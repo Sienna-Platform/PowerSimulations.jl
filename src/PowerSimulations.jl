@@ -66,6 +66,7 @@ export DCLossyLine
 export StaticPowerLoad
 export PowerLoadInterruption
 export PowerLoadDispatch
+export PowerLoadShift
 ######## Renewable Formulations ########
 export RenewableFullDispatch
 export RenewableConstantPowerFactor
@@ -272,6 +273,8 @@ export AuxBilinearConverterVariable
 export AuxBilinearSquaredConverterVariable
 export InterpolationSquaredBilinearVariable
 export InterpolationBinarySquaredBilinearVariable
+export ShiftUpActivePowerVariable
+export ShiftDownActivePowerVariable
 
 # Auxiliary variables
 export TimeDurationOn
@@ -359,6 +362,9 @@ export InterpolationCurrentConstraints
 export InterpolationBilinearConstraints
 export ConverterLossConstraint
 export CurrentAbsoluteValueConstraint
+export ShiftedActivePowerBalanceConstraint
+export ShiftUpActivePowerVariableLimitsConstraint
+export ShiftDownActivePowerVariableLimitsConstraint
 
 # Parameters
 # Time Series Parameters
@@ -407,6 +413,7 @@ export PostContingencyActivePowerGeneration
 export PostContingencyActivePowerBalance
 export NetActivePower
 export DCCurrentBalance
+export RealizedShiftedLoad
 
 #################################################################################
 # Imports

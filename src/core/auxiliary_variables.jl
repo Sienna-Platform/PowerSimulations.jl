@@ -14,6 +14,11 @@ Auxiliary Variable for Thermal Generation Models that solve for power above min
 struct PowerOutput <: AuxVariableType end
 
 """
+Auxiliary Variable for [``PowerLoadShift``](@ref) for the realized load after shifting
+"""
+struct RealizedLoad <: AuxVariableType end
+
+"""
 Auxiliary Variable of DC Current Variables for DC Lines formulations
 Docs abbreviation: ``p_l^{loss}``
 """
