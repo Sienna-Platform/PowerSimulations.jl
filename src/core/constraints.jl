@@ -712,6 +712,15 @@ The specified constraints are formulated as:
 """
 struct ShiftedActivePowerBalanceConstraint <: ConstraintType end
 """
+Struct to create the constraint to balance shifted power over the user-defined time horizons.
+For more information check the [`PowerLoadShift`](@ref) formulation.
+The specified constraints are formulated as:
+```math
+p_t^\\text{realized} \\ge 0.0 , \\quad \\forall k \\text{ time horizons}
+```
+"""
+struct RealizedShiftedLoadMinimumBoundConstraint <: ConstraintType end
+"""
 Struct to create the constraint to limit shifted power active power between upper and lower bounds.
 For more information check the [`PowerLoadShift`](@ref) formulation.
 The specified constraints are formulated as:

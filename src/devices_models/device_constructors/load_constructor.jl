@@ -570,6 +570,14 @@ function construct_device!(
     )
     add_constraints!(
         container,
+        RealizedShiftedLoadMinimumBoundConstraint,
+        RealizedShiftedLoad,
+        devices,
+        model,
+        network_model,
+    )
+    add_constraints!(
+        container,
         ShiftUpActivePowerVariableLimitsConstraint,
         ShiftUpActivePowerVariable,
         devices,
@@ -661,6 +669,14 @@ function construct_device!(
     add_constraints!(
         container,
         ShiftedActivePowerBalanceConstraint,
+        devices,
+        model,
+        network_model,
+    )
+    add_constraints!(
+        container,
+        RealizedShiftedLoadMinimumBoundConstraint,
+        RealizedShiftedLoad,
         devices,
         model,
         network_model,

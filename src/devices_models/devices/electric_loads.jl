@@ -355,6 +355,31 @@ end
 
 function add_constraints!(
     container::OptimizationContainer,
+    T::Type{RealizedShiftedLoadMinimumBoundConstraint},
+    U::Type{<:ExpressionType},
+    devices::IS.FlattenIteratorWrapper{V},
+    ::DeviceModel{V, W},
+    ::NetworkModel{X},
+) where {V <: PSY.ShiftablePowerLoad, W <: PowerLoadShift, X <: PM.AbstractPowerModel}
+    time_steps = get_time_steps(container)
+    constraint = add_constraints_container!(
+        container,
+        T(),
+        V,
+        PSY.get_name.(devices),
+        time_steps,
+    )
+    realized_load = get_expression(container, U(), V)
+    jump_model = get_jump_model(container)
+    for d in devices, t in time_steps
+        name = PSY.get_name(d)
+        constraint[name, t] = JuMP.@constraint(jump_model, realized_load[name, t] >= 0.0)
+    end
+    return
+end
+
+function add_constraints!(
+    container::OptimizationContainer,
     ::Type{ShiftUpActivePowerVariableLimitsConstraint},
     U::Type{<:VariableType},
     devices::IS.FlattenIteratorWrapper{V},
