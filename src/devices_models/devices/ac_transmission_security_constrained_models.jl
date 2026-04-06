@@ -182,15 +182,24 @@ function add_constraints!(
 end
 
 function _add_post_contingency_flow_expressions_for_outage!(
-    expression_container,
+    expression_container::DenseAxisArray,
     jump_model::JuMP.Model,
     time_steps::UnitRange{Int},
     modf_matrix::PNM.VirtualMODF,
     contingency_spec::PNM.ContingencySpec,
     contingency_branch_type::Type{<:PSY.ACTransmission},
     nodal_balance_expressions::Matrix{JuMP.AffExpr},
-    branch_type_data,
-) where {T}
+    branch_type_data::Vector{
+        Tuple{
+            DataType,
+            SortedDict{
+                String,
+                Tuple{Tuple{Int64, Int64}, String},
+                Base.Order.ForwardOrdering,
+            },
+        },
+    },
+)
     outage_id = string(contingency_spec.uuid)
     for (b_type, name_to_arc_map) in branch_type_data
         @debug "Adding post contingency flow expressions for branch type $b_type caused by contingencies associated with branch type $contingency_branch_type"
