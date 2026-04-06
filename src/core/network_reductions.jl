@@ -256,5 +256,5 @@ function get_branch_argument_constraint_axis(
         push!(all_names, names_by_type)
     end
 
-    return reduce(vcat, all_names; init=String[])
+    return reduce(vcat, all_names; init = String[])
 end
