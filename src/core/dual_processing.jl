@@ -57,7 +57,8 @@ function process_duals(container::OptimizationContainer, lp_optimizer)
         else
             nothing
         end
-        cache[key] = VarRestoreInfo{typeof(var_cache[key])}(lb, ub, fixed_int_value, is_integer_flag)
+        cache[key] =
+            VarRestoreInfo{typeof(var_cache[key])}(lb, ub, fixed_int_value, is_integer_flag)
         # Round cached values in-place to nearest integer to avoid infeasibilities
         # from MIP solver numerical tolerances (e.g. 0.9999997 instead of 1.0)
         _round_cache_values!(var_cache[key])
