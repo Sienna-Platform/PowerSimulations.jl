@@ -51,7 +51,7 @@ function process_duals(container::OptimizationContainer, lp_optimizer)
         cache[key] = VarRestoreInfo(lb, ub, fixed_int_value, is_integer_flag)
         # Round cached values in-place to nearest integer to avoid infeasibilities
         # from MIP solver numerical tolerances (e.g. 0.9999997 instead of 1.0)
-        var_cache[key] .= round.(var_cache[key])
+        var_cache[key].data .= round.(var_cache[key].data)
         JuMP.fix.(variable, var_cache[key]; force = true)
     end
     @assert !isempty(cache)

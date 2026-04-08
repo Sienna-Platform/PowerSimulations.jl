@@ -50,9 +50,8 @@ function test_2_stage_decision_models_with_feedforwards(in_memory)
     template_ed = get_template_nomin_ed_simulation()
     set_device_model!(template_ed, InterruptiblePowerLoad, StaticPowerLoad)
     set_network_model!(template_uc, NetworkModel(
-        CopperPlatePowerModel,
-        # MILP "duals" not supported with free solvers
-        # duals = [CopperPlateBalanceConstraint],
+        CopperPlatePowerModel;
+        duals = [CopperPlateBalanceConstraint],
     ))
     set_network_model!(
         template_ed,
@@ -117,9 +116,8 @@ end
     template_uc = get_template_basic_uc_simulation()
     set_device_model!(template_uc, ThermalStandard, ThermalStandardUnitCommitment)
     set_network_model!(template_uc, NetworkModel(
-        CopperPlatePowerModel,
-        # MILP "duals" not supported with free solvers
-        # duals = [CopperPlateBalanceConstraint],
+        CopperPlatePowerModel;
+        duals = [CopperPlateBalanceConstraint],
     ))
 
     template_ed = get_template_nomin_ed_simulation(
