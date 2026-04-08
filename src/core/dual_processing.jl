@@ -25,10 +25,8 @@ function process_duals(container::OptimizationContainer, lp_optimizer)
             continue
         end
         is_integer_flag = false
-        is_binary_flag = false
         if JuMP.is_binary(first(variable))
             JuMP.unset_binary.(variable)
-            is_binary_flag = true
         elseif JuMP.is_integer(first(variable))
             JuMP.unset_integer.(variable)
             is_integer_flag = true
@@ -79,7 +77,7 @@ function process_duals(container::OptimizationContainer, lp_optimizer)
     if JuMP.has_duals(jump_model)
         for (key, dual) in get_duals(container)
             constraint = get_constraint(container, key)
-            dual.data .= jump_value.(constraint.data)
+            dual.data .= jump_value.(constraint).data
         end
     end
 
