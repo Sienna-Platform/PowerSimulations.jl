@@ -1,7 +1,7 @@
-struct VarRestoreInfo
-    lb::Union{Nothing, AbstractArray}
-    ub::Union{Nothing, AbstractArray}
-    fixed_int_value::Union{Nothing, AbstractArray}
+struct VarRestoreInfo{A <: AbstractArray}
+    lb::Union{Nothing, A}
+    ub::Union{Nothing, A}
+    fixed_int_value::Union{Nothing, A}
     is_integer::Bool
 end
 
@@ -31,7 +31,7 @@ function process_duals(container::OptimizationContainer, lp_optimizer)
     end
     var_cache = container.primal_values_cache.variables_cache
     cache = sizehint!(Dict{VariableKey, VarRestoreInfo}(), length(var_container))
-    for (key, variable) in get_variables(container)
+    for (key, variable) in var_container
         is_integer_flag = false
         elem = _first_element(variable)
         if JuMP.is_binary(elem)
@@ -90,7 +90,7 @@ function process_duals(container::OptimizationContainer, lp_optimizer)
         end
     end
 
-    for (key, variable) in get_variables(container)
+    for (key, variable) in var_container
         if !haskey(cache, key)
             continue
         end
