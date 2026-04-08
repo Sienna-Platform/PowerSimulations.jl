@@ -5,14 +5,25 @@ struct VarRestoreInfo
     is_integer::Bool
 end
 
+_first_element(v::DenseAxisArray) = first(v)
+_first_element(v::SparseAxisArray) = first(values(v.data))
+
+function _round_cache_values!(cache::DenseAxisArray)
+    cache.data .= round.(cache.data)
+    return
+end
+
+function _round_cache_values!(cache::SparseAxisArray)
+    for k in keys(cache.data)
+        cache.data[k] = round(cache.data[k])
+    end
+    return
+end
+
 function process_duals(container::OptimizationContainer, lp_optimizer)
     var_container = get_variables(container)
     for (k, v) in var_container
-        if isa(v, JuMP.Containers.SparseAxisArray)
-            container.primal_values_cache.variables_cache[k] = jump_value.(v)
-        else
-            container.primal_values_cache.variables_cache[k] = jump_value.(v)
-        end
+        container.primal_values_cache.variables_cache[k] = jump_value.(v)
     end
 
     for (k, v) in get_expressions(container)
@@ -21,29 +32,27 @@ function process_duals(container::OptimizationContainer, lp_optimizer)
     var_cache = container.primal_values_cache.variables_cache
     cache = sizehint!(Dict{VariableKey, VarRestoreInfo}(), length(var_container))
     for (key, variable) in get_variables(container)
-        if isa(variable, JuMP.Containers.SparseAxisArray)
-            continue
-        end
         is_integer_flag = false
-        if JuMP.is_binary(first(variable))
+        elem = _first_element(variable)
+        if JuMP.is_binary(elem)
             JuMP.unset_binary.(variable)
-        elseif JuMP.is_integer(first(variable))
+        elseif JuMP.is_integer(elem)
             JuMP.unset_integer.(variable)
             is_integer_flag = true
         else
             continue
         end
-        lb = if JuMP.has_lower_bound(first(variable))
+        lb = if JuMP.has_lower_bound(elem)
             JuMP.lower_bound.(variable)
         else
             nothing
         end
-        ub = if JuMP.has_upper_bound(first(variable))
+        ub = if JuMP.has_upper_bound(elem)
             JuMP.upper_bound.(variable)
         else
             nothing
         end
-        fixed_int_value = if JuMP.is_fixed(first(variable)) && is_integer_flag
+        fixed_int_value = if JuMP.is_fixed(elem) && is_integer_flag
             jump_value.(variable)
         else
             nothing
@@ -51,7 +60,7 @@ function process_duals(container::OptimizationContainer, lp_optimizer)
         cache[key] = VarRestoreInfo(lb, ub, fixed_int_value, is_integer_flag)
         # Round cached values in-place to nearest integer to avoid infeasibilities
         # from MIP solver numerical tolerances (e.g. 0.9999997 instead of 1.0)
-        var_cache[key].data .= round.(var_cache[key].data)
+        _round_cache_values!(var_cache[key])
         JuMP.fix.(variable, var_cache[key]; force = true)
     end
     @assert !isempty(cache)
@@ -83,9 +92,6 @@ function process_duals(container::OptimizationContainer, lp_optimizer)
 
     for (key, variable) in get_variables(container)
         if !haskey(cache, key)
-            continue
-        end
-        if isa(variable, JuMP.Containers.SparseAxisArray)
             continue
         end
         info = cache[key]
