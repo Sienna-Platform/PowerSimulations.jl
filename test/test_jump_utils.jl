@@ -200,3 +200,29 @@ end
     data = rand(2, 3)
     @test PSI.to_matrix(DenseAxisArray(data, ["a", "b"], 1:3)) == permutedims(data)
 end
+
+@testset "Dual processing helpers" begin
+    @testset "_first_element with DenseAxisArray" begin
+        arr = DenseAxisArray([1.1, 2.9], 1:2)
+        @test PSI._first_element(arr) == 1.1
+    end
+
+    @testset "_first_element with SparseAxisArray" begin
+        arr = SparseAxisArray(Dict((1,) => 1.1, (2,) => 2.9))
+        @test PSI._first_element(arr) ∈ [1.1, 2.9]
+    end
+
+    @testset "_round_cache_values! with DenseAxisArray" begin
+        arr = DenseAxisArray([1.1, 2.9], 1:2)
+        PSI._round_cache_values!(arr)
+        @test arr[1] == 1.0
+        @test arr[2] == 3.0
+    end
+
+    @testset "_round_cache_values! with SparseAxisArray" begin
+        arr = SparseAxisArray(Dict((1,) => 1.1, (2,) => 2.9))
+        PSI._round_cache_values!(arr)
+        @test arr[(1,)] == 1.0
+        @test arr[(2,)] == 3.0
+    end
+end
