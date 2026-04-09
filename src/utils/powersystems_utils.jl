@@ -386,6 +386,14 @@ function create_temporary_cost_function_in_system_per_unit(
     )
 end
 
+"""
+Return the set of distinct forecast intervals present in the system.
+"""
+function get_forecast_intervals(sys::PSY.System)
+    table = PSY.get_forecast_summary_table(sys)
+    return Set(row.interval for row in eachrow(table) if row.interval !== nothing)
+end
+
 function get_deterministic_time_series_type(sys::PSY.System)
     time_series_types = IS.get_time_series_counts_by_type(sys.data)
     existing_types = Set(d["type"] for d in time_series_types)
