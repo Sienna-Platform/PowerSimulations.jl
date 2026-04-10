@@ -285,11 +285,14 @@ function _add_time_series_parameters!(
         if has_entry
             @assert !isempty(tracker_container) name arc reduction
         else
+            model_interval = get_interval(get_settings(container))
+            ts_interval = model_interval == UNSET_INTERVAL ? nothing : model_interval
             raw_ts_vals = get_time_series_initial_values!(
                 container,
                 ts_type,
                 device_with_time_series,
-                ts_name,
+                ts_name;
+                interval = ts_interval,
             )
             ts_vals =
                 _unwrap_for_param.(Ref(param_instance), raw_ts_vals, Ref(additional_axes))
@@ -363,8 +366,16 @@ function _add_time_series_parameters!(
         push!(devices_with_time_series, device)
         ts_uuid = string(IS.get_time_series_uuid(ts_type, device, ts_name))
         if !(ts_uuid in keys(initial_values))
+            model_interval = get_interval(get_settings(container))
+            ts_interval = model_interval == UNSET_INTERVAL ? nothing : model_interval
             initial_values[ts_uuid] =
-                get_time_series_initial_values!(container, ts_type, device, ts_name)
+                get_time_series_initial_values!(
+                    container,
+                    ts_type,
+                    device,
+                    ts_name;
+                    interval = ts_interval,
+                )
             _check_dynamic_branch_rating_ts(initial_values[ts_uuid], param, device, model)
         end
     end
@@ -672,9 +683,17 @@ function _add_parameters!(
         time_steps,
     )
 
+    model_interval = get_interval(get_settings(container))
+    ts_interval = model_interval == UNSET_INTERVAL ? nothing : model_interval
     param_instance = T()
     for (ts_name, device_name, device) in zip(ts_names, device_names, active_devices)
-        raw_ts_vals = get_time_series_initial_values!(container, ts_type, device, ts_name)
+        raw_ts_vals = get_time_series_initial_values!(
+            container,
+            ts_type,
+            device,
+            ts_name;
+            interval = ts_interval,
+        )
         ts_vals = _unwrap_for_param.(Ref(param_instance), raw_ts_vals, Ref(additional_axes))
         @assert all(_size_wrapper.(ts_vals) .== Ref(length.(additional_axes)))
         for step in time_steps
@@ -721,7 +740,9 @@ function _add_parameters!(
 
     set_subsystem!(get_attributes(parameter_container), get_subsystem(model))
     jump_model = get_jump_model(container)
-    ts_vector = get_time_series(container, service, T(), name)
+    model_interval = get_interval(get_settings(container))
+    ts_interval = model_interval == UNSET_INTERVAL ? nothing : model_interval
+    ts_vector = get_time_series(container, service, T(), name; interval = ts_interval)
     multiplier = get_multiplier_value(T(), service, V())
     for t in time_steps
         set_multiplier!(parameter_container, multiplier, name, t)
