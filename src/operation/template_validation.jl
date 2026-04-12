@@ -1,3 +1,55 @@
+function _dlr_supported_network_model(::NetworkModel{<:AbstractPTDFModel})
+    return true
+end
+
+function _dlr_supported_network_model(::NetworkModel)
+    return false
+end
+
+function _dlr_supported_formulation(
+    ::DeviceModel{<:PSY.ACTransmission, StaticBranch},
+)
+    return true
+end
+
+function _dlr_supported_formulation(::DeviceModel)
+    return false
+end
+
+function _check_dlr_branch_compatibility(
+    network_model::NetworkModel,
+    branch_models::Dict,
+)
+    for (_, device_model) in branch_models
+        if !haskey(get_time_series_names(device_model), DynamicBranchRatingTimeSeriesParameter)
+            continue
+        end
+        D = get_component_type(device_model)
+        B = get_formulation(device_model)
+        if !_dlr_supported_formulation(device_model)
+            throw(
+                IS.ConflictingInputsError(
+                    "DynamicBranchRatingTimeSeriesParameter is only supported with the \
+                    StaticBranch formulation, but branch type $(D) was configured with \
+                    $(B). Remove DynamicBranchRatingTimeSeriesParameter from \
+                    time_series_names or change the formulation to StaticBranch.",
+                ),
+            )
+        end
+        if !_dlr_supported_network_model(network_model)
+            throw(
+                IS.ConflictingInputsError(
+                    "DynamicBranchRatingTimeSeriesParameter requires a PTDFPowerModel \
+                    (AbstractPTDFModel) network model. Remove \
+                    DynamicBranchRatingTimeSeriesParameter from time_series_names or use \
+                    a PTDFPowerModel network model.",
+                ),
+            )
+        end
+    end
+    return
+end
+
 function _check_branch_network_compatibility(
     ::NetworkModel{T},
     unmodeled_branch_types::Vector{DataType},
@@ -103,6 +155,7 @@ function validate_template_impl!(model::OperationModel)
     for k in branch_keys_to_delete
         delete!(model.template.branches, k)
     end
+    _check_dlr_branch_compatibility(network_model, model.template.branches)
     validate_network_model(network_model, unmodeled_branch_types, model_has_branch_filters)
     return
 end
