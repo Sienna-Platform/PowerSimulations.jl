@@ -31,7 +31,7 @@ StaticBranch
     a branch and the `DeviceModel` is configured with `time_series_names = Dict(DynamicBranchRatingTimeSeriesParameter => "dynamic_line_ratings")`,
     the static ``R^\text{max}`` bound is replaced by a time-varying parameter ``R^\text{max}_t = R^\text{max} \cdot \text{DLR}_t``.
     This feature requires the `PTDFPowerModel` network model and is **only** available for `StaticBranch`.
-    See the [Dynamic Line Ratings tutorial](@ref) for a complete example.
+    See the [Dynamic Line Ratings (DLR)](@ref) for a complete example.
 
 **Variables:**
 
