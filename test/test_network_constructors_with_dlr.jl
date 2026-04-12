@@ -47,6 +47,74 @@ function check_dlr_branch_flows!(
     end
 end
 
+@testset "DLR compatibility validation errors" begin
+    branches_dlr = ["1", "2", "6"]
+    dlr_factors = vcat([fill(x, 6) for x in [0.99, 0.98, 1.0, 0.95]]...)
+    n_steps = 2
+
+    # Case 1: DLR time series configured with an unsupported branch formulation.
+    sys_wrong_formulation = PSB.build_system(PSITestSystems, "c_sys5")
+    add_dlr_to_system_branches!(
+        sys_wrong_formulation,
+        branches_dlr,
+        n_steps,
+        dlr_factors;
+        initial_date = "2024-01-01",
+    )
+    template_wrong_formulation = get_thermal_dispatch_template_network(
+        NetworkModel(
+            PTDFPowerModel;
+            PTDF_matrix = PTDF(sys_wrong_formulation),
+        ),
+    )
+    set_device_model!(
+        template_wrong_formulation,
+        DeviceModel(
+            Line,
+            StaticBranchBounds;
+            time_series_names = Dict(
+                DynamicBranchRatingTimeSeriesParameter => "dynamic_line_ratings",
+            ),
+        ),
+    )
+    model_wrong_formulation =
+        DecisionModel(template_wrong_formulation, sys_wrong_formulation; optimizer = HiGHS_optimizer)
+
+    @test_throws IS.ConflictingInputsError build!(
+        model_wrong_formulation;
+        output_dir = mktempdir(; cleanup = true),
+    )
+
+    # Case 2: DLR time series configured with an unsupported network formulation.
+    sys_wrong_network = PSB.build_system(PSITestSystems, "c_sys5")
+    add_dlr_to_system_branches!(
+        sys_wrong_network,
+        branches_dlr,
+        n_steps,
+        dlr_factors;
+        initial_date = "2024-01-01",
+    )
+    template_wrong_network =
+        get_thermal_dispatch_template_network(NetworkModel(CopperPlatePowerModel))
+    set_device_model!(
+        template_wrong_network,
+        DeviceModel(
+            Line,
+            StaticBranch;
+            time_series_names = Dict(
+                DynamicBranchRatingTimeSeriesParameter => "dynamic_line_ratings",
+            ),
+        ),
+    )
+    model_wrong_network =
+        DecisionModel(template_wrong_network, sys_wrong_network; optimizer = HiGHS_optimizer)
+
+    @test_throws IS.ConflictingInputsError build!(
+        model_wrong_network;
+        output_dir = mktempdir(; cleanup = true),
+    )
+end
+
 @testset "Network DC-PF with VirtualPTDF Model and implementing Dynamic Branch Ratings" begin
     line_device_model = DeviceModel(
         Line,
