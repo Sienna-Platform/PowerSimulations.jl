@@ -42,10 +42,10 @@ function _check_dlr_branch_compatibility(
         if !_dlr_supported_network_model(network_model)
             throw(
                 IS.ConflictingInputsError(
-                    "DynamicBranchRatingTimeSeriesParameter requires a PTDFPowerModel \
-                    (AbstractPTDFModel) network model. Remove \
+                    "DynamicBranchRatingTimeSeriesParameter requires a PTDF-based \
+                    network model (NetworkModel{<:AbstractPTDFModel}). Remove \
                     DynamicBranchRatingTimeSeriesParameter from time_series_names or use \
-                    a PTDFPowerModel network model.",
+                    a PTDF-based network model.",
                 ),
             )
         end
