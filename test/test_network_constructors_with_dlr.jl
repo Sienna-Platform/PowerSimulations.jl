@@ -78,7 +78,11 @@ end
         ),
     )
     model_wrong_formulation =
-        DecisionModel(template_wrong_formulation, sys_wrong_formulation; optimizer = HiGHS_optimizer)
+        DecisionModel(
+            template_wrong_formulation,
+            sys_wrong_formulation;
+            optimizer = HiGHS_optimizer,
+        )
 
     @test_throws IS.ConflictingInputsError build!(
         model_wrong_formulation;
@@ -107,7 +111,11 @@ end
         ),
     )
     model_wrong_network =
-        DecisionModel(template_wrong_network, sys_wrong_network; optimizer = HiGHS_optimizer)
+        DecisionModel(
+            template_wrong_network,
+            sys_wrong_network;
+            optimizer = HiGHS_optimizer,
+        )
 
     @test_throws IS.ConflictingInputsError build!(
         model_wrong_network;
