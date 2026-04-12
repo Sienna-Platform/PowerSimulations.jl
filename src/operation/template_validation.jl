@@ -21,7 +21,10 @@ function _check_dlr_branch_compatibility(
     branch_models::Dict,
 )
     for (_, device_model) in branch_models
-        if !haskey(get_time_series_names(device_model), DynamicBranchRatingTimeSeriesParameter)
+        if !haskey(
+            get_time_series_names(device_model),
+            DynamicBranchRatingTimeSeriesParameter,
+        )
             continue
         end
         D = get_component_type(device_model)
