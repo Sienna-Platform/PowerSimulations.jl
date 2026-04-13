@@ -20,10 +20,7 @@ function construct_device!(
     end
     process_market_bid_parameters!(container, devices, model)
 
-    add_expressions!(container, ProductionCostExpression, devices, model)
-    add_expressions!(container, FixedCostExpression, devices, model)
-    add_expressions!(container, CurtailmentCostExpression, devices, model)
-    add_expressions!(container, VOMCostExpression, devices, model)
+    add_cost_expressions!(container, devices, model)
 
     # Expression
     add_to_expression!(
@@ -138,10 +135,7 @@ function construct_device!(
     end
     process_market_bid_parameters!(container, devices, model)
 
-    add_expressions!(container, ProductionCostExpression, devices, model)
-    add_expressions!(container, FixedCostExpression, devices, model)
-    add_expressions!(container, CurtailmentCostExpression, devices, model)
-    add_expressions!(container, VOMCostExpression, devices, model)
+    add_cost_expressions!(container, devices, model)
 
     # Expression
     add_to_expression!(

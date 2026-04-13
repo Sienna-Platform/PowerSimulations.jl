@@ -154,7 +154,6 @@ function add_shut_down_cost!(
             exp = _add_proportional_term_maybe_variant!(
                 Val(add_as_time_variant), container, U(), d, my_cost_term * multiplier,
                 t)
-            add_to_expression!(container, ProductionCostExpression, exp, d, t)
             add_to_expression!(container, ShutDownCostExpression, exp, d, t)
         end
     end
@@ -178,7 +177,6 @@ function add_proportional_cost!(
         iszero(cost_term) && continue
         for t in get_time_steps(container)
             exp = _add_proportional_term!(container, U(), d, cost_term * multiplier, t)
-            add_to_expression!(container, ProductionCostExpression, exp, d, t)
             add_to_expression!(container, FixedCostExpression, exp, d, t)
         end
     end
@@ -221,7 +219,6 @@ function _add_vom_cost_to_objective!(
                 cost_term_normalized * multiplier * dt,
                 t,
             )
-        add_to_expression!(container, ProductionCostExpression, exp, component, t)
         add_to_expression!(container, VOMCostExpression, exp, component, t)
     end
     return
@@ -252,7 +249,6 @@ function add_proportional_cost!(
                 _add_proportional_term_maybe_variant!(
                     Val(add_as_time_variant), container, U(), d, cost_term, t)
             end
-            add_to_expression!(container, ProductionCostExpression, exp, d, t)
             add_to_expression!(container, FixedCostExpression, exp, d, t)
         end
     end
@@ -291,7 +287,6 @@ function add_proportional_cost!(
             cost_term *= multiplier
             exp = _add_proportional_term_maybe_variant!(
                 Val(add_as_time_variant), container, U(), d, cost_term, t)
-            add_to_expression!(container, ProductionCostExpression, exp, d, t)
             add_to_expression!(container, FixedCostExpression, exp, d, t)
         end
     end
@@ -365,7 +360,6 @@ function _add_start_up_cost_to_objective!(
         exp = _add_proportional_term_maybe_variant!(
             Val(add_as_time_variant), container, T(), component,
             my_cost_term * multiplier, t)
-        add_to_expression!(container, ProductionCostExpression, exp, component, t)
         add_to_expression!(container, StartUpCostExpression, exp, component, t)
     end
     return
@@ -516,13 +510,6 @@ function _add_time_varying_fuel_variable_cost!(
     name = PSY.get_name(component)
     for t in get_time_steps(container)
         cost_expr = expression[name, t] * parameter[name, t] * multiplier[name, t]
-        add_to_expression!(
-            container,
-            ProductionCostExpression,
-            cost_expr,
-            component,
-            t,
-        )
         add_to_expression!(
             container,
             FuelCostExpression,

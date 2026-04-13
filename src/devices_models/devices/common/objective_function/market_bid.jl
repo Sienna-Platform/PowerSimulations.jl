@@ -1049,7 +1049,6 @@ function _add_vom_cost_to_objective_helper!(
     for t in get_time_steps(container)
         exp = _add_proportional_term!(
             container, T(), component, cost_term_normalized * multiplier * dt, t)
-        add_to_expression!(container, ProductionCostExpression, exp, component, t)
         add_to_expression!(container, VOMCostExpression, exp, component, t)
     end
     return

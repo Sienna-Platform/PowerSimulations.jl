@@ -42,7 +42,7 @@ function construct_device!(
         add_parameters!(container, ActivePowerTimeSeriesParameter, devices, model)
     end
 
-    add_expressions!(container, ProductionCostExpression, devices, model)
+    add_cost_expressions!(container, devices, model)
     add_event_arguments!(container, devices, model, network_model)
     return
 end
@@ -117,7 +117,7 @@ function construct_device!(
 
     process_market_bid_parameters!(container, devices, model, false, true)
 
-    add_expressions!(container, ProductionCostExpression, devices, model)
+    add_cost_expressions!(container, devices, model)
     add_event_arguments!(container, devices, model, network_model)
     return
 end
@@ -192,7 +192,7 @@ function construct_device!(
 
     process_market_bid_parameters!(container, devices, model, false, true)
 
-    add_expressions!(container, ProductionCostExpression, devices, model)
+    add_cost_expressions!(container, devices, model)
     add_event_arguments!(container, devices, model, network_model)
     return
 end
@@ -272,7 +272,7 @@ function construct_device!(
         add_parameters!(container, ActivePowerTimeSeriesParameter, devices, model)
     end
 
-    add_expressions!(container, ProductionCostExpression, devices, model)
+    add_cost_expressions!(container, devices, model)
     add_event_arguments!(container, devices, model, network_model)
     return
 end

@@ -500,13 +500,6 @@ function _add_variable_cost_to_objective!(
     for t in get_time_steps(container)
         add_to_expression!(
             container,
-            ProductionCostExpression,
-            pwl_cost_expressions[t],
-            component,
-            t,
-        )
-        add_to_expression!(
-            container,
             FuelCostExpression,
             pwl_cost_expressions[t],
             component,
@@ -554,13 +547,6 @@ function _add_variable_cost_to_objective!(
             is_time_variant_,
         )
         pwl_cost_expression = pwl_fuel_consumption_expressions[t] * fuel_cost_value
-        add_to_expression!(
-            container,
-            ProductionCostExpression,
-            pwl_cost_expression,
-            component,
-            t,
-        )
         add_to_expression!(
             container,
             FuelCostExpression,

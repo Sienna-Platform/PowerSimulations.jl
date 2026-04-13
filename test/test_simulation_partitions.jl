@@ -93,7 +93,15 @@ end
                 skip && continue
                 r_sum = 0
                 p_sum = 0
-                atol = (occursin("ProductionCostExpression", key) || occursin("FuelCostExpression__ThermalStandard", key)) ? 11000 : 1e-6
+                atol =
+                    if (
+                        occursin("ProductionCostExpression", key) ||
+                        occursin("FuelCostExpression__ThermalStandard", key)
+                    )
+                        11000
+                    else
+                        1e-6
+                    end
                 for i in 2:ncol(rdf)
                     r_sum += sum(rdf[!, i])
                     p_sum += sum(pdf[!, i])

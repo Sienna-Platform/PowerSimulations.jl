@@ -118,8 +118,8 @@ const TIME1 = DateTime("2024-01-01T00:00:00")
         @test cost_with_startup > cost_no_startup
     end
 
-   @testset "Test cost expression decomposition and nonnegativity (ThermalBasicUnitCommitment)" begin
-        for (i, cost_reference, thermal_formulation) in test_cases 
+    @testset "Test cost expression decomposition and nonnegativity (ThermalBasicUnitCommitment)" begin
+        for (i, cost_reference, thermal_formulation) in test_cases
             if thermal_formulation == ThermalBasicUnitCommitment
                 @testset "$i" begin
                     sys = build_system(PSITestSystems, "c_$(i)")
@@ -136,7 +136,8 @@ const TIME1 = DateTime("2024-01-01T00:00:00")
                         system_to_file = false,
                         optimizer_solve_log_print = true,
                     )
-                    @test build!(model; output_dir = test_path) == PSI.ModelBuildStatus.BUILT
+                    @test build!(model; output_dir = test_path) ==
+                          PSI.ModelBuildStatus.BUILT
                     @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
 
                     results = OptimizationProblemResults(model)
@@ -176,7 +177,9 @@ const TIME1 = DateTime("2024-01-01T00:00:00")
                     # 1) Decomposition: production == variable + startup + shutdown + proportional
                     # Do it per timestep for the unit, then also check total sum.
                     unit = "Test Unit"
-                    decomp_vec = expr_fuel[!, unit] .+ expr_su[!, unit] .+ expr_sd[!, unit] .+ expr_fixed[!, unit] .+expr_VOM[!, unit]
+                    decomp_vec =
+                        expr_fuel[!, unit] .+ expr_su[!, unit] .+ expr_sd[!, unit] .+
+                        expr_fixed[!, unit] .+ expr_VOM[!, unit]
                     @test isapprox.(decomp_vec, expr_prod[!, unit]; atol = 1e-6) |> all
 
                     total_prod = sum(expr_prod[!, unit])
@@ -242,7 +245,8 @@ const TIME1 = DateTime("2024-01-01T00:00:00")
                     system_to_file = false,
                     optimizer_solve_log_print = true,
                 )
-                @test build!(model_yes; output_dir = test_path) == PSI.ModelBuildStatus.BUILT
+                @test build!(model_yes; output_dir = test_path) ==
+                      PSI.ModelBuildStatus.BUILT
                 @test solve!(model_yes) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
                 res_yes = OptimizationProblemResults(model_yes)
 

@@ -29,13 +29,6 @@ function _add_quadraticcurve_variable_term_to_model!(
     end
     add_to_expression!(
         container,
-        ProductionCostExpression,
-        cost_term,
-        component,
-        time_period,
-    )
-    add_to_expression!(
-        container,
         FuelCostExpression,
         cost_term,
         component,

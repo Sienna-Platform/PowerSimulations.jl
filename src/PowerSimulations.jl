@@ -394,6 +394,7 @@ export SystemBalanceExpressions
 export RangeConstraintLBExpressions
 export RangeConstraintUBExpressions
 export CostExpressions
+export ConstituentCostExpression
 export ActivePowerBalance
 export ReactivePowerBalance
 export EmergencyUp

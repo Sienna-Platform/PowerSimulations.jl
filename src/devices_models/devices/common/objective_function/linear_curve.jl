@@ -17,13 +17,6 @@ function _add_linearcurve_variable_term_to_model!(
     )
     add_to_expression!(
         container,
-        ProductionCostExpression,
-        linear_cost,
-        component,
-        time_period,
-    )
-    add_to_expression!(
-        container,
         FuelCostExpression,
         linear_cost,
         component,
@@ -178,7 +171,6 @@ function _add_curtailment_cost!(
     cost_function::PSY.CostCurve{PSY.LinearCurve},
     ::U,
 ) where {T <: VariableType, U <: AbstractDeviceFormulation}
-
     base_power = get_base_power(container)
     device_base_power = PSY.get_base_power(component)
 
@@ -208,7 +200,13 @@ function _add_curtailment_cost!(
         dispatch = dispatch_vars[name, t]
         curtailment_cost = proportional_term_per_unit * dt * (offer_max - dispatch)
 
-        add_to_expression!(container, CurtailmentCostExpression, curtailment_cost, component, t)
+        add_to_expression!(
+            container,
+            CurtailmentCostExpression,
+            curtailment_cost,
+            component,
+            t,
+        )
     end
 
     return
@@ -221,7 +219,6 @@ function _add_curtailment_cost!(
     cost_function::PSY.CostCurve{PSY.LinearCurve},
     ::U,
 ) where {T <: VariableType, U <: AbstractDeviceFormulation}
-
     base_power = get_base_power(container)
     device_base_power = PSY.get_base_power(component)
 
@@ -251,7 +248,13 @@ function _add_curtailment_cost!(
         dispatch = dispatch_vars[name, t]
         curtailment_cost = proportional_term_per_unit * dt * (offer_max - dispatch)
 
-        add_to_expression!(container, CurtailmentCostExpression, curtailment_cost, component, t)
+        add_to_expression!(
+            container,
+            CurtailmentCostExpression,
+            curtailment_cost,
+            component,
+            t,
+        )
     end
 
     return

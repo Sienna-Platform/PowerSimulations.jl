@@ -2418,6 +2418,36 @@ function add_to_expression!(
     return
 end
 
+"""
+Specialized `add_to_expression!` for `ConstituentCostExpression` subtypes. In addition to
+adding to the constituent expression, this method automatically propagates the cost to
+`ProductionCostExpression`, so callers do not need to add to both.
+"""
+function add_to_expression!(
+    container::OptimizationContainer,
+    ::Type{S},
+    cost_expression::JuMPOrFloat,
+    component::T,
+    time_period::Int,
+) where {S <: ConstituentCostExpression, T <: PSY.Component}
+    if has_container_key(container, S, T)
+        device_cost_expression = get_expression(container, S(), T)
+        component_name = PSY.get_name(component)
+        JuMP.add_to_expression!(
+            device_cost_expression[component_name, time_period],
+            cost_expression,
+        )
+    end
+    if has_container_key(container, ProductionCostExpression, T)
+        prod_cost_expression = get_expression(container, ProductionCostExpression(), T)
+        JuMP.add_to_expression!(
+            prod_cost_expression[PSY.get_name(component), time_period],
+            cost_expression,
+        )
+    end
+    return
+end
+
 function add_to_expression!(
     container::OptimizationContainer,
     ::Type{S},
@@ -2425,6 +2455,26 @@ function add_to_expression!(
     component::T,
     time_period::Int,
 ) where {S <: CostExpressions, T <: PSY.ReserveDemandCurve}
+    if has_container_key(container, S, T, PSY.get_name(component))
+        device_cost_expression = get_expression(container, S(), T, PSY.get_name(component))
+        component_name = PSY.get_name(component)
+        JuMP.add_to_expression!(
+            device_cost_expression[component_name, time_period],
+            cost_expression,
+        )
+    end
+    return
+end
+
+# Disambiguate: ConstituentCostExpression ∩ ReserveDemandCurve — no ProductionCostExpression
+# propagation since reserves don't have a ProductionCostExpression container.
+function add_to_expression!(
+    container::OptimizationContainer,
+    ::Type{S},
+    cost_expression::JuMP.AbstractJuMPScalar,
+    component::T,
+    time_period::Int,
+) where {S <: ConstituentCostExpression, T <: PSY.ReserveDemandCurve}
     if has_container_key(container, S, T, PSY.get_name(component))
         device_cost_expression = get_expression(container, S(), T, PSY.get_name(component))
         component_name = PSY.get_name(component)
@@ -2609,6 +2659,87 @@ function add_to_expression!(
             )
         end
     end
+    return
+end
+
+##################################
+##### Cost Expression Setup ######
+##################################
+
+"""
+Adds all cost expression containers appropriate for the given device type and formulation
+in a single pass through the device list.
+
+The default method adds only `ProductionCostExpression`. Overloads for `PSY.ThermalGen`
+and `PSY.RenewableGen` add their full set of constituent cost expressions, which then
+automatically propagate into `ProductionCostExpression` via the `ConstituentCostExpression`
+dispatch on `add_to_expression!`.
+"""
+function add_cost_expressions!(
+    container::OptimizationContainer,
+    devices::U,
+    model::DeviceModel{D, W},
+) where {D <: PSY.Component, U, W <: AbstractDeviceFormulation}
+    time_steps = get_time_steps(container)
+    names = PSY.get_name.(devices)
+    add_expression_container!(container, ProductionCostExpression(), D, names, time_steps)
+    return
+end
+
+function add_cost_expressions!(
+    container::OptimizationContainer,
+    devices::U,
+    model::DeviceModel{D, W},
+) where {D <: PSY.ThermalGen, U, W <: AbstractThermalFormulation}
+    time_steps = get_time_steps(container)
+    n_devices = length(devices)
+    all_names = Vector{String}(undef, n_devices)
+    fuel_names = sizehint!(String[], n_devices)
+    has_quad_fuel = false
+    for (i, d) in enumerate(devices)
+        name = PSY.get_name(d)
+        all_names[i] = name
+        fuel_curve = _get_variable_if_exists(PSY.get_operation_cost(d))
+        if fuel_curve isa PSY.FuelCurve
+            push!(fuel_names, name)
+            if !has_quad_fuel
+                has_quad_fuel = PSY.get_value_curve(fuel_curve) isa PSY.QuadraticCurve
+            end
+        end
+    end
+    if !isempty(fuel_names)
+        fuel_expr_type = has_quad_fuel ? JuMP.QuadExpr : GAE
+        add_expression_container!(
+            container, FuelConsumptionExpression(), D, fuel_names, time_steps;
+            expr_type = fuel_expr_type,
+        )
+    end
+    add_expression_container!(
+        container,
+        ProductionCostExpression(),
+        D,
+        all_names,
+        time_steps,
+    )
+    add_expression_container!(container, FuelCostExpression(), D, all_names, time_steps)
+    add_expression_container!(container, StartUpCostExpression(), D, all_names, time_steps)
+    add_expression_container!(container, ShutDownCostExpression(), D, all_names, time_steps)
+    add_expression_container!(container, FixedCostExpression(), D, all_names, time_steps)
+    add_expression_container!(container, VOMCostExpression(), D, all_names, time_steps)
+    return
+end
+
+function add_cost_expressions!(
+    container::OptimizationContainer,
+    devices::U,
+    model::DeviceModel{D, W},
+) where {D <: PSY.RenewableGen, U, W <: AbstractRenewableDispatchFormulation}
+    time_steps = get_time_steps(container)
+    names = PSY.get_name.(devices)
+    add_expression_container!(container, ProductionCostExpression(), D, names, time_steps)
+    add_expression_container!(container, FixedCostExpression(), D, names, time_steps)
+    add_expression_container!(container, CurtailmentCostExpression(), D, names, time_steps)
+    add_expression_container!(container, VOMCostExpression(), D, names, time_steps)
     return
 end
 
