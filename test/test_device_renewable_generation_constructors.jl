@@ -83,7 +83,6 @@ end
         c_sys5_re;
         name = "RE_curtailment_cost",
         optimizer = HiGHS_optimizer,
-        system_to_file = false,
         optimizer_solve_log_print = true,
     )
 

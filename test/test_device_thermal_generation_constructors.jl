@@ -130,7 +130,6 @@ const TIME1 = DateTime("2024-01-01T00:00:00")
                         sys;
                         name = "UC_cost_decomp",
                         optimizer = HiGHS_optimizer,
-                        system_to_file = false,
                         optimizer_solve_log_print = true,
                     )
                     @test build!(model; output_dir = test_path) ==
@@ -212,7 +211,6 @@ const TIME1 = DateTime("2024-01-01T00:00:00")
                     sys_no_startup;
                     name = "UC_no_startup_2",
                     optimizer = HiGHS_optimizer,
-                    system_to_file = false,
                     optimizer_solve_log_print = true,
                 )
                 @test build!(model_no; output_dir = test_path) == PSI.ModelBuildStatus.BUILT
@@ -239,7 +237,6 @@ const TIME1 = DateTime("2024-01-01T00:00:00")
                     sys_with_startup;
                     name = "UC_with_startup_2",
                     optimizer = HiGHS_optimizer,
-                    system_to_file = false,
                     optimizer_solve_log_print = true,
                 )
                 @test build!(model_yes; output_dir = test_path) ==
