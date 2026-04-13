@@ -215,6 +215,18 @@ function _read_results(
     if isempty(setdiff(result_keys, keys(cached_results)))
         @debug "reading aux_variables from SimulationsResults"
         vals = Dict(k => cached_results[k] for k in result_keys)
+        if table_format == TableFormat.WIDE
+            for (k, v) in vals
+                if :name2 in DataFrames.propertynames(v)
+                    error(
+                        "TableFormat.WIDE is not supported when the data has three dimensions.",
+                    )
+                end
+            end
+            vals = Dict(
+                k => DataFrames.unstack(v, :DateTime, :name, :value) for (k, v) in vals
+            )
+        end
     else
         @debug "reading aux_variables from data store"
         vals =

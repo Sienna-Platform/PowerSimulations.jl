@@ -30,6 +30,7 @@ const DISABLED_TEST_FILES = [  # Can generate with ls -1 test | grep "test_.*.jl
 # "test_model_decision.jl",
 # "test_model_emulation.jl",
 # "test_network_constructors.jl",
+# "test_network_constructors_with_dlr.jl",
 # "test_power_flow_in_the_loop.jl",
 # "test_print.jl",
 # "test_problem_template.jl",

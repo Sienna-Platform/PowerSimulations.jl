@@ -27,7 +27,8 @@ get_parameter_multiplier(::UpperBoundValueParameter, ::PSY.ACTransmission, ::Abs
 
 get_variable_multiplier(::PhaseShifterAngle, d::PSY.PhaseShiftingTransformer, ::PhaseAngleControl) = 1.0/PSY.get_x(d)
 
-get_multiplier_value(::AbstractDynamicBranchRatingTimeSeriesParameter, d::PSY.ACTransmission, ::StaticBranch) = 1.0/PSY.get_base_power(d)
+get_multiplier_value(::AbstractDynamicBranchRatingTimeSeriesParameter, d::PSY.ACTransmission, ::StaticBranch) = PSY.get_rating(d)
+get_multiplier_value(::AbstractDynamicBranchRatingTimeSeriesParameter, d::PNM.BranchesParallel, ::StaticBranch) = PNM.get_equivalent_rating(d)
 
 
 get_initial_conditions_device_model(::OperationModel, ::DeviceModel{T, U}) where {T <: PSY.ACTransmission, U <: AbstractBranchFormulation} = DeviceModel(T, U)
@@ -52,7 +53,9 @@ function get_default_time_series_names(
     ::Type{U},
     ::Type{V},
 ) where {U <: PSY.ACTransmission, V <: AbstractBranchFormulation}
-    return Dict{Type{<:TimeSeriesParameter}, String}()
+    return Dict{Type{<:TimeSeriesParameter}, String}(
+        DynamicBranchRatingTimeSeriesParameter => "dynamic_line_ratings",
+    )
 end
 
 function get_default_attributes(
@@ -90,7 +93,57 @@ function add_variables!(
         # TODO: entry is not type stable here, it can return any type ACTransmission.
         # It might have performance implications. Possibly separate this into other functions
         reduction_entry = all_branch_maps_by_type[reduction][U][arc]
-        has_entry, tracker_container = search_for_reduced_branch_variable!(
+        has_entry, tracker_container = search_for_reduced_branch_argument!(
+            reduced_branch_tracker,
+            arc,
+            T,
+        )
+        if has_entry
+            @assert !isempty(tracker_container) name arc reduction
+        end
+        ub = get_variable_upper_bound(T(), reduction_entry, formulation)
+        lb = get_variable_lower_bound(T(), reduction_entry, formulation)
+        for t in time_steps
+            if !has_entry
+                tracker_container[t] = JuMP.@variable(
+                    get_jump_model(container),
+                    base_name = "$(T)_$(U)_$(reduction)_{$(name), $(t)}",
+                )
+                ub !== nothing && JuMP.set_upper_bound(tracker_container[t], ub)
+                lb !== nothing && JuMP.set_lower_bound(tracker_container[t], lb)
+            end
+            variable_container[name, t] = tracker_container[t]
+        end
+    end
+    return
+end
+
+function add_variables!(
+    container::OptimizationContainer,
+    ::Type{T},
+    network_model::NetworkModel{<:PM.AbstractPowerModel},
+    devices::IS.FlattenIteratorWrapper{U},
+    formulation::AbstractBranchFormulation,
+) where {
+    T <: AbstractACActivePowerFlow,
+    U <: PSY.ACTransmission}
+    net_reduction_data = network_model.network_reduction
+    time_steps = get_time_steps(container)
+    branch_names = get_branch_argument_variable_axis(net_reduction_data, devices)
+    reduced_branch_tracker = get_reduced_branch_tracker(network_model)
+    all_branch_maps_by_type = PNM.get_all_branch_maps_by_type(net_reduction_data)
+
+    variable_container = add_variable_container!(
+        container,
+        T(),
+        U,
+        branch_names,
+        time_steps,
+    )
+
+    for (name, (arc, reduction)) in PNM.get_name_to_arc_map(net_reduction_data, U)
+        reduction_entry = all_branch_maps_by_type[reduction][U][arc]
+        has_entry, tracker_container = search_for_reduced_branch_argument!(
             reduced_branch_tracker,
             arc,
             T,
@@ -302,7 +355,10 @@ function get_min_max_limits(
     ::Type{<:ConstraintType},
     ::Type{<:AbstractBranchFormulation},
 ) #  -> Union{Nothing, NamedTuple{(:min, :max), Tuple{Float64, Float64}}}
-    return (min = -1 * PSY.get_rating(device), max = PSY.get_rating(device))
+    return (
+        min = -1 * PNM.get_equivalent_rating(device),
+        max = PNM.get_equivalent_rating(device),
+    )
 end
 
 """
@@ -316,17 +372,37 @@ function get_min_max_limits(
     return (min = -π / 2, max = π / 2)
 end
 
-function _get_device_dynamic_branch_rating_time_series(
-    param_container::ParameterContainer,
-    device::PSY.ACTransmission,
-    ts_name::String,
-    ts_type::DataType,
-)
-    device_dlr_params = []
-    if PSY.has_time_series(device, ts_type, ts_name)
-        device_dlr_params = get_parameter_column_refs(param_container, get_name(device))
+function _add_flow_rate_constraint!(
+    container::OptimizationContainer,
+    ::Type{T},
+    arc::Tuple{Int, Int},
+    use_slacks::Bool,
+    con_lb::DenseAxisArray,
+    con_ub::DenseAxisArray,
+    var::DenseAxisArray,
+    branch_maps_by_type::Dict,
+    name::String,
+) where {T <: PSY.ACTransmission}
+    reduction_entry = branch_maps_by_type[arc]
+    time_steps = get_time_steps(container)
+    if use_slacks
+        slack_ub = get_variable(container, FlowActivePowerSlackUpperBound(), T)[name, :]
+        slack_lb = get_variable(container, FlowActivePowerSlackLowerBound(), T)[name, :]
     end
-    return device_dlr_params
+    limits = get_min_max_limits(reduction_entry, FlowRateConstraint, StaticBranch)
+    for t in time_steps
+        con_ub[name, t] =
+            JuMP.@constraint(
+                get_jump_model(container),
+                var[name, t] - (use_slacks ? slack_ub[t] : 0.0) <= limits.max
+            )
+        con_lb[name, t] =
+            JuMP.@constraint(
+                get_jump_model(container),
+                var[name, t] + (use_slacks ? slack_lb[t] : 0.0) >= limits.min
+            )
+    end
+    return
 end
 
 """
@@ -382,22 +458,56 @@ function add_constraints!(
     end
     for (name, (arc, reduction)) in
         get_constraint_map_by_type(reduced_branch_tracker)[FlowRateConstraint][T]
-        # TODO: entry is not type stable here, it can return any type ACTransmission.
-        # It might have performance implications. Possibly separate this into other functions
-        reduction_entry = all_branch_maps_by_type[reduction][T][arc]
-        limits = get_min_max_limits(reduction_entry, FlowRateConstraint, U)
-        for t in time_steps
-            con_ub[name, t] =
-                JuMP.@constraint(get_jump_model(container),
-                    array[name, t] -
-                    (use_slacks ? slack_ub[name, t] : 0.0) <=
-                    limits.max)
-            con_lb[name, t] =
-                JuMP.@constraint(get_jump_model(container),
-                    array[name, t] +
-                    (use_slacks ? slack_lb[name, t] : 0.0) >=
-                    limits.min)
-        end
+        _add_flow_rate_constraint!(
+            container,
+            T,
+            arc,
+            use_slacks,
+            con_lb,
+            con_ub,
+            array,
+            all_branch_maps_by_type[reduction][T],
+            name,
+        )
+    end
+    return
+end
+
+function _add_flow_rate_constraint_with_parameters!(
+    container::OptimizationContainer,
+    ::Type{T},
+    arc::Tuple{Int, Int},
+    use_slacks::Bool,
+    con_lb::DenseAxisArray,
+    con_ub::DenseAxisArray,
+    var::DenseAxisArray,
+    branch_maps_by_type::Dict,
+    name::String,
+    ts_name::String,
+) where {T <: PSY.ACTransmission}
+    time_steps = get_time_steps(container)
+    if use_slacks
+        slack_ub = get_variable(container, FlowActivePowerSlackUpperBound(), T)[name, :]
+        slack_lb = get_variable(container, FlowActivePowerSlackLowerBound(), T)[name, :]
+    end
+    param_container =
+        get_parameter(container, DynamicBranchRatingTimeSeriesParameter(), T)
+    param = get_parameter_column_refs(param_container, name)
+    mult = get_multiplier_array(param_container)[name, :]
+
+    for t in time_steps
+        @debug "Dynamic Branch Rating applied for branch $(name) at time step $(t)"
+        con_ub[name, t] =
+            JuMP.@constraint(
+                get_jump_model(container),
+                var[name, t] - (use_slacks ? slack_ub[t] : 0.0) <= param[t] * mult[t]
+            )
+        con_lb[name, t] =
+            JuMP.@constraint(
+                get_jump_model(container),
+                var[name, t] + (use_slacks ? slack_lb[t] : 0.0) >=
+                -1.0 * param[t] * mult[t]
+            )
     end
     return
 end
@@ -467,6 +577,90 @@ function add_constraints!(
                     array[name, t] +
                     (use_slacks ? slack_lb[name, t] : 0.0) >=
                     limits.min)
+        end
+    end
+    return
+end
+
+function add_flow_rate_constraint_with_parameters!(
+    container::OptimizationContainer,
+    cons_type::Type{FlowRateConstraint},
+    devices::IS.FlattenIteratorWrapper{T},
+    device_model::DeviceModel{T, U},
+    network_model::NetworkModel{V},
+) where {
+    T <: PSY.ACTransmission,
+    U <: StaticBranch,
+    V <: AbstractPTDFModel,
+}
+    time_steps = get_time_steps(container)
+    net_reduction_data = network_model.network_reduction
+    reduced_branch_tracker = get_reduced_branch_tracker(network_model)
+
+    branch_names = get_branch_argument_constraint_axis(
+        net_reduction_data,
+        reduced_branch_tracker,
+        devices,
+        cons_type,
+    )
+
+    all_branch_maps_by_type = PNM.get_all_branch_maps_by_type(net_reduction_data)
+
+    con_lb =
+        add_constraints_container!(
+            container,
+            cons_type(),
+            T,
+            branch_names,
+            time_steps;
+            meta = "lb",
+        )
+    con_ub =
+        add_constraints_container!(
+            container,
+            cons_type(),
+            T,
+            branch_names,
+            time_steps;
+            meta = "ub",
+        )
+
+    var_array = get_expression(container, PTDFBranchFlow(), T)
+
+    ts_name = get_time_series_names(device_model)[DynamicBranchRatingTimeSeriesParameter]
+    ts_type = get_default_time_series_type(container)
+    use_slacks = get_use_slacks(device_model)
+    for (name, (arc, reduction)) in
+        get_constraint_map_by_type(reduced_branch_tracker)[FlowRateConstraint][T]
+        if PNM.has_time_series(
+            all_branch_maps_by_type[reduction][T][arc],
+            ts_type,
+            ts_name,
+        )
+            _add_flow_rate_constraint_with_parameters!(
+                container,
+                T,
+                arc,
+                use_slacks,
+                con_lb,
+                con_ub,
+                var_array,
+                all_branch_maps_by_type[reduction][T],
+                name,
+                ts_name,
+            )
+        else
+            _add_flow_rate_constraint!(
+                container,
+                T,
+                arc,
+                use_slacks,
+                con_lb,
+                con_ub,
+                var_array,
+                all_branch_maps_by_type[reduction][T],
+                name,
+            )
         end
     end
     return

@@ -27,6 +27,36 @@ end
     ) isa NetworkModel
 end
 
+@testset "validate_template dispatch Tests" begin
+    struct CustomDecisionProblem <: PSI.DecisionProblem end
+    struct CustomEmulationProblem <: PSI.EmulationProblem end
+
+    sys = PSB.build_system(PSITestSystems, "c_sys5")
+    template = ProblemTemplate(CopperPlatePowerModel)
+
+    # DecisionModel has no inner constructor, so use the default field constructor
+    decision_model = DecisionModel{CustomDecisionProblem}(
+        :test,
+        template,
+        sys,
+        nothing,
+        PSI.SimulationInfo(),
+        PSI.DecisionModelStore(),
+        Dict{String, Any}(),
+    )
+    @test_throws ErrorException PSI.validate_template(decision_model)
+
+    # EmulationModel has an inner constructor; build with settings then test
+    settings = PSI.Settings(sys)
+    emulation_model = EmulationModel{CustomEmulationProblem}(
+        deepcopy(template),
+        sys,
+        settings,
+        nothing,
+    )
+    @test_throws ErrorException PSI.validate_template(emulation_model)
+end
+
 @testset "Feedforward Struct Tests" begin
     ffs = [
         UpperBoundFeedforward(;

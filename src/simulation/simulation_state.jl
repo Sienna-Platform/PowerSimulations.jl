@@ -685,10 +685,10 @@ function update_decision_state!(
 
     if resolution_ratio == 1.0
         increment_per_period = 1.0
-    elseif state_resolution < Dates.Hour(1) && state_resolution > Dates.Minute(1)
+    elseif state_resolution < Dates.Day(365) && state_resolution > Dates.Minute(1)
         increment_per_period = Dates.value(Dates.Minute(state_resolution))
     else
-        error("Incorrect Problem Resolution specification")
+        error("Incorrect Problem Resolution specification: $(state_resolution)")
     end
 
     column_names = axes(state_data.values)[1]

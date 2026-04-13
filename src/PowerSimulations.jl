@@ -118,7 +118,6 @@ export EconomicDispatchProblem
 export build!
 ## Op Model Exports
 export get_initial_conditions
-export serialize_problem
 export serialize_results
 export serialize_optimization_model
 ## Decision Model Export
@@ -596,6 +595,7 @@ include("core/results_by_time.jl")
 include("operation/problem_template.jl")
 include("core/power_flow_data_wrapper.jl")
 include("core/optimization_container.jl")
+include("core/dual_processing.jl")
 include("core/store_common.jl")
 include("initial_conditions/initial_condition_chronologies.jl")
 include("operation/operation_model_interface.jl")
@@ -605,10 +605,11 @@ include("operation/decision_model_store.jl")
 include("operation/emulation_model_store.jl")
 include("operation/initial_conditions_update_in_memory_store.jl")
 include("simulation/simulation_info.jl")
+include("operation/operation_model_types.jl")
+include("operation/template_validation.jl")
 include("operation/decision_model.jl")
 include("operation/emulation_model.jl")
 include("operation/problem_results.jl")
-include("operation/operation_model_serialization.jl")
 include("operation/time_series_interface.jl")
 include("operation/optimization_debugging.jl")
 include("operation/model_numerical_analysis_utils.jl")
@@ -703,7 +704,6 @@ include("network_models/power_flow_evaluation.jl")
 include("initial_conditions/initialization.jl")
 
 # Device constructors
-include("devices_models/device_constructors/constructor_validations.jl")
 include("devices_models/device_constructors/thermalgeneration_constructor.jl")
 include("devices_models/device_constructors/hvdcsystems_constructor.jl")
 include("devices_models/device_constructors/branch_constructor.jl")

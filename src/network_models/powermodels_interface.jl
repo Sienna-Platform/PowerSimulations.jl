@@ -482,7 +482,7 @@ function add_pm_variable_refs!(
                 )
                 for (name, (arc_tuple, reduction)) in
                     PNM.get_name_to_arc_map(net_reduction_data, d_type)
-                    has_entry, tracker_container = search_for_reduced_branch_variable!(
+                    has_entry, tracker_container = search_for_reduced_branch_argument!(
                         reduced_branch_tracker,
                         arc_tuple,
                         typeof(var_type), # TODO: Make the mapping not rely on instances but types

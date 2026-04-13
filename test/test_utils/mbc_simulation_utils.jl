@@ -136,7 +136,6 @@ function build_generic_mbc_model(sys::System;
         name = "UC",
         store_variable_names = true,
         optimizer = HiGHS_optimizer_small_gap,
-        system_to_file = false,
     )
     return model
 end
@@ -213,7 +212,7 @@ function run_generic_mbc_sim(
         simulation_folder = mktempdir(),
     )
 
-    test_success && @test build!(sim; serialize = false) == PSI.SimulationBuildStatus.BUILT
+    test_success && @test build!(sim) == PSI.SimulationBuildStatus.BUILT
     test_success &&
         @test execute!(sim; in_memory = in_memory_store) ==
               PSI.RunStatus.SUCCESSFULLY_FINALIZED

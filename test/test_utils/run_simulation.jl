@@ -11,7 +11,6 @@ function run_simulation(
     file_path::String,
     export_path;
     in_memory = false,
-    system_to_file = true,
     uc_network_model = nothing,
     ed_network_model = nothing,
 )
@@ -45,14 +44,12 @@ function run_simulation(
                 c_sys5_hy_uc;
                 name = "UC",
                 optimizer = HiGHS_optimizer,
-                system_to_file = system_to_file,
             ),
             DecisionModel(
                 template_ed,
                 c_sys5_hy_ed;
                 name = "ED",
                 optimizer = ipopt_optimizer,
-                system_to_file = system_to_file,
             ),
         ],
     )

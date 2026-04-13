@@ -258,3 +258,4 @@ function write_optimizer_stats!(
 end
 
 serialize_system!(::InMemorySimulationStore, ::PSY.System) = nothing
+write_system_json!(::InMemorySimulationStore, ::String, ::String) = nothing

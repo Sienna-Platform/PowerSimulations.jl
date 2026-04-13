@@ -22,6 +22,9 @@ get_variable_upper_bound(::ReactivePowerVariable, d::PSY.Source, ::AbstractSourc
 get_multiplier_value(::ActivePowerTimeSeriesParameter, d::PSY.Source, ::AbstractSourceFormulation) = PSY.get_active_power_limits(d).max
 get_multiplier_value(::ActivePowerOutTimeSeriesParameter, d::PSY.Source, ::AbstractSourceFormulation) = PSY.get_active_power_limits(d).max
 get_multiplier_value(::ActivePowerInTimeSeriesParameter, d::PSY.Source, ::AbstractSourceFormulation) = PSY.get_active_power_limits(d).max
+get_multiplier_value(::ActivePowerTimeSeriesParameter, d::PSY.Source, ::FixedOutput) = PSY.get_active_power_limits(d).max
+get_multiplier_value(::ActivePowerOutTimeSeriesParameter, d::PSY.Source, ::FixedOutput) = PSY.get_active_power_limits(d).max
+get_multiplier_value(::ActivePowerInTimeSeriesParameter, d::PSY.Source, ::FixedOutput) = PSY.get_active_power_limits(d).min
 # This additional method definition is used to avoid ambiguity with the method defined in default_interface_methods.jl
 get_multiplier_value(::AbstractPiecewiseLinearBreakpointParameter, d::PSY.Source, ::AbstractSourceFormulation) = 1.0
 
@@ -33,7 +36,7 @@ get_variable_binary(::ReservationVariable, ::Type{<:PSY.Source}, ::ImportExportS
 function get_default_time_series_names(
     ::Type{U},
     ::Type{V},
-) where {U <: PSY.Source, V <: AbstractSourceFormulation}
+) where {U <: PSY.Source, V <: Union{FixedOutput, AbstractSourceFormulation}}
     return Dict{Type{<:TimeSeriesParameter}, String}(
         ActivePowerOutTimeSeriesParameter => "max_active_power_out",
         ActivePowerInTimeSeriesParameter => "max_active_power_in",
@@ -43,7 +46,7 @@ end
 function get_default_attributes(
     ::Type{U},
     ::Type{V},
-) where {U <: PSY.Source, V <: AbstractSourceFormulation}
+) where {U <: PSY.Source, V <: Union{FixedOutput, AbstractSourceFormulation}}
     return Dict{String, Any}(
         "reservation" => true,
     )

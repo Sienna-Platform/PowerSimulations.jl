@@ -106,7 +106,6 @@ try
                     name = "UC",
                     optimizer = optimizer_with_attributes(HiGHS.Optimizer,
                         "mip_rel_gap" => 0.01),
-                    system_to_file = false,
                     initialize_model = true,
                     optimizer_solve_log_print = false,
                     direct_mode_optimizer = true,
@@ -118,7 +117,6 @@ try
                     name = "ED",
                     optimizer = optimizer_with_attributes(HiGHS.Optimizer,
                         "mip_rel_gap" => 0.01),
-                    system_to_file = false,
                     initialize_model = true,
                     check_numerical_bounds = false,
                     #export_pwl_vars = true,
@@ -163,7 +161,7 @@ try
         )
 
         build_out, time_build, _, _ =
-            @timed build!(sim; console_level = Logging.Error, serialize = false)
+            @timed build!(sim; console_level = Logging.Error)
 
         if build_out == PSI.SimulationBuildStatus.BUILT
             name = i > 1 ? "Postcompile" : "Precompile"

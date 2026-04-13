@@ -268,7 +268,6 @@ end
         sys_5;
         name = "UC",
         optimizer = HiGHS_optimizer,
-        system_to_file = false,
     )
     build!(model; output_dir = mktempdir())
 
@@ -286,7 +285,6 @@ end
         sys_5;
         name = "UC",
         optimizer = HiGHS_optimizer,
-        system_to_file = false,
     )
 
     solve!(model; output_dir = mktempdir())
@@ -345,7 +343,6 @@ end
                 sys_5;
                 name = "UC",
                 optimizer = HiGHS_optimizer,
-                system_to_file = false,
                 store_variable_names = true,
             )
 
@@ -378,7 +375,6 @@ end
                 sys_5;
                 name = "UC",
                 optimizer = HiGHS_optimizer,
-                system_to_file = false,
             )
 
             solve!(model; output_dir = mktempdir())
@@ -430,7 +426,6 @@ end
                 sys_5;
                 name = "UC",
                 optimizer = HiGHS_optimizer,
-                system_to_file = false,
             )
 
             solve!(model_wl; output_dir = mktempdir())

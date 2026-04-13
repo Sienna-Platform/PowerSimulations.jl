@@ -170,7 +170,7 @@ function build_simulation(
     )
 
     status =
-        build!(sim; partitions = partitions, index = index, serialize = isnothing(index))
+        build!(sim; partitions = partitions, index = index)
     if status != PSI.SimulationBuildStatus.BUILT
         error("Failed to build simulation: status=$status")
     end

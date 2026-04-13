@@ -496,7 +496,7 @@ function update_pf_data!(
     PFS.clear_injection_data!(pf_data)
     input_map = get_input_key_map(pf_e_data)
     for (category, inputs) in input_map
-        @info "Writing $category to $(nameof(typeof(pf_data)))"
+        @debug "Writing $category to $(nameof(typeof(pf_data)))"
         for (key, component_map) in inputs
             _write_value_to_pf_data!(pf_data, category, container, key, component_map)
         end

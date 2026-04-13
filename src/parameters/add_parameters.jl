@@ -15,6 +15,24 @@ function add_parameters!(
     return
 end
 
+function add_branch_parameters!(
+    container::OptimizationContainer,
+    ::Type{T},
+    devices::U,
+    model::DeviceModel{D, W},
+    network_model::NetworkModel{<:AbstractPTDFModel},
+) where {
+    T <: ParameterType,
+    U <: Union{Vector{D}, IS.FlattenIteratorWrapper{D}},
+    W <: AbstractDeviceFormulation,
+} where {D <: PSY.ACTransmission}
+    if get_rebuild_model(get_settings(container)) && has_container_key(container, T, D)
+        return
+    end
+    _add_time_series_parameters!(container, T(), network_model, devices, model)
+    return
+end
+
 function add_parameters!(
     container::OptimizationContainer,
     ::Type{T},
@@ -207,6 +225,111 @@ end
 # Extends `size` to tuples, treating them like scalars
 _size_wrapper(elem) = size(elem)
 _size_wrapper(::Tuple) = ()
+
+function _add_time_series_parameters!(
+    container::OptimizationContainer,
+    param::T,
+    network_model::NetworkModel{<:AbstractPTDFModel},
+    devices,
+    model::DeviceModel{D, W},
+) where {D <: PSY.ACTransmission, T <: TimeSeriesParameter, W <: AbstractDeviceFormulation}
+    ts_type = get_default_time_series_type(container)
+    if !(ts_type <: Union{PSY.AbstractDeterministic, PSY.StaticTimeSeries})
+        error("add_parameters! for TimeSeriesParameter is not compatible with $ts_type")
+    end
+    time_steps = get_time_steps(container)
+
+    net_reduction_data = network_model.network_reduction
+    reduced_branch_tracker = get_reduced_branch_tracker(network_model)
+    all_branch_maps_by_type = PNM.get_all_branch_maps_by_type(net_reduction_data)
+
+    # TODO: Temporary workaround to get the name where we assume all the names are the same accross devices.
+    ts_name = _get_time_series_name(T(), first(devices), model)
+    device_name_axis, ts_uuid_axis =
+        get_branch_argument_parameter_axes(net_reduction_data, devices, ts_type, ts_name)
+    if isempty(device_name_axis)
+        @info "No devices with time series $ts_name found for $D devices. Skipping parameter addition."
+        return
+    end
+    additional_axes = ()
+    param_container = add_param_container!(
+        container,
+        param,
+        D,
+        ts_type,
+        ts_name,
+        ts_uuid_axis,
+        device_name_axis,
+        additional_axes,
+        time_steps,
+    )
+    set_subsystem!(get_attributes(param_container), get_subsystem(model))
+    ts_uuid_axis
+    param_instance = T()
+    for (name, (arc, reduction)) in PNM.get_name_to_arc_map(net_reduction_data, D)
+        reduction_entry = all_branch_maps_by_type[reduction][D][arc]
+        if !PNM.has_time_series(reduction_entry, ts_type, ts_name)
+            continue
+        end
+        device_with_time_series =
+            PNM.get_device_with_time_series(reduction_entry, ts_type, ts_name)
+        ts_uuid =
+            string(IS.get_time_series_uuid(ts_type, device_with_time_series, ts_name))
+
+        has_entry, tracker_container = search_for_reduced_branch_parameter!(
+            reduced_branch_tracker,
+            arc,
+            T,
+        )
+
+        if has_entry
+            @assert !isempty(tracker_container) name arc reduction
+        else
+            raw_ts_vals = get_time_series_initial_values!(
+                container,
+                ts_type,
+                device_with_time_series,
+                ts_name,
+            )
+            ts_vals =
+                _unwrap_for_param.(Ref(param_instance), raw_ts_vals, Ref(additional_axes))
+            @assert all(_size_wrapper.(ts_vals) .== Ref(length.(additional_axes)))
+        end
+        multiplier = get_multiplier_value(T(), reduction_entry, W())
+        jump_model = get_jump_model(container)
+        param_array = get_parameter_array(param_container)
+        for t in time_steps
+            if !has_entry
+                # Store raw float in tracker for non-recurrent builds. For recurrent
+                # builds (JuMP parameters), read back the VariableRef that set_parameter!
+                # creates so that parallel branch types share the same JuMP parameter.
+                set_parameter!(param_container, jump_model, ts_vals[t], ts_uuid, t)
+                if built_for_recurrent_solves(container)
+                    tracker_container[t] = param_array[ts_uuid, t]
+                else
+                    tracker_container[t] = ts_vals[t]
+                end
+            else
+                # Reuse the value (Float64) or VariableRef already stored by the first
+                # branch type that processed this arc.
+                set_parameter!(
+                    param_container,
+                    jump_model,
+                    tracker_container[t],
+                    ts_uuid,
+                    t,
+                )
+            end
+            set_multiplier!(param_container, multiplier, name, t)
+        end
+        add_component_name!(
+            get_attributes(param_container),
+            name,
+            string(IS.get_time_series_uuid(ts_type, device_with_time_series, ts_name)),
+        )
+    end
+    return
+end
 
 # NOTE direct equivalent of _add_parameters! on ObjectiveFunctionParameter
 # PERF: compilation hotspot. Switch to TSC.

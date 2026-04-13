@@ -347,38 +347,6 @@ end
           PSI.RunStatus.SUCCESSFULLY_FINALIZED
 end
 
-@testset "Test Serialization, deserialization and write optimizer problem" begin
-    fpath = mktempdir(; cleanup = true)
-    sys = PSB.build_system(PSITestSystems, "c_sys5_re")
-    template = get_template_dispatch_with_network(
-        NetworkModel(CopperPlatePowerModel; duals = [CopperPlateBalanceConstraint]),
-    )
-    model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
-    @test build!(model; output_dir = fpath) == PSI.ModelBuildStatus.BUILT
-    @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
-
-    file_list = sort!(collect(readdir(fpath)))
-    model_name = PSI.get_name(model)
-    @test PSI._JUMP_MODEL_FILENAME in file_list
-    @test PSI._SERIALIZED_MODEL_FILENAME in file_list
-    ED2 = DecisionModel(fpath, HiGHS_optimizer)
-    @test build!(ED2; output_dir = fpath) == PSI.ModelBuildStatus.BUILT
-    psi_checksolve_test(ED2, [MOI.OPTIMAL], 240000.0, 10000)
-
-    path2 = mktempdir(; cleanup = true)
-    model_no_sys =
-        DecisionModel(template, sys; optimizer = HiGHS_optimizer, system_to_file = false)
-
-    @test build!(model_no_sys; output_dir = path2) == PSI.ModelBuildStatus.BUILT
-    @test solve!(model_no_sys) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
-
-    file_list = sort!(collect(readdir(path2)))
-    @test .!all(occursin.(r".h5", file_list))
-    ED3 = DecisionModel(path2, HiGHS_optimizer; system = sys)
-    build!(ED3; output_dir = path2)
-    psi_checksolve_test(ED3, [MOI.OPTIMAL], 240000.0, 10000)
-end
-
 @testset "Test NonSpinning reseve model" begin
     c_sys5 = PSB.build_system(PSITestSystems, "c_sys5_uc_non_spin"; add_reserves = true)
     template = get_thermal_standard_uc_template()

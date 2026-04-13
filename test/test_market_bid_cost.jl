@@ -32,7 +32,6 @@ function test_market_bid_cost_models(sys::PSY.System,
         sys;
         name = "UC_test_mbc",
         optimizer = HiGHS_optimizer_small_gap,
-        system_to_file = false,
         optimizer_solve_log_print = true,
         store_variable_names = true,
     )
@@ -871,7 +870,6 @@ end
         sys_hourly;
         name = "VOM_hourly",
         optimizer = HiGHS_optimizer,
-        system_to_file = false,
         optimizer_solve_log_print = false,
     )
     @test build!(model_hourly; output_dir = test_path) == PSI.ModelBuildStatus.BUILT
@@ -919,7 +917,6 @@ end
         sys_30min;
         name = "VOM_30min",
         optimizer = HiGHS_optimizer,
-        system_to_file = false,
         optimizer_solve_log_print = false,
         resolution = Dates.Minute(30),  # Set 30-minute resolution here
     )
@@ -996,7 +993,6 @@ end
         sys_hourly;
         name = "MBC_VOM_hourly",
         optimizer = HiGHS_optimizer,
-        system_to_file = false,
         optimizer_solve_log_print = false,
     )
     @test build!(model_hourly; output_dir = test_path) == PSI.ModelBuildStatus.BUILT
@@ -1021,7 +1017,6 @@ end
         sys_30min;
         name = "MBC_VOM_30min",
         optimizer = HiGHS_optimizer,
-        system_to_file = false,
         optimizer_solve_log_print = false,
         resolution = Dates.Minute(30),
     )

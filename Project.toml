@@ -1,7 +1,7 @@
 name = "PowerSimulations"
 uuid = "e690365d-45e2-57bb-ac84-44ba829e73c4"
 authors = ["Jose Daniel Lara", "Clayton Barrows", "Daniel Thom", "Dheepak Krishnamurthy", "Sourabh Dalvi"]
-version = "0.33.1"
+version = "0.33.5"
 
 [deps]
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
@@ -50,7 +50,7 @@ Logging = "1"
 MathOptInterface = "1"
 PowerFlows = "^0.16"
 PowerModels = "^0.21.5"
-PowerNetworkMatrices = "^0.18"
+PowerNetworkMatrices = "^0.19"
 PowerSystems = "5.5"
 PrettyTables = "2.4, 3.1"
 ProgressMeter = "^1.5"

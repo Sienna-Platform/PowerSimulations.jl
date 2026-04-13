@@ -166,7 +166,6 @@ function test_simulation_results(
     file_path::String,
     export_path;
     in_memory = false,
-    system_to_file = true,
 )
     @testset "Test simulation results in_memory = $in_memory" begin
         c_sys5_hy_uc = PSB.build_system(PSITestSystems, "c_sys5_hy_uc")
@@ -177,7 +176,6 @@ function test_simulation_results(
             file_path,
             export_path;
             in_memory = in_memory,
-            system_to_file = system_to_file,
         )
         results = SimulationResults(sim)
         test_decision_problem_results(results, c_sys5_hy_ed, c_sys5_hy_uc, in_memory)
@@ -888,6 +886,22 @@ function test_emulation_problem_results(results::SimulationResults, in_memory)
           length(expressions_inputs[2]) +
           length(parameters_inputs[2]) +
           length(variables_inputs[2])
+
+    # Test that table_format is applied when reading from cache (regression test for GH issue)
+    vars_wide_from_cache = read_realized_variables(
+        results_em,
+        variables_inputs[2];
+        table_format = TableFormat.WIDE,
+    )
+    for val in values(vars_wide_from_cache)
+        @test val isa DataFrames.DataFrame
+        @test DataFrames.nrow(val) == 576
+        @test :DateTime in propertynames(val)
+        @test :name ∉ propertynames(val)
+        @test :value ∉ propertynames(val)
+        @test DataFrames.ncol(val) > 1  # DateTime + at least one component column
+    end
+
     empty!(results_em)
     @test isempty(results_em)
 
@@ -1000,7 +1014,6 @@ end
         c_sys5_hy_ed,
         file_path,
         export_path;
-        system_to_file = false,
         in_memory = in_memory,
     )
     results = SimulationResults(PSI.get_simulation_folder(sim))

@@ -81,6 +81,66 @@ function _update_parameter_values!(
     return
 end
 
+# Time-series parameter update for reduced ACTransmission branches 
+function _update_parameter_values!(
+    parameter_array::AbstractArray{T},
+    ::W,
+    attributes::TimeSeriesAttributes{U},
+    ::Type{V},
+    model::DecisionModel,
+    ::DatasetContainer{InMemoryDataset},
+) where {
+    T <: Union{JuMP.VariableRef, Float64},
+    U <: PSY.AbstractDeterministic,
+    V <: PSY.ACTransmission,
+    W <: TimeSeriesParameter,
+}
+    initial_forecast_time = get_current_time(model)
+    horizon = get_time_steps(get_optimization_container(model))[end]
+    ts_name = get_time_series_name(attributes)
+
+    network_model = get_network_model(get_template(model))
+    net_reduction_data = network_model.network_reduction
+    all_branch_maps_by_type = PNM.get_all_branch_maps_by_type(net_reduction_data)
+
+    if !haskey(net_reduction_data.name_to_arc_map, V)
+        return
+    end
+
+    ts_uuids_updated = Set{String}()
+    for (name, (arc, reduction)) in PNM.get_name_to_arc_map(net_reduction_data, V)
+        reduction_entry = all_branch_maps_by_type[reduction][V][arc]
+        if !PNM.has_time_series(reduction_entry, U, ts_name)
+            continue
+        end
+        device_with_time_series =
+            PNM.get_device_with_time_series(reduction_entry, U, ts_name)
+        ts_uuid = _get_ts_uuid(attributes, name)
+        if ts_uuid in ts_uuids_updated
+            continue
+        end
+        ts_vector = get_time_series_values!(
+            U,
+            model,
+            device_with_time_series,
+            ts_name,
+            initial_forecast_time,
+            horizon,
+        )
+        for (t, value) in enumerate(ts_vector)
+            if !isfinite(value)
+                error(
+                    "The value for the time series $(ts_name) is not finite. \
+                    Check that the data in the time series is valid.",
+                )
+            end
+            _set_param_value!(parameter_array, value, ts_uuid, t)
+        end
+        push!(ts_uuids_updated, ts_uuid)
+    end
+    return
+end
+
 function _update_parameter_values!(
     parameter_array::AbstractArray{T},
     ::ParameterType,

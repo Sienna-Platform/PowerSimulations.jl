@@ -89,12 +89,14 @@ function construct_device!(
         add_variables!(
             container,
             FlowActivePowerSlackUpperBound,
+            network_model,
             devices,
             StaticBranch(),
         )
         add_variables!(
             container,
             FlowActivePowerSlackLowerBound,
+            network_model,
             devices,
             StaticBranch(),
         )
@@ -147,24 +149,24 @@ function construct_device!(
         )
     end
 
-    if haskey(get_time_series_names(device_model), DynamicBranchRatingTimeSeriesParameter)
-        add_parameters!(
-            container,
-            DynamicBranchRatingTimeSeriesParameter,
-            devices,
-            device_model,
-        )
-    end
+    add_branch_parameters!(
+        container,
+        DynamicBranchRatingTimeSeriesParameter,
+        devices,
+        device_model,
+        network_model,
+    )
 
     if haskey(
         get_time_series_names(device_model),
         PostContingencyDynamicBranchRatingTimeSeriesParameter,
     )
-        add_parameters!(
+        add_branch_parameters!(
             container,
             PostContingencyDynamicBranchRatingTimeSeriesParameter,
             devices,
             device_model,
+            network_model,
         )
     end
 
@@ -189,8 +191,23 @@ function construct_device!(
         device_model,
         network_model,
     )
-
-    add_constraints!(container, FlowRateConstraint, devices, device_model, network_model)
+    if haskey(get_time_series_names(device_model), DynamicBranchRatingTimeSeriesParameter)
+        add_flow_rate_constraint_with_parameters!(
+            container,
+            FlowRateConstraint,
+            devices,
+            device_model,
+            network_model,
+        )
+    else
+        add_constraints!(
+            container,
+            FlowRateConstraint,
+            devices,
+            device_model,
+            network_model,
+        )
+    end
     add_feedforward_constraints!(container, device_model, devices)
     objective_function!(container, devices, device_model, PTDFPowerModel)
     add_constraint_dual!(container, sys, device_model)
@@ -309,6 +326,7 @@ function construct_device!(
         add_variables!(
             container,
             FlowActivePowerSlackUpperBound,
+            network_model,
             devices,
             StaticBranch(),
         )
