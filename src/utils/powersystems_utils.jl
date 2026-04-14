@@ -394,6 +394,49 @@ function get_forecast_intervals(sys::PSY.System)
     return Set(row.interval for row in eachrow(table) if row.interval !== nothing)
 end
 
+"""
+Automatically transform `SingleTimeSeries` into `DeterministicSingleTimeSeries` for a
+given (horizon, interval) when a DecisionModel is built with these settings and the
+system contains only static time series. Uses `delete_existing=false` so multiple
+models may share the same system with different transforms.
+
+Does nothing when:
+
+  - The model's `horizon` or `interval` are unset.
+  - The system has no `SingleTimeSeries` to transform.
+  - The system already has forecast data (auto-transform only applies to pure SingleTimeSeries systems).
+"""
+function auto_transform_time_series!(sys::PSY.System, settings::Settings)
+    model_interval = get_interval(settings)
+    model_horizon = get_horizon(settings)
+    if model_interval == UNSET_INTERVAL || model_horizon == UNSET_HORIZON
+        return
+    end
+
+    counts = PSY.get_time_series_counts(sys)
+    if counts.static_time_series_count < 1
+        return
+    end
+    if counts.forecast_count > 0 && model_interval in get_forecast_intervals(sys)
+        return
+    end
+
+    model_resolution = get_resolution(settings)
+    resolution_kwarg =
+        model_resolution == UNSET_RESOLUTION ? (;) : (; resolution = model_resolution)
+
+    @info "Auto-transforming SingleTimeSeries to DeterministicSingleTimeSeries" horizon =
+        Dates.canonicalize(model_horizon) interval = Dates.canonicalize(model_interval)
+    PSY.transform_single_time_series!(
+        sys,
+        model_horizon,
+        model_interval;
+        delete_existing = false,
+        resolution_kwarg...,
+    )
+    return
+end
+
 function get_deterministic_time_series_type(sys::PSY.System)
     time_series_types = IS.get_time_series_counts_by_type(sys.data)
     existing_types = Set(d["type"] for d in time_series_types)

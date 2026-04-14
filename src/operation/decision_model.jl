@@ -64,6 +64,7 @@ function DecisionModel{M}(
     elseif name isa String
         name = Symbol(name)
     end
+    auto_transform_time_series!(sys, settings)
     ts_type = get_deterministic_time_series_type(sys)
     internal = ISOPT.ModelInternal(
         OptimizationContainer(sys, settings, jump_model, ts_type),
