@@ -259,6 +259,9 @@ function _add_time_series_parameters!(
         @info " $ts_name found for $D devices. Skipping parameter addition."
         return
     end
+    # name -> ts_uuid cache built from the axis pair so the per-branch loop below
+    # doesn't re-query IS.get_time_series_uuid for each branch.
+    branch_ts_uuids = Dict{String, String}(zip(device_name_axis, ts_uuid_axis))
     additional_axes = ()
     param_container = add_param_container!(
         container,
@@ -281,15 +284,7 @@ function _add_time_series_parameters!(
         end
         device_with_time_series =
             PNM.get_device_with_time_series(reduction_entry, ts_type, ts_name)
-        ts_uuid =
-            string(
-                IS.get_time_series_uuid(
-                    ts_type,
-                    device_with_time_series,
-                    ts_name;
-                    interval = _to_is_interval(ts_interval),
-                ),
-            )
+        ts_uuid = branch_ts_uuids[name]
 
         has_entry, tracker_container = search_for_reduced_branch_parameter!(
             reduced_branch_tracker,
@@ -338,18 +333,7 @@ function _add_time_series_parameters!(
             end
             set_multiplier!(param_container, multiplier, name, t)
         end
-        add_component_name!(
-            get_attributes(param_container),
-            name,
-            string(
-                IS.get_time_series_uuid(
-                    ts_type,
-                    device_with_time_series,
-                    ts_name;
-                    interval = _to_is_interval(ts_interval),
-                ),
-            ),
-        )
+        add_component_name!(get_attributes(param_container), name, ts_uuid)
     end
     return
 end
@@ -374,8 +358,11 @@ function _add_time_series_parameters!(
     device_names = String[]
     devices_with_time_series = D[]
     initial_values = Dict{String, AbstractArray}()
+    # device name -> ts_uuid cache so the second loop below doesn't re-query IS.
+    device_ts_uuids = Dict{String, String}()
     model_interval = get_interval(get_settings(container))
     ts_interval = model_interval
+    is_ts_interval = _to_is_interval(ts_interval)
 
     @debug "adding" T D ts_name ts_type _group = LOG_GROUP_OPTIMIZATION_CONTAINER
 
@@ -384,16 +371,18 @@ function _add_time_series_parameters!(
             @info "Time series $(ts_type):$(ts_name) for $D, $(PSY.get_name(device)) not found skipping parameter addition."
             continue
         end
-        push!(device_names, PSY.get_name(device))
+        device_name = PSY.get_name(device)
+        push!(device_names, device_name)
         push!(devices_with_time_series, device)
         ts_uuid = string(
             IS.get_time_series_uuid(
                 ts_type,
                 device,
                 ts_name;
-                interval = _to_is_interval(ts_interval),
+                interval = is_ts_interval,
             ),
         )
+        device_ts_uuids[device_name] = ts_uuid
         if !(ts_uuid in keys(initial_values))
             initial_values[ts_uuid] =
                 get_time_series_initial_values!(
@@ -465,14 +454,7 @@ function _add_time_series_parameters!(
         add_component_name!(
             get_attributes(param_container),
             device_name,
-            string(
-                IS.get_time_series_uuid(
-                    ts_type,
-                    device,
-                    ts_name;
-                    interval = _to_is_interval(ts_interval),
-                ),
-            ),
+            device_ts_uuids[device_name],
         )
     end
     return
