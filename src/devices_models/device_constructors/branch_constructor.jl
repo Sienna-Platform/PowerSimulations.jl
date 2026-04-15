@@ -149,13 +149,15 @@ function construct_device!(
         )
     end
 
-    add_branch_parameters!(
-        container,
-        DynamicBranchRatingTimeSeriesParameter,
-        devices,
-        device_model,
-        network_model,
-    )
+    if haskey(get_time_series_names(device_model), DynamicBranchRatingTimeSeriesParameter)
+        add_branch_parameters!(
+            container,
+            DynamicBranchRatingTimeSeriesParameter,
+            devices,
+            device_model,
+            network_model,
+        )
+    end
 
     if haskey(
         get_time_series_names(device_model),
