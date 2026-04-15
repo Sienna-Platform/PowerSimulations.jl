@@ -776,14 +776,13 @@ function _make_flow_expressions!(
     nodal_balance_expressions::Matrix{JuMP.AffExpr},
 )
     @debug "Making Flow Expression on thread $(Threads.threadid()) for branch $name"
-    hint = count(c -> abs(c) > PTDF_ZERO_TOL, ptdf_col)
+    nz_idx = [i for i in eachindex(ptdf_col) if abs(ptdf_col[i]) > PTDF_ZERO_TOL]
+    hint = length(nz_idx)
     expressions = Vector{JuMP.AffExpr}(undef, length(time_steps))
     for t in time_steps
         acc = get_hinted_aff_expr(hint)
-        @inbounds for i in eachindex(ptdf_col)
-            c = ptdf_col[i]
-            abs(c) > PTDF_ZERO_TOL || continue
-            JuMP.add_to_expression!(acc, c, nodal_balance_expressions[i, t])
+        @inbounds for i in nz_idx
+            JuMP.add_to_expression!(acc, ptdf_col[i], nodal_balance_expressions[i, t])
         end
         expressions[t] = acc
     end
