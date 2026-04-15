@@ -43,7 +43,7 @@ function _update_parameter_values!(
     horizon = get_time_steps(get_optimization_container(model))[end]
     ts_name = get_time_series_name(attributes)
     model_interval = get_interval(get_settings(model))
-    ts_interval = model_interval == UNSET_INTERVAL ? nothing : model_interval
+    ts_interval = model_interval
     subsystem = get_subsystem(attributes)
     template = get_template(model)
     if isempty(subsystem)
@@ -102,7 +102,7 @@ function _update_parameter_values!(
     horizon = get_time_steps(get_optimization_container(model))[end]
     ts_name = get_time_series_name(attributes)
     model_interval = get_interval(get_settings(model))
-    ts_interval = model_interval == UNSET_INTERVAL ? nothing : model_interval
+    ts_interval = model_interval
 
     network_model = get_network_model(get_template(model))
     net_reduction_data = network_model.network_reduction
@@ -163,7 +163,7 @@ function _update_parameter_values!(
     horizon = get_time_steps(get_optimization_container(model))[end]
     ts_name = get_time_series_name(attributes)
     model_interval = get_interval(get_settings(model))
-    ts_interval = model_interval == UNSET_INTERVAL ? nothing : model_interval
+    ts_interval = model_interval
     ts_uuid = _get_ts_uuid(attributes, PSY.get_name(service))
     ts_vector = get_time_series_values!(
         U,

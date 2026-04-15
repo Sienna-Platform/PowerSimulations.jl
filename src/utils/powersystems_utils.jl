@@ -1,3 +1,12 @@
+"""
+Convert the internal `Dates.Millisecond` interval (where `UNSET_INTERVAL` means
+unset) to the `Union{Nothing, Dates.Period}` form the IS / PSY time-series API
+expects. Internal hot paths carry a concrete `Dates.Millisecond` to stay
+type-stable; this helper performs the boundary conversion.
+"""
+_to_is_interval(interval::Dates.Millisecond) =
+    interval == UNSET_INTERVAL ? nothing : interval
+
 function get_available_components(
     model::DeviceModel{T, <:AbstractDeviceFormulation},
     sys::PSY.System,

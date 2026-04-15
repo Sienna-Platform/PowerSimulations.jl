@@ -141,7 +141,7 @@ function get_branch_argument_parameter_axes(
     ::IS.FlattenIteratorWrapper{T},
     ::Type{V},
     ts_name::String;
-    interval::Union{Nothing, Dates.Period} = nothing,
+    interval::Dates.Millisecond = UNSET_INTERVAL,
 ) where {T <: PSY.ACTransmission, V <: PSY.TimeSeriesData}
     return get_branch_argument_parameter_axes(
         net_reduction_data,
@@ -157,8 +157,9 @@ function get_branch_argument_parameter_axes(
     ::Type{T},
     ::Type{V},
     ts_name::String;
-    interval::Union{Nothing, Dates.Period} = nothing,
+    interval::Dates.Millisecond = UNSET_INTERVAL,
 ) where {T <: PSY.ACTransmission, V <: PSY.TimeSeriesData}
+    is_interval = _to_is_interval(interval)
     name_axis = Vector{String}()
     ts_uuid_axis = Vector{String}()
     for (name, (arc, reduction)) in net_reduction_data.name_to_arc_map[T]
@@ -174,7 +175,7 @@ function get_branch_argument_parameter_axes(
                         V,
                         device_with_time_series,
                         ts_name;
-                        interval = interval,
+                        interval = is_interval,
                     ),
                 ),
             )

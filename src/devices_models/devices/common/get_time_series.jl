@@ -2,7 +2,7 @@ function _get_time_series(
     container::OptimizationContainer,
     component::PSY.Component,
     attributes::TimeSeriesAttributes{T};
-    interval::Union{Nothing, Dates.Period} = nothing,
+    interval::Dates.Millisecond = UNSET_INTERVAL,
 ) where {T <: PSY.TimeSeriesData}
     return get_time_series_initial_values!(
         container,
@@ -18,7 +18,7 @@ function get_time_series(
     component::T,
     parameter::TimeSeriesParameter,
     meta = ISOPT.CONTAINER_KEY_EMPTY_META;
-    interval::Union{Nothing, Dates.Period} = nothing,
+    interval::Dates.Millisecond = UNSET_INTERVAL,
 ) where {T <: PSY.Component}
     parameter_container = get_parameter(container, parameter, T, meta)
     return _get_time_series(
@@ -35,7 +35,7 @@ function get_time_series(
     container::OptimizationContainer,
     component::PSY.Component,
     forecast_name::String;
-    interval::Union{Nothing, Dates.Period} = nothing,
+    interval::Dates.Millisecond = UNSET_INTERVAL,
 )
     ts_type = get_default_time_series_type(container)
     return _get_time_series(
