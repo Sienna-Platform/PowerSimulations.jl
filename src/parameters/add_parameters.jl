@@ -246,7 +246,7 @@ function _add_time_series_parameters!(
     # TODO: Temporary workaround to get the name where we assume all the names are the same accross devices.
     ts_name = _get_time_series_name(T(), first(devices), model)
     model_interval = get_interval(get_settings(container))
-    ts_interval = model_interval == UNSET_INTERVAL ? nothing : model_interval
+    ts_interval = model_interval
     device_name_axis, ts_uuid_axis =
         get_branch_argument_parameter_axes(
             net_reduction_data,
@@ -287,7 +287,7 @@ function _add_time_series_parameters!(
                     ts_type,
                     device_with_time_series,
                     ts_name;
-                    interval = ts_interval,
+                    interval = _to_is_interval(ts_interval),
                 ),
             )
 
@@ -346,7 +346,7 @@ function _add_time_series_parameters!(
                     ts_type,
                     device_with_time_series,
                     ts_name;
-                    interval = ts_interval,
+                    interval = _to_is_interval(ts_interval),
                 ),
             ),
         )
@@ -375,7 +375,7 @@ function _add_time_series_parameters!(
     devices_with_time_series = D[]
     initial_values = Dict{String, AbstractArray}()
     model_interval = get_interval(get_settings(container))
-    ts_interval = model_interval == UNSET_INTERVAL ? nothing : model_interval
+    ts_interval = model_interval
 
     @debug "adding" T D ts_name ts_type _group = LOG_GROUP_OPTIMIZATION_CONTAINER
 
@@ -391,7 +391,7 @@ function _add_time_series_parameters!(
                 ts_type,
                 device,
                 ts_name;
-                interval = ts_interval,
+                interval = _to_is_interval(ts_interval),
             ),
         )
         if !(ts_uuid in keys(initial_values))
@@ -470,7 +470,7 @@ function _add_time_series_parameters!(
                     ts_type,
                     device,
                     ts_name;
-                    interval = ts_interval,
+                    interval = _to_is_interval(ts_interval),
                 ),
             ),
         )
@@ -718,7 +718,7 @@ function _add_parameters!(
     )
 
     model_interval = get_interval(get_settings(container))
-    ts_interval = model_interval == UNSET_INTERVAL ? nothing : model_interval
+    ts_interval = model_interval
     param_instance = T()
     for (ts_name, device_name, device) in zip(ts_names, device_names, active_devices)
         raw_ts_vals = get_time_series_initial_values!(
@@ -757,13 +757,15 @@ function _add_parameters!(
     time_steps = get_time_steps(container)
     name = PSY.get_name(service)
     model_interval = get_interval(get_settings(container))
-    ts_interval = model_interval == UNSET_INTERVAL ? nothing : model_interval
-    ts_uuid = string(IS.get_time_series_uuid(
-        ts_type,
-        service,
-        ts_name;
-        interval = ts_interval,
-    ))
+    ts_interval = model_interval
+    ts_uuid = string(
+        IS.get_time_series_uuid(
+            ts_type,
+            service,
+            ts_name;
+            interval = _to_is_interval(ts_interval),
+        ),
+    )
     @debug "adding" T U _group = LOG_GROUP_OPTIMIZATION_CONTAINER
     additional_axes = calc_additional_axes(container, T(), [service], model)
     parameter_container = add_param_container!(

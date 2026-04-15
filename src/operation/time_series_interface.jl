@@ -6,8 +6,9 @@ function get_time_series_values!(
     initial_time::Dates.DateTime,
     horizon::Int;
     ignore_scaling_factors = true,
-    interval::Union{Nothing, Dates.Period} = nothing,
+    interval::Dates.Millisecond = UNSET_INTERVAL,
 ) where {T <: PSY.Forecast}
+    is_interval = _to_is_interval(interval)
     if !use_time_series_cache(get_settings(model))
         return IS.get_time_series_values(
             T,
@@ -16,7 +17,7 @@ function get_time_series_values!(
             start_time = initial_time,
             len = horizon,
             ignore_scaling_factors = ignore_scaling_factors,
-            interval = interval,
+            interval = is_interval,
         )
     end
 
@@ -32,7 +33,7 @@ function get_time_series_values!(
             initial_time,
             horizon;
             ignore_scaling_factors = ignore_scaling_factors,
-            interval = interval,
+            interval = is_interval,
         )
         cache[key] = ts_cache
     end
