@@ -826,7 +826,6 @@ function _add_expression_to_container!(
     name = PSY.get_name(reduction_entry)
     if name in branches
         branch_flow_expr[name, :] .= _make_flow_expressions!(
-            jump_model,
             name,
             time_steps,
             ptdf_col,
@@ -849,7 +848,6 @@ function _add_expression_to_container!(
     for name in names
         if name in branches
             branch_flow_expr[name, :] .= _make_flow_expressions!(
-                jump_model,
                 name,
                 time_steps,
                 ptdf_col,
@@ -874,7 +872,6 @@ function _add_expression_to_container!(
     for name in names
         if name in branches
             branch_flow_expr[name, :] .= _make_flow_expressions!(
-                jump_model,
                 name,
                 time_steps,
                 ptdf_col,
