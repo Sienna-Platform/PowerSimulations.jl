@@ -770,26 +770,49 @@ function add_constraints!(
 end
 
 function _make_flow_expressions!(
-    jump_model::JuMP.Model,
     name::String,
     time_steps::UnitRange{Int},
-    ptdf_col::AbstractVector{Float64},
+    ptdf_col::Vector{Float64},
     nodal_balance_expressions::Matrix{JuMP.AffExpr},
 )
     @debug "Making Flow Expression on thread $(Threads.threadid()) for branch $name"
+    hint = count(c -> abs(c) > PTDF_ZERO_TOL, ptdf_col)
     expressions = Vector{JuMP.AffExpr}(undef, length(time_steps))
     for t in time_steps
-        expressions[t] = JuMP.@expression(
-            jump_model,
-            sum(
-                ptdf_col[i] * nodal_balance_expressions[i, t] for
-                i in 1:length(ptdf_col)
-            )
-        )
+        acc = get_hinted_aff_expr(hint)
+        @inbounds for i in eachindex(ptdf_col)
+            c = ptdf_col[i]
+            abs(c) > PTDF_ZERO_TOL || continue
+            JuMP.add_to_expression!(acc, c, nodal_balance_expressions[i, t])
+        end
+        expressions[t] = acc
     end
     return name, expressions
-    # change when using the not concurrent version
-    # return expressions
+end
+
+function _make_flow_expressions!(
+    name::String,
+    time_steps::UnitRange{Int},
+    ptdf_col::SparseArrays.SparseVector{Float64, Int},
+    nodal_balance_expressions::Matrix{JuMP.AffExpr},
+)
+    @debug "Making Flow Expression on thread $(Threads.threadid()) for branch $name"
+    nz_idx = SparseArrays.nonzeroinds(ptdf_col)
+    nz_val = SparseArrays.nonzeros(ptdf_col)
+    hint = length(nz_idx)
+    expressions = Vector{JuMP.AffExpr}(undef, length(time_steps))
+    for t in time_steps
+        acc = get_hinted_aff_expr(hint)
+        @inbounds for k in eachindex(nz_idx)
+            JuMP.add_to_expression!(
+                acc,
+                nz_val[k],
+                nodal_balance_expressions[nz_idx[k], t],
+            )
+        end
+        expressions[t] = acc
+    end
+    return name, expressions
 end
 
 function _add_expression_to_container!(
@@ -893,11 +916,10 @@ function add_expressions!(
 
     jump_model = get_jump_model(container)
 
-    tasks = map(collect(name_to_arc_map)) do pair
+    tasks = map(name_to_arc_map) do pair
         (name, (arc, _)) = pair
         ptdf_col = ptdf[arc, :]
         Threads.@spawn _make_flow_expressions!(
-            jump_model,
             name,
             time_steps,
             ptdf_col,
