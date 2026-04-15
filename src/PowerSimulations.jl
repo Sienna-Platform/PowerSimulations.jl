@@ -421,6 +421,7 @@ import JuMP.Containers: DenseAxisArray, SparseAxisArray
 export optimizer_with_attributes
 import MathOptInterface as MOI
 import LinearAlgebra
+import SparseArrays
 import JSON3
 import PowerSystems as PSY
 import InfrastructureSystems as IS
