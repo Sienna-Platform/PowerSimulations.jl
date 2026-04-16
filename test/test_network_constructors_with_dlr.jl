@@ -84,11 +84,9 @@ end
             optimizer = HiGHS_optimizer,
         )
 
-    @test_throws IS.ConflictingInputsError build!(
-        model_wrong_formulation;
-        output_dir = mktempdir(; cleanup = true),
-    )
-
+    @test build!(model_wrong_formulation; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.FAILED
+          
     # Case 2: DLR time series configured with an unsupported network formulation.
     sys_wrong_network = PSB.build_system(PSITestSystems, "c_sys5")
     add_dlr_to_system_branches!(
@@ -117,10 +115,8 @@ end
             optimizer = HiGHS_optimizer,
         )
 
-    @test_throws IS.ConflictingInputsError build!(
-        model_wrong_network;
-        output_dir = mktempdir(; cleanup = true),
-    )
+    @test build!(model_wrong_network; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.FAILED
 end
 
 @testset "Network DC-PF with VirtualPTDF Model and implementing Dynamic Branch Ratings" begin
