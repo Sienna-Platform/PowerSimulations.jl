@@ -225,7 +225,7 @@ mdtable(combo_table; latex = false)
 
 **Expressions:**
 
-  - Defines the [`RealizedShiftedLoad`](@ref) expression per device per time step:
+  - Defines the `RealizedShiftedLoad` expression per device per time step:
     
     ```math
     p_t^\text{realized} = \text{ActivePowerTimeSeriesParameter}_t + p_t^\text{shift,up} - p_t^\text{shift,dn}, \quad \forall t \in \{1,\dots,T\}
