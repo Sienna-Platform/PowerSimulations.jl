@@ -11,7 +11,8 @@ Electric load formulations define the optimization models that describe load uni
  1. [`StaticPowerLoad`](#StaticPowerLoad)
  2. [`PowerLoadInterruption`](#PowerLoadInterruption)
  3. [`PowerLoadDispatch`](#PowerLoadDispatch)
- 4. [Valid configurations](#Valid-configurations)
+ 4. [`PowerLoadShift`](#PowerLoadShift)
+ 5. [Valid configurations](#Valid-configurations)
 
 * * *
 
@@ -175,7 +176,95 @@ Creates an objective function term based on the [`FunctionData` Options](@ref) w
 \end{aligned}
 ```
 
-on which ``\text{pf} = \sin(\arctan(Q^\text{ld,max}/P^\text{ld,max}))``.
+* * *
+
+## `PowerLoadShift`
+
+```@docs
+PowerLoadShift
+```
+
+**Variables:**
+
+  - [`ShiftUpActivePowerVariable`](@ref):
+    
+      + Bounds: [0.0, `ShiftUpActivePowerTimeSeriesParameter`]
+      + Default initial value: 0.0
+      + Symbol: ``p^\text{shift,up}``
+
+  - [`ShiftDownActivePowerVariable`](@ref):
+    
+      + Bounds: [0.0, `ShiftDownActivePowerTimeSeriesParameter`]
+      + Default initial value: 0.0
+      + Symbol: ``p^\text{shift,dn}``
+
+  - [`ReactivePowerVariable`](@ref) *(AC network models only)*:
+    
+      + Bounds: [0.0, ]
+      + Default initial value: `PowerSystems.get_reactive_power(device)`
+      + Symbol: ``q^\text{ld}``
+
+**Static Parameters:**
+
+  - ``P^\text{ld,max}`` = `PowerSystems.get_max_active_power(device)`
+  - ``Q^\text{ld,max}`` = `PowerSystems.get_max_reactive_power(device)`
+
+**Time Series Parameters:**
+
+```@eval
+using PowerSimulations
+using PowerSystems
+using DataFrames
+using Latexify
+combos = PowerSimulations.get_default_time_series_names(ShiftablePowerLoad, PowerLoadShift)
+combo_table = DataFrame(
+    "Parameter" => map(x -> "[`$x`](@ref)", collect(keys(combos))),
+    "Default Time Series Name" => map(x -> "`$x`", collect(values(combos))),
+)
+mdtable(combo_table; latex = false)
+```
+
+**Expressions:**
+
+  - Defines the [`RealizedShiftedLoad`](@ref) expression per device per time step:
+    ```math
+    p_t^\text{realized} = \text{ActivePowerTimeSeriesParameter}_t + p_t^\text{shift,up} - p_t^\text{shift,dn}, \quad \forall t \in \{1,\dots,T\}
+    ```
+  - Subtracts ``p_t^\text{realized}`` from the active power balance expression of the selected [Network Formulations](@ref network_formulations).
+
+**Objective:**
+
+Creates objective function terms based on the [`FunctionData` Options](@ref) for both shift variables:
+
+  - A cost term on ``p^\text{shift,up}`` (typically zero or negative, rewarding shifting up)
+  - A cost term on ``p^\text{shift,dn}`` (typically positive, penalizing shifting down)
+
+**Constraints:**
+
+```math
+\begin{aligned}
+& \sum_{t=1}^{T} \left( p_t^\text{shift,up} - p_t^\text{shift,dn} \right) = 0 \\
+& \sum_{t=1}^{T_\text{sub}} \left( p_t^\text{shift,up} - p_t^\text{shift,dn} \right) = 0 \quad \text{(if \texttt{additional\_balance\_interval} is set)}
+\end{aligned}
+```
+```math
+p_t^\text{realized} \ge 0, \quad \forall t \in \{1,\dots,T\}
+```
+```math
+p_t^\text{shift,up} \le \text{ShiftUpActivePowerTimeSeriesParameter}_t, \quad \forall t \in \{1,\dots,T\}
+```
+
+```math
+p_t^\text{shift,dn} \le \text{ShiftDownActivePowerTimeSeriesParameter}_t, \quad \forall t \in \{1,\dots,T\}
+```
+
+```math
+\sum_{\tau=1}^{t} \left( p_\tau^\text{shift,dn} - p_\tau^\text{shift,up} \right) \ge 0, \quad \forall t \in \{1,\dots,T\}
+```
+
+```math
+q_t^\text{ld} = \text{pf} \cdot p_t^\text{realized}, \quad \forall t \in \{1,\dots,T\}
+```
 
 ## Valid configurations
 

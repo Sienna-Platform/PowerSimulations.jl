@@ -202,6 +202,14 @@ ActivePowerOutVariable
 ActivePowerInVariable
 ```
 
+### Load Variables
+
+```@docs
+ShiftUpActivePowerVariable
+ShiftDownActivePowerVariable
+
+```
+
 ### Branches and Network Variables
 
 ```@docs
@@ -293,6 +301,7 @@ PowerFlowBranchReactivePowerFromTo
 PowerFlowBranchReactivePowerToFrom
 PowerFlowBranchActivePowerFromTo
 PowerFlowBranchActivePowerToFrom
+PowerFlowBranchActivePowerLoss
 ```
 
 ```@raw html
@@ -361,6 +370,16 @@ EqualityConstraint
 
 ```@docs
 ImportExportBudgetConstraint
+```
+
+## Load Constraints
+
+```@docs
+ShiftDownActivePowerVariableLimitsConstraint
+NonAnticipativityConstraint
+ShiftUpActivePowerVariableLimitsConstraint
+RealizedShiftedLoadMinimumBoundConstraint
+ShiftedActivePowerBalanceConstraint
 ```
 
 ### Branches Constraints
