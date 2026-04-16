@@ -256,7 +256,7 @@ function _add_time_series_parameters!(
             interval = ts_interval,
         )
     if isempty(device_name_axis)
-        @info " $ts_name found for $D devices. Skipping parameter addition."
+        @info "No devices with time series $ts_name found for $D devices. Skipping parameter addition."
         return
     end
     # name -> ts_uuid cache built from the axis pair so the per-branch loop below

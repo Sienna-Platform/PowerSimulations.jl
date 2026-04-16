@@ -413,7 +413,7 @@ Does nothing when:
 
   - The model's `horizon` or `interval` are unset.
   - The system has no `SingleTimeSeries` to transform.
-  - The system already has forecast data (auto-transform only applies to pure SingleTimeSeries systems).
+  - The system already has forecast data for the requested model interval.
 """
 function auto_transform_time_series!(sys::PSY.System, settings::Settings)
     model_interval = get_interval(settings)
