@@ -221,3 +221,102 @@ end
         @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
     end
 end
+
+@testset "PowerLoadShift with NonAnticipativityConstraint" begin
+    c_sys5_il =
+        PSB.build_system(PSITestSystems, "c_sys5_il"; add_single_time_series = true)
+    il_load = first(PSY.get_components(InterruptiblePowerLoad, c_sys5_il))
+
+    shiftable_load = ShiftablePowerLoad(;
+        name = "shiftable_load",
+        available = true,
+        bus = PSY.get_bus(il_load),
+        active_power = PSY.get_active_power(il_load),
+        active_power_limits = (min = 0.0, max = PSY.get_active_power(il_load)),
+        reactive_power = PSY.get_reactive_power(il_load),
+        max_active_power = PSY.get_max_active_power(il_load),
+        max_reactive_power = PSY.get_max_reactive_power(il_load),
+        base_power = PSY.get_base_power(il_load),
+        load_balance_time_horizon = 1,
+        operation_cost = LoadCost(;
+            variable = CostCurve(
+                LinearCurve(0.0),
+                UnitSystem.NATURAL_UNITS,
+                LinearCurve(1.0),
+            ),
+            fixed = 0.0,
+        ),
+    )
+    PSY.add_component!(c_sys5_il, shiftable_load)
+    PSY.set_available!(il_load, false)
+    PSY.copy_time_series!(shiftable_load, il_load)
+
+    tstamps = TimeSeries.timestamp(
+        PSY.get_time_series_array(SingleTimeSeries, shiftable_load, "max_active_power"),
+    )
+    n = length(tstamps)
+    up_vals = ones(n)
+    down_vals = ones(n)
+
+    PSY.add_time_series!(
+        c_sys5_il,
+        shiftable_load,
+        SingleTimeSeries(
+            "shift_up_max_active_power",
+            TimeArray(tstamps, up_vals);
+            scaling_factor_multiplier = PSY.get_max_active_power,
+        ),
+    )
+    PSY.add_time_series!(
+        c_sys5_il,
+        shiftable_load,
+        SingleTimeSeries(
+            "shift_down_max_active_power",
+            TimeArray(tstamps, down_vals);
+            scaling_factor_multiplier = PSY.get_max_active_power,
+        ),
+    )
+
+    PSY.transform_single_time_series!(c_sys5_il, Hour(24), Hour(24))
+
+    template = ProblemTemplate(
+        NetworkModel(
+            CopperPlatePowerModel;
+            duals = [CopperPlateBalanceConstraint],
+        ),
+    )
+    set_device_model!(template, ThermalStandard, ThermalBasicUnitCommitment)
+    set_device_model!(template, PowerLoad, StaticPowerLoad)
+    set_device_model!(
+        template,
+        DeviceModel(
+            ShiftablePowerLoad,
+            PowerLoadShift;
+            attributes = Dict{String, Any}("additional_balance_interval" => Hour(12)),
+        ),
+    )
+
+    model = DecisionModel(
+        template,
+        c_sys5_il;
+        name = "UC_shiftable",
+        store_variable_names = true,
+        optimizer = HiGHS_optimizer,
+        system_to_file = false,
+    )
+
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+
+    @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    results = OptimizationProblemResults(model)
+    up = read_variable(results, "ShiftUpActivePowerVariable__ShiftablePowerLoad"; table_format = TableFormat.WIDE)
+    dn = read_variable(results, "ShiftDownActivePowerVariable__ShiftablePowerLoad"; table_format = TableFormat.WIDE)
+
+    # Verify the non-anticipativity constraint holds in the solution:
+    # the running sum of (shift_down - shift_up) must be >= 0 at every time step.
+    @test all(
+        cumsum(dn[!, "shiftable_load"] .- up[!, "shiftable_load"]) .>= -1e-6,
+    )
+end
