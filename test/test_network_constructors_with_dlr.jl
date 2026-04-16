@@ -86,7 +86,7 @@ end
 
     @test build!(model_wrong_formulation; output_dir = mktempdir(; cleanup = true)) ==
           PSI.ModelBuildStatus.FAILED
-          
+
     # Case 2: DLR time series configured with an unsupported network formulation.
     sys_wrong_network = PSB.build_system(PSITestSystems, "c_sys5")
     add_dlr_to_system_branches!(
