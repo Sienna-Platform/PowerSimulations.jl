@@ -711,6 +711,7 @@ The specified constraints are formulated as:
 ```
 """
 struct ShiftedActivePowerBalanceConstraint <: ConstraintType end
+
 """
 Struct to create the constraint to balance shifted power over the user-defined time horizons.
 For more information check the [`PowerLoadShift`](@ref) formulation.
@@ -720,6 +721,20 @@ p_t^\\text{realized} \\ge 0.0 , \\quad \\forall k \\text{ time horizons}
 ```
 """
 struct RealizedShiftedLoadMinimumBoundConstraint <: ConstraintType end
+
+"""
+Struct to create the non-anticipativity constraint for the [`PowerLoadShift`](@ref) formulation.
+This enforces that shift up can only occur after an equal or greater amount of shift down has
+already been committed, preventing the optimizer from shifting load up before it has been
+shifted down. The constraint is formulated as:
+
+```math
+\\sum_{\\tau=1}^{t} \\left( p_\\tau^\\text{shift,dn} - p_\\tau^\\text{shift,up} \\right) \\ge 0,
+\\quad \\forall t \\in \\{1,\\dots,T\\}
+```
+"""
+struct NonAnticipativityConstraint <: ConstraintType end
+
 """
 Struct to create the constraint to limit shifted power active power between upper and lower bounds.
 For more information check the [`PowerLoadShift`](@ref) formulation.
@@ -729,6 +744,7 @@ The specified constraints are formulated as:
 ```
 """
 struct ShiftUpActivePowerVariableLimitsConstraint <: PowerVariableLimitsConstraint end
+
 """
 Struct to create the constraint to limit shifted power active power between upper and lower bounds.
 For more information check the [`PowerLoadShift`](@ref) formulation.

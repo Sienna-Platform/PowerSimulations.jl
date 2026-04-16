@@ -380,6 +380,36 @@ end
 
 function add_constraints!(
     container::OptimizationContainer,
+    T::Type{NonAnticipativityConstraint},
+    devices::IS.FlattenIteratorWrapper{V},
+    ::DeviceModel{V, W},
+    ::NetworkModel{X},
+) where {V <: PSY.ShiftablePowerLoad, W <: PowerLoadShift, X <: PM.AbstractPowerModel}
+    time_steps = get_time_steps(container)
+    constraint = add_constraints_container!(
+        container,
+        T(),
+        V,
+        PSY.get_name.(devices),
+        time_steps,
+    )
+    up_variable = get_variable(container, ShiftUpActivePowerVariable(), V)
+    down_variable = get_variable(container, ShiftDownActivePowerVariable(), V)
+    jump_model = get_jump_model(container)
+    for d in devices
+        name = PSY.get_name(d)
+        for t in time_steps
+            constraint[name, t] = JuMP.@constraint(
+                jump_model,
+                sum(down_variable[name, τ] - up_variable[name, τ] for τ in 1:t) >= 0.0
+            )
+        end
+    end
+    return
+end
+
+function add_constraints!(
+    container::OptimizationContainer,
     ::Type{ShiftUpActivePowerVariableLimitsConstraint},
     U::Type{<:VariableType},
     devices::IS.FlattenIteratorWrapper{V},
