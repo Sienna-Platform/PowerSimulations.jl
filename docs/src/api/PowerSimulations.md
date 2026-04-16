@@ -207,7 +207,7 @@ ActivePowerInVariable
 ```@docs
 ShiftUpActivePowerVariable
 ShiftDownActivePowerVariable
-
+RealizedShiftedLoad
 ```
 
 ### Branches and Network Variables

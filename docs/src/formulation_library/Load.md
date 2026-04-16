@@ -197,7 +197,6 @@ PowerLoadShift
       + Bounds: [0.0, `ShiftDownActivePowerTimeSeriesParameter`]
       + Default initial value: 0.0
       + Symbol: ``p^\text{shift,dn}``
-
   - [`ReactivePowerVariable`](@ref) *(AC network models only)*:
     
       + Bounds: [0.0, ]
@@ -227,6 +226,7 @@ mdtable(combo_table; latex = false)
 **Expressions:**
 
   - Defines the [`RealizedShiftedLoad`](@ref) expression per device per time step:
+    
     ```math
     p_t^\text{realized} = \text{ActivePowerTimeSeriesParameter}_t + p_t^\text{shift,up} - p_t^\text{shift,dn}, \quad \forall t \in \{1,\dots,T\}
     ```
@@ -247,9 +247,11 @@ Creates objective function terms based on the [`FunctionData` Options](@ref) for
 & \sum_{t=1}^{T_\text{sub}} \left( p_t^\text{shift,up} - p_t^\text{shift,dn} \right) = 0 \quad \text{(if \texttt{additional\_balance\_interval} is set)}
 \end{aligned}
 ```
+
 ```math
 p_t^\text{realized} \ge 0, \quad \forall t \in \{1,\dots,T\}
 ```
+
 ```math
 p_t^\text{shift,up} \le \text{ShiftUpActivePowerTimeSeriesParameter}_t, \quad \forall t \in \{1,\dots,T\}
 ```

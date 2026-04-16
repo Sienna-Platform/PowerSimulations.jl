@@ -311,8 +311,16 @@ end
     @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
 
     results = OptimizationProblemResults(model)
-    up = read_variable(results, "ShiftUpActivePowerVariable__ShiftablePowerLoad"; table_format = TableFormat.WIDE)
-    dn = read_variable(results, "ShiftDownActivePowerVariable__ShiftablePowerLoad"; table_format = TableFormat.WIDE)
+    up = read_variable(
+        results,
+        "ShiftUpActivePowerVariable__ShiftablePowerLoad";
+        table_format = TableFormat.WIDE,
+    )
+    dn = read_variable(
+        results,
+        "ShiftDownActivePowerVariable__ShiftablePowerLoad";
+        table_format = TableFormat.WIDE,
+    )
 
     # Verify the non-anticipativity constraint holds in the solution:
     # the running sum of (shift_down - shift_up) must be >= 0 at every time step.
