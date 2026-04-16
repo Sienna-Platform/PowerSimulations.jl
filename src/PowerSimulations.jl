@@ -416,7 +416,6 @@ export PostContingencyActivePowerGeneration
 export PostContingencyActivePowerBalance
 export NetActivePower
 export DCCurrentBalance
-export RealizedShiftedLoad
 
 #################################################################################
 # Imports
