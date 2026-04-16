@@ -600,6 +600,13 @@ function construct_device!(
         model,
         network_model,
     )
+    add_constraints!(
+        container,
+        NonAnticipativityConstraint,
+        devices,
+        model,
+        network_model,
+    )
 
     add_feedforward_constraints!(container, model, devices)
 
@@ -693,6 +700,13 @@ function construct_device!(
         container,
         ShiftDownActivePowerVariableLimitsConstraint,
         ShiftDownActivePowerVariable,
+        devices,
+        model,
+        network_model,
+    )
+    add_constraints!(
+        container,
+        NonAnticipativityConstraint,
         devices,
         model,
         network_model,
