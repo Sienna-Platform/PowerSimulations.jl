@@ -367,6 +367,7 @@ export ShiftedActivePowerBalanceConstraint
 export ShiftUpActivePowerVariableLimitsConstraint
 export ShiftDownActivePowerVariableLimitsConstraint
 export RealizedShiftedLoadMinimumBoundConstraint
+export NonAnticipativityConstraint
 
 # Parameters
 # Time Series Parameters
