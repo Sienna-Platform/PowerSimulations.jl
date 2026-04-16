@@ -230,6 +230,7 @@ mdtable(combo_table; latex = false)
     ```math
     p_t^\text{realized} = \text{ActivePowerTimeSeriesParameter}_t + p_t^\text{shift,up} - p_t^\text{shift,dn}, \quad \forall t \in \{1,\dots,T\}
     ```
+
   - Subtracts ``p_t^\text{realized}`` from the active power balance expression of the selected [Network Formulations](@ref network_formulations).
 
 **Objective:**
