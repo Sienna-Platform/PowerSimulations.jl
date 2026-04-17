@@ -7,6 +7,14 @@ type-stable; this helper performs the boundary conversion.
 _to_is_interval(interval::Dates.Millisecond) =
     interval == UNSET_INTERVAL ? nothing : interval
 
+"""
+Convert the internal `Dates.Millisecond` resolution (where `UNSET_RESOLUTION`
+means unset) to the `Union{Nothing, Dates.Period}` form the IS / PSY
+time-series API expects.
+"""
+_to_is_resolution(resolution::Dates.Millisecond) =
+    resolution == UNSET_RESOLUTION ? nothing : resolution
+
 function get_available_components(
     model::DeviceModel{T, <:AbstractDeviceFormulation},
     sys::PSY.System,
@@ -401,6 +409,41 @@ Return the set of distinct forecast intervals present in the system.
 function get_forecast_intervals(sys::PSY.System)
     table = PSY.get_forecast_summary_table(sys)
     return Set(row.interval for row in eachrow(table) if row.interval !== nothing)
+end
+
+"""
+Return `(initial_timestamp, length)` for the `SingleTimeSeries` in `sys` whose
+resolution matches `resolution`. Throws `IS.InvalidValue` when no match exists
+or when matching series disagree on either field. Used to validate emulation
+model inputs when a system carries SingleTimeSeries at multiple resolutions.
+"""
+function get_single_time_series_consistency(
+    sys::PSY.System,
+    resolution::Dates.Period,
+)
+    table = PSY.get_static_time_series_summary_table(sys)
+    target = Dates.canonicalize(Dates.Millisecond(resolution))
+    filtered =
+        [row for row in eachrow(table) if row.resolution == target]
+    if isempty(filtered)
+        throw(
+            IS.InvalidValue(
+                "No SingleTimeSeries found at resolution $(target)",
+            ),
+        )
+    end
+    unique_pairs =
+        unique((row.initial_timestamp, row.time_step_count) for row in filtered)
+    if length(unique_pairs) > 1
+        throw(
+            IS.InvalidValue(
+                "SingleTimeSeries at resolution $(target) have inconsistent " *
+                "initial times and lengths: $(collect(unique_pairs))",
+            ),
+        )
+    end
+    ini_time_str, ts_length = first(unique_pairs)
+    return (Dates.DateTime(ini_time_str), ts_length)
 end
 
 """
