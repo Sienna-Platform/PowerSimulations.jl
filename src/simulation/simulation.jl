@@ -198,10 +198,9 @@ Manually provided initial times have to be compatible with the specified interva
     end
     if get_models(sim).emulation_model !== nothing
         em = get_models(sim).emulation_model
-        system = get_system(get_models(sim).emulation_model)
-        ini_time, ts_length =
-            PSY.check_time_series_consistency(system, PSY.SingleTimeSeries)
+        system = get_system(em)
         resolution = get_resolution(em)
+        ini_time, ts_length = get_single_time_series_consistency(system, resolution)
         em_available_times = range(ini_time; step = resolution, length = ts_length)
         if get_initial_time(sim) ∉ em_available_times
             throw(
