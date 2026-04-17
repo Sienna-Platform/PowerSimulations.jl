@@ -80,14 +80,38 @@ function assign_dual_variable!(
 ) where {U <: Union{Vector{D}, IS.FlattenIteratorWrapper{D}}} where {D <: PSY.Device}
     @assert !isempty(devices)
     time_steps = get_time_steps(container)
-    add_dual_container!(
-        container,
-        constraint_type,
-        D,
-        PSY.get_name.(devices),
-        time_steps,
-    )
+    device_names = PSY.get_name.(devices)
+    metas = _existing_constraint_metas(container, constraint_type, D)
+    if isempty(metas)
+        add_dual_container!(container, constraint_type, D, device_names, time_steps)
+    else
+        for meta in metas
+            add_dual_container!(
+                container,
+                constraint_type,
+                D,
+                device_names,
+                time_steps;
+                meta = meta,
+            )
+        end
+    end
     return
+end
+
+function _existing_constraint_metas(
+    container::OptimizationContainer,
+    ::Type{T},
+    ::Type{D},
+) where {T <: ConstraintType, D}
+    metas = String[]
+    for key in get_constraint_keys(container)
+        if IS.Optimization.get_entry_type(key) === T &&
+           IS.Optimization.get_component_type(key) === D
+            push!(metas, key.meta)
+        end
+    end
+    return metas
 end
 
 function assign_dual_variable!(
