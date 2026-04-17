@@ -196,6 +196,7 @@ function _update_parameter_values!(
     device_model = get_model(template, V)
     components = get_available_components(device_model, get_system(model))
     ts_name = get_time_series_name(attributes)
+    ts_resolution = get_resolution(get_settings(model))
     ts_uuids = Set{String}()
     for component in components
         ts_uuid = _get_ts_uuid(attributes, PSY.get_name(component))
@@ -206,7 +207,8 @@ function _update_parameter_values!(
                 model,
                 component,
                 get_time_series_name(attributes),
-                initial_forecast_time,
+                initial_forecast_time;
+                resolution = ts_resolution,
             )[1]
             if !isfinite(value)
                 error("The value for the time series $(ts_name) is not finite. \
@@ -230,13 +232,15 @@ function _update_parameter_values!(
     initial_forecast_time = get_current_time(model)
     ts_name = get_time_series_name(attributes)
     ts_uuid = _get_ts_uuid(attributes, PSY.get_name(service))
+    ts_resolution = get_resolution(get_settings(model))
     # Note: This interface reads one single value per component at a time.
     value = get_time_series_values!(
         U,
         model,
         service,
         get_time_series_name(attributes),
-        initial_forecast_time,
+        initial_forecast_time;
+        resolution = ts_resolution,
     )[1]
     if !isfinite(value)
         error("The value for the time series $(ts_name) is not finite. \

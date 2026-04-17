@@ -361,8 +361,9 @@ function _add_time_series_parameters!(
     # device name -> ts_uuid cache so the second loop below doesn't re-query IS.
     device_ts_uuids = Dict{String, String}()
     model_interval = get_interval(get_settings(container))
-    ts_interval = model_interval
-    is_ts_interval = _to_is_interval(ts_interval)
+    is_ts_interval = _to_is_interval(model_interval)
+    model_resolution = get_resolution(get_settings(container))
+    is_ts_resolution = _to_is_resolution(model_resolution)
 
     @debug "adding" T D ts_name ts_type _group = LOG_GROUP_OPTIMIZATION_CONTAINER
 
@@ -379,6 +380,7 @@ function _add_time_series_parameters!(
                 ts_type,
                 device,
                 ts_name;
+                resolution = is_ts_resolution,
                 interval = is_ts_interval,
             ),
         )
@@ -390,7 +392,8 @@ function _add_time_series_parameters!(
                     ts_type,
                     device,
                     ts_name;
-                    interval = ts_interval,
+                    interval = model_interval,
+                    resolution = model_resolution,
                 )
             _check_dynamic_branch_rating_ts(initial_values[ts_uuid], param, device, model)
         end
