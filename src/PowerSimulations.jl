@@ -67,6 +67,7 @@ export DCLossyLine
 export StaticPowerLoad
 export PowerLoadInterruption
 export PowerLoadDispatch
+export PowerLoadShift
 ######## Renewable Formulations ########
 export RenewableFullDispatch
 export RenewableConstantPowerFactor
@@ -273,6 +274,8 @@ export AuxBilinearConverterVariable
 export AuxBilinearSquaredConverterVariable
 export InterpolationSquaredBilinearVariable
 export InterpolationBinarySquaredBilinearVariable
+export ShiftUpActivePowerVariable
+export ShiftDownActivePowerVariable
 
 # Auxiliary variables
 export TimeDurationOn
@@ -305,15 +308,9 @@ export FeedforwardSemiContinuousConstraint
 export FeedforwardUpperBoundConstraint
 export FeedforwardLowerBoundConstraint
 export FeedforwardIntegralLimitConstraint
-export FlowActivePowerConstraint
-export FlowActivePowerFromToConstraint
-export FlowActivePowerToFromConstraint
 export FlowLimitConstraint
 export FlowLimitFromToConstraint
 export FlowLimitToFromConstraint
-export FlowReactivePowerConstraint
-export FlowReactivePowerFromToConstraint
-export FlowReactivePowerToFromConstraint
 export FrequencyResponseConstraint
 export HVDCPowerBalance
 export HVDCLosses
@@ -360,6 +357,11 @@ export InterpolationCurrentConstraints
 export InterpolationBilinearConstraints
 export ConverterLossConstraint
 export CurrentAbsoluteValueConstraint
+export ShiftedActivePowerBalanceConstraint
+export ShiftUpActivePowerVariableLimitsConstraint
+export ShiftDownActivePowerVariableLimitsConstraint
+export RealizedShiftedLoadMinimumBoundConstraint
+export NonAnticipativityConstraint
 
 # Parameters
 # Time Series Parameters
@@ -422,6 +424,7 @@ import JuMP.Containers: DenseAxisArray, SparseAxisArray
 export optimizer_with_attributes
 import MathOptInterface as MOI
 import LinearAlgebra
+import SparseArrays
 import JSON3
 import PowerSystems as PSY
 import InfrastructureSystems as IS

@@ -33,15 +33,20 @@ end
 get_initial_time(store::HdfSimulationStore) = get_initial_time(store.params)
 
 function HdfSimulationStore(file_path::AbstractString, mode::AbstractString)
-    if !(mode == "w" || mode == "r")
-        throw(IS.ConflictingInputsError("mode can only be 'w' or 'r'"))
+    if !(mode in ("w", "r", "rw"))
+        throw(IS.ConflictingInputsError("mode can only be 'w', 'r', or 'rw'"))
+    end
+
+    if !isfile(file_path) && mode in ("r", "rw")
+        throw(IS.ConflictingInputsError("$file_path does not exist"))
     end
 
     if isfile(file_path) && mode == "w"
         throw(IS.ConflictingInputsError("$file_path already exists"))
     end
 
-    file = HDF5.h5open(file_path, mode)
+    hdf5_mode = mode == "rw" ? "r+" : mode
+    file = HDF5.h5open(file_path, hdf5_mode)
     if mode == "w"
         HDF5.create_group(file, HDF_SIMULATION_ROOT_PATH)
         @debug "Created store" file_path
@@ -56,7 +61,7 @@ function HdfSimulationStore(file_path::AbstractString, mode::AbstractString)
         Dict{Symbol, Int}(),
         OptimizationOutputCaches(),
     )
-    mode == "r" && _deserialize_attributes!(store)
+    mode in ("r", "rw") && _deserialize_attributes!(store)
 
     finalizer(_check_state, store)
     return store
@@ -136,6 +141,18 @@ function Base.flush(store::HdfSimulationStore)
 end
 
 get_params(store::HdfSimulationStore) = store.params
+
+function set_cache_flush_rules!(store::HdfSimulationStore, flush_rules::CacheFlushRules)
+    new_cache = OptimizationOutputCaches(flush_rules)
+    for (key, output_cache) in store.cache.data
+        new_cache.data[key] = output_cache
+    end
+    store.cache = new_cache
+    @debug "Updated store cache rules" get_min_flush_size(store.cache) get_max_size(
+        store.cache,
+    )
+    return
+end
 
 function get_decision_model_params(store::HdfSimulationStore, model_name::Symbol)
     return get_decision_model_params(get_params(store), model_name)
@@ -739,6 +756,15 @@ function serialize_system!(store::HdfSimulationStore, sys::PSY.System)
     return
 end
 
+function write_system_json!(store::HdfSimulationStore, uuid::String, json_text::String)
+    root = store.file[HDF_SIMULATION_ROOT_PATH]
+    systems_group = _get_group_or_create(root, "systems")
+    if !haskey(systems_group, uuid)
+        systems_group[uuid] = json_text
+    end
+    return
+end
+
 function deserialize_system(store::HdfSimulationStore, uuid::Base.UUID)
     root = store.file[HDF_SIMULATION_ROOT_PATH]
     systems_group = _get_group_or_create(root, "systems")
@@ -857,7 +883,7 @@ function _deserialize_attributes!(store::HdfSimulationStore)
         end
 
         store.optimizer_stats_datasets[model_name] = problem_group[OPTIMIZER_STATS_PATH]
-        store.optimizer_stats_write_index[model_name] = 0
+        store.optimizer_stats_write_index[model_name] = 1
     end
 
     em_group = _get_emulation_model_path(store)

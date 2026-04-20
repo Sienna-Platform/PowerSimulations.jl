@@ -40,15 +40,15 @@ Struct fields must have concrete types or be parameterized.
 
 #### Captured variables
 
-Avoid closures that capture variables causing boxing. Pass variables as function arguments instead.
+Avoid closures that capture mutable or reassigned variables, as these cause boxing. Captured variables that do not change type (especially if never reassigned) do not incur boxing — see [Julia docs on captured variables](https://docs.julialang.org/en/v1/manual/performance-tips/#man-performance-captured).
 
 #### Splatting penalty
 
-Avoid splatting (`...`) in performance-critical code.
+Avoid splatting (`...`) in performance-critical code. Splatting containers with known length at compile time (e.g., `Tuple`) is acceptable.
 
 #### Abstract return types
 
-Avoid returning `Union` types or abstract types.
+In performance-critical code, avoid returning abstract types. Returning `Union{T, Nothing}` is acceptable for functions that may fail or return nothing. Factory functions that return one of several concrete subtypes are also fine.
 
 #### Using `isa` in function logic
 

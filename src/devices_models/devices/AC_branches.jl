@@ -355,7 +355,10 @@ function get_min_max_limits(
     ::Type{<:ConstraintType},
     ::Type{<:AbstractBranchFormulation},
 ) #  -> Union{Nothing, NamedTuple{(:min, :max), Tuple{Float64, Float64}}}
-    return (min = -1 * PSY.get_rating(device), max = PSY.get_rating(device))
+    return (
+        min = -1 * PNM.get_equivalent_rating(device),
+        max = PNM.get_equivalent_rating(device),
+    )
 end
 
 """
@@ -767,26 +770,48 @@ function add_constraints!(
 end
 
 function _make_flow_expressions!(
-    jump_model::JuMP.Model,
     name::String,
     time_steps::UnitRange{Int},
-    ptdf_col::AbstractVector{Float64},
+    ptdf_col::Vector{Float64},
     nodal_balance_expressions::Matrix{JuMP.AffExpr},
 )
     @debug "Making Flow Expression on thread $(Threads.threadid()) for branch $name"
+    nz_idx = [i for i in eachindex(ptdf_col) if abs(ptdf_col[i]) > PTDF_ZERO_TOL]
+    hint = length(nz_idx)
     expressions = Vector{JuMP.AffExpr}(undef, length(time_steps))
     for t in time_steps
-        expressions[t] = JuMP.@expression(
-            jump_model,
-            sum(
-                ptdf_col[i] * nodal_balance_expressions[i, t] for
-                i in 1:length(ptdf_col)
-            )
-        )
+        acc = get_hinted_aff_expr(hint)
+        @inbounds for i in nz_idx
+            JuMP.add_to_expression!(acc, ptdf_col[i], nodal_balance_expressions[i, t])
+        end
+        expressions[t] = acc
     end
     return name, expressions
-    # change when using the not concurrent version
-    # return expressions
+end
+
+function _make_flow_expressions!(
+    name::String,
+    time_steps::UnitRange{Int},
+    ptdf_col::SparseArrays.SparseVector{Float64, Int},
+    nodal_balance_expressions::Matrix{JuMP.AffExpr},
+)
+    @debug "Making Flow Expression on thread $(Threads.threadid()) for branch $name"
+    nz_idx = SparseArrays.nonzeroinds(ptdf_col)
+    nz_val = SparseArrays.nonzeros(ptdf_col)
+    hint = length(nz_idx)
+    expressions = Vector{JuMP.AffExpr}(undef, length(time_steps))
+    for t in time_steps
+        acc = get_hinted_aff_expr(hint)
+        @inbounds for k in eachindex(nz_idx)
+            JuMP.add_to_expression!(
+                acc,
+                nz_val[k],
+                nodal_balance_expressions[nz_idx[k], t],
+            )
+        end
+        expressions[t] = acc
+    end
+    return name, expressions
 end
 
 function _add_expression_to_container!(
@@ -801,7 +826,6 @@ function _add_expression_to_container!(
     name = PSY.get_name(reduction_entry)
     if name in branches
         branch_flow_expr[name, :] .= _make_flow_expressions!(
-            jump_model,
             name,
             time_steps,
             ptdf_col,
@@ -824,7 +848,6 @@ function _add_expression_to_container!(
     for name in names
         if name in branches
             branch_flow_expr[name, :] .= _make_flow_expressions!(
-                jump_model,
                 name,
                 time_steps,
                 ptdf_col,
@@ -849,7 +872,6 @@ function _add_expression_to_container!(
     for name in names
         if name in branches
             branch_flow_expr[name, :] .= _make_flow_expressions!(
-                jump_model,
                 name,
                 time_steps,
                 ptdf_col,
@@ -890,11 +912,10 @@ function add_expressions!(
 
     jump_model = get_jump_model(container)
 
-    tasks = map(collect(name_to_arc_map)) do pair
+    tasks = map(name_to_arc_map) do pair
         (name, (arc, _)) = pair
         ptdf_col = ptdf[arc, :]
         Threads.@spawn _make_flow_expressions!(
-            jump_model,
             name,
             time_steps,
             ptdf_col,
@@ -1036,8 +1057,8 @@ Min and max limits for monitored line
 function get_min_max_limits(
     device::PSY.MonitoredLine,
     ::Type{<:ConstraintType},
-    ::Type{<:AbstractBranchFormulation},
-)
+    ::Type{T},
+) where {T <: AbstractBranchFormulation}
     if PSY.get_flow_limits(device).to_from != PSY.get_flow_limits(device).from_to
         @warn(
             "Flow limits in Line $(PSY.get_name(device)) aren't equal. The minimum will be used in formulation $(T)"

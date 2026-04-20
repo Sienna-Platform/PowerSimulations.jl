@@ -1,3 +1,20 @@
+"""
+Convert the internal `Dates.Millisecond` interval (where `UNSET_INTERVAL` means
+unset) to the `Union{Nothing, Dates.Period}` form the IS / PSY time-series API
+expects. Internal hot paths carry a concrete `Dates.Millisecond` to stay
+type-stable; this helper performs the boundary conversion.
+"""
+_to_is_interval(interval::Dates.Millisecond) =
+    interval == UNSET_INTERVAL ? nothing : interval
+
+"""
+Convert the internal `Dates.Millisecond` resolution (where `UNSET_RESOLUTION`
+means unset) to the `Union{Nothing, Dates.Period}` form the IS / PSY
+time-series API expects.
+"""
+_to_is_resolution(resolution::Dates.Millisecond) =
+    resolution == UNSET_RESOLUTION ? nothing : resolution
+
 function get_available_components(
     model::DeviceModel{T, <:AbstractDeviceFormulation},
     sys::PSY.System,
@@ -384,6 +401,92 @@ function create_temporary_cost_function_in_system_per_unit(
         PSY.LinearCurve(0.0),  # setting fuel offtake cost to default value of 0
         PSY.get_vom_cost(original_cost_function),
     )
+end
+
+"""
+Return the set of distinct forecast intervals present in the system.
+"""
+function get_forecast_intervals(sys::PSY.System)
+    table = PSY.get_forecast_summary_table(sys)
+    return Set(row.interval for row in eachrow(table) if row.interval !== nothing)
+end
+
+"""
+Return `(initial_timestamp, length)` for the `SingleTimeSeries` in `sys` whose
+resolution matches `resolution`. Throws `IS.InvalidValue` when no match exists
+or when matching series disagree on either field. Used to validate emulation
+model inputs when a system carries SingleTimeSeries at multiple resolutions.
+"""
+function get_single_time_series_consistency(
+    sys::PSY.System,
+    resolution::Dates.Period,
+)
+    table = PSY.get_static_time_series_summary_table(sys)
+    target = Dates.canonicalize(Dates.Millisecond(resolution))
+    filtered =
+        [row for row in eachrow(table) if row.resolution == target]
+    if isempty(filtered)
+        throw(
+            IS.InvalidValue(
+                "No SingleTimeSeries found at resolution $(target)",
+            ),
+        )
+    end
+    unique_pairs =
+        unique((row.initial_timestamp, row.time_step_count) for row in filtered)
+    if length(unique_pairs) > 1
+        throw(
+            IS.InvalidValue(
+                "SingleTimeSeries at resolution $(target) have inconsistent " *
+                "initial times and lengths: $(collect(unique_pairs))",
+            ),
+        )
+    end
+    ini_time_str, ts_length = first(unique_pairs)
+    return (Dates.DateTime(ini_time_str), ts_length)
+end
+
+"""
+Automatically transform `SingleTimeSeries` into `DeterministicSingleTimeSeries` for a
+given (horizon, interval) when a DecisionModel is built with these settings and the
+system contains only static time series. Uses `delete_existing=false` so multiple
+models may share the same system with different transforms.
+
+Does nothing when:
+
+  - The model's `horizon` or `interval` are unset.
+  - The system has no `SingleTimeSeries` to transform.
+  - The system has existing forecast data AND the requested interval is already present in those forecasts.
+"""
+function auto_transform_time_series!(sys::PSY.System, settings::Settings)
+    model_interval = get_interval(settings)
+    model_horizon = get_horizon(settings)
+    if model_interval == UNSET_INTERVAL || model_horizon == UNSET_HORIZON
+        return
+    end
+
+    counts = PSY.get_time_series_counts(sys)
+    if counts.static_time_series_count < 1
+        return
+    end
+    if counts.forecast_count > 0 && model_interval in get_forecast_intervals(sys)
+        return
+    end
+
+    model_resolution = get_resolution(settings)
+    resolution_kwarg =
+        model_resolution == UNSET_RESOLUTION ? (;) : (; resolution = model_resolution)
+
+    @info "Auto-transforming SingleTimeSeries to DeterministicSingleTimeSeries" horizon =
+        Dates.canonicalize(model_horizon) interval = Dates.canonicalize(model_interval)
+    PSY.transform_single_time_series!(
+        sys,
+        model_horizon,
+        model_interval;
+        delete_existing = false,
+        resolution_kwarg...,
+    )
+    return
 end
 
 function get_deterministic_time_series_type(sys::PSY.System)

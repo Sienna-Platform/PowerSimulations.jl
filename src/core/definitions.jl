@@ -54,6 +54,7 @@ const JumpSupportedLiterals =
 # Settings constants
 const UNSET_HORIZON = Dates.Millisecond(0)
 const UNSET_RESOLUTION = Dates.Millisecond(0)
+const UNSET_INTERVAL = Dates.Millisecond(0)
 const UNSET_INI_TIME = Dates.DateTime(0)
 
 # Tolerance of comparisons
@@ -63,6 +64,7 @@ const BALANCE_SLACK_COST = 1e6
 const CONSTRAINT_VIOLATION_SLACK_COST = 2e5
 const SERVICES_SLACK_COST = 1e5
 const COST_EPSILON = 1e-3
+const PTDF_ZERO_TOL = 1e-9
 const MISSING_INITIAL_CONDITIONS_TIME_COUNT = 999.0
 const SECONDS_IN_MINUTE = 60.0
 const MINUTES_IN_HOUR = 60.0
