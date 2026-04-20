@@ -128,9 +128,6 @@ The specified constraint is formulated as:
 """
 struct FeedforwardLowerBoundConstraint <: ConstraintType end
 struct FeedforwardEnergyTargetConstraint <: ConstraintType end
-struct FlowActivePowerConstraint <: ConstraintType end #not being used
-struct FlowActivePowerFromToConstraint <: ConstraintType end #not being used
-struct FlowActivePowerToFromConstraint <: ConstraintType end #not being used
 """
 Struct to create the constraint that set the flow limits through a PhaseShiftingTransformer.
 
@@ -145,10 +142,6 @@ The specified constraint is formulated as:
 struct FlowLimitConstraint <: ConstraintType end
 struct FlowLimitFromToConstraint <: ConstraintType end
 struct FlowLimitToFromConstraint <: ConstraintType end
-
-struct FlowReactivePowerConstraint <: ConstraintType end #not being used
-struct FlowReactivePowerFromToConstraint <: ConstraintType end #not being used
-struct FlowReactivePowerToFromConstraint <: ConstraintType end #not being used
 """
 Struct to create the constraints that set the power balance across a lossy HVDC two-terminal line.
 
