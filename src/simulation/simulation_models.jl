@@ -123,8 +123,13 @@ end
 function determine_intervals(models::SimulationModels)
     intervals = OrderedDict{Symbol, Dates.Millisecond}()
     for model in models.decision_models
-        system = get_system(model)
-        interval = PSY.get_forecast_interval(system)
+        model_interval = get_interval(get_settings(model))
+        if model_interval != UNSET_INTERVAL
+            interval = model_interval
+        else
+            system = get_system(model)
+            interval = PSY.get_forecast_interval(system)
+        end
         if interval == Dates.Millisecond(0)
             throw(IS.InvalidValue("Model $(get_name(model)) interval not set correctly"))
         end

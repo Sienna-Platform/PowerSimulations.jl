@@ -9,7 +9,7 @@ const PF_INPUT_KEY_PRECEDENCES = Dict(
     :active_power_hvdc_pst_from_to =>
         [FlowActivePowerFromToVariable, FlowActivePowerVariable],
     :active_power_hvdc_pst_to_from =>
-        [FlowActivePowerFromToVariable, FlowActivePowerVariable],
+        [FlowActivePowerToFromVariable, FlowActivePowerVariable],
 )
 
 const RELEVANT_COMPONENTS_SELECTOR =

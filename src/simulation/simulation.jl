@@ -157,9 +157,12 @@ function _get_simulation_initial_times!(sim::Simulation)
     sim_ini_time = get_initial_time(sim)
     for (model_number, model) in enumerate(get_models(sim).decision_models)
         system = get_system(model)
+        model_interval = get_interval(get_settings(model))
+        interval_kwarg =
+            model_interval == UNSET_INTERVAL ? (;) : (; interval = model_interval)
         model_horizon = get_horizon(model)
-        system_horizon = PSY.get_forecast_horizon(system)
-        system_interval = PSY.get_forecast_interval(system)
+        system_horizon = PSY.get_forecast_horizon(system; interval_kwarg...)
+        system_interval = PSY.get_forecast_interval(system; interval_kwarg...)
         if model_horizon > system_horizon
             throw(
                 IS.ConflictingInputsError(
@@ -167,7 +170,8 @@ function _get_simulation_initial_times!(sim::Simulation)
                 ),
             )
         end
-        model_initial_times[model_number] = PSY.get_forecast_initial_times(system)
+        model_initial_times[model_number] =
+            PSY.get_forecast_initial_times(system; interval_kwarg...)
         for (ix, element) in enumerate(model_initial_times[model_number][1:(end - 1)])
             if !(element + system_interval == model_initial_times[model_number][ix + 1])
                 throw(
@@ -194,10 +198,9 @@ Manually provided initial times have to be compatible with the specified interva
     end
     if get_models(sim).emulation_model !== nothing
         em = get_models(sim).emulation_model
-        system = get_system(get_models(sim).emulation_model)
-        ini_time, ts_length =
-            PSY.check_time_series_consistency(system, PSY.SingleTimeSeries)
+        system = get_system(em)
         resolution = get_resolution(em)
+        ini_time, ts_length = get_single_time_series_consistency(system, resolution)
         em_available_times = range(ini_time; step = resolution, length = ts_length)
         if get_initial_time(sim) ∉ em_available_times
             throw(

@@ -1960,7 +1960,9 @@ function get_time_series_initial_values!(
     container::OptimizationContainer,
     ::Type{T},
     component::PSY.Component,
-    time_series_name::AbstractString,
+    time_series_name::AbstractString;
+    interval::Dates.Millisecond = UNSET_INTERVAL,
+    resolution::Dates.Millisecond = UNSET_RESOLUTION,
 ) where {T <: PSY.TimeSeriesData}
     initial_time = get_initial_time(container)
     time_steps = get_time_steps(container)
@@ -1970,6 +1972,8 @@ function get_time_series_initial_values!(
         time_series_name;
         start_time = initial_time,
         count = 1,
+        interval = _to_is_interval(interval),
+        resolution = _to_is_resolution(resolution),
     )
     ts_values = IS.get_time_series_values(
         component,
