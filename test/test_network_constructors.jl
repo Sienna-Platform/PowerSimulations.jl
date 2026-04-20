@@ -1614,7 +1614,7 @@ end
           PSI.ModelBuildStatus.BUILT
 end
 
-# Regression test for https://github.com/NREL-Sienna/PowerSimulations.jl/issues/1594
+# Regression test for https://github.com/Sienna-Platform/PowerSimulations.jl/issues/1594
 # Combines a NetworkModel with radial + degree-two reductions, a Line DeviceModel
 # with a filter_function, and a request for FlowRateConstraint duals. Before the
 # fix in src/devices_models/devices/common/add_constraint_dual.jl, the dual

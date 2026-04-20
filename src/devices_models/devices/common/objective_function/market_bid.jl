@@ -417,7 +417,7 @@ function process_market_bid_parameters!(
     incremental::Bool = true,
     decremental::Bool = false,
 )
-    devices = filter(_has_market_bid_cost, collect(devices_in))  # https://github.com/NREL-Sienna/InfrastructureSystems.jl/issues/460
+    devices = filter(_has_market_bid_cost, collect(devices_in))  # https://github.com/Sienna-Platform/InfrastructureSystems.jl/issues/460
     isempty(devices) && return
 
     # Validate and add the parameters:
@@ -568,7 +568,7 @@ function _add_pwl_constraint!(
     name = PSY.get_name(component)
     sum_pwl_vars = sum(pwl_vars[name, ix, period] for ix in 1:len_cost_data)
 
-    # As detailed in https://github.com/NREL-Sienna/PowerSimulations.jl/issues/1318,
+    # As detailed in https://github.com/Sienna-Platform/PowerSimulations.jl/issues/1318,
     # time-variable P1 is problematic, so for now we require P1 to be constant. Thus we can
     # just look up what it is currently fixed to and use that here without worrying about
     # updating.

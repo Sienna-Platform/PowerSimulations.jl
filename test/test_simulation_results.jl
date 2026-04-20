@@ -532,7 +532,7 @@ function test_decision_problem_results_values(
         )].data,
     )
 
-    # Inspired by https://github.com/NREL-Sienna/PowerSimulations.jl/issues/1072
+    # Inspired by https://github.com/Sienna-Platform/PowerSimulations.jl/issues/1072
     @testset "Test cache behavior" begin
         myres = deepcopy(results_ed)
         initial_time = DateTime("2024-01-01T00:00:00")

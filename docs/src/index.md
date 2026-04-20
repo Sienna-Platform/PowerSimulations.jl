@@ -23,7 +23,7 @@ The most common Simulation Model is the solution of a Unit Commitment and Econom
 `PowerSimulations.jl` is part of the National Renewable Energy Laboratory's
 [Sienna ecosystem](https://nrel-sienna.github.io/Sienna/), an open source framework for
 power system modeling, simulation, and optimization. The Sienna ecosystem can be
-[found on Github](https://github.com/NREL-Sienna/Sienna). It contains three applications:
+[found on Github](https://github.com/Sienna-Platform/Sienna). It contains three applications:
 
   - [Sienna\Data](https://nrel-sienna.github.io/Sienna/pages/applications/sienna_data.html) enables
     efficient data input, analysis, and transformation
