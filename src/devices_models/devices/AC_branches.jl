@@ -1039,8 +1039,8 @@ Min and max limits for monitored line
 function get_min_max_limits(
     device::PSY.MonitoredLine,
     ::Type{<:ConstraintType},
-    ::Type{<:AbstractBranchFormulation},
-)
+    ::Type{T},
+) where {T <: AbstractBranchFormulation}
     if PSY.get_flow_limits(device).to_from != PSY.get_flow_limits(device).from_to
         @warn(
             "Flow limits in Line $(PSY.get_name(device)) aren't equal. The minimum will be used in formulation $(T)"
