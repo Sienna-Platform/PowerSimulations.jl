@@ -2122,9 +2122,12 @@ function _reduced_entry_in_interface(
     ]
 
     if !allequal(in_interface)
+        branch_names = PSY.get_name.(reduction_entry)
         throw(
             ArgumentError(
-                "An interface is specified with only part of a double-circuit that has been reduced. Modify the data to include all parallel segements.",
+                "An interface is specified with only part of a double-circuit that has been reduced. 
+                Branches: $(branch_names[in_interface]) are in the interface and branches: $(branch_names[.!in_interface]) are not.
+                Modify the data to include all of or none of the parallel segements.",
             ),
         )
     end
