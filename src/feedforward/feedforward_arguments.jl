@@ -77,7 +77,7 @@ function _add_feedforward_slack_variables!(container::OptimizationContainer,
         variable = get_variable(container, var)
         device_name_set, set_time = JuMP.axes(variable)
         device_names = PSY.get_name.(devices)
-        @assert issetequal(device_name_set, devices_names)
+        @assert issetequal(device_name_set, device_names)
         IS.@assert_op set_time == time_steps
         service_name = get_service_name(model)
         var_type = get_entry_type(var)
