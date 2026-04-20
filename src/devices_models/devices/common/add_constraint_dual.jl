@@ -80,17 +80,26 @@ function assign_dual_variable!(
 ) where {U <: Union{Vector{D}, IS.FlattenIteratorWrapper{D}}} where {D <: PSY.Device}
     @assert !isempty(devices)
     time_steps = get_time_steps(container)
-    device_names = PSY.get_name.(devices)
     metas = _existing_constraint_metas(container, constraint_type, D)
     if isempty(metas)
+        device_names = PSY.get_name.(devices)
         add_dual_container!(container, constraint_type, D, device_names, time_steps)
     else
+        # Reuse the existing constraint container's row axis so the dual axis
+        # matches the constraint exactly. Network reductions (radial /
+        # degree-two) drop branches that pass the device-model filter, so the
+        # constraint axis is a strict subset of PSY.get_name.(devices). Sizing
+        # the dual from the device list would leave the dual broadcast in
+        # process_duals incompatible with the constraint matrix.
         for meta in metas
+            existing =
+                get_constraint(container, ConstraintKey(constraint_type, D, meta))
+            row_axis = axes(existing)[1]
             add_dual_container!(
                 container,
                 constraint_type,
                 D,
-                device_names,
+                row_axis,
                 time_steps;
                 meta = meta,
             )
