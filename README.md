@@ -1,8 +1,8 @@
 # PowerSimulations.jl
 
-[![Main - CI](https://github.com/NREL-Sienna/PowerSimulations.jl/actions/workflows/main-tests.yml/badge.svg)](https://github.com/NREL-Sienna/PowerSimulations.jl/actions/workflows/main-tests.yml)
-[![codecov](https://codecov.io/gh/NREL-Sienna/PowerSimulations.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/NREL-Sienna/PowerSimulations.jl)
-[![Documentation](https://github.com/NREL-Sienna/PowerSimulations.jl/workflows/Documentation/badge.svg)](https://nrel-sienna.github.io/PowerSimulations.jl/latest)
+[![Main - CI](https://github.com/Sienna-Platform/PowerSimulations.jl/actions/workflows/main-tests.yml/badge.svg)](https://github.com/Sienna-Platform/PowerSimulations.jl/actions/workflows/main-tests.yml)
+[![codecov](https://codecov.io/gh/Sienna-Platform/PowerSimulations.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/Sienna-Platform/PowerSimulations.jl)
+[![Documentation](https://github.com/Sienna-Platform/PowerSimulations.jl/workflows/Documentation/badge.svg)](https://nrel-sienna.github.io/PowerSimulations.jl/latest)
 [![DOI](https://zenodo.org/badge/109443246.svg)](https://zenodo.org/badge/latestdoi/109443246)
 [<img src="https://img.shields.io/badge/slack-@Sienna/PSI-sienna.svg?logo=slack">](https://join.slack.com/t/nrel-sienna/shared_invite/zt-glam9vdu-o8A9TwZTZqqNTKHa7q3BpQ)
 [![PowerSimulations.jl Downloads](https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Ftotal_downloads%2FPowerSimulations&query=total_requests&label=Downloads)](http://juliapkgstats.com/pkg/PowerSimulations)
@@ -36,7 +36,7 @@ julia> ]
 
 ## Usage
 
-`PowerSimulations.jl` uses [PowerSystems.jl](https://github.com/NREL-Sienna/PowerSystems.jl) to handle the data used in the simulations.
+`PowerSimulations.jl` uses [PowerSystems.jl](https://github.com/Sienna-Platform/PowerSystems.jl) to handle the data used in the simulations.
 
 ```julia
 using PowerSimulations
@@ -47,8 +47,8 @@ For information on using the package, see the [stable documentation](https://nre
 
 ## Development
 
-Contributions to the development and enhancement of PowerSimulations is welcome. Please see [CONTRIBUTING.md](https://github.com/NREL-Sienna/PowerSimulations.jl/blob/main/CONTRIBUTING.md) for code contribution guidelines.
+Contributions to the development and enhancement of PowerSimulations is welcome. Please see [CONTRIBUTING.md](https://github.com/Sienna-Platform/PowerSimulations.jl/blob/main/CONTRIBUTING.md) for code contribution guidelines.
 
 ## License
 
-PowerSimulations is released under a BSD [license](https://github.com/NREL-Sienna/PowerSimulations.jl/blob/main/LICENSE). PowerSimulations has been developed as part of the Scalable Integrated Infrastructure Planning (SIIP) initiative at the U.S. Department of Energy's National Renewable Energy Laboratory ([NREL](https://www.nrel.gov/)) Software Record SWR-23-104.
+PowerSimulations is released under a BSD [license](https://github.com/Sienna-Platform/PowerSimulations.jl/blob/main/LICENSE). PowerSimulations has been developed as part of the Scalable Integrated Infrastructure Planning (SIIP) initiative at the U.S. Department of Energy's National Renewable Energy Laboratory ([NREL](https://www.nrel.gov/)) Software Record SWR-23-104.
