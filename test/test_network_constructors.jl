@@ -1614,6 +1614,90 @@ end
           PSI.ModelBuildStatus.BUILT
 end
 
+# Regression test for https://github.com/NREL-Sienna/PowerSimulations.jl/issues/1594
+# Combines a NetworkModel with radial + degree-two reductions, a Line DeviceModel
+# with a filter_function, and a request for FlowRateConstraint duals. Before the
+# fix, assign_dual_variable! sized the dual container from the unfiltered device
+# list while the FlowRateConstraint container was sized from the post-reduction
+# branch axis, so process_duals threw DimensionMismatch on extraction.
+@testset "FlowRateConstraint duals with branch filter and network reductions" begin
+    sys = build_system(PSITestSystems, "case11_network_reductions")
+    add_dummy_time_series_data!(sys)
+    nr = NetworkReduction[RadialReduction(), DegreeTwoReduction()]
+    ptdf = PTDF(sys; network_reductions = nr)
+
+    # Filter mixes a line that survives both reductions ("4-5-i_1") with lines
+    # that get reduced away. The unfiltered set is 4 lines; the post-reduction
+    # set is 1 line — exactly the size mismatch that triggered the bug.
+    modeled_line_names = ["4-5-i_1", "1-4-i_1", "1-6-i_1", "10-3-i_1"]
+    template = ProblemTemplate(
+        NetworkModel(PTDFPowerModel;
+            PTDF_matrix = ptdf,
+            duals = [CopperPlateBalanceConstraint],
+            reduce_radial_branches = PNM.has_radial_reduction(ptdf.network_reduction_data),
+            reduce_degree_two_branches = PNM.has_degree_two_reduction(
+                ptdf.network_reduction_data,
+            ),
+            use_slacks = false),
+    )
+    set_device_model!(
+        template,
+        DeviceModel(
+            Line,
+            StaticBranch;
+            duals = [FlowRateConstraint],
+            attributes = Dict(
+                "filter_function" => x -> PSY.get_name(x) in modeled_line_names,
+            ),
+        ),
+    )
+    # Restrict transformers to the one that survives both reductions to mirror
+    # the existing "Network reductions + branch filter edge cases" pattern.
+    set_device_model!(
+        template,
+        DeviceModel(
+            Transformer2W,
+            StaticBranch;
+            attributes = Dict(
+                "filter_function" => x -> PSY.get_name(x) == "9-5-i_1",
+            ),
+        ),
+    )
+    ps_model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
+    @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+
+    container = PSI.get_optimization_container(ps_model)
+    # The Line FlowRateConstraint is split into "lb" and "ub" metas; both must
+    # have a dual container whose first axis matches the constraint's first
+    # axis (only "4-5-i_1" survives both reductions in this filter).
+    for meta in ("lb", "ub")
+        cons_key = PSI.ConstraintKey(FlowRateConstraint, Line, meta)
+        cons = PSI.get_constraint(container, cons_key)
+        dual = PSI.get_duals(container)[cons_key]
+        @test axes(dual)[1] == axes(cons)[1]
+        @test "4-5-i_1" in axes(cons)[1]
+    end
+
+    @test solve!(ps_model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+    res = OptimizationProblemResults(ps_model)
+
+    # The original failure surfaces in process_duals during solve!. If we get
+    # here, the broadcast succeeded; verify read_dual returns a usable frame.
+    flow_ub = read_dual(
+        res,
+        PSI.ConstraintKey(FlowRateConstraint, Line, "ub");
+        table_format = TableFormat.WIDE,
+    )
+    flow_lb = read_dual(
+        res,
+        PSI.ConstraintKey(FlowRateConstraint, Line, "lb");
+        table_format = TableFormat.WIDE,
+    )
+    @test "4-5-i_1" in string.(propertynames(flow_ub))
+    @test "4-5-i_1" in string.(propertynames(flow_lb))
+end
+
 @testset "Branch bounds of parallel and series reductions" begin
     sys = build_system(PSITestSystems, "case11_network_reductions")
     add_dummy_time_series_data!(sys)
