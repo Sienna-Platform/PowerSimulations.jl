@@ -333,7 +333,7 @@ export RangeLimitConstraint
 export FlowRateConstraint
 export FlowRateConstraintFromTo
 export FlowRateConstraintToFrom
-export PostContingencyEmergencyRateLimitConstrain
+export PostContingencyEmergencyRateLimitConstraint
 export ReactivePowerVariableLimitsConstraint
 export RegulationLimitsConstraint
 export RequirementConstraint
