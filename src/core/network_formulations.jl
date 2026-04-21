@@ -15,7 +15,7 @@ Approximation to represent inter-area flow with each area represented as a singl
 """
 struct AreaBalancePowerModel <: PM.AbstractActivePowerModel end
 """
-Linear active power approximation using the power transfer distribution factor [PTDF](https://sienna-platform.github.io/PowerNetworkMatrices.jl/stable/tutorials/tutorial_PTDF_matrix/) matrix. Balancing areas as well as synchrounous regions.
+Linear active power approximation using the power transfer distribution factor [PTDF](https://sienna-platform.github.io/PowerNetworkMatrices.jl/stable/tutorials/tutorial_PTDF_matrix/) matrix. Balancing areas as well as synchronous regions.
 """
 struct AreaPTDFPowerModel <: AbstractPTDFModel end
 
