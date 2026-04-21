@@ -237,4 +237,4 @@ rm(path; force = true, recursive = true) #hide
 
 # ## Plotting
 #
-# Take a look at the plotting capabilities in [PowerGraphics.jl](https://nrel-sienna.github.io/PowerGraphics.jl/stable/)
+# Take a look at the plotting capabilities in [PowerGraphics.jl](https://sienna-platform.github.io/PowerGraphics.jl/stable/)
