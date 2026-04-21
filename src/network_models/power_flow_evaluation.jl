@@ -439,6 +439,9 @@ _update_pf_data_component!(
     t,
     value,
 ) = (pf_data.bus_active_power_injections[index, t] -= value)
+# FlowActivePowerToFromVariable is signed negative when power flows from→to (since
+# `tf_var + ft_var == losses ≥ 0`), so subtracting yields the correct positive
+# injection at the receiving bus.
 _update_pf_data_component!(
     pf_data::PFS.PowerFlowData,
     ::Val{:active_power_hvdc_pst_to_from},
@@ -446,7 +449,7 @@ _update_pf_data_component!(
     index,
     t,
     value,
-) = (pf_data.bus_active_power_injections[index, t] += value)
+) = (pf_data.bus_active_power_injections[index, t] -= value)
 _update_pf_data_component!(
     pf_data::PFS.PowerFlowData,
     ::Val{:active_power_hvdc_pst_from_to},
