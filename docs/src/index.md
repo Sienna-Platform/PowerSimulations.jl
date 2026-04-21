@@ -21,15 +21,15 @@ The most common Simulation Model is the solution of a Unit Commitment and Econom
 ## About Sienna
 
 `PowerSimulations.jl` is part of the National Renewable Energy Laboratory's
-[Sienna ecosystem](https://nrel-sienna.github.io/Sienna/), an open source framework for
+[Sienna ecosystem](https://sienna-platform.github.io/Sienna/), an open source framework for
 power system modeling, simulation, and optimization. The Sienna ecosystem can be
 [found on Github](https://github.com/Sienna-Platform/Sienna). It contains three applications:
 
-  - [Sienna\Data](https://nrel-sienna.github.io/Sienna/pages/applications/sienna_data.html) enables
+  - [Sienna\Data](https://sienna-platform.github.io/Sienna/pages/applications/sienna_data.html) enables
     efficient data input, analysis, and transformation
-  - [Sienna\Ops](https://nrel-sienna.github.io/Sienna/pages/applications/sienna_ops.html) enables
+  - [Sienna\Ops](https://sienna-platform.github.io/Sienna/pages/applications/sienna_ops.html) enables
     enables system scheduling simulations by formulating and solving optimization problems
-  - [Sienna\Dyn](https://nrel-sienna.github.io/Sienna/pages/applications/sienna_dyn.html) enables
+  - [Sienna\Dyn](https://sienna-platform.github.io/Sienna/pages/applications/sienna_dyn.html) enables
     system transient analysis including small signal stability and full system dynamic
     simulations
 
@@ -38,10 +38,10 @@ programming language.
 
 ## Installation and Quick Links
 
-  - [Sienna installation page](https://nrel-sienna.github.io/Sienna/SiennaDocs/docs/build/how-to/install/):
+  - [Sienna installation page](https://sienna-platform.github.io/Sienna/SiennaDocs/docs/build/how-to/install/):
     Instructions to install `PowerSimulations.jl` and other Sienna\Ops packages
   - [`JuMP.jl` solver's page](https://jump.dev/JuMP.jl/stable/installation/#Install-a-solver): An appropriate optimization solver is required for running `PowerSimulations.jl` models. Refer to this page to select and install a solver for your application.
-  - [Sienna Documentation Hub](https://nrel-sienna.github.io/Sienna/SiennaDocs/docs/build/index.html):
+  - [Sienna Documentation Hub](https://sienna-platform.github.io/Sienna/SiennaDocs/docs/build/index.html):
     Links to other Sienna packages' documentation
 
 ## How To Use This Documentation

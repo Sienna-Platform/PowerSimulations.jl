@@ -28,7 +28,7 @@ using Dates
 #     and tutorials. Normally you would pass your local files to create the system data
 #     instead of calling the function `build_system`.
 #     For more details visit
-#     [PowerSystemCaseBuilder Documentation](https://nrel-sienna.github.io/PowerSystems.jl/stable/how_to/powersystembuilder/)
+#     [PowerSystemCaseBuilder Documentation](https://sienna-platform.github.io/PowerSystems.jl/stable/how_to/powersystembuilder/)
 
 sys = build_system(PSISystems, "modified_RTS_GMLC_DA_sys")
 
@@ -44,7 +44,7 @@ template_uc = ProblemTemplate()
 # that can be applied to different PowerSystems device types, each dispatching to different
 # methods for populating optimization problem objectives, variables, and constraints.
 # Documentation on the formulation options for various devices can be found in the
-# [formulation library docs](https://nrel-sienna.github.io/PowerSimulations.jl/latest/formulation_library/General/#formulation_library)
+# [formulation library docs](https://sienna-platform.github.io/PowerSimulations.jl/latest/formulation_library/General/#formulation_library)
 
 # ### Branch Formulations
 #
@@ -159,4 +159,4 @@ read_parameter(res, "ActivePowerTimeSeriesParameter__RenewableDispatch")
 # ## Plotting
 #
 # Take a look at the plotting capabilities in
-# [PowerGraphics.jl](https://nrel-sienna.github.io/PowerGraphics.jl/stable/)
+# [PowerGraphics.jl](https://sienna-platform.github.io/PowerGraphics.jl/stable/)
