@@ -121,7 +121,8 @@ function _post_contingency_outage_ids(
         if haskey(registered, uuid)
             push!(ids, uuid)
         else
-            @warn "Outage $(uuid) associated with $(V) is not registered on the MODF matrix; skipping its post-contingency constraints." maxlog=1
+            @warn "Outage $(uuid) associated with $(V) is not registered on the MODF matrix; skipping its post-contingency constraints." maxlog =
+                1
         end
     end
     sort!(ids)

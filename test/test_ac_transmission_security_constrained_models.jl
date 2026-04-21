@@ -323,7 +323,6 @@ end
             component_parallel = get_component(ACTransmission, sys, line_name * "_copy")
             add_supplemental_attribute!(sys, component_parallel, transition_data)
         end
-        @show ix
         template = get_thermal_dispatch_template_network(
             NetworkModel(
                 PTDFPowerModel;

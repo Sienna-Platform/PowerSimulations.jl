@@ -140,7 +140,7 @@ struct StaticBranchUnbounded <: AbstractBranchFormulation end
 abstract type AbstractSecurityConstrainedStaticBranch <: AbstractBranchFormulation end
 
 """
-Branch formulation to formulate N-1 contraints in ACTransmission Branches
+Branch formulation to formulate N-1 constraints in ACTransmission Branches
 """
 struct SecurityConstrainedStaticBranch <: AbstractSecurityConstrainedStaticBranch end
 
