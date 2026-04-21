@@ -64,6 +64,16 @@ function get_default_attributes(
 ) where {U <: PSY.ACTransmission, V <: AbstractBranchFormulation}
     return Dict{String, Any}()
 end
+
+function get_default_attributes(
+    ::Type{U},
+    ::Type{V},
+) where {U <: PSY.ACTransmission, V <: AbstractSecurityConstrainedStaticBranch}
+    return Dict{String, Any}(
+        "include_planned_outages" => false,
+        "contingency_uuids" => nothing,
+    )
+end
 #################################### Flow Variable Bounds ##################################################
 
 function add_variables!(

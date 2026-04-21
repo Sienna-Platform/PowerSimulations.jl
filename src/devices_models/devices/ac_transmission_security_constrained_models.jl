@@ -84,6 +84,51 @@ function get_emergency_min_max_limits(
 end
 
 """
+Outages on `sys` associated with branch type `V` that are also registered on
+`modf_matrix`. Two device-model attributes filter the set:
+
+- `"include_planned_outages"::Bool` (default `false`) — when `true`, both
+  `PSY.UnplannedOutage` and `PSY.PlannedOutage` subtypes are considered;
+  otherwise only `PSY.UnplannedOutage` (standard SCUC N-1).
+- `"contingency_uuids"::Union{Nothing, AbstractVector{Base.UUID}, AbstractSet{Base.UUID}}`
+  (default `nothing`) — when non-`nothing`, only outages whose UUID is in
+  the collection are modeled. UUIDs not found among associated/registered
+  outages are silently dropped.
+
+Returned UUIDs are sorted so expression and constraint containers have
+deterministic axes.
+"""
+function _post_contingency_outage_ids(
+    sys::PSY.System,
+    modf_matrix::PNM.VirtualMODF,
+    ::Type{V},
+    device_model::DeviceModel,
+) where {V <: PSY.ACTransmission}
+    include_planned = get_attribute(device_model, "include_planned_outages")
+    outage_type = include_planned === true ? PSY.Outage : PSY.UnplannedOutage
+
+    uuid_filter_raw = get_attribute(device_model, "contingency_uuids")
+    uuid_filter = uuid_filter_raw === nothing ? nothing : Set{Base.UUID}(uuid_filter_raw)
+
+    registered = PNM.get_registered_contingencies(modf_matrix)
+    associated = PSY.get_associated_supplemental_attributes(
+        sys, V; attribute_type = outage_type,
+    )
+    ids = Base.UUID[]
+    for outage in associated
+        uuid = IS.get_uuid(outage)
+        uuid_filter !== nothing && !(uuid in uuid_filter) && continue
+        if haskey(registered, uuid)
+            push!(ids, uuid)
+        else
+            @warn "Outage $(uuid) associated with $(V) is not registered on the MODF matrix; skipping its post-contingency constraints." maxlog=1
+        end
+    end
+    sort!(ids)
+    return ids
+end
+
+"""
 Add branch post-contingency rate limit constraints for ACBranch considering LODF and Security Constraints
 """
 function add_constraints!(
@@ -99,17 +144,14 @@ function add_constraints!(
     X <: AbstractPTDFModel,
 }
     time_steps = get_time_steps(container)
+    modf_matrix = get_MODF_matrix(network_model)
 
-    associated_outages = PSY.get_associated_supplemental_attributes(
-        sys,
-        V;
-        attribute_type = PSY.UnplannedOutage,
-    )
+    outage_ids = _post_contingency_outage_ids(sys, modf_matrix, V, device_model)
+    isempty(outage_ids) && return
 
     net_reduction_data = network_model.network_reduction
     all_branch_maps_by_type = PNM.get_all_branch_maps_by_type(net_reduction_data)
     reduced_branch_tracker = get_reduced_branch_tracker(network_model)
-
     modeled_branch_types = network_model.modeled_ac_branch_types
 
     branches_names = get_branch_argument_constraint_axis(
@@ -119,61 +161,36 @@ function add_constraints!(
         PostContingencyEmergencyFlowRateConstraint,
     )
 
-    con_lb =
-        add_constraints_container!(
-            container,
-            T(),
-            V,
-            string.(IS.get_uuid.(associated_outages)),
-            branches_names,
-            time_steps;
-            meta = "lb",
-        )
+    outage_id_strings = string.(outage_ids)
 
-    con_ub =
-        add_constraints_container!(
-            container,
-            T(),
-            V,
-            string.(IS.get_uuid.(associated_outages)),
-            branches_names,
-            time_steps;
-            meta = "ub",
-        )
+    con_lb = add_constraints_container!(
+        container, T(), V, outage_id_strings, branches_names, time_steps; meta = "lb",
+    )
+    con_ub = add_constraints_container!(
+        container, T(), V, outage_id_strings, branches_names, time_steps; meta = "ub",
+    )
 
     expressions = get_expression(container, PostContingencyBranchFlow(), V)
 
-    # Deactivating this since it does not seem that the industry or we have data for this
-    #param_keys = get_parameter_keys(container)
-    # param_key = ParameterKey(
-    #     PostContingencyDynamicBranchRatingTimeSeriesParameter,
-    #     typeof(branch),
-    # )
-    for outage in associated_outages
-        outage_id = string(IS.get_uuid(outage))
+    constraint_map =
+        get_constraint_map_by_type(reduced_branch_tracker)[PostContingencyEmergencyFlowRateConstraint]
+    jump_model = get_jump_model(container)
 
+    for outage_id in outage_id_strings
         for b_type in modeled_branch_types
-            if !haskey(
-                get_constraint_map_by_type(reduced_branch_tracker)[PostContingencyEmergencyFlowRateConstraint],
-                b_type,
-            )
-                continue
-            end
-            name_to_arc_map =
-                get_constraint_map_by_type(reduced_branch_tracker)[PostContingencyEmergencyFlowRateConstraint][b_type]
-            for (name, (arc, reduction)) in name_to_arc_map
+            haskey(constraint_map, b_type) || continue
+            for (name, (arc, reduction)) in constraint_map[b_type]
                 reduction_entry = all_branch_maps_by_type[reduction][b_type][arc]
-                limits =
-                    get_emergency_min_max_limits(reduction_entry, T, U)
+                limits = get_emergency_min_max_limits(reduction_entry, T, U)
                 for t in time_steps
-                    con_ub[outage_id, name, t] =
-                        JuMP.@constraint(get_jump_model(container),
-                            expressions[outage_id, name, t] <=
-                            limits.max)
-                    con_lb[outage_id, name, t] =
-                        JuMP.@constraint(get_jump_model(container),
-                            expressions[outage_id, name, t] >=
-                            limits.min)
+                    con_ub[outage_id, name, t] = JuMP.@constraint(
+                        jump_model,
+                        expressions[outage_id, name, t] <= limits.max,
+                    )
+                    con_lb[outage_id, name, t] = JuMP.@constraint(
+                        jump_model,
+                        expressions[outage_id, name, t] >= limits.min,
+                    )
                 end
             end
         end
@@ -183,11 +200,9 @@ end
 
 function _add_post_contingency_flow_expressions_for_outage!(
     expression_container::DenseAxisArray,
-    jump_model::JuMP.Model,
     time_steps::UnitRange{Int},
     modf_matrix::PNM.VirtualMODF,
     contingency_spec::PNM.ContingencySpec,
-    contingency_branch_type::Type{<:PSY.ACTransmission},
     nodal_balance_expressions::Matrix{JuMP.AffExpr},
     branch_type_data::Vector{
         Tuple{
@@ -202,13 +217,10 @@ function _add_post_contingency_flow_expressions_for_outage!(
 )
     outage_id = string(contingency_spec.uuid)
     for (b_type, name_to_arc_map) in branch_type_data
-        @debug "Adding post contingency flow expressions for branch type $b_type caused by contingencies associated with branch type $contingency_branch_type"
         tasks = map(collect(name_to_arc_map)) do pair
             (name, (arc, _)) = pair
-
-            modf_col = modf_matrix[arc, contingency_spec]
+            modf_col = modf_matrix[arc, contingency_spec]  # serial — mutates VirtualMODF scratch
             Threads.@spawn _make_flow_expressions!(
-                jump_model,
                 name,
                 time_steps,
                 modf_col,
@@ -221,7 +233,6 @@ function _add_post_contingency_flow_expressions_for_outage!(
             expression_container[outage_id, name, :] .= expressions
         end
     end
-
     return
 end
 
@@ -241,6 +252,9 @@ function add_post_contingency_flow_expressions!(
     modf_matrix = get_MODF_matrix(network_model)
     registered_contingencies = PNM.get_registered_contingencies(modf_matrix)
 
+    outage_ids = _post_contingency_outage_ids(sys, modf_matrix, V, model)
+    isempty(outage_ids) && return
+
     net_reduction_data = network_model.network_reduction
     reduced_branch_tracker = get_reduced_branch_tracker(network_model)
     modeled_branch_types = network_model.modeled_ac_branch_types
@@ -256,37 +270,30 @@ function add_post_contingency_flow_expressions!(
         container,
         T(),
         V,
-        string.(collect(keys(registered_contingencies))),
+        string.(outage_ids),
         branches_names,
         time_steps,
     )
 
-    jump_model = get_jump_model(container)
     post_contingency_constraint_map =
         get_constraint_map_by_type(reduced_branch_tracker)[PostContingencyEmergencyFlowRateConstraint]
     branch_type_data = [
-        (
-            b_type,
-            post_contingency_constraint_map[b_type],
-        ) for b_type in modeled_branch_types if
-        haskey(post_contingency_constraint_map, b_type)
+        (b_type, post_contingency_constraint_map[b_type])
+        for b_type in modeled_branch_types
+        if haskey(post_contingency_constraint_map, b_type)
     ]
 
-    for (outage_id, outage_spec) in registered_contingencies
-        nodal_balance_expressions = get_expression(
-            container,
-            ActivePowerBalance(),
-            PSY.ACBus,
-        )
+    nodal_balance_expressions =
+        get_expression(container, ActivePowerBalance(), PSY.ACBus).data
 
+    for uuid in outage_ids
+        outage_spec = registered_contingencies[uuid]
         _add_post_contingency_flow_expressions_for_outage!(
             expression_container,
-            jump_model,
             time_steps,
             modf_matrix,
             outage_spec,
-            V,
-            nodal_balance_expressions.data,
+            nodal_balance_expressions,
             branch_type_data,
         )
     end
@@ -371,17 +378,6 @@ function construct_device!(
     add_feedforward_constraints!(container, device_model, devices)
     objective_function!(container, devices, device_model, X)
     add_constraint_dual!(container, sys, device_model)
-
-    associated_outages = PSY.get_associated_supplemental_attributes(
-        sys,
-        V;
-        attribute_type = PSY.UnplannedOutage,
-    )
-
-    if isempty(associated_outages)
-        @info "No associated outage supplemental attributes found associated with devices: $V. Skipping contingency variable addition for that device type."
-        return
-    end
 
     add_post_contingency_flow_expressions!(
         container,
