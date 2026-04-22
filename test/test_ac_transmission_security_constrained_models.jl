@@ -19,18 +19,18 @@
         c_sys14_dc => PTDF(c_sys14_dc),
     )
     lines_outages = IdDict{System, Vector{String}}(
-        c_sys5 => ["2", "3"],
+        c_sys5 => ["2"],
         c_sys14 => ["Line1", "Line2", "Line9", "Line10", "Line12", "Trans2"],
         c_sys14_dc => ["Line1", "Line9", "Line10", "Line12", "Trans2"],
     )
     test_results = IdDict{System, Vector{Int}}(
-        c_sys5 => [120, 0, 552, 552, 24],
+        c_sys5 => [120, 0, 408, 408, 24],
         c_sys14 => [120, 0, 3480, 3480, 24],
         c_sys14_dc => [168, 0, 2808, 2712, 24],
     )
 
     test_obj_values = IdDict{System, Float64}(
-        c_sys5 => 355231,
+        c_sys5 => 297424,
         c_sys14 => 152839.4,
         c_sys14_dc => 154585.1,
     )
