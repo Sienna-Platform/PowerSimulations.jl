@@ -130,7 +130,7 @@ function _post_contingency_outage_ids(
 end
 
 """
-Add branch post-contingency rate limit constraints for ACBranch considering LODF and Security Constraints
+Add branch post-contingency rate limit constraints for ACBranch considering MODF and Security Constraints
 """
 function add_constraints!(
     container::OptimizationContainer,

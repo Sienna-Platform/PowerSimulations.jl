@@ -26,10 +26,11 @@ Establishes the NetworkModel for a given PowerModels formulation type.
     Adds slack buses to the network modeling.
 - `PTDF_matrix::Union{PNM.PowerNetworkMatrix, Nothing}` = nothing
     PTDF/VirtualPTDF matrix produced by PowerNetworkMatrices (optional).
-- `LODF_matrix::Union{PNM.PowerNetworkMatrix, Nothing}` = nothing
-    LODF/VirtualLODF matrix produced by PowerNetworkMatrices (optional).
 - `MODF_matrix::Union{PNM.VirtualMODF, Nothing}` = nothing
     VirtualMODF matrix for security-constrained models (N-k contingencies).
+    If `nothing` and the template includes a `SecurityConstrainedStaticBranch`
+    formulation, the matrix is constructed from the system during
+    `instantiate_network_model!` (same pattern as PTDF).
 - `reduce_radial_branches::Bool` = false
     Enable radial branch reduction when building network matrices.
 - `reduce_degree_two_branches::Bool` = false
@@ -45,7 +46,7 @@ Establishes the NetworkModel for a given PowerModels formulation type.
 # Notes
 - `modeled_ac_branch_types` and `reduced_branch_tracker` are internal fields managed by the model.
 - `subsystem` can be set after construction via `set_subsystem!(model, id)`.
-- PTDF/LODF inputs are validated against the requested reduction flags and may raise
+- PTDF inputs are validated against the requested reduction flags and may raise
   a ConflictingInputsError if they are inconsistent with `reduce_radial_branches`
   or `reduce_degree_two_branches`.
 
@@ -59,7 +60,6 @@ nw2 = NetworkModel(CopperPlatePowerModel; subnetworks = Dict(1 => Set([1,2,3])))
 mutable struct NetworkModel{T <: PM.AbstractPowerModel}
     use_slacks::Bool
     PTDF_matrix::Union{Nothing, PNM.PowerNetworkMatrix}
-    LODF_matrix::Union{Nothing, PNM.PowerNetworkMatrix}
     MODF_matrix::Union{Nothing, PNM.VirtualMODF}
     subnetworks::Dict{Int, Set{Int}}
     bus_area_map::Dict{PSY.ACBus, Int}
@@ -77,7 +77,6 @@ mutable struct NetworkModel{T <: PM.AbstractPowerModel}
         ::Type{T};
         use_slacks = false,
         PTDF_matrix = nothing,
-        LODF_matrix = nothing,
         MODF_matrix = nothing,
         reduce_radial_branches = false,
         reduce_degree_two_branches = false,
@@ -93,7 +92,6 @@ mutable struct NetworkModel{T <: PM.AbstractPowerModel}
         new{T}(
             use_slacks,
             PTDF_matrix,
-            LODF_matrix,
             MODF_matrix,
             subnetworks,
             Dict{PSY.ACBus, Int}(),
@@ -112,7 +110,6 @@ end
 
 get_use_slacks(m::NetworkModel) = m.use_slacks
 get_PTDF_matrix(m::NetworkModel) = m.PTDF_matrix
-get_LODF_matrix(m::NetworkModel) = m.LODF_matrix
 get_MODF_matrix(m::NetworkModel) = m.MODF_matrix
 get_reduce_radial_branches(m::NetworkModel) = m.reduce_radial_branches
 get_network_reduction(m::NetworkModel) = m.network_reduction
@@ -137,6 +134,32 @@ function add_dual!(model::NetworkModel, dual)
     push!(model.duals, dual)
     @debug "Added dual" dual _group = LOG_GROUP_NETWORK_CONSTRUCTION
     return
+end
+
+function _template_uses_security_constrained_branch(branch_models::BranchModelContainer)
+    for v in values(branch_models)
+        if get_formulation(v) <: AbstractSecurityConstrainedStaticBranch
+            return true
+        end
+    end
+    return false
+end
+
+function _build_network_reductions(
+    model::NetworkModel,
+    irreducible_buses::Vector{Int64},
+)
+    reductions = PNM.NetworkReduction[]
+    if model.reduce_radial_branches
+        push!(reductions, PNM.RadialReduction(; irreducible_buses = irreducible_buses))
+    end
+    if model.reduce_degree_two_branches
+        push!(
+            reductions,
+            PNM.DegreeTwoReduction(; irreducible_buses = irreducible_buses),
+        )
+    end
+    return reductions
 end
 
 function _get_filters(branch_models::BranchModelContainer)
@@ -375,6 +398,15 @@ function instantiate_network_model!(
     if length(model.subnetworks) > 1
         @debug "System Contains Multiple Subnetworks. Assigning buses to subnetworks."
         _assign_subnetworks_to_buses(model, sys)
+    end
+    if _template_uses_security_constrained_branch(branch_models) &&
+       get_MODF_matrix(model) === nothing
+        @info "No MODF Matrix provided. Calculating using PowerNetworkMatrices.VirtualMODF"
+        model.MODF_matrix = PNM.VirtualMODF(
+            sys;
+            tol = PTDF_ZERO_TOL,
+            network_reductions = _build_network_reductions(model, irreducible_buses),
+        )
     end
     PNM.populate_branch_maps_by_type!(model.network_reduction, _get_filters(branch_models))
     empty!(model.reduced_branch_tracker)
