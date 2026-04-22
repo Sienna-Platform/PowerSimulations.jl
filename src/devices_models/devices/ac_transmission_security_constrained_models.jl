@@ -218,19 +218,36 @@ function _add_post_contingency_flow_expressions_for_outage!(
 )
     outage_id = string(contingency_spec.uuid)
     for (b_type, name_to_arc_map) in branch_type_data
-        tasks = map(collect(name_to_arc_map)) do pair
-            (name, (arc, _)) = pair
-            modf_col = modf_matrix[arc, contingency_spec]  # serial — mutates VirtualMODF scratch
-            Threads.@spawn _make_flow_expressions!(
+        # NOTE: The parallel version below is commented out because VirtualMODF internally
+        # uses a KLU-backed lazy factorization whose scratch buffers are mutated on every
+        # solve. Concurrent access from multiple Threads.@spawn tasks causes non-thread-safe
+        # KLU state, which surfaces as EXCEPTION_ACCESS_VIOLATION on Windows and as
+        # ArgumentError("Invalid Status") elsewhere. Use the serial loop until VirtualMODF
+        # exposes a thread-safe API or columns are pre-materialised before spawning.
+        #
+        # tasks = map(collect(name_to_arc_map)) do pair
+        #     (name, (arc, _)) = pair
+        #     modf_col = modf_matrix[arc, contingency_spec]
+        #     Threads.@spawn _make_flow_expressions!(
+        #         name,
+        #         time_steps,
+        #         modf_col,
+        #         nodal_balance_expressions,
+        #     )
+        # end
+        # for task in tasks
+        #     name, expressions = fetch(task)
+        #     expression_container[outage_id, name, :] .= expressions
+        # end
+
+        for (name, (arc, _)) in name_to_arc_map
+            modf_col = modf_matrix[arc, contingency_spec]
+            _, expressions = _make_flow_expressions!(
                 name,
                 time_steps,
                 modf_col,
                 nodal_balance_expressions,
             )
-        end
-
-        for task in tasks
-            name, expressions = fetch(task)
             expression_container[outage_id, name, :] .= expressions
         end
     end
