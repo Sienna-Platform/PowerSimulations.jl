@@ -79,6 +79,46 @@
     end
 end
 
+@testset "Security Constrained branch formulation Network DC-PF with VirtualPTDF + auto-MODF" begin
+    # Guards against regressions on the threaded Woodbury code path: combining
+    # VirtualPTDF with MODF contingency solves has shown KLU-solver instability,
+    # so this testset keeps that combination exercised even if other testsets
+    # use a concrete PTDF.
+    c_sys5 = PSB.build_system(PSITestSystems, "c_sys5")
+    for line_name in ["1", "2", "3"]
+        transition_data = GeometricDistributionForcedOutage(;
+            mean_time_to_recovery = 10,
+            outage_transition_probability = 0.9999,
+        )
+        component = get_component(ACTransmission, c_sys5, line_name)
+        add_supplemental_attribute!(c_sys5, component, transition_data)
+    end
+    template = get_thermal_dispatch_template_network(
+        NetworkModel(
+            PTDFPowerModel;
+            PTDF_matrix = VirtualPTDF(c_sys5),
+            # MODF_matrix intentionally omitted — exercises auto-construction
+        ),
+    )
+    set_device_model!(template, Line, SecurityConstrainedStaticBranch)
+    set_device_model!(template, Transformer2W, SecurityConstrainedStaticBranch)
+    set_device_model!(template, TapTransformer, SecurityConstrainedStaticBranch)
+
+    ps_model = DecisionModel(template, c_sys5; optimizer = HiGHS_optimizer)
+    @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+
+    # MODF should have been auto-populated during build
+    nm = PSI.get_network_model(PSI.get_template(ps_model))
+    @test PSI.get_MODF_matrix(nm) !== nothing
+
+    constraint_keys = [
+        PSI.ConstraintKey(PostContingencyEmergencyFlowRateConstraint, PSY.Line, "lb"),
+        PSI.ConstraintKey(PostContingencyEmergencyFlowRateConstraint, PSY.Line, "ub"),
+    ]
+    psi_constraint_test(ps_model, constraint_keys)
+end
+
 @testset "Security Constrained branch formulation Network DC-PF with PTDF/MODF Model and parallel lines" begin
     template = get_thermal_dispatch_template_network(PTDFPowerModel)
     c_sys5 = PSB.build_system(PSITestSystems, "c_sys5")
@@ -361,6 +401,31 @@ end
         @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
               PSI.ModelBuildStatus.BUILT
         psi_constraint_test(ps_model, constraint_keys)
+
+        # Tracker-state assertions on c_sys5 only: every arc registered in a
+        # per-type submap must appear exactly once in the dedupe set, so that
+        # constraint containers cannot silently pick up duplicate arcs under
+        # a reduction.
+        if ix == 1
+            nm = PSI.get_network_model(PSI.get_template(ps_model))
+            tracker = PSI.get_reduced_branch_tracker(nm)
+            c_dict = PSI.get_constraint_dict(tracker)
+            c_map = PSI.get_constraint_map_by_type(tracker)
+            pcfr = PostContingencyEmergencyFlowRateConstraint
+            @test haskey(c_dict, pcfr)
+            @test haskey(c_map, pcfr)
+            post_arc_set = c_dict[pcfr]
+            post_type_map = c_map[pcfr]
+            for (_, submap) in post_type_map
+                for (_, (arc, _)) in submap
+                    @test arc in post_arc_set
+                end
+            end
+            @test haskey(post_type_map, PSY.Line)
+            @test !isempty(post_type_map[PSY.Line])
+            total_submap_entries = sum(length(v) for v in values(post_type_map))
+            @test total_submap_entries == length(post_arc_set)
+        end
 
         moi_tests(
             ps_model,
