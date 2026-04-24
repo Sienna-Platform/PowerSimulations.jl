@@ -47,6 +47,10 @@ get_variable_warm_start_value(::FlowActivePowerVariable, d::PSY.TModelHVDCLine, 
 get_variable_lower_bound(::FlowActivePowerVariable, d::PSY.TModelHVDCLine, ::AbstractBranchFormulation) = _get_flow_bounds(d)[1]
 get_variable_upper_bound(::FlowActivePowerVariable, d::PSY.TModelHVDCLine, ::AbstractBranchFormulation) = _get_flow_bounds(d)[2]
 
+get_parameter_multiplier(::FixValueParameter, ::PSY.DCBranch, ::AbstractBranchFormulation) = 1.0
+get_parameter_multiplier(::LowerBoundValueParameter, ::PSY.DCBranch, ::AbstractBranchFormulation) = 1.0
+get_parameter_multiplier(::UpperBoundValueParameter, ::PSY.DCBranch, ::AbstractBranchFormulation) = 1.0
+
 # This is an approximation for DC lines since the actual current limit depends on the voltage, that is a variable in the optimization problem
 function get_variable_lower_bound(::DCLineCurrent, d::PSY.TModelHVDCLine, ::AbstractBranchFormulation)
     p_min_flow = _get_flow_bounds(d)[1]
@@ -320,7 +324,35 @@ function add_to_expression!(
     V <: PSY.InterconnectingConverter,
     W <: AbstractConverterFormulation,
 }
-    error("AreaPTDFPowerModel doesn't support InterconnectingConverter")
+    variable = get_variable(container, U(), V)
+    expression_dc = get_expression(container, T(), PSY.DCBus)
+    expression_ac = get_expression(container, T(), PSY.ACBus)
+    area_expr = get_expression(container, T(), PSY.Area)
+    network_reduction = get_network_reduction(network_model)
+    for d in devices
+        name = PSY.get_name(d)
+        device_bus = PSY.get_bus(d)
+        area_name = PSY.get_name(PSY.get_area(device_bus))
+        bus_number_ac = PNM.get_mapped_bus_number(network_reduction, device_bus)
+        bus_number_dc = PSY.get_number(PSY.get_dc_bus(d))
+        for t in get_time_steps(container)
+            _add_to_jump_expression!(
+                area_expr[area_name, t],
+                variable[name, t],
+                get_variable_multiplier(U(), V, W()),
+            )
+            _add_to_jump_expression!(
+                expression_ac[bus_number_ac, t],
+                variable[name, t],
+                get_variable_multiplier(U(), V, W()),
+            )
+            _add_to_jump_expression!(
+                expression_dc[bus_number_dc, t],
+                variable[name, t],
+                -1.0,
+            )
+        end
+    end
     return
 end
 
