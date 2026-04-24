@@ -286,7 +286,7 @@ end
 Min and max limits for Abstract Branch Formulation
 """
 function get_min_max_limits(
-    double_circuit::PNM.BranchesParallel{<:PSY.ACTransmission},
+    double_circuit::PNM.BranchesParallel,
     constraint_type::Type{<:ConstraintType},
     branch_formulation::Type{<:AbstractBranchFormulation},
 ) #  -> Union{Nothing, NamedTuple{(:min, :max), Tuple{Float64, Float64}}}
