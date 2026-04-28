@@ -2,7 +2,7 @@
 #!nb # EditURL = "decision_problem.jl"
 #!nb # ```
 #!nb #
-# # Running a Simple-Step Problem
+# # Running a Single-Step Problem
 #
 # ## Introduction
 #
