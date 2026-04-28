@@ -304,20 +304,6 @@ function add_post_contingency_flow_expressions!(
     nodal_balance_expressions =
         get_expression(container, ActivePowerBalance(), PSY.ACBus).data
 
-    # Pre-materialize the VirtualMODF cache for every (arc, contingency) pair
-    # used below. VirtualMODF wraps a stateful KLU factorization whose
-    # `common.status` and scratch buffers are mutated on every solve and are
-    # not safe against concurrent activity (BLAS worker threads, GC finalizers,
-    # the compile server). Warming the cache here, single-threaded, ensures the
-    # subsequent expression-build loop only performs `Dict`/`RowCache` reads
-    # and never re-enters KLU — which removes the intermittent
-    # `ArgumentError("Invalid Status")` failures observed during `build!`.
-    _warm_virtualmodf_cache!(
-        modf_matrix,
-        outage_ids,
-        registered_contingencies,
-        branch_type_data,
-    )
 
     for uuid in outage_ids
         outage_spec = registered_contingencies[uuid]
@@ -333,43 +319,6 @@ function add_post_contingency_flow_expressions!(
     return
 end
 
-"""
-Touch every `(arc, contingency)` entry in `modf_matrix` once so that
-`VirtualMODF`'s `woodbury_cache` and per-contingency `row_caches` are populated
-before any constraint/expression construction reads from them. After warming,
-subsequent `modf_matrix[arc, ctg]` calls inside the expression-building loop
-hit the caches and do not invoke `KLU.solve!`.
-
-Done serially on a single task: the underlying KLU factorization is not
-re-entrant and shares mutable scratch buffers across calls.
-"""
-function _warm_virtualmodf_cache!(
-    modf_matrix::PNM.VirtualMODF,
-    outage_ids::AbstractVector{Base.UUID},
-    registered_contingencies::AbstractDict,
-    branch_type_data::Vector{
-        Tuple{
-            DataType,
-            SortedDict{
-                String,
-                Tuple{Tuple{Int64, Int64}, String},
-                Base.Order.ForwardOrdering,
-            },
-        },
-    },
-)
-    for uuid in outage_ids
-        contingency_spec = registered_contingencies[uuid]
-        for (_, name_to_arc_map) in branch_type_data
-            for (_, (arc, _)) in name_to_arc_map
-                # Discard the result; only the side effect of populating the
-                # VirtualMODF caches matters.
-                modf_matrix[arc, contingency_spec]
-            end
-        end
-    end
-    return
-end
 
 # For DC Power only
 function construct_device!(
