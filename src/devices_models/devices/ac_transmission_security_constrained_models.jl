@@ -217,29 +217,15 @@ function _add_post_contingency_flow_expressions_for_outage!(
     },
 )
     outage_id = string(contingency_spec.uuid)
-    for (b_type, name_to_arc_map) in branch_type_data
-        # NOTE: The parallel version below is commented out because VirtualMODF internally
-        # uses a KLU-backed lazy factorization whose scratch buffers are mutated on every
-        # solve. Concurrent access from multiple Threads.@spawn tasks causes non-thread-safe
-        # KLU state, which surfaces as EXCEPTION_ACCESS_VIOLATION on Windows and as
-        # ArgumentError("Invalid Status") elsewhere. Use the serial loop until VirtualMODF
-        # exposes a thread-safe API or columns are pre-materialised before spawning.
-        #
-        # tasks = map(collect(name_to_arc_map)) do pair
-        #     (name, (arc, _)) = pair
-        #     modf_col = modf_matrix[arc, contingency_spec]
-        #     Threads.@spawn _make_flow_expressions!(
-        #         name,
-        #         time_steps,
-        #         modf_col,
-        #         nodal_balance_expressions,
-        #     )
-        # end
-        # for task in tasks
-        #     name, expressions = fetch(task)
-        #     expression_container[outage_id, name, :] .= expressions
-        # end
-
+    # Concurrent calls into modf_matrix[arc, contingency_spec] across DIFFERENT
+    # outages are safe in PowerNetworkMatrices ≥ 0.21 thanks to the
+    # KLULinSolvePool + per-worker scratch + cache_lock in VirtualMODF. Each
+    # outage_id is therefore handled by its own Threads.@spawn task in
+    # add_post_contingency_flow_expressions!. The branch loop here stays serial:
+    # all branches for one outage share the same Woodbury solve and the
+    # subsequent per-branch work is dominated by JuMP AffExpr construction, so
+    # task-overhead from inner-level parallelism is not justified.
+    for (_, name_to_arc_map) in branch_type_data
         for (name, (arc, _)) in name_to_arc_map
             modf_col = modf_matrix[arc, contingency_spec]
             _, expressions = _make_flow_expressions!(
@@ -304,10 +290,9 @@ function add_post_contingency_flow_expressions!(
     nodal_balance_expressions =
         get_expression(container, ActivePowerBalance(), PSY.ACBus).data
 
-
-    for uuid in outage_ids
+    tasks = map(outage_ids) do uuid
         outage_spec = registered_contingencies[uuid]
-        _add_post_contingency_flow_expressions_for_outage!(
+        Threads.@spawn _add_post_contingency_flow_expressions_for_outage!(
             expression_container,
             time_steps,
             modf_matrix,
@@ -316,9 +301,9 @@ function add_post_contingency_flow_expressions!(
             branch_type_data,
         )
     end
+    foreach(wait, tasks)
     return
 end
-
 
 # For DC Power only
 function construct_device!(
