@@ -21,6 +21,40 @@
     end
 end
 
+@testset "DC Power Flow Models MonitoredLine Asymmetric Flow Limits" begin
+    system = PSB.build_system(PSITestSystems, "c_sys5_ml")
+    ml = PSY.get_component(MonitoredLine, system, "1")
+    rating = PSY.get_rating(ml)
+    # Set asymmetric flow limits where from_to < to_from (and both < rating)
+    asymmetric_limits = (from_to = rating * 0.5, to_from = rating * 0.8)
+    PSY.set_flow_limits!(ml, asymmetric_limits)
+    expected_limit = min(rating, asymmetric_limits.from_to, asymmetric_limits.to_from)
+    @test expected_limit == asymmetric_limits.from_to
+
+    # Directly verify get_min_max_limits returns the minimum of the two flow limits and rating
+    minmax = PSI.get_min_max_limits(ml, FlowRateConstraint, StaticBranch)
+    @test minmax.max ≈ expected_limit atol = 1e-6
+    @test minmax.min ≈ -expected_limit atol = 1e-6
+
+    for net_model in [DCPPowerModel, PTDFPowerModel]
+        template = get_thermal_dispatch_template_network(
+            NetworkModel(net_model; PTDF_matrix = PTDF(system)),
+        )
+        set_device_model!(template, DeviceModel(MonitoredLine, StaticBranch))
+        model_m = DecisionModel(template, system; optimizer = HiGHS_optimizer)
+        @test build!(model_m; output_dir = mktempdir(; cleanup = true)) ==
+              PSI.ModelBuildStatus.BUILT
+        @test solve!(model_m) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+        @test check_flow_variable_values(
+            model_m,
+            FlowActivePowerVariable,
+            MonitoredLine,
+            "1",
+            expected_limit,
+        )
+    end
+end
+
 @testset "AC Power Flow Monitored Line Flow Constraints" begin
     system = PSB.build_system(PSITestSystems, "c_sys5_ml")
     limits = PSY.get_flow_limits(PSY.get_component(MonitoredLine, system, "1"))
