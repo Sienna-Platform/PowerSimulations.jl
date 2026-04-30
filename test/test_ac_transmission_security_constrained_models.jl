@@ -468,3 +468,75 @@ end
     # the testset would be silently passing with zero structural assertions.
     @test n_checked >= 1
 end
+
+@testset "PTDFBranchFlow expressions match ptdf-derived ground truth" begin
+    # Validates that every JuMP.AffExpr in the PTDFBranchFlow expression
+    # container equals dot(ptdf_matrix[arc, :], nodal_balance[:, t]).
+    # Phase A moved the `ptdf[arc, :]` KLU solve INTO the spawned task at
+    # `AC_branches.jl:925`; this testset is the regression net for that
+    # change, analogous to the post-contingency MODF testset above.
+    c_sys14 = PSB.build_system(PSB.PSITestSystems, "c_sys14")
+
+    template = get_thermal_dispatch_template_network(
+        NetworkModel(
+            PTDFPowerModel;
+            PTDF_matrix = VirtualPTDF(c_sys14),
+        ),
+    )
+    set_device_model!(template, Line, StaticBranch)
+    set_device_model!(template, Transformer2W, StaticBranch)
+    set_device_model!(template, TapTransformer, StaticBranch)
+
+    ps_model = DecisionModel(template, c_sys14; optimizer = HiGHS_optimizer)
+    @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+
+    container = PSI.get_optimization_container(ps_model)
+    network_model = PSI.get_network_model(PSI.get_template(ps_model))
+    @test PSI.get_PTDF_matrix(network_model) isa PNM.VirtualPTDF
+
+    # Fresh VirtualPTDF for the ground-truth column. Independent
+    # KLULinSolvePool and row cache from the production matrix, so a
+    # build-time race that corrupted the production cache cannot pass the
+    # test by being read identically here.
+    ground_truth_ptdf = PNM.VirtualPTDF(c_sys14)
+
+    nodal_balance =
+        PSI.get_expression(container, PSI.ActivePowerBalance(), PSY.ACBus).data
+    time_steps = PSI.get_time_steps(container)
+
+    net_reduction_data = network_model.network_reduction
+    modeled_branch_types = network_model.modeled_ac_branch_types
+
+    # Iterate every (V, name, t) tuple in every modeled-branch PTDFBranchFlow
+    # container and assert structural equality to the PNM-derived ground truth.
+    n_checked = 0
+    for V in modeled_branch_types
+        PSI.has_container_key(container, PSI.PTDFBranchFlow, V) || continue
+        pbf = PSI.get_expression(container, PSI.PTDFBranchFlow(), V)
+        name_to_arc_map = collect(PNM.get_name_to_arc_map(net_reduction_data, V))
+        isempty(name_to_arc_map) && continue
+        n_checked += 1
+        for (name, (arc, _)) in name_to_arc_map
+            ptdf_col = ground_truth_ptdf[arc, :]
+            nz_idx =
+                [i for i in eachindex(ptdf_col) if abs(ptdf_col[i]) > PSI.PTDF_ZERO_TOL]
+            # Mirror `_make_flow_expressions!` (including
+            # `get_hinted_aff_expr`) so `JuMP.isequal_canonical` cannot
+            # diverge due to internal AffExpr capacity differences.
+            for t in time_steps
+                expected = PSI.get_hinted_aff_expr(length(nz_idx))
+                for i in nz_idx
+                    JuMP.add_to_expression!(
+                        expected,
+                        ptdf_col[i],
+                        nodal_balance[i, t],
+                    )
+                end
+                actual = pbf[name, t]
+                @test JuMP.isequal_canonical(actual, expected)
+            end
+        end
+    end
+    @test n_checked >= 1
+end
