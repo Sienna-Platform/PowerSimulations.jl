@@ -42,7 +42,6 @@ function construct_services!(
         )
     end
     for key in groupservices
-        println("setting the service ",key)
         construct_service!(
             container,
             sys,
@@ -85,7 +84,6 @@ function construct_services!(
         )
     end
     for key in groupservices
-        println("adding the service ",key)
         construct_service!(
             container,
             sys,
