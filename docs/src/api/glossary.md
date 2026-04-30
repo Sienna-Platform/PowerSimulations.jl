@@ -29,7 +29,7 @@ Changing the attributes between `true` or `false` can enable/disable multiple as
 
 ## D
 
-  - *Decision Problem*: A decision problem calculates the desired system operation based on forecasts of uncertain inputs and information about the state of the system. The output of a decision problem represents the policies used to drive the set-points of the system's devices, like generators or switches, and depends on the purpose of the problem. See the tutorial on [Running a Simple-Step Problem](@ref) to learn more about solving individual problems.
+  - *Decision Problem*: A decision problem calculates the desired system operation based on forecasts of uncertain inputs and information about the state of the system. The output of a decision problem represents the policies used to drive the set-points of the system's devices, like generators or switches, and depends on the purpose of the problem. See the tutorial on [Running a Single-Step Problem](@ref) to learn more about solving individual problems.
 
   - *Device Formulation*: The model of a device that is incorporated into a large system optimization models. For instance, the storage device model used inside of a Unit Commitment (UC) problem. A device model needs to follow some requirements to be integrated into operation problems. For more information about valid `DeviceModel`s and their mathematical representations, check out the [Formulation Library](@ref formulation_intro).
 
