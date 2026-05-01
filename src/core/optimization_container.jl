@@ -1797,7 +1797,7 @@ function calculate_aux_variables!(container::OptimizationContainer, system::PSY.
         # Power flow-related aux vars get calculated once per power flow
         for (i, pf_e_data) in enumerate(get_power_flow_evaluation_data(container))
             @debug "Processing power flow $i"
-            solve_power_flow!(pf_e_data, container)
+            solve_power_flow!(pf_e_data, container, system)
             for key in pf_aux_var_keys
                 calculate_aux_variable_value!(container, key, system)
             end

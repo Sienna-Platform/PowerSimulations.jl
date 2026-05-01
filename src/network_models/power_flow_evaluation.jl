@@ -575,6 +575,133 @@ function update_pf_data!(
     return
 end
 
+# ParameterKey → FixedOutput formulation; dispatch is externally determined,
+# should not participate in slack.
+_accumulate_headroom!(::PFS.PowerFlowData,
+    ::OptimizationContainer,
+    ::PSY.System,
+    ::OptimizationContainerKey{<:ParameterType, <:PSY.Component},
+    ::Dict{String, Int},
+    ::Int,
+    ::Matrix{PSY.ACBusTypes},
+    ::Float64,
+    ::Vector{Dict{Tuple{DataType, String}, Float64}},
+) = nothing
+
+"""
+Accumulate headroom for a single OptimizationContainerKey into `pf_data` and `computed_gspf`.
+Extracted as a function barrier so that Julia specializes on the concrete key type — the
+`where {U}` clause makes the component type a compile-time constant, giving type-stable
+`get_component`, `lookup_value`, and downstream PFS calls.
+"""
+function _accumulate_headroom!(
+    pf_data::PFS.PowerFlowData,
+    container::OptimizationContainer,
+    sys::PSY.System,
+    key::OptimizationContainerKey{<:ISOPT.OptimizationKeyType, U},
+    component_map::Dict{String, Int},
+    n_time_steps::Int,
+    bus_types::Matrix{PSY.ACBusTypes},
+    base_power::Float64,
+    computed_gspf::Vector{Dict{Tuple{DataType, String}, Float64}},
+) where {U <: PSY.Component}
+    result = lookup_value(container, key)
+
+    # Time-varying active power limits (e.g. renewable availability profiles)
+    ts_param_values =
+        if has_container_key(
+            container, ActivePowerTimeSeriesParameter, U)
+            ts_key = ParameterKey(ActivePowerTimeSeriesParameter, U)
+            lookup_value(container, ts_key)
+        else
+            nothing
+        end
+
+    for (device_name, bus_ix) in component_map
+        bus_types[bus_ix, 1] ∈ (PSY.ACBusTypes.REF, PSY.ACBusTypes.PV) || continue
+
+        comp = PSY.get_component(U, sys, device_name)
+        comp === nothing && continue
+        PFS.contributes_active_power(comp) || continue
+        PFS.active_power_contribution_type(comp) ==
+        PFS.PowerContributionType.INJECTION || continue
+
+        limits = PFS.get_active_power_limits_for_power_flow(comp)
+        p_max_static = limits.max * PSY.get_base_power(comp) / base_power
+
+        injection_values = result[device_name, :]
+        for t in 1:n_time_steps
+            p_setpoint = jump_value(injection_values[t])
+            p_max_t = p_max_static
+            if ts_param_values !== nothing &&
+               device_name ∈ axes(ts_param_values, 1)
+                p_max_t = min(p_max_t, jump_value(ts_param_values[device_name, t]))
+            end
+            headroom = p_max_t - p_setpoint
+            headroom <= 0.0 && continue
+
+            computed_gspf[t][(U, device_name)] = headroom
+            pf_data.bus_active_power_range[bus_ix, t] += headroom
+        end
+    end
+    return
+end
+
+"""
+Recompute per-time-step headroom-proportional generator slack participation factors using
+optimization results. Only runs if headroom proportional slack was enabled during
+initialization.
+
+For each generator at a REF or PV bus, headroom is `P_max(t) - P_setpoint(t)`, where
+`P_setpoint(t)` comes from the optimization result and `P_max(t)` is the minimum of the
+static device limit and any `ActivePowerTimeSeriesParameter` at time `t`. This overwrites the
+PF-initialized values (which were computed once from static system data) with time-varying
+factors.
+"""
+function _update_headroom_participation_factors!(
+    pf_data::PFS.PowerFlowData,
+    container::OptimizationContainer,
+    sys::PSY.System,
+    input_key_map::Dict{Symbol, <:Dict{OptimizationContainerKey, <:Dict}},
+)
+    PFS.get_distribute_slack_proportional_to_headroom(PFS.get_pf(pf_data)) || return
+    computed_gspf = PFS.get_computed_gspf(pf_data)
+
+    n_time_steps = length(get_time_steps(container))
+    bus_types = PFS.get_bus_type(pf_data)
+    base_power = get_base_power(container)
+    bus_slack_pf = PFS.get_bus_slack_participation_factors(pf_data)
+
+    # Reset with fresh dicts per time step (init may share references)
+    for t in 1:n_time_steps
+        computed_gspf[t] = Dict{Tuple{DataType, String}, Float64}()
+    end
+    pf_data.bus_active_power_range .= 0.0
+    bus_slack_pf.nzval .= 0.0
+
+    active_power_inputs = get(input_key_map, :active_power, nothing)
+    active_power_inputs === nothing && return
+
+    # PERF: function barrier — iterating over Dict{OptimizationContainerKey, …} yields
+    # abstract key types, so `lookup_value(container, key)` is a runtime dispatch and
+    # `result` gets an abstract type. By calling into a separate function, Julia compiles
+    # a specialization for each concrete key type, making the hot inner loop type-stable.
+    for (key, component_map) in active_power_inputs
+        _accumulate_headroom!(
+            pf_data, container, sys, key, component_map,
+            n_time_steps, bus_types, base_power, computed_gspf)
+    end
+
+    # Update bus-level slack participation factors with new headroom totals
+    for t in 1:n_time_steps
+        for bus_ix in axes(pf_data.bus_active_power_range, 1)
+            R_k = pf_data.bus_active_power_range[bus_ix, t]
+            R_k > 0.0 && (bus_slack_pf[bus_ix, t] = R_k)
+        end
+    end
+    return
+end
+
 "Fetch the most recently solved `PowerFlowEvaluationData`"
 function latest_solved_power_flow_evaluation_data(container::OptimizationContainer)
     datas = get_power_flow_evaluation_data(container)
@@ -583,10 +710,13 @@ end
 
 function solve_power_flow!(
     pf_e_data::PowerFlowEvaluationData,
-    container::OptimizationContainer)
+    container::OptimizationContainer,
+    sys::PSY.System)
     pf_data = get_power_flow_data(pf_e_data)
     if PFS.supports_multi_period(pf_data)
         update_pf_data!(pf_e_data, container)
+        _update_headroom_participation_factors!(
+            pf_data, container, sys, get_input_key_map(pf_e_data))
         PFS.solve_power_flow!(pf_data)
     else
         for t in get_time_steps(container)
