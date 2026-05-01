@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>- · PowerSimulations.jl</title><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.045/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.13.24/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="PowerSimulations.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">PowerSimulations.jl</a></span></div><form class="docs-search" action="../../search/"><input class="docs-search-query" id="documenter-search-query" name="q" type="text" placeholder="Search docs"/></form><ul class="docs-menu"><li><a class="tocitem" href="../../">Introduction</a></li><li><span class="tocitem">API</span><ul><li><a class="tocitem" href="../../api/PowerSimulations/">PowerSimulations</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>-</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>-</a></li></ul></nav><div class="docs-right"><a class="docs-edit-link" href="https://github.com/NREL-SIIP/PowerSimulations.jl/blob/master/docs/src/man/parallel_simulations_hpc.md" title="Edit on GitHub"><span class="docs-icon fab"></span><span class="docs-label is-hidden-touch">Edit on GitHub</span></a><a class="docs-settings-button fas fa-cog" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-sidebar-button fa fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a></div></header><article class="content" id="documenter-page"><h2 id="Run-a-Simulation-in-Parallel-on-an-HPC"><a class="docs-heading-anchor" href="#Run-a-Simulation-in-Parallel-on-an-HPC">Run a Simulation in Parallel on an HPC</a><a id="Run-a-Simulation-in-Parallel-on-an-HPC-1"></a><a class="docs-heading-anchor-permalink" href="#Run-a-Simulation-in-Parallel-on-an-HPC" title="Permalink"></a></h2><p>This page describes how to split a simulation into partitions, run each partition in parallel on HPC compute nodes, and then join the results.</p><p>These steps can be used on a local computer or any HPC supported by the submission software. Some steps may be specific to NREL&#39;s HPC <code>Eagle</code> cluster.</p><p><em>Note</em>: Some instructions are preliminary and will change if functionality is moved to a new Julia package.</p><h3 id="Setup"><a class="docs-heading-anchor" href="#Setup">Setup</a><a id="Setup-1"></a><a class="docs-heading-anchor-permalink" href="#Setup" title="Permalink"></a></h3><ol><li>Create a conda environment and install the Python package <code>NREL-jade</code>: https://nrel.github.io/jade/installation.html. The rest of this page assumes that the environment is called <code>jade</code>.</li><li>Activate the environment with <code>conda activate jade</code>.</li><li>Locate the path to that conda environment. It will likely be <code>~/.conda-envs/jade</code> or <code>~/.conda/envs/jade</code>.</li><li>Load the Julia environment that you use to run simulations. Add the packages <code>Conda</code> and <code>PyCall</code>.</li><li>Setup Conda to use the existing <code>jade</code> environment by running these commands:</li></ol><pre><code class="nohighlight hljs">julia&gt; run(`conda create -n conda_jl python conda`)
+julia&gt; ENV[&quot;CONDA_JL_HOME&quot;] = joinpath(ENV[&quot;HOME&quot;], &quot;.conda-envs&quot;, &quot;jade&quot;)  # change this to your path
+pkg&gt; build Conda</code></pre><ol><li>Copy the code below into a Julia file called <code>configure_parallel_simulation.jl</code>. This is an interface to Jade through PyCall. It will be used to create a Jade configuration. (It may eventually be moved to a separate package.)</li></ol><pre><code class="nohighlight hljs">function configure_parallel_simulation(
+    script::AbstractString,
+    num_steps::Integer,
+    num_period_steps::Integer;
+    num_overlap_steps::Integer=0,
+    project_path=nothing,
+    simulation_name=&quot;simulation&quot;,
+    config_file=&quot;config.json&quot;,
+    force=false,
+)
+    partitions = SimulationPartitions(num_steps, num_period_steps, num_overlap_steps)
+    jgc = pyimport(&quot;jade.extensions.generic_command&quot;)
+    julia_cmd = isnothing(project_path) ? &quot;julia&quot; : &quot;julia --project=$project_path&quot;
+    setup_command = &quot;$julia_cmd $script setup --simulation-name=$simulation_name &quot; *
+    &quot;--num-steps=$num_steps --num-period-steps=$num_period_steps &quot; *
+    &quot;--num-overlap-steps=$num_overlap_steps&quot;
+    teardown_command = &quot;$julia_cmd $script join --simulation-name=$simulation_name&quot;
+    config = jgc.GenericCommandConfiguration(
+        setup_command=setup_command,
+        teardown_command=teardown_command,
+    )
+
+    for i in 1:get_num_partitions(partitions)
+        cmd = &quot;$julia_cmd $script execute --simulation-name=$simulation_name --index=$i&quot;
+        job = jgc.GenericCommandParameters(command=cmd, name=&quot;execute-$i&quot;)
+        config.add_job(job)
+    end
+
+    config.dump(config_file, indent=2)
+    println(&quot;Created Jade configuration in $config_file. &quot; *
+            &quot;Run &#39;jade submit-jobs [options] $config_file&#39; to execute them.&quot;)
+end</code></pre><ol><li>Create a Julia script to build and run simulations. It must meet the requirements below. A full example is in the PowerSimulations repository in <code>test/run_partitioned_simulation.jl</code>.</li></ol><ul><li><p>Call <code>using PowerSimulations</code>.</p></li><li><p>Implement a build function that matches the signature below. It must construct a <code>Simulation</code>, call <code>build!</code>, and then return the <code>Simulation</code> instance. It must throw an exception if the build fails.</p></li></ul><pre><code class="nohighlight hljs">function build_simulation(
+    output_dir::AbstractString,
+    simulation_name::AbstractString,
+    partitions::SimulationPartitions,
+    index::Union{Nothing, Integer}=nothing,
+)</code></pre><p>Here is example code to construct the <code>Simulation</code> with these parameters:</p><pre><code class="nohighlight hljs">    sim = Simulation(
+        name=simulation_name,
+        steps=partitions.num_steps,
+        models=models,
+        sequence=sequence,
+        simulation_folder=output_dir,
+    )
+    status = build!(sim; partitions=partitions, index=index, serialize=isnothing(index))
+    if status != PSI.BuildStatus.BUILT
+        error(&quot;Failed to build simulation: status=$status&quot;)
+    end</code></pre><ul><li>Implement an execute function that matches the signature below. It must throw an exception if the execute fails.</li></ul><pre><code class="nohighlight hljs">function execute_simulation(sim, args...; kwargs...)
+    status = execute!(sim)
+    if status != PSI.RunStatus.SUCCESSFUL
+        error(&quot;Simulation failed to execute: status=$status&quot;)
+    end
+end</code></pre><ul><li>Make the script runnable as a CLI command by including the following code at the bottom of the</li></ul><p>file.</p><pre><code class="nohighlight hljs">function main()
+    process_simulation_partition_cli_args(build_simulation, execute_simulation, ARGS...)
+end
+
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end</code></pre><h3 id="Execution"><a class="docs-heading-anchor" href="#Execution">Execution</a><a id="Execution-1"></a><a class="docs-heading-anchor-permalink" href="#Execution" title="Permalink"></a></h3><ol><li><p>Create a Jade configuration that defines the partitioned simulation jobs. Load your Julia environment.</p><p>This example splits a year-long simulation into weekly partitions for a total of 53 individual jobs.</p></li></ol><pre><code class="nohighlight hljs">julia&gt; include(&quot;configure_parallel_simulation.jl&quot;)
+julia&gt; num_steps = 365
+julia&gt; period = 7
+julia&gt; num_overlap_steps = 1
+julia&gt; configure_parallel_simulation(
+    &quot;my_simulation.jl&quot;,  # this is your build/execute script
+    num_steps,
+    period,
+    num_overlap_steps=1,
+    project_path=&quot;.&quot;,  # This optionally specifies the Julia project environment to load.
+)
+Created Jade configuration in config.json. Run &#39;jade submit-jobs [options] config.json&#39; to execute them.</code></pre><p>Exit Julia.</p><ol><li>View the configuration for accuracy.</li></ol><pre><code class="nohighlight hljs">$ jade config show config.json</code></pre><ol><li>Start an interactive session on a debug node. <em>Do not submit the jobs on a login node!</em> The submission step will run a full build of the simulation and that may consume too many CPU and memory resources for the login node.</li></ol><pre><code class="nohighlight hljs">$ salloc -t 01:00:00 -N1 --account=&lt;your-account&gt; --partition=debug</code></pre><ol><li><p>Follow the instructions at https://nrel.github.io/jade/tutorial.html to submit the jobs. The example below will configure Jade to run each partition on its own compute node. Depending on the compute and memory constraints of your simulation, you may be able to pack more jobs on each node.</p><p>Adjust the walltime as necessary.</p></li></ol><pre><code class="nohighlight hljs">$ jade config hpc -c hpc_config.toml -t slurm  --walltime=04:00:00 -a &lt;your-account&gt;
+$ jade submit-jobs config.json --per-node-batch-size=1 -o output</code></pre><p>If you are unsure about how much memory and CPU resources your simulation consumes, add these options:</p><pre><code class="nohighlight hljs">$ jade submit-jobs config.json --per-node-batch-size=1 -o output --resource-monitor-type periodic --resource-monitor-interval 3</code></pre><p>Jade will create HTML plots of the resource utilization in <code>output/stats</code>. You may be able to customize <code>--per-node-batch-size</code> and <code>--num-processes</code> to finish the simulations more quickly.</p><ol><li>Jade will run a final command to join the simulation partitions into one unified file. You can load the results as you normally would.</li></ol><pre><code class="nohighlight hljs">julia&gt; results = SimulationResults(&quot;&lt;output-dir&gt;/job-outputs/&lt;simulation-name&gt;&quot;)</code></pre><p>Note the log files and results for each partition are located in <code>&lt;output-dir&gt;/job-outputs/&lt;simulation-name&gt;/simulation_partitions</code></p></article><nav class="docs-footer"><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.23 on <span class="colophon-date" title="Friday 2 September 2022 06:28">Friday 2 September 2022</span>. Using Julia version 1.8.0.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

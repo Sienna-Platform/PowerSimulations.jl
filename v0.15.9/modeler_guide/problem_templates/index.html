@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Operations ProblemTemplates · PowerSimulations.jl</title><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.045/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.13.24/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="PowerSimulations.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">PowerSimulations.jl</a></span></div><form class="docs-search" action="../../search/"><input class="docs-search-query" id="documenter-search-query" name="q" type="text" placeholder="Search docs"/></form><ul class="docs-menu"><li><a class="tocitem" href="../../">Welcome Page</a></li><li><a class="tocitem" href="../../quick_start_guide/">Quick Start Guide</a></li><li><span class="tocitem">Modeler Guide</span><ul><li><a class="tocitem" href="../definitions/">Definitions</a></li><li><a class="tocitem" href="../psi_structure/">PowerSimulations.jl Modeling Structure</a></li><li class="is-active"><a class="tocitem" href>Operations <code>ProblemTemplate</code>s</a><ul class="internal"><li><a class="tocitem" href="#Building-a-ProblemTemplate"><span>Building a <code>ProblemTemplate</code></span></a></li><li><a class="tocitem" href="#Default-Templates"><span>Default Templates</span></a></li></ul></li><li><a class="tocitem" href="../running_a_simulation/">Simulation</a></li><li><a class="tocitem" href="../simulation_recorder/">Simulation Recorder</a></li><li><a class="tocitem" href="../logging/">Logging</a></li><li><a class="tocitem" href="../tips_and_tricks/">Tips and tricks</a></li><li><a class="tocitem" href="../debugging_infeasible_models/">Debugging infeasible models</a></li><li><a class="tocitem" href="../parallel_simulations/">Parallel Simulations</a></li><li><a class="tocitem" href="../modeling_faq/">Modeling FAQ</a></li></ul></li><li><span class="tocitem">Model Developer Guide</span><ul><li><a class="tocitem" href="../../model_developer_guide/adding_new_device_formulation/">Adding Formulations</a></li><li><a class="tocitem" href="../../model_developer_guide/adding_new_problem_model/">Adding Problems</a></li><li><a class="tocitem" href="../../model_developer_guide/troubleshooting/">Troubleshooting</a></li></ul></li><li><span class="tocitem">Code Base Developer Guide</span><ul><li><a class="tocitem" href="../../code_base_developer_guide/developer/">Developer Guide</a></li><li><a class="tocitem" href="../../code_base_developer_guide/troubleshooting/">Troubleshooting</a></li></ul></li><li><span class="tocitem">Formulation Library</span><ul><li><a class="tocitem" href="../../formulation_library/General/">General</a></li><li><a class="tocitem" href="../../formulation_library/ThermalGen/">Thermal Generation</a></li><li><a class="tocitem" href="../../formulation_library/HydroGen/">Hydro Generation</a></li><li><a class="tocitem" href="../../formulation_library/RenewableGen/">Renewable Generation</a></li><li><a class="tocitem" href="../../formulation_library/Storage/">Storage</a></li><li><a class="tocitem" href="../../formulation_library/HybridSystem/">Hybrid System</a></li><li><a class="tocitem" href="../../formulation_library/Load/">Load</a></li><li><a class="tocitem" href="../../formulation_library/Network/">Network</a></li><li><a class="tocitem" href="../../formulation_library/Branch/">Branch</a></li></ul></li><li><a class="tocitem" href="../../api/PowerSimulations/">API Reference</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Modeler Guide</a></li><li class="is-active"><a href>Operations <code>ProblemTemplate</code>s</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Operations <code>ProblemTemplate</code>s</a></li></ul></nav><div class="docs-right"><a class="docs-edit-link" href="https://github.com/NREL-SIIP/PowerSimulations.jl/blob/master/docs/src/modeler_guide/problem_templates.md" title="Edit on GitHub"><span class="docs-icon fab"></span><span class="docs-label is-hidden-touch">Edit on GitHub</span></a><a class="docs-settings-button fas fa-cog" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-sidebar-button fa fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a></div></header><article class="content" id="documenter-page"><h1 id="op_problem_template"><a class="docs-heading-anchor" href="#op_problem_template">Operations <a href="../../api/PowerSimulations/#PowerSimulations.ProblemTemplate"><code>ProblemTemplate</code></a>s</a><a id="op_problem_template-1"></a><a class="docs-heading-anchor-permalink" href="#op_problem_template" title="Permalink"></a></h1><p>Templates are used to specify the modeling properties of the devices and network that are going to he used to specify a problem. A <code>ProblemTemplate</code> is just a collection of <code>DeviceModel</code>s that allows the user to specify the formulations of each set of devices (by device type) independently so that the modeler can adjust the level of detail according to the question of interest and the available data. For more information about valid <code>DeviceModel</code>s and their mathematical representations, check out the <a href="../../formulation_library/General/#formulation_library">Formulation Library</a>.</p><h2 id="Building-a-ProblemTemplate"><a class="docs-heading-anchor" href="#Building-a-ProblemTemplate">Building a <code>ProblemTemplate</code></a><a id="Building-a-ProblemTemplate-1"></a><a class="docs-heading-anchor-permalink" href="#Building-a-ProblemTemplate" title="Permalink"></a></h2><p>You can build a <code>ProblemTemplate</code> by adding a <code>NetworkModel</code>, <code>DeviceModel</code>s, and <code>ServiceModels</code>.</p><pre><code class="language-julia hljs">template = ProblemTemplate()
+set_network_model!(template, NetworkModel(CopperPlatePowerModel))
+set_device_model!(template, PowerLoad, StaticPowerLoad)
+set_device_model!(template, ThermalStandard, ThermalBasicUnitCommitment)
+set_service_model!(template, VariableReserve{ReserveUp}, RangeReserve)</code></pre><h2 id="Default-Templates"><a class="docs-heading-anchor" href="#Default-Templates">Default Templates</a><a id="Default-Templates-1"></a><a class="docs-heading-anchor-permalink" href="#Default-Templates" title="Permalink"></a></h2><p><code>PowerSimulations.jl</code> provides default templates for common operation problems. You can retrieve a default template and modify it according to your requirements. Currently supported default templates are:</p><p><a href="../../api/PowerSimulations/#PowerSimulations.template_economic_dispatch-Tuple{}"><code>template_economic_dispatch</code></a></p><pre><code class="language-julia hljs">template_economic_dispatch()</code></pre><table>
+  <caption style = "text-align: left;">Network Model</caption>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">Network Model</td>
+      <td style = "text-align: left;">CopperPlatePowerModel</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Slacks</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">PTDF</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Duals</td>
+      <td style = "text-align: left;">None</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">Device Models</caption>
+  <thead>
+    <tr class = "header headerLastRow">
+      <th style = "text-align: left;">Device Type</th>
+      <th style = "text-align: left;">Formulation</th>
+      <th style = "text-align: left;">Slacks</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">ThermalStandard</td>
+      <td style = "text-align: left;">ThermalBasicDispatch</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">HydroDispatch</td>
+      <td style = "text-align: left;">HydroDispatchRunOfRiver</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">PowerLoad</td>
+      <td style = "text-align: left;">StaticPowerLoad</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableFix</td>
+      <td style = "text-align: left;">FixedOutput</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableDispatch</td>
+      <td style = "text-align: left;">RenewableFullDispatch</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">HydroEnergyReservoir</td>
+      <td style = "text-align: left;">HydroDispatchRunOfRiver</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">InterruptibleLoad</td>
+      <td style = "text-align: left;">InterruptiblePowerLoad</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">Branch Models</caption>
+  <thead>
+    <tr class = "header headerLastRow">
+      <th style = "text-align: left;">Branch Type</th>
+      <th style = "text-align: left;">Formulation</th>
+      <th style = "text-align: left;">Slacks</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">Line</td>
+      <td style = "text-align: left;">StaticBranch</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">TapTransformer</td>
+      <td style = "text-align: left;">StaticBranch</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Transformer2W</td>
+      <td style = "text-align: left;">StaticBranch</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">HVDCLine</td>
+      <td style = "text-align: left;">HVDCDispatch</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">Service Models</caption>
+  <thead>
+    <tr class = "header headerLastRow">
+      <th style = "text-align: left;">Service Type</th>
+      <th style = "text-align: left;">Formulation</th>
+      <th style = "text-align: left;">Slacks</th>
+      <th style = "text-align: left;">Aggregated Model</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">VariableReserve{ReserveUp}</td>
+      <td style = "text-align: left;">RangeReserve</td>
+      <td style = "text-align: left;">false</td>
+      <td style = "text-align: left;">true</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">VariableReserve{ReserveDown}</td>
+      <td style = "text-align: left;">RangeReserve</td>
+      <td style = "text-align: left;">false</td>
+      <td style = "text-align: left;">true</td>
+    </tr>
+  </tbody>
+</table>
+<p><a href="../../api/PowerSimulations/#PowerSimulations.template_unit_commitment-Tuple{}"><code>template_unit_commitment</code></a></p><pre><code class="language-julia hljs">template_unit_commitment()</code></pre><table>
+  <caption style = "text-align: left;">Network Model</caption>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">Network Model</td>
+      <td style = "text-align: left;">CopperPlatePowerModel</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Slacks</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">PTDF</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Duals</td>
+      <td style = "text-align: left;">None</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">Device Models</caption>
+  <thead>
+    <tr class = "header headerLastRow">
+      <th style = "text-align: left;">Device Type</th>
+      <th style = "text-align: left;">Formulation</th>
+      <th style = "text-align: left;">Slacks</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">ThermalStandard</td>
+      <td style = "text-align: left;">ThermalBasicUnitCommitment</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">HydroDispatch</td>
+      <td style = "text-align: left;">HydroDispatchRunOfRiver</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">PowerLoad</td>
+      <td style = "text-align: left;">StaticPowerLoad</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableFix</td>
+      <td style = "text-align: left;">FixedOutput</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableDispatch</td>
+      <td style = "text-align: left;">RenewableFullDispatch</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">HydroEnergyReservoir</td>
+      <td style = "text-align: left;">HydroDispatchRunOfRiver</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">InterruptibleLoad</td>
+      <td style = "text-align: left;">InterruptiblePowerLoad</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">Branch Models</caption>
+  <thead>
+    <tr class = "header headerLastRow">
+      <th style = "text-align: left;">Branch Type</th>
+      <th style = "text-align: left;">Formulation</th>
+      <th style = "text-align: left;">Slacks</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">Line</td>
+      <td style = "text-align: left;">StaticBranch</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">TapTransformer</td>
+      <td style = "text-align: left;">StaticBranch</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Transformer2W</td>
+      <td style = "text-align: left;">StaticBranch</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">HVDCLine</td>
+      <td style = "text-align: left;">HVDCDispatch</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">Service Models</caption>
+  <thead>
+    <tr class = "header headerLastRow">
+      <th style = "text-align: left;">Service Type</th>
+      <th style = "text-align: left;">Formulation</th>
+      <th style = "text-align: left;">Slacks</th>
+      <th style = "text-align: left;">Aggregated Model</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">VariableReserve{ReserveUp}</td>
+      <td style = "text-align: left;">RangeReserve</td>
+      <td style = "text-align: left;">false</td>
+      <td style = "text-align: left;">true</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">VariableReserve{ReserveDown}</td>
+      <td style = "text-align: left;">RangeReserve</td>
+      <td style = "text-align: left;">false</td>
+      <td style = "text-align: left;">true</td>
+    </tr>
+  </tbody>
+</table>
+<p><a href="../../api/PowerSimulations/#PowerSimulations.template_agc_reserve_deployment-Tuple{}"><code>template_agc_reserve_deployment</code></a></p><pre><code class="language-julia hljs">template_agc_reserve_deployment()</code></pre><table>
+  <caption style = "text-align: left;">Network Model</caption>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">Network Model</td>
+      <td style = "text-align: left;">AreaBalancePowerModel</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Slacks</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">PTDF</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Duals</td>
+      <td style = "text-align: left;">None</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">Device Models</caption>
+  <thead>
+    <tr class = "header headerLastRow">
+      <th style = "text-align: left;">Device Type</th>
+      <th style = "text-align: left;">Formulation</th>
+      <th style = "text-align: left;">Slacks</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">RegulationDevice{HydroDispatch}</td>
+      <td style = "text-align: left;">ReserveLimitedRegulation</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ThermalStandard</td>
+      <td style = "text-align: left;">FixedOutput</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">PowerLoad</td>
+      <td style = "text-align: left;">StaticPowerLoad</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">HydroDispatch</td>
+      <td style = "text-align: left;">FixedOutput</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableFix</td>
+      <td style = "text-align: left;">FixedOutput</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableDispatch</td>
+      <td style = "text-align: left;">FixedOutput</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RegulationDevice{HydroEnergyReservoir}</td>
+      <td style = "text-align: left;">ReserveLimitedRegulation</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RegulationDevice{ThermalStandard}</td>
+      <td style = "text-align: left;">DeviceLimitedRegulation</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">HydroEnergyReservoir</td>
+      <td style = "text-align: left;">FixedOutput</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">Service Models</caption>
+  <thead>
+    <tr class = "header headerLastRow">
+      <th style = "text-align: left;">Service Type</th>
+      <th style = "text-align: left;">Formulation</th>
+      <th style = "text-align: left;">Slacks</th>
+      <th style = "text-align: left;">Aggregated Model</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">AGC</td>
+      <td style = "text-align: left;">PIDSmoothACE</td>
+      <td style = "text-align: left;">false</td>
+      <td style = "text-align: left;">true</td>
+    </tr>
+  </tbody>
+</table>
+</article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../psi_structure/">« PowerSimulations.jl Modeling Structure</a><a class="docs-footer-nextpage" href="../running_a_simulation/">Simulation »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.23 on <span class="colophon-date" title="Wednesday 9 November 2022 18:52">Wednesday 9 November 2022</span>. Using Julia version 1.8.2.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
