@@ -190,6 +190,9 @@ function get_parameter_values(
 end
 
 get_parameter_array(c::ParameterContainer) = c.parameter_array
+# Underlying dense storage of the parameter array. `parent` on a JuMP `DenseAxisArray`
+# returns the array itself, so reach for `.data` directly to bypass the axis-keyed lookup.
+get_parameter_array_data(c::ParameterContainer) = get_parameter_array(c).data
 get_multiplier_array(c::ParameterContainer) = c.multiplier_array
 get_attributes(c::ParameterContainer) = c.attributes
 Base.length(c::ParameterContainer) = length(c.parameter_array)
@@ -255,6 +258,77 @@ function set_parameter!(
     ixs...,
 )
     assign_maybe_broadcast!(get_parameter_array(container), parameter, ixs)
+    return
+end
+
+# Fast-path setters that skip DenseAxisArray's string-keyed axis lookup. Callers pass
+# `get_parameter_array_data(container)` once, then write into the underlying Array
+# by integer indices. The (i, t) layout matches the canonical (component, time) axis
+# order produced by `add_param_container!`.
+#
+# 2D scalar path: covers Float64 and Tuple{Vararg{Float64}} eltypes (the latter is
+# used by piecewise-cost MarketBid parameters whose storage is a Matrix of tuples).
+@inline function _set_parameter_at!(
+    parent_param::Array{T, 2},
+    ::JuMP.Model,
+    value::T,
+    i::Int,
+    t::Int,
+) where {T <: ValidDataParamEltypes}
+    @inbounds parent_param[i, t] = value
+    return
+end
+
+# 2D recurrent-rebuild paths: param storage is `Array{JuMP.VariableRef, 2}`. Either we
+# need a fresh JuMP parameter (Float64 input) or we reuse one created by an earlier
+# parallel branch type (VariableRef input).
+@inline function _set_parameter_at!(
+    parent_param::Array{JuMP.VariableRef, 2},
+    jump_model::JuMP.Model,
+    value::Float64,
+    i::Int,
+    t::Int,
+)
+    @inbounds parent_param[i, t] = add_jump_parameter(jump_model, value)
+    return
+end
+
+@inline function _set_parameter_at!(
+    parent_param::Array{JuMP.VariableRef, 2},
+    ::JuMP.Model,
+    parameter::JuMP.VariableRef,
+    i::Int,
+    t::Int,
+)
+    @inbounds parent_param[i, t] = parameter
+    return
+end
+
+# 3D fast paths (parameter container with a middle additional axis, e.g. piecewise
+# tranches). The supplied `value` is a length-(size(parent_param, 2)) vector that fills
+# the middle axis at position (i, :, t). Eltype constrained to `ValidDataParamEltypes`
+# so tuples-of-floats are also accepted (piecewise breakpoint storage).
+@inline function _set_parameter_at!(
+    parent_param::Array{T, 3},
+    ::JuMP.Model,
+    value::AbstractVector,
+    i::Int,
+    t::Int,
+) where {T <: ValidDataParamEltypes}
+    @inbounds @views parent_param[i, :, t] .= value
+    return
+end
+
+@inline function _set_parameter_at!(
+    parent_param::Array{JuMP.VariableRef, 3},
+    jump_model::JuMP.Model,
+    value::AbstractVector{Float64},
+    i::Int,
+    t::Int,
+)
+    @inbounds for k in 1:size(parent_param, 2)
+        parent_param[i, k, t] = add_jump_parameter(jump_model, value[k])
+    end
     return
 end
 

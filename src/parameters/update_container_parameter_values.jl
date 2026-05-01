@@ -17,6 +17,16 @@ function _set_param_value!(
 end
 
 function _set_param_value!(
+    param::DenseAxisArray{T, 2},
+    value::T,
+    name::String,
+    t::Int,
+) where {T <: ValidDataParamEltypes}
+    param[name, t] = value
+    return
+end
+
+function _set_param_value!(
     param::DenseAxisArray{T},
     value::Union{T, AbstractVector{T}},
     name::String,
