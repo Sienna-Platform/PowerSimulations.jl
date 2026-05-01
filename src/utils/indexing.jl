@@ -1,47 +1,59 @@
-# If `ixs` does not index all dimensions of `dest`, add a `:` for the rest (like Python's
-# `...`) to prepare for broadcast-assigning.
-function expand_ixs(ixs::NTuple{1, T}, dest) where {T}
-    if length(ixs) <= ndims(dest)
-        return (ixs[1], fill(:, ndims(dest) - 1)...)
-    else
-        throw(ArgumentError("`ixs` must not index more dimensions than `dest` has"))
-    end
+# Pad `ixs` with `:` for any unindexed middle dimensions of `dest` (Python `...`-style).
+# Fast path for AbstractArrays where `N` is known at compile time → allocation-free `Val(N - K)`.
+@inline function expand_ixs(
+    ixs::NTuple{K, Any},
+    dest::AbstractArray{<:Any, N},
+) where {K, N}
+    K <= N || throw(ArgumentError("`ixs` must not index more dimensions than `dest` has"))
+    K == N && return ixs
+    # Single-element ixs is the leading axis; multi-element preserves first..last with `:` filling the middle.
+    K == 1 && return (only(ixs), ntuple(_ -> Colon(), Val(N - 1))...)
+    return (Base.front(ixs)..., ntuple(_ -> Colon(), Val(N - K))..., last(ixs))
 end
 
-function expand_ixs(ixs::Tuple{T, U}, dest) where {T, U}
-    if length(ixs) <= ndims(dest)
-        return (ixs[1], fill(:, ndims(dest) - 2)..., ixs[end])
-    else
-        throw(ArgumentError("`ixs` must not index more dimensions than `dest` has"))
-    end
+# Fallback for non-AbstractArray containers (e.g. `HDF5.Dataset`) — `ndims` resolved at runtime.
+@inline function expand_ixs(ixs::NTuple{K, Any}, dest) where {K}
+    N = ndims(dest)
+    K <= N || throw(ArgumentError("`ixs` must not index more dimensions than `dest` has"))
+    K == N && return ixs
+    K == 1 && return (only(ixs), ntuple(_ -> Colon(), N - 1)...)
+    return (Base.front(ixs)..., ntuple(_ -> Colon(), N - K)..., last(ixs))
 end
 
-function expand_ixs(ixs::Tuple, dest)
-    if length(ixs) <= ndims(dest)
-        return (ixs[1:(end - 1)]..., fill(:, ndims(dest) - length(ixs))..., ixs[end])
-    else
-        throw(ArgumentError("`ixs` must not index more dimensions than `dest` has"))
-    end
-end
-
-# If `src` is an array, we want to set a slice of `dest` equal to `src`. Broadcast
-# assignment from integer-indexed `src` to DenseAxisArray `dest` slice of same shape doesn't
-# work when `dest`'s axes being broadcast across aren't 1:n, but standard assignment does
-# the trick in that case and (PERF) seems to not appreciably affect simulation performance
-function assign_maybe_broadcast!(dest, src::AbstractArray, ixs::Tuple)
-    expanded_axs = expand_ixs(ixs, dest)
-    dest[expanded_axs...] = src
+# Concrete fast path: scalar `src` with a fully-specified index tuple goes through `setindex!`.
+@inline function assign_maybe_broadcast!(
+    dest::DenseAxisArray{T, N},
+    src::T,
+    ixs::NTuple{N, Any},
+) where {T, N}
+    dest[ixs...] = src
     return
 end
 
-# If `src` is a tuple or scalar, we want to set all values across a slice of `dest` equal to `src`
-function assign_maybe_broadcast!(dest, src, ixs::Tuple)
-    expanded_axs = expand_ixs(ixs, dest)
-    dest[expanded_axs...] .= Ref(src)
+# Array `src`: assign a slice of `dest` from `src` (standard assignment handles non-1:n axes).
+# `dest` is left untyped so non-`AbstractArray` containers (e.g. `HDF5.Dataset`) are also accepted.
+@inline function assign_maybe_broadcast!(dest, src::AbstractArray, ixs::Tuple)
+    dest[expand_ixs(ixs, dest)...] = src
+    return
+end
+
+# Scalar/tuple `src`: broadcast the value across the indexed slice of `dest`.
+@inline function assign_maybe_broadcast!(dest, src, ixs::Tuple)
+    expanded = expand_ixs(ixs, dest)
+    @views dest[expanded...] .= src
     return
 end
 
 # Similar to assign_maybe_broadcast! but for fixing JuMP VariableRefs
+@inline function fix_maybe_broadcast!(
+    dest::DenseAxisArray{JuMP.VariableRef, N},
+    src::Float64,
+    ixs::NTuple{N, Any},
+) where {N}
+    JuMP.fix(dest[ixs...], src; force = true)
+    return
+end
+
 fix_expand(dest, src, ixs::Tuple) =
     fix_parameter_value.(dest[expand_ixs(ixs, dest)...], src)
 fix_maybe_broadcast!(dest, src::AbstractArray, ixs::Tuple) =

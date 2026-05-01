@@ -254,24 +254,19 @@ function _add_parameters!(
     )
 
     jump_model = get_jump_model(container)
+    multiplier_array = get_multiplier_array(parameter_container)
+    parent_param = get_parameter_array_data(parameter_container)
 
-    for d in devices
+    for (i, d) in enumerate(devices)
         ini_val = get_initial_parameter_value(T(), d, event_model)
         name = PSY.get_name(d)
+        assign_maybe_broadcast!(
+            multiplier_array,
+            get_parameter_multiplier(T(), d, event_model),
+            (name,),
+        )
         for t in time_steps
-            set_multiplier!(
-                parameter_container,
-                get_parameter_multiplier(T(), d, event_model),
-                name,
-                t,
-            )
-            set_parameter!(
-                parameter_container,
-                jump_model,
-                ini_val,
-                name,
-                t,
-            )
+            _set_parameter_at!(parent_param, jump_model, ini_val, i, t)
         end
     end
     return
