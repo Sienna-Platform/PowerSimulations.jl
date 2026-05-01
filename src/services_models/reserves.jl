@@ -496,7 +496,7 @@ function add_constraints!(
         component_type = typeof(d)
         name = PSY.get_name(d)
         varstatus = get_variable(container, OnVariable(), component_type)
-        startup_time = PSY.get_time_limits(d).up
+        startup_time = PSY.get_time_limits(d).down
         ramp_limits = _get_ramp_limits(d)
         if reserve_response_time > startup_time
             reserve_limit =

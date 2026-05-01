@@ -23,11 +23,11 @@ function construct_services!(
     isempty(services_template) && return
     incompatible_device_types = get_incompatible_devices(devices_template)
 
-    groupservice = nothing
+    groupservices = Any[]
 
     for (key, service_model) in services_template
-        if get_formulation(service_model) === GroupReserve  # group service needs to be constructed last
-            groupservice = key
+        if get_formulation(service_model) === GroupReserve # group service needs to be constructed last
+            push!(groupservices, key)  
             continue
         end
         isempty(get_contributing_devices(service_model)) && continue
@@ -41,15 +41,17 @@ function construct_services!(
             network_model,
         )
     end
-    groupservice === nothing || construct_service!(
-        container,
-        sys,
-        stage,
-        services_template[groupservice],
-        devices_template,
-        incompatible_device_types,
-        network_model,
-    )
+    for key in groupservices
+        construct_service!(
+            container,
+            sys,
+            stage,
+            services_template[key],
+            devices_template,
+            incompatible_device_types,
+            network_model,
+        )
+    end
     return
 end
 
@@ -64,10 +66,10 @@ function construct_services!(
     isempty(services_template) && return
     incompatible_device_types = get_incompatible_devices(devices_template)
 
-    groupservice = nothing
+    groupservices = Any[]
     for (key, service_model) in services_template
-        if get_formulation(service_model) === GroupReserve  # group service needs to be constructed last
-            groupservice = key
+        if get_formulation(service_model) === GroupReserve # group service needs to be constructed last
+            push!(groupservices, key)  
             continue
         end
         isempty(get_contributing_devices_map(service_model)) && continue
@@ -81,15 +83,17 @@ function construct_services!(
             network_model,
         )
     end
-    groupservice === nothing || construct_service!(
-        container,
-        sys,
-        stage,
-        services_template[groupservice],
-        devices_template,
-        incompatible_device_types,
-        network_model,
-    )
+    for key in groupservices
+        construct_service!(
+            container,
+            sys,
+            stage,
+            services_template[key],
+            devices_template,
+            incompatible_device_types,
+            network_model,
+        )
+    end
     return
 end
 

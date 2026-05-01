@@ -1030,3 +1030,86 @@ end
         output_dir = mktempdir(; cleanup = true),
     ) == PSI.ModelBuildStatus.FAILED
 end
+
+@testset "Test Multiple GroupReserve Constraints" begin
+    template = get_thermal_dispatch_template_network()
+    set_service_model!(
+        template,
+        ServiceModel(VariableReserve{ReserveUp}, RangeReserve, "Reserve1"),
+    )
+    set_service_model!(
+        template,
+        ServiceModel(VariableReserve{ReserveUp}, RangeReserve, "Reserve11"),
+    )
+    set_service_model!(
+        template,
+        ServiceModel(VariableReserve{ReserveDown}, RangeReserve, "Reserve2"),
+    )
+    set_service_model!(
+        template,
+        ServiceModel(ReserveDemandCurve{ReserveUp}, StepwiseCostReserve, "ORDC1"),
+    )
+
+    c_sys5_uc = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_reserves = true)
+    services = get_components(Service, c_sys5_uc)
+    requirement_group1 = 5.0
+    contributing_services = Vector{Service}()
+    for service in services
+        if (typeof(service) <: PSY.VariableReserve{ReserveUp})
+            push!(contributing_services, service)
+        end
+    end
+    groupservice = ConstantReserveGroup{ReserveSymmetric}(;
+        name = "group_reserve_1",
+        available = true,
+        requirement = requirement_group1,
+        ext = Dict{String, Any}(),
+    )
+    add_service!(c_sys5_uc, groupservice, contributing_services)
+
+    contributing_services = Vector{Service}()
+    requirement_group2 = 10.0
+    for service in services
+        if (typeof(service) <: PSY.VariableReserve{ReserveUp}) || (typeof(service) <: PSY.VariableReserve{ReserveDown})
+            push!(contributing_services, service)
+        end
+    end
+    groupservice = ConstantReserveGroup{ReserveSymmetric}(;
+        name = "group_reserve_2",
+        available = true,
+        requirement = requirement_group2,
+        ext = Dict{String, Any}(),
+    )
+    add_service!(c_sys5_uc, groupservice, contributing_services)
+
+    set_service_model!(
+        template,
+        ServiceModel(ConstantReserveGroup{ReserveSymmetric}, GroupReserve),
+    )
+
+    model = DecisionModel(template, c_sys5_uc)
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+
+    container = model.internal.container
+
+    group_reserve_key1 = PSI.ConstraintKey(
+        RequirementConstraint,
+        ConstantReserveGroup{ReserveSymmetric},
+        "group_reserve_1",
+    )
+    cons1 = PSI.get_constraint(container, group_reserve_key1)
+
+    group_reserve_key2 = PSI.ConstraintKey(
+        RequirementConstraint,
+        ConstantReserveGroup{ReserveSymmetric},
+        "group_reserve_2",
+    )
+    cons2 = PSI.get_constraint(container, group_reserve_key2)
+
+    @test all((
+        all(JuMP.normalized_rhs.(cons1).data .== requirement_group1),
+        all(JuMP.normalized_rhs.(cons2).data .== requirement_group2),
+    ))
+
+end

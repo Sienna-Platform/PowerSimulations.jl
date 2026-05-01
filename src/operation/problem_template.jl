@@ -254,9 +254,9 @@ function _populate_contributing_devices!(template::ProblemTemplate, sys::PSY.Sys
             )
         end
         if isempty(get_contributing_devices_map(service_model))
-            error(
-                "The contributing devices for service $(PSY.get_name(service)) is empty. Add contributing devices to the service in the data to continue.",
-            )
+            @warn "The contributing devices for service $(PSY.get_name(service)) is empty, consider removing the service from the system" _group =
+                LOG_GROUP_SERVICE_CONSTUCTORS
+            continue
         end
     end
     return
