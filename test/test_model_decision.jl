@@ -68,7 +68,7 @@ end
     @test length(read_variables(res; table_format = TableFormat.WIDE)) == 4
     @test length(read_parameters(res; table_format = TableFormat.WIDE)) == 1
     @test length(read_duals(res; table_format = TableFormat.WIDE)) == 0
-    @test length(read_expressions(res; table_format = TableFormat.WIDE)) == 2
+    @test length(read_expressions(res; table_format = TableFormat.WIDE)) == 7
     @test read_variables(
         res,
         ["StartVariable__ThermalStandard"];
@@ -415,7 +415,7 @@ end
     # Manually Multiply by the base power var1_a has natural units and export writes directly from the solver
     @test var1_a.value == var4.value .* 100.0
 
-    @test length(readdir(ISOPT.export_realized_results(results1))) === 7
+    @test length(readdir(ISOPT.export_realized_results(results1))) === 12
 end
 
 @testset "Test Numerical Stability of Constraints" begin

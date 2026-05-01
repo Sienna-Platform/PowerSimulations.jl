@@ -1595,7 +1595,7 @@ function add_expression_container!(
     axs...;
     sparse = false,
     meta = ISOPT.CONTAINER_KEY_EMPTY_META,
-) where {T <: ProductionCostExpression, U <: Union{PSY.Component, PSY.System}}
+) where {T <: CostExpressions, U <: Union{PSY.Component, PSY.System}}
     expr_key = ExpressionKey(T, U, meta)
     expr_type = JuMP.QuadExpr
     return _add_expression_container!(

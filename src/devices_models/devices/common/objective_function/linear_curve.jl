@@ -17,7 +17,7 @@ function _add_linearcurve_variable_term_to_model!(
     )
     add_to_expression!(
         container,
-        ProductionCostExpression,
+        FuelCostExpression,
         linear_cost,
         component,
         time_period,
@@ -161,5 +161,101 @@ function _add_variable_cost_to_objective!(
         fuel_curve_per_unit,
         fuel_cost,
     )
+    return
+end
+
+function _add_curtailment_cost!(
+    container::OptimizationContainer,
+    ::T,
+    component::PSY.RenewableDispatch,
+    cost_function::PSY.CostCurve{PSY.LinearCurve},
+    ::U,
+) where {T <: VariableType, U <: AbstractDeviceFormulation}
+    base_power = get_base_power(container)
+    device_base_power = PSY.get_base_power(component)
+
+    value_curve = PSY.get_value_curve(cost_function)
+    power_units = PSY.get_power_units(cost_function)
+    cost_component = PSY.get_function_data(value_curve)
+    proportional_term = PSY.get_proportional_term(cost_component)
+    iszero(proportional_term) && return
+
+    proportional_term_per_unit = get_proportional_cost_per_system_unit(
+        proportional_term,
+        power_units,
+        base_power,
+        device_base_power,
+    )
+
+    resolution = get_resolution(container)
+    dt = Dates.value(resolution) / MILLISECONDS_IN_HOUR
+
+    name = PSY.get_name(component)
+    dispatch_vars = get_variable(container, T(), PSY.RenewableDispatch)
+
+    for t in get_time_steps(container)
+        breakpoints, _ = _get_pwl_data(false, container, component, t)
+        offer_max = breakpoints[end]
+
+        dispatch = dispatch_vars[name, t]
+        curtailment_cost = proportional_term_per_unit * dt * (offer_max - dispatch)
+
+        add_to_expression!(
+            container,
+            CurtailmentCostExpression,
+            curtailment_cost,
+            component,
+            t,
+        )
+    end
+
+    return
+end
+
+function _add_curtailment_cost!(
+    container::OptimizationContainer,
+    ::T,
+    component::PSY.RenewableGen,
+    cost_function::PSY.CostCurve{PSY.LinearCurve},
+    ::U,
+) where {T <: VariableType, U <: AbstractDeviceFormulation}
+    base_power = get_base_power(container)
+    device_base_power = PSY.get_base_power(component)
+
+    value_curve = PSY.get_value_curve(cost_function)
+    power_units = PSY.get_power_units(cost_function)
+    cost_component = PSY.get_function_data(value_curve)
+    proportional_term = PSY.get_proportional_term(cost_component)
+    iszero(proportional_term) && return
+
+    proportional_term_per_unit = get_proportional_cost_per_system_unit(
+        proportional_term,
+        power_units,
+        base_power,
+        device_base_power,
+    )
+
+    resolution = get_resolution(container)
+    dt = Dates.value(resolution) / MILLISECONDS_IN_HOUR
+
+    name = PSY.get_name(component)
+    dispatch_vars = get_variable(container, T(), PSY.RenewableGen)
+
+    for t in get_time_steps(container)
+        breakpoints, _ = _get_pwl_data(false, container, component, t)
+        offer_max = breakpoints[end]
+
+        dispatch = dispatch_vars[name, t]
+        curtailment_cost = proportional_term_per_unit * dt * (offer_max - dispatch)
+
+        add_to_expression!(
+            container,
+            CurtailmentCostExpression,
+            curtailment_cost,
+            component,
+            t,
+        )
+    end
+
     return
 end

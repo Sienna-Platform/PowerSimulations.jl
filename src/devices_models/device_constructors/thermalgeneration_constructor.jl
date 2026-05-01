@@ -102,8 +102,7 @@ function construct_device!(
         network_model,
     )
 
-    add_expressions!(container, FuelConsumptionExpression, devices, device_model)
-    add_expressions!(container, ProductionCostExpression, devices, device_model)
+    add_cost_expressions!(container, devices, device_model)
 
     add_to_expression!(
         container,
@@ -253,8 +252,7 @@ function construct_device!(
         network_model,
     )
 
-    add_expressions!(container, FuelConsumptionExpression, devices, device_model)
-    add_expressions!(container, ProductionCostExpression, devices, device_model)
+    add_cost_expressions!(container, devices, device_model)
 
     add_to_expression!(
         container,
@@ -389,8 +387,7 @@ function construct_device!(
         network_model,
     )
 
-    add_expressions!(container, FuelConsumptionExpression, devices, device_model)
-    add_expressions!(container, ProductionCostExpression, devices, device_model)
+    add_cost_expressions!(container, devices, device_model)
 
     add_to_expression!(
         container,
@@ -534,8 +531,7 @@ function construct_device!(
         network_model,
     )
 
-    add_expressions!(container, FuelConsumptionExpression, devices, device_model)
-    add_expressions!(container, ProductionCostExpression, devices, device_model)
+    add_cost_expressions!(container, devices, device_model)
 
     add_to_expression!(
         container,
@@ -670,8 +666,7 @@ function construct_device!(
         network_model,
     )
 
-    add_expressions!(container, FuelConsumptionExpression, devices, device_model)
-    add_expressions!(container, ProductionCostExpression, devices, device_model)
+    add_cost_expressions!(container, devices, device_model)
 
     add_to_expression!(
         container,
@@ -795,8 +790,7 @@ function construct_device!(
         network_model,
     )
 
-    add_expressions!(container, FuelConsumptionExpression, devices, device_model)
-    add_expressions!(container, ProductionCostExpression, devices, device_model)
+    add_cost_expressions!(container, devices, device_model)
 
     add_to_expression!(
         container,
@@ -919,8 +913,7 @@ function construct_device!(
         network_model,
     )
 
-    add_expressions!(container, FuelConsumptionExpression, devices, device_model)
-    add_expressions!(container, ProductionCostExpression, devices, device_model)
+    add_cost_expressions!(container, devices, device_model)
 
     add_to_expression!(
         container,
@@ -1028,8 +1021,7 @@ function construct_device!(
         network_model,
     )
 
-    add_expressions!(container, FuelConsumptionExpression, devices, device_model)
-    add_expressions!(container, ProductionCostExpression, devices, device_model)
+    add_cost_expressions!(container, devices, device_model)
 
     add_to_expression!(
         container,
@@ -1168,8 +1160,7 @@ function construct_device!(
         network_model,
     )
 
-    add_expressions!(container, FuelConsumptionExpression, devices, device_model)
-    add_expressions!(container, ProductionCostExpression, devices, device_model)
+    add_cost_expressions!(container, devices, device_model)
 
     add_to_expression!(
         container,
@@ -1348,8 +1339,7 @@ function construct_device!(
         network_model,
     )
 
-    add_expressions!(container, FuelConsumptionExpression, devices, device_model)
-    add_expressions!(container, ProductionCostExpression, devices, device_model)
+    add_cost_expressions!(container, devices, device_model)
 
     add_to_expression!(
         container,
@@ -1526,8 +1516,7 @@ function construct_device!(
         network_model,
     )
 
-    add_expressions!(container, FuelConsumptionExpression, devices, device_model)
-    add_expressions!(container, ProductionCostExpression, devices, device_model)
+    add_cost_expressions!(container, devices, device_model)
 
     add_to_expression!(
         container,
@@ -1681,8 +1670,7 @@ function construct_device!(
         network_model,
     )
 
-    add_expressions!(container, FuelConsumptionExpression, devices, device_model)
-    add_expressions!(container, ProductionCostExpression, devices, device_model)
+    add_cost_expressions!(container, devices, device_model)
 
     add_to_expression!(
         container,
@@ -1834,8 +1822,7 @@ function construct_device!(
         network_model,
     )
 
-    add_expressions!(container, FuelConsumptionExpression, devices, device_model)
-    add_expressions!(container, ProductionCostExpression, devices, device_model)
+    add_cost_expressions!(container, devices, device_model)
 
     add_to_expression!(
         container,
@@ -1986,8 +1973,7 @@ function construct_device!(
         network_model,
     )
 
-    add_expressions!(container, FuelConsumptionExpression, devices, device_model)
-    add_expressions!(container, ProductionCostExpression, devices, device_model)
+    add_cost_expressions!(container, devices, device_model)
 
     add_to_expression!(
         container,
@@ -2113,8 +2099,7 @@ function construct_device!(
         network_model,
     )
 
-    add_expressions!(container, FuelConsumptionExpression, devices, device_model)
-    add_expressions!(container, ProductionCostExpression, devices, device_model)
+    add_cost_expressions!(container, devices, device_model)
 
     add_to_expression!(
         container,
@@ -2261,8 +2246,7 @@ function construct_device!(
 
     initial_conditions!(container, devices, ThermalCompactDispatch())
 
-    add_expressions!(container, ProductionCostExpression, devices, device_model)
-    add_expressions!(container, FuelConsumptionExpression, devices, device_model)
+    add_cost_expressions!(container, devices, device_model)
 
     add_to_expression!(
         container,

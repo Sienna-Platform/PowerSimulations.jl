@@ -114,6 +114,164 @@ const TIME1 = DateTime("2024-01-01T00:00:00")
         # because it includes the startup cost in addition to generation costs
         @test cost_with_startup > cost_no_startup
     end
+
+    @testset "Test cost expression decomposition and nonnegativity (ThermalBasicUnitCommitment)" begin
+        for (i, cost_reference, thermal_formulation) in test_cases
+            if thermal_formulation == ThermalBasicUnitCommitment
+                @testset "$i" begin
+                    sys = build_system(PSITestSystems, "c_$(i)")
+
+                    template = ProblemTemplate(NetworkModel(CopperPlatePowerModel))
+                    set_device_model!(template, ThermalStandard, ThermalBasicUnitCommitment)
+                    set_device_model!(template, PowerLoad, StaticPowerLoad)
+
+                    model = DecisionModel(
+                        template,
+                        sys;
+                        name = "UC_cost_decomp",
+                        optimizer = HiGHS_optimizer,
+                        optimizer_solve_log_print = true,
+                    )
+                    @test build!(model; output_dir = test_path) ==
+                          PSI.ModelBuildStatus.BUILT
+                    @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+                    results = OptimizationProblemResults(model)
+
+                    expr_prod = read_expression(
+                        results,
+                        "ProductionCostExpression__ThermalStandard";
+                        table_format = TableFormat.WIDE,
+                    )
+                    expr_fuel = read_expression(
+                        results,
+                        "FuelCostExpression__ThermalStandard";
+                        table_format = TableFormat.WIDE,
+                    )
+                    expr_sd = read_expression(
+                        results,
+                        "ShutDownCostExpression__ThermalStandard";
+                        table_format = TableFormat.WIDE,
+                    )
+                    expr_su = read_expression(
+                        results,
+                        "StartUpCostExpression__ThermalStandard";
+                        table_format = TableFormat.WIDE,
+                    )
+                    expr_fixed = read_expression(
+                        results,
+                        "FixedCostExpression__ThermalStandard";
+                        table_format = TableFormat.WIDE,
+                    )
+
+                    expr_VOM = read_expression(
+                        results,
+                        "VOMCostExpression__ThermalStandard";
+                        table_format = TableFormat.WIDE,
+                    )
+
+                    # 1) Decomposition: production == variable + startup + shutdown + proportional
+                    # Do it per timestep for the unit, then also check total sum.
+                    unit = "Test Unit"
+                    decomp_vec =
+                        expr_fuel[!, unit] .+ expr_su[!, unit] .+ expr_sd[!, unit] .+
+                        expr_fixed[!, unit] .+ expr_VOM[!, unit]
+                    @test isapprox.(decomp_vec, expr_prod[!, unit]; atol = 1e-6) |> all
+
+                    total_prod = sum(expr_prod[!, unit])
+                    total_decomp = sum(decomp_vec)
+                    @test isapprox(total_prod, total_decomp; atol = 1e-6)
+
+                    # 2) Nonnegativity (allow zeros, tolerate tiny numerical negatives)
+                    tol = 1e-8
+                    @test all(expr_fuel[!, unit] .>= -tol)
+                    @test all(expr_su[!, unit] .>= -tol)
+                    @test all(expr_sd[!, unit] .>= -tol)
+                    @test all(expr_fixed[!, unit] .>= -tol)
+                    @test all(expr_VOM[!, unit] .>= -tol)
+                end
+            end
+        end
+    end
+
+    @testset "Test startup cost equals delta production cost" begin
+        for (i, cost_reference, thermal_formulation) in test_cases
+            @testset "$i" begin
+                sys = build_system(PSITestSystems, "c_$(i)")
+                template = ProblemTemplate(NetworkModel(CopperPlatePowerModel))
+                set_device_model!(template, ThermalStandard, ThermalBasicUnitCommitment)
+                set_device_model!(template, PowerLoad, StaticPowerLoad)
+
+                unit = "Test Unit"
+
+                # Run 1: no startup expected
+                sys_no_startup = build_system(PSITestSystems, "c_linear_cost_test")
+                model_no = DecisionModel(
+                    template,
+                    sys_no_startup;
+                    name = "UC_no_startup_2",
+                    optimizer = HiGHS_optimizer,
+                    optimizer_solve_log_print = true,
+                )
+                @test build!(model_no; output_dir = test_path) == PSI.ModelBuildStatus.BUILT
+                @test solve!(model_no) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+                res_no = OptimizationProblemResults(model_no)
+
+                prod_no = read_expression(
+                    res_no,
+                    "ProductionCostExpression__ThermalStandard";
+                    table_format = TableFormat.WIDE,
+                )
+                cost_no_t1 = prod_no[1, unit]
+
+                # Run 2: force startup in first timestep
+                sys_with_startup = build_system(PSITestSystems, "c_linear_cost_test")
+                thermal_units = collect(get_components(ThermalStandard, sys_with_startup))
+                for u in thermal_units
+                    set_status!(u, false)
+                    set_time_at_status!(u, 10.0)
+                end
+
+                model_yes = DecisionModel(
+                    template,
+                    sys_with_startup;
+                    name = "UC_with_startup_2",
+                    optimizer = HiGHS_optimizer,
+                    optimizer_solve_log_print = true,
+                )
+                @test build!(model_yes; output_dir = test_path) ==
+                      PSI.ModelBuildStatus.BUILT
+                @test solve!(model_yes) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+                res_yes = OptimizationProblemResults(model_yes)
+
+                prod_yes = read_expression(
+                    res_yes,
+                    "ProductionCostExpression__ThermalStandard";
+                    table_format = TableFormat.WIDE,
+                )
+                cost_yes_t1 = prod_yes[1, unit]
+
+                # Verify startup happened
+                start_vars = read_variable(
+                    res_yes,
+                    "StartVariable__ThermalStandard";
+                    table_format = TableFormat.WIDE,
+                )
+                @test start_vars[1, unit] > 0.5
+
+                # 3) Compare delta production cost (t=1) with StartUpCostExpression (t=1)
+                expr_su = read_expression(
+                    res_yes,
+                    "StartUpCostExpression__ThermalStandard";
+                    table_format = TableFormat.WIDE,
+                )
+                startup_cost_t1 = expr_su[1, unit]
+
+                @test startup_cost_t1 > 0.0
+                @test isapprox(cost_yes_t1 - cost_no_t1, startup_cost_t1; atol = 1e-6)
+            end
+        end
+    end
 end
 
 #TODO: ThermalGen

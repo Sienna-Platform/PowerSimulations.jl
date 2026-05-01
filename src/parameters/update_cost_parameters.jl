@@ -291,6 +291,7 @@ function update_variable_cost!(
         )
     add_to_objective_variant_expression!(container, mult2 * mult_ * gen_cost)
     set_expression!(container, ProductionCostExpression, gen_cost, component, time_period)
+    set_expression!(container, FuelCostExpression, gen_cost, component, time_period)
     return
 end
 
@@ -315,5 +316,6 @@ function update_variable_cost!(
     cost_expr = expression[component_name, time_period] * fuel_cost * mult_
     add_to_objective_variant_expression!(container, cost_expr)
     set_expression!(container, ProductionCostExpression, cost_expr, component, time_period)
+    set_expression!(container, FuelCostExpression, cost_expr, component, time_period)
     return
 end
