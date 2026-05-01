@@ -251,3 +251,26 @@ function get_branch_argument_constraint_axis(
     end
     return collect(keys(constraint_submap))
 end
+
+function get_branch_argument_constraint_axis(
+    net_reduction_data::PNM.NetworkReductionData,
+    reduced_branch_tracker::BranchReductionOptimizationTracker,
+    branch_types::Vector{DataType},
+    ::Type{U},
+) where {U <: ISOPT.ConstraintType}
+    all_names = []
+    for branch_type in branch_types
+        if !(branch_type <: PSY.ACTransmission)
+            continue
+        end
+        names_by_type = get_branch_argument_constraint_axis(
+            net_reduction_data,
+            reduced_branch_tracker,
+            branch_type,
+            U,
+        )
+        push!(all_names, names_by_type)
+    end
+
+    return reduce(vcat, all_names; init = String[])
+end

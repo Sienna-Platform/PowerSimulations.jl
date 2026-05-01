@@ -264,7 +264,23 @@ The specified constraint is formulated as:
 ```
 """
 struct FlowRateConstraint <: ConstraintType end
-struct PostContingencyEmergencyRateLimitConstraint <: PostContingencyConstraintType end
+
+"""
+Struct to create the constraint that set the post-contingency AC flow limits through ACTransmission branches.
+
+For more information check [Branch Formulations](@ref PowerSystems.Branch-Formulations).
+
+In a security-constrained unit commitment (SCUC), for each contingency c and
+each monitored arc m, the post-contingency flow constraint is:
+
+```math
+\\begin{align*}
+&  -R_m \\leq \\sum_{j} \text{PTDF}^\\text{post}_{m,c}[j] \\cdot p_j \\leq R_m,\\quad \\forall t \\in \\{1,\\dots, T\\} \\\\
+&  \\text{PTDF}^{\\text{post}}_{m,c} = vmodf[m, c] \\\\
+\\end{align*}
+```
+"""
+struct PostContingencyEmergencyFlowRateConstraint <: PostContingencyConstraintType end
 
 """
 Struct to create the constraint for branch flow rate limits from the 'from' bus to the 'to' bus.

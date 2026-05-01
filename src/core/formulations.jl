@@ -136,6 +136,14 @@ struct StaticBranchBounds <: AbstractBranchFormulation end
 Branch type to avoid flow constraints
 """
 struct StaticBranchUnbounded <: AbstractBranchFormulation end
+
+abstract type AbstractSecurityConstrainedStaticBranch <: AbstractBranchFormulation end
+
+"""
+Branch formulation to formulate N-1 constraints in ACTransmission Branches
+"""
+struct SecurityConstrainedStaticBranch <: AbstractSecurityConstrainedStaticBranch end
+
 """
 Branch formulation for PhaseShiftingTransformer flow control
 """
