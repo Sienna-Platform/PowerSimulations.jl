@@ -24,6 +24,15 @@ Formulation valid for `PTDFPowerModel` Network model
 StaticBranch
 ```
 
+!!! note "Dynamic Line Ratings (DLR)"
+    
+    `StaticBranch` supports time-varying line rating constraints via `DynamicBranchRatingTimeSeriesParameter`.
+    When a `Deterministic` or `SingleTimeSeries` time series named `"dynamic_line_ratings"` is attached to
+    a branch and the `DeviceModel` is configured with `time_series_names = Dict(DynamicBranchRatingTimeSeriesParameter => "dynamic_line_ratings")`,
+    the static ``R^\text{max}`` bound is replaced by a time-varying parameter ``R^\text{max}_t = R^\text{max} \cdot \text{DLR}_t``.
+    This feature requires the `PTDFPowerModel` network model and is **only** available for `StaticBranch`.
+    See the [Dynamic Line Ratings (DLR)](@ref) for a complete example.
+
 **Variables:**
 
   - [`FlowActivePowerVariable`](@ref):
@@ -75,6 +84,11 @@ on which ``\text{PTDF}`` is the ``N \times B`` system Power Transfer Distributio
 
 Formulation valid for `PTDFPowerModel` Network model
 
+!!! warning
+    
+    `DynamicBranchRatingTimeSeriesParameter` (Dynamic Line Ratings) is **not** supported for
+    `StaticBranchBounds`. Use `StaticBranch` if time-varying line rating constraints are needed.
+
 ```@docs
 StaticBranchBounds
 ```
@@ -115,6 +129,11 @@ on which ``\text{PTDF}`` is the ``N \times B`` system Power Transfer Distributio
 ## `StaticBranchUnbounded`
 
 Formulation valid for `PTDFPowerModel` Network model
+
+!!! warning
+    
+    `DynamicBranchRatingTimeSeriesParameter` (Dynamic Line Ratings) is **not** supported for
+    `StaticBranchUnbounded`. Use `StaticBranch` if time-varying line rating constraints are needed.
 
 ```@docs
 StaticBranchUnbounded
