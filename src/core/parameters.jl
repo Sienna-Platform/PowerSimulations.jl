@@ -311,7 +311,7 @@ end
 @inline function _set_parameter_at!(
     parent_param::Array{T, 3},
     ::JuMP.Model,
-    value::AbstractVector,
+    value::AbstractVector{<:T},
     i::Int,
     t::Int,
 ) where {T <: ValidDataParamEltypes}

@@ -40,7 +40,7 @@ end
 # Scalar/tuple `src`: broadcast the value across the indexed slice of `dest`.
 @inline function assign_maybe_broadcast!(dest, src, ixs::Tuple)
     expanded = expand_ixs(ixs, dest)
-    @views dest[expanded...] .= src
+    @views dest[expanded...] .= Ref(src)
     return
 end
 
