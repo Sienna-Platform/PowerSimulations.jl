@@ -285,7 +285,7 @@ function _add_time_series_parameters!(
     param_instance = T()
     jump_model = get_jump_model(container)
     parent_param = get_parameter_array_data(param_container)
-    multiplier_array = get_multiplier_array(param_container)
+    parent_mult = get_multiplier_array_data(param_container)
     for (name, (arc, reduction)) in PNM.get_name_to_arc_map(net_reduction_data, D)
         reduction_entry = all_branch_maps_by_type[reduction][D][arc]
         if !PNM.has_time_series(reduction_entry, ts_type, ts_name)
@@ -317,7 +317,7 @@ function _add_time_series_parameters!(
             @assert all(_size_wrapper.(ts_vals) .== Ref(length.(additional_axes)))
         end
         multiplier = get_multiplier_value(T(), reduction_entry, W())
-        assign_maybe_broadcast!(multiplier_array, multiplier, (name,))
+        _set_multiplier_at!(parent_mult, Float64(multiplier), i)
         for t in time_steps
             if !has_entry
                 # Store raw float in tracker for non-recurrent builds. For recurrent
@@ -460,11 +460,13 @@ function _add_time_series_parameters!(
         end
     end
 
-    multiplier_array = get_multiplier_array(param_container)
-    for device in devices_with_time_series
+    parent_mult = get_multiplier_array_data(param_container)
+    # `devices_with_time_series` was built in the same order as `device_names`, which
+    # matches the multiplier array's first axis, so enumeration index `i` is correct.
+    for (i, device) in enumerate(devices_with_time_series)
         multiplier = get_multiplier_value(T(), device, W())
         device_name = PSY.get_name(device)
-        assign_maybe_broadcast!(multiplier_array, multiplier, (device_name,))
+        _set_multiplier_at!(parent_mult, Float64(multiplier), i)
         add_component_name!(
             get_attributes(param_container),
             device_name,
@@ -716,7 +718,7 @@ function _add_parameters!(
     model_interval = get_interval(get_settings(container))
     ts_interval = model_interval
     param_instance = T()
-    multiplier_array = get_multiplier_array(param_container)
+    parent_mult = get_multiplier_array_data(param_container)
     parent_param = get_parameter_array_data(param_container)
     for (i, (ts_name, device_name, device)) in
         enumerate(zip(ts_names, device_names, active_devices))
@@ -729,10 +731,13 @@ function _add_parameters!(
         )
         ts_vals = _unwrap_for_param.(Ref(param_instance), raw_ts_vals, Ref(additional_axes))
         @assert all(_size_wrapper.(ts_vals) .== Ref(length.(additional_axes)))
-        assign_maybe_broadcast!(
-            multiplier_array,
+        # PWL/cost-function path: the parameter values flowing through
+        # `_set_parameter_at!` below are tuples-of-floats from `_unwrap_for_param`;
+        # the multiplier itself is a scalar Float64 (per-device cost weight).
+        _set_multiplier_at!(
+            parent_mult,
             get_multiplier_value(T(), device, W()),
-            (device_name,),
+            i,
         )
         for step in time_steps
             _set_parameter_at!(parent_param, jump_model, ts_vals[step], i, step)
@@ -783,7 +788,8 @@ function _add_parameters!(
     jump_model = get_jump_model(container)
     ts_vector = get_time_series(container, service, T(), name; interval = ts_interval)
     multiplier = get_multiplier_value(T(), service, V())
-    assign_maybe_broadcast!(get_multiplier_array(parameter_container), multiplier, (name,))
+    parent_mult = get_multiplier_array_data(parameter_container)
+    _set_multiplier_at!(parent_mult, Float64(multiplier), 1)
     parent_param = get_parameter_array_data(parameter_container)
     for t in time_steps
         _set_parameter_at!(parent_param, jump_model, ts_vector[t], 1, t)
@@ -809,14 +815,14 @@ function _add_parameters!(
     time_steps = get_time_steps(container)
     parameter_container = add_param_container!(container, T(), D, key, names, time_steps)
     jump_model = get_jump_model(container)
-    multiplier_array = get_multiplier_array(parameter_container)
+    parent_mult = get_multiplier_array_data(parameter_container)
     parent_param = get_parameter_array_data(parameter_container)
     for (i, d) in enumerate(devices)
         name = PSY.get_name(d)
-        assign_maybe_broadcast!(
-            multiplier_array,
+        _set_multiplier_at!(
+            parent_mult,
             get_parameter_multiplier(T(), d, W()),
-            (name,),
+            i,
         )
         if get_variable_warm_start_value(U(), d, W()) === nothing
             inital_parameter_value = 0.0
@@ -847,16 +853,16 @@ function _add_parameters!(
     time_steps = get_time_steps(container)
     parameter_container = add_param_container!(container, T(), D, key, names, time_steps)
     jump_model = get_jump_model(container)
-    multiplier_array = get_multiplier_array(parameter_container)
+    parent_mult = get_multiplier_array_data(parameter_container)
     parent_param = get_parameter_array_data(parameter_container)
     # Iterate the same filtered view used to construct `names` so enumeration index
     # `i` lines up with the parameter container's first axis.
     for (i, d) in enumerate(Iterators.filter(d -> !PSY.get_must_run(d), devices))
         name = PSY.get_name(d)
-        assign_maybe_broadcast!(
-            multiplier_array,
+        _set_multiplier_at!(
+            parent_mult,
             get_parameter_multiplier(T(), d, W()),
-            (name,),
+            i,
         )
         if get_variable_warm_start_value(U(), d, W()) === nothing
             inital_parameter_value = 0.0
@@ -888,14 +894,14 @@ function _add_parameters!(
     parameter_container =
         add_param_container!(container, T(), D, key, names, time_steps; meta = "$U")
     jump_model = get_jump_model(container)
-    multiplier_array = get_multiplier_array(parameter_container)
+    parent_mult = get_multiplier_array_data(parameter_container)
     parent_param = get_parameter_array_data(parameter_container)
     for (i, d) in enumerate(devices)
         name = PSY.get_name(d)
-        assign_maybe_broadcast!(
-            multiplier_array,
+        _set_multiplier_at!(
+            parent_mult,
             get_parameter_multiplier(T(), d, W()),
-            (name,),
+            i,
         )
         if get_variable_warm_start_value(U(), d, W()) === nothing
             inital_parameter_value = 0.0
@@ -933,15 +939,15 @@ function _add_parameters!(
         time_steps,
     )
     jump_model = get_jump_model(container)
-    multiplier_array = get_multiplier_array(parameter_container)
+    parent_mult = get_multiplier_array_data(parameter_container)
     parent_param = get_parameter_array_data(parameter_container)
 
     for (i, d) in enumerate(devices)
         name = PSY.get_name(d)
-        assign_maybe_broadcast!(
-            multiplier_array,
+        _set_multiplier_at!(
+            parent_mult,
             get_parameter_multiplier(T(), d, W()),
-            (name,),
+            i,
         )
         ini_val = get_initial_parameter_value(T(), d, W())
         for t in time_steps
@@ -978,15 +984,15 @@ function _add_parameters!(
         time_steps,
     )
     jump_model = get_jump_model(container)
-    multiplier_array = get_multiplier_array(parameter_container)
+    parent_mult = get_multiplier_array_data(parameter_container)
     parent_param = get_parameter_array_data(parameter_container)
 
     for (i, d) in enumerate(devices)
         name = PSY.get_name(d)
-        assign_maybe_broadcast!(
-            multiplier_array,
+        _set_multiplier_at!(
+            parent_mult,
             get_parameter_multiplier(T(), d, W()),
-            (name,),
+            i,
         )
         ini_val = get_initial_parameter_value(T(), d, W())
         for t in time_steps
@@ -1023,13 +1029,13 @@ function _add_parameters!(
         meta = get_service_name(model),
     )
     jump_model = get_jump_model(container)
-    multiplier_array = get_multiplier_array(parameter_container)
+    parent_mult = get_multiplier_array_data(parameter_container)
     parent_param = get_parameter_array_data(parameter_container)
     multiplier = get_parameter_multiplier(T(), S, W())
     ini_val = get_initial_parameter_value(T(), S, W())
     for (i, d) in enumerate(contributing_devices)
         name = PSY.get_name(d)
-        assign_maybe_broadcast!(multiplier_array, multiplier, (name,))
+        _set_multiplier_at!(parent_mult, multiplier, i)
         for t in time_steps
             _set_parameter_at!(parent_param, jump_model, ini_val, i, t)
         end

@@ -262,7 +262,7 @@ function _add_parameters!(
         name = PSY.get_name(d)
         _set_multiplier_at!(
             parent_mult,
-            Float64(get_parameter_multiplier(T(), d, event_model)),
+            get_parameter_multiplier(T(), d, event_model),
             i,
         )
         for t in time_steps

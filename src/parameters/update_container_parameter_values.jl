@@ -62,6 +62,12 @@ function _update_parameter_values!(
         device_model = get_model(template, V, subsystem)
     end
     components = get_available_components(device_model, get_system(model))
+    # Hoist the underlying dense storage and per-component name lookup once so each
+    # write skips DenseAxisArray's String-keyed axis lookup. `additional_axes` is
+    # invariant for the lifetime of this update call.
+    parent_param = parameter_array.data
+    name_lookup = parameter_array.lookup[1]
+    additional_axes = lookup_additional_axes(parameter_array)
     ts_uuids = Set{String}()
     for component in components
         if !PSY.has_time_series(component, U, ts_name)
@@ -78,15 +84,16 @@ function _update_parameter_values!(
                 horizon;
                 interval = ts_interval,
             )
+            i_param = name_lookup[ts_uuid]
             for (t, value) in enumerate(ts_vector)
                 # first two axes of parameter_array are component, time; we care about any additional ones
                 unwrapped_value =
-                    _unwrap_for_param(W(), value, lookup_additional_axes(parameter_array))
+                    _unwrap_for_param(W(), value, additional_axes)
                 if !all(isfinite.(unwrapped_value))
                     error("The value for the time series $(ts_name) is not finite. \
                           Check that the data in the time series is valid.")
                 end
-                _set_param_value!(parameter_array, unwrapped_value, ts_uuid, t)
+                _set_param_value_at!(parent_param, unwrapped_value, i_param, t)
             end
             push!(ts_uuids, ts_uuid)
         end
@@ -94,7 +101,7 @@ function _update_parameter_values!(
     return
 end
 
-# Time-series parameter update for reduced ACTransmission branches 
+# Time-series parameter update for reduced ACTransmission branches
 function _update_parameter_values!(
     parameter_array::AbstractArray{T},
     ::W,
@@ -122,6 +129,11 @@ function _update_parameter_values!(
         return
     end
 
+    # Hoist the underlying dense storage and per-component name lookup once so each
+    # write skips DenseAxisArray's String-keyed axis lookup.
+    parent_param = parameter_array.data
+    name_lookup = parameter_array.lookup[1]
+
     ts_uuids_updated = Set{String}()
     for (name, (arc, reduction)) in PNM.get_name_to_arc_map(net_reduction_data, V)
         reduction_entry = all_branch_maps_by_type[reduction][V][arc]
@@ -143,6 +155,7 @@ function _update_parameter_values!(
             horizon;
             interval = ts_interval,
         )
+        i_param = name_lookup[ts_uuid]
         for (t, value) in enumerate(ts_vector)
             if !isfinite(value)
                 error(
@@ -150,7 +163,7 @@ function _update_parameter_values!(
                     Check that the data in the time series is valid.",
                 )
             end
-            _set_param_value!(parameter_array, value, ts_uuid, t)
+            _set_param_value_at!(parent_param, value, i_param, t)
         end
         push!(ts_uuids_updated, ts_uuid)
     end
@@ -184,12 +197,16 @@ function _update_parameter_values!(
         horizon;
         interval = ts_interval,
     )
+    # Hoist the underlying dense storage and resolve the row index once so the
+    # per-time-step writes skip DenseAxisArray's String-keyed axis lookup.
+    parent_param = parameter_array.data
+    i_param = parameter_array.lookup[1][ts_uuid]
     for (t, value) in enumerate(ts_vector)
         if !isfinite(value)
             error("The value for the time series $(ts_name) is not finite. \
                   Check that the data in the time series is valid.")
         end
-        _set_param_value!(parameter_array, value, ts_uuid, t)
+        _set_param_value_at!(parent_param, value, i_param, t)
     end
 end
 
@@ -207,6 +224,9 @@ function _update_parameter_values!(
     components = get_available_components(device_model, get_system(model))
     ts_name = get_time_series_name(attributes)
     ts_resolution = get_resolution(get_settings(model))
+    # Hoist the underlying dense storage and per-component name lookup once.
+    parent_param = parameter_array.data
+    name_lookup = parameter_array.lookup[1]
     ts_uuids = Set{String}()
     for component in components
         ts_uuid = _get_ts_uuid(attributes, PSY.get_name(component))
@@ -224,7 +244,7 @@ function _update_parameter_values!(
                 error("The value for the time series $(ts_name) is not finite. \
                       Check that the data in the time series is valid.")
             end
-            _set_param_value!(parameter_array, value, ts_uuid, 1)
+            _set_param_value_at!(parent_param, value, name_lookup[ts_uuid], 1)
             push!(ts_uuids, ts_uuid)
         end
     end
@@ -256,7 +276,9 @@ function _update_parameter_values!(
         error("The value for the time series $(ts_name) is not finite. \
             Check that the data in the time series is valid.")
     end
-    _set_param_value!(parameter_array, value, ts_uuid, 1)
+    parent_param = parameter_array.data
+    i_param = parameter_array.lookup[1][ts_uuid]
+    _set_param_value_at!(parent_param, value, i_param, 1)
 
     return
 end
@@ -283,6 +305,12 @@ function _update_parameter_values!(
     end
     state_data_index = find_timestamp_index(state_timestamps, current_time)
     sim_timestamps = range(current_time; step = model_resolution, length = time[end])
+    # Hoist underlying dense storage and per-axis name lookups so the inner loop
+    # can index by integer pair, skipping DenseAxisArray's String-keyed lookup.
+    parent_param = parameter_array.data
+    parent_state = state_values.data
+    param_lookup = parameter_array.lookup[1]
+    state_lookup = state_values.lookup[1]
     for t in time
         timestamp_ix = min(max_state_index, state_data_index + t_step)
         @debug "parameter horizon is over the step" max_state_index > state_data_index + 1
@@ -290,8 +318,9 @@ function _update_parameter_values!(
             state_data_index = timestamp_ix
         end
         for name in component_names
-            # Pass indices in this way since JuMP DenseAxisArray don't support view()
-            state_value = state_values[name, state_data_index]
+            i_state = state_lookup[name]
+            i_param = param_lookup[name]
+            state_value = parent_state[i_state, state_data_index]
             if !isfinite(state_value)
                 error(
                     "The value for the system state used in $(encode_key_as_string(get_attribute_key(attributes))) is not a finite value $(state_value) \
@@ -299,7 +328,7 @@ function _update_parameter_values!(
                      Consider reviewing your models' horizon and interval definitions",
                 )
             end
-            _set_param_value!(parameter_array, state_value, name, t)
+            _set_param_value_at!(parent_param, state_value, i_param, t)
         end
     end
     return
@@ -327,6 +356,12 @@ function _update_parameter_values!(
     end
     state_data_index = find_timestamp_index(state_timestamps, current_time)
     sim_timestamps = range(current_time; step = model_resolution, length = time[end])
+    # Hoist underlying dense storage and per-axis name lookups so the inner loop
+    # can index by integer pair, skipping DenseAxisArray's String-keyed lookup.
+    parent_param = parameter_array.data
+    parent_state = state_values.data
+    param_lookup = parameter_array.lookup[1]
+    state_lookup = state_values.lookup[1]
     for t in time
         timestamp_ix = min(max_state_index, state_data_index + t_step)
         @debug "parameter horizon is over the step" max_state_index > state_data_index + 1
@@ -334,8 +369,9 @@ function _update_parameter_values!(
             state_data_index = timestamp_ix
         end
         for name in component_names
-            # Pass indices in this way since JuMP DenseAxisArray don't support view()
-            state_value = state_values[name, state_data_index]
+            i_state = state_lookup[name]
+            i_param = param_lookup[name]
+            state_value = parent_state[i_state, state_data_index]
             if !isfinite(state_value)
                 error(
                     "The value for the system state used in $(encode_key_as_string(get_attribute_key(attributes))) is not a finite value $(state_value) \
@@ -343,7 +379,7 @@ function _update_parameter_values!(
                      Consider reviewing your models' horizon and interval definitions",
                 )
             end
-            _set_param_value!(parameter_array, state_value, name, t)
+            _set_param_value_at!(parent_param, state_value, i_param, t)
         end
     end
     return
@@ -372,6 +408,12 @@ function _update_parameter_values!(
     state_data_index = find_timestamp_index(state_timestamps, current_time)
 
     sim_timestamps = range(current_time; step = model_resolution, length = time[end])
+    # Hoist underlying dense storage and per-axis name lookups so the inner loop
+    # can index by integer pair, skipping DenseAxisArray's String-keyed lookup.
+    parent_param = parameter_array.data
+    parent_state = state_values.data
+    param_lookup = parameter_array.lookup[1]
+    state_lookup = state_values.lookup[1]
     for t in time
         timestamp_ix = min(max_state_index, state_data_index + t_step)
         @debug "parameter horizon is over the step" max_state_index > state_data_index + 1
@@ -379,8 +421,9 @@ function _update_parameter_values!(
             state_data_index = timestamp_ix
         end
         for name in component_names
-            # Pass indices in this way since JuMP DenseAxisArray don't support view()
-            value = round(state_values[name, state_data_index])
+            i_state = state_lookup[name]
+            i_param = param_lookup[name]
+            value = round(parent_state[i_state, state_data_index])
             if !isfinite(value)
                 error(
                     "The value for the system state used in $(encode_key_as_string(get_attribute_key(attributes))) is not a finite value $(value) \
@@ -393,7 +436,7 @@ function _update_parameter_values!(
                     "The value for the system state used in $(encode_key_as_string(get_attribute_key(attributes))): $(value) is out of the [0, 1] range",
                 )
             end
-            _set_param_value!(parameter_array, value, name, t)
+            _set_param_value_at!(parent_param, value, i_param, t)
         end
     end
     return
@@ -413,9 +456,20 @@ function _update_parameter_values!(
     state_data = get_dataset(state, get_attribute_key(attributes))
     state_timestamps = state_data.timestamps
     state_data_index = find_timestamp_index(state_timestamps, current_time)
+    # Hoist underlying dense storage and per-axis name lookups.
+    parent_param = parameter_array.data
+    parent_state = state_values.data
+    param_lookup = parameter_array.lookup[1]
+    state_lookup = state_values.lookup[1]
     for name in component_names
-        # Pass indices in this way since JuMP DenseAxisArray don't support view()
-        _set_param_value!(parameter_array, state_values[name, state_data_index], name, 1)
+        i_state = state_lookup[name]
+        i_param = param_lookup[name]
+        _set_param_value_at!(
+            parent_param,
+            parent_state[i_state, state_data_index],
+            i_param,
+            1,
+        )
     end
     return
 end
@@ -464,16 +518,26 @@ function _update_parameter_values!(
         )
         status_timestamps = status_data.timestamps
         status_data_index = find_timestamp_index(status_timestamps, current_time)
+        parent_status = status_values.data
+        # `_AxisLookup{Dict{String,Int64}}` wraps a `Dict`; reach for `.data`
+        # so we can `haskey` and integer-index without a String-keyed scan.
+        status_lookup_dict = status_values.lookup[1].data
     end
+    # Hoist underlying dense storage and per-axis name lookups for the inner loop.
+    parent_param = parameter_array.data
+    parent_state = state_values.data
+    param_lookup = parameter_array.lookup[1]
+    state_lookup = state_values.lookup[1]
     for name in component_names
-        # Pass indices in this way since JuMP DenseAxisArray don't support view()
-        if has_outage && name in status_values.axes[1] &&
-           status_values[name, status_data_index] == 0.0 &&
-           round(state_values[name, state_data_index]) == 1.0
+        i_state = state_lookup[name]
+        i_param = param_lookup[name]
+        if has_outage && haskey(status_lookup_dict, name) &&
+           parent_status[status_lookup_dict[name], status_data_index] == 0.0 &&
+           round(parent_state[i_state, state_data_index]) == 1.0
             # Override feed forward based on status parameter
             value = 0.0
         else
-            value = round(state_values[name, state_data_index])
+            value = round(parent_state[i_state, state_data_index])
         end
         if !isfinite(value)
             error(
@@ -487,7 +551,7 @@ function _update_parameter_values!(
                 "The value for the system state used in $(encode_key_as_string(get_attribute_key(attributes))): $(value) is out of the [0, 1] range",
             )
         end
-        _set_param_value!(parameter_array, value, name, 1)
+        _set_param_value_at!(parent_param, value, i_param, 1)
     end
     return
 end
@@ -533,6 +597,11 @@ function _update_parameter_values!(
     state_data_index = find_timestamp_index(state_timestamps, current_time)
 
     sim_timestamps = range(current_time; step = model_resolution, length = time[end])
+    # Hoist underlying dense storage and per-axis name lookups for the inner loop.
+    parent_param = parameter_array.data
+    parent_state = state_values.data
+    param_lookup = parameter_array.lookup[1]
+    state_lookup = state_values.lookup[1]
     for t in time
         timestamp_ix = min(max_state_index, state_data_index + t_step)
         @debug "parameter horizon is over the step" max_state_index > state_data_index + 1
@@ -540,8 +609,9 @@ function _update_parameter_values!(
             state_data_index = timestamp_ix
         end
         for name in component_names
-            # Pass indices in this way since JuMP DenseAxisArray don't support view()
-            value = state_values[name, state_data_index]
+            i_state = state_lookup[name]
+            i_param = param_lookup[name]
+            value = parent_state[i_state, state_data_index]
             if !isfinite(value)
                 error(
                     "The value for the system state used in $(encode_key_as_string(get_attribute_key(attributes))) is not a finite value $(value) \
@@ -549,7 +619,7 @@ function _update_parameter_values!(
                      Consider reviewing your models' horizon and interval definitions",
                 )
             end
-            _set_param_value!(parameter_array, value, name, t)
+            _set_param_value_at!(parent_param, value, i_param, t)
         end
     end
     return
@@ -574,9 +644,20 @@ function _update_parameter_values!(
     state_timestamps = state_data.timestamps
     state_data_index = find_timestamp_index(state_timestamps, current_time)
 
+    # Hoist underlying dense storage and per-axis name lookups.
+    parent_param = parameter_array.data
+    parent_state = state_values.data
+    param_lookup = parameter_array.lookup[1]
+    state_lookup = state_values.lookup[1]
     for name in component_names
-        # Pass indices in this way since JuMP DenseAxisArray don't support view()
-        _set_param_value!(parameter_array, state_values[name, state_data_index], name, 1)
+        i_state = state_lookup[name]
+        i_param = param_lookup[name]
+        _set_param_value_at!(
+            parent_param,
+            parent_state[i_state, state_data_index],
+            i_param,
+            1,
+        )
     end
     return
 end
