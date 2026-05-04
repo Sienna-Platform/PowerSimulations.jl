@@ -98,22 +98,6 @@ mutable struct Simulation
     end
 end
 
-"""
-Constructs Simulation from a serialized directory. Callers should pass any kwargs here that
-they passed to the original Simulation.
-
-# Arguments
-
-  - `directory::AbstractString`: the directory returned from the call to serialize
-  - `model_info::Dict`: Two-level dictionary containing model parameters that cannot be
-    serialized. The outer dict should be keyed by the problem name. The inner dict must contain
-    'optimizer' and may contain 'jump_model'. These should be the same values used for the
-    original simulation.
-"""
-function Simulation(directory::AbstractString, model_info::Dict)
-    return deserialize_model(Simulation, directory, model_info)
-end
-
 ###################### Simulation Accessor Functions ####################
 function get_base_powers(sim::Simulation)
     base_powers = Dict()
@@ -173,9 +157,12 @@ function _get_simulation_initial_times!(sim::Simulation)
     sim_ini_time = get_initial_time(sim)
     for (model_number, model) in enumerate(get_models(sim).decision_models)
         system = get_system(model)
+        model_interval = get_interval(get_settings(model))
+        interval_kwarg =
+            model_interval == UNSET_INTERVAL ? (;) : (; interval = model_interval)
         model_horizon = get_horizon(model)
-        system_horizon = PSY.get_forecast_horizon(system)
-        system_interval = PSY.get_forecast_interval(system)
+        system_horizon = PSY.get_forecast_horizon(system; interval_kwarg...)
+        system_interval = PSY.get_forecast_interval(system; interval_kwarg...)
         if model_horizon > system_horizon
             throw(
                 IS.ConflictingInputsError(
@@ -183,7 +170,8 @@ function _get_simulation_initial_times!(sim::Simulation)
                 ),
             )
         end
-        model_initial_times[model_number] = PSY.get_forecast_initial_times(system)
+        model_initial_times[model_number] =
+            PSY.get_forecast_initial_times(system; interval_kwarg...)
         for (ix, element) in enumerate(model_initial_times[model_number][1:(end - 1)])
             if !(element + system_interval == model_initial_times[model_number][ix + 1])
                 throw(
@@ -210,10 +198,9 @@ Manually provided initial times have to be compatible with the specified interva
     end
     if get_models(sim).emulation_model !== nothing
         em = get_models(sim).emulation_model
-        system = get_system(get_models(sim).emulation_model)
-        ini_time, ts_length =
-            PSY.check_time_series_consistency(system, PSY.SingleTimeSeries)
+        system = get_system(em)
         resolution = get_resolution(em)
+        ini_time, ts_length = get_single_time_series_consistency(system, resolution)
         em_available_times = range(ini_time; step = resolution, length = ts_length)
         if get_initial_time(sim) ∉ em_available_times
             throw(
@@ -505,8 +492,8 @@ end
 
 function _initialize_problem_storage!(
     sim::Simulation,
-    cache_size_mib,
-    min_cache_flush_size_mib,
+    cache_size_mib::Int = DEFAULT_SIMULATION_STORE_CACHE_SIZE_MiB,
+    min_cache_flush_size_mib::Int = MIN_CACHE_FLUSH_SIZE_MiB,
 )
     sequence = get_sequence(sim)
     executions_by_model = sequence.executions_by_model
@@ -568,7 +555,7 @@ end
 
 function _build!(
     sim::Simulation;
-    serialize = true,
+    store_systems_in_results = true,
     setup_simulation_partitions = false,
     partitions = nothing,
     index = nothing,
@@ -614,6 +601,12 @@ function _build!(
         _check_steps(sim, problem_initial_times)
     end
 
+    if store_systems_in_results
+        # Spawn system serialization (JSON conversion) in parallel with model builds.
+        # Systems are read-only during building, so this is safe.
+        serialization_task = Threads.@spawn _serialize_systems_to_json(sim)
+    end
+
     _build_decision_models!(sim)
     _build_emulation_model!(sim)
 
@@ -621,15 +614,21 @@ function _build!(
         _initialize_simulation_state!(sim)
     end
 
-    if serialize
-        TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "Serializing Simulation Files" begin
-            serialize_simulation(sim)
-        end
-        for model in get_decision_models(simulation_models)
-            serialize_problem(model)
-        end
-        if em !== nothing
-            serialize_problem(em)
+    TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "Initialize Problem Storage" begin
+        open_store(HdfSimulationStore, get_store_dir(sim), "w") do store
+            set_simulation_store!(sim, store)
+            try
+                _initialize_problem_storage!(sim)
+                if store_systems_in_results
+                    # Fetch pre-computed JSON from the parallel task and write to HDF5 store.
+                    serialized = fetch(serialization_task)
+                    for (uuid, json_text) in serialized
+                        write_system_json!(store, uuid, json_text)
+                    end
+                end
+            finally
+                set_simulation_store!(sim, nothing)
+            end
         end
     end
 
@@ -669,20 +668,6 @@ function _setup_simulation_partitions(sim::Simulation)
     for i in 1:get_num_partitions(sim.internal.partitions)
         mkdir(joinpath(sim.internal.partitions_dir, string(i)))
     end
-
-    open_store(HdfSimulationStore, get_store_dir(sim), "w") do store
-        set_simulation_store!(sim, store)
-        try
-            _initialize_problem_storage!(
-                sim,
-                DEFAULT_SIMULATION_STORE_CACHE_SIZE_MiB,
-                MIN_CACHE_FLUSH_SIZE_MiB,
-            )
-            _serialize_systems_to_store!(store, sim)
-        finally
-            set_simulation_store!(sim, nothing)
-        end
-    end
 end
 
 """
@@ -692,7 +677,7 @@ Build the Simulation, problems and the related folder structure.
 
   - `sim::Simulation`: simulation object
   - `recorders::Vector{Symbol} = []`: recorder names to register
-  - `serialize::Bool = true`: serializes the simulation objects in the simulation
+  - `store_systems_in_results::Bool = true`: stores the systems as JSON in the results HDF5 file
   - `console_level = Logging.Error`:
   - `file_level = Logging.Info`:
 """
@@ -701,23 +686,17 @@ function build!(
     recorders = [],
     console_level = Logging.Error,
     file_level = Logging.Info,
-    serialize = true,
+    store_systems_in_results = true,
     partitions::Union{Nothing, SimulationPartitions} = nothing,
     index = nothing,
 )
-    if !isnothing(partitions) && !isnothing(index) && serialize
-        # This is build of a partition. No need to serialize again.
-        serialize = false
-    end
     TimerOutputs.reset_timer!(BUILD_PROBLEMS_TIMER)
     TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "Build Simulation" begin
         _check_folder(sim)
         _set_simulation_internal!(sim, partitions, recorders, console_level, file_level)
         make_dirs(sim.internal)
         if !isnothing(partitions) && isnothing(index)
-            # This is the build for the overall simulation.
             setup_simulation_partitions = true
-            serialize = true
         else
             setup_simulation_partitions = false
         end
@@ -729,7 +708,7 @@ function build!(
                 try
                     _build!(
                         sim;
-                        serialize = serialize,
+                        store_systems_in_results = store_systems_in_results,
                         setup_simulation_partitions = setup_simulation_partitions,
                         partitions = partitions,
                         index = index,
@@ -959,8 +938,8 @@ end
 
 function _execute!(
     sim::Simulation;
-    cache_size_mib = DEFAULT_SIMULATION_STORE_CACHE_SIZE_MiB,
-    min_cache_flush_size_mib = MIN_CACHE_FLUSH_SIZE_MiB,
+    cache_size_mib::Union{Nothing, Int} = nothing,
+    min_cache_flush_size_mib::Union{Nothing, Int} = nothing,
     exports = nothing,
     enable_progress_bar = progress_meter_enabled(),
     disable_timer_outputs = false,
@@ -972,9 +951,25 @@ function _execute!(
     execution_order = get_execution_order(sim)
     steps = get_steps(sim)
     num_executions = steps * length(execution_order)
-    store_params =
-        _initialize_problem_storage!(sim, cache_size_mib, min_cache_flush_size_mib)
-    status = RunStatus.RUNNING
+    store = get_simulation_store(sim)
+    # For InMemorySimulationStore, initialize storage here since it doesn't persist from build.
+    if store isa InMemorySimulationStore
+        _initialize_problem_storage!(
+            sim,
+            something(cache_size_mib, DEFAULT_SIMULATION_STORE_CACHE_SIZE_MiB),
+            something(min_cache_flush_size_mib, MIN_CACHE_FLUSH_SIZE_MiB),
+        )
+    else
+        # Override cache flush rules from build phase if user passes kwargs at execution time.
+        rules = CacheFlushRules(;
+            max_size = something(cache_size_mib, DEFAULT_SIMULATION_STORE_CACHE_SIZE_MiB) * MiB,
+            min_flush_size = trunc(
+                something(min_cache_flush_size_mib, MIN_CACHE_FLUSH_SIZE_MiB) * MiB,
+            ),
+        )
+        set_cache_flush_rules!(store, rules)
+    end
+    store_params = get_params(store)
     if exports !== nothing
         if !(exports isa SimulationResultsExport)
             exports = SimulationResultsExport(exports, store_params)
@@ -1072,7 +1067,7 @@ function _execute!(
 
                 # _apply_warm_start! can only be called once all the operations that read solutions
                 # from the optimization container have been called.
-                # See https://github.com/NREL-Sienna/PowerSimulations.jl/pull/793#discussion_r761545526
+                # See https://github.com/Sienna-Platform/PowerSimulations.jl/pull/793#discussion_r761545526
                 # for reference
                 if warm_start_enabled(model)
                     _apply_warm_start!(model)
@@ -1133,21 +1128,21 @@ function execute!(sim::Simulation; kwargs...)
             "Simulation build status $sim_build_status, or Simulation run status $sim_run_status, are invalid, you need to rebuild the simulation",
         )
     end
+    file_mode = in_memory ? "w" : "rw"
     try
         Logging.with_logger(logger) do
-            open_store(store_type, get_store_dir(sim), "w") do store
+            open_store(store_type, get_store_dir(sim), file_mode) do store
                 set_simulation_store!(sim, store)
                 try
                     TimerOutputs.reset_timer!(RUN_SIMULATION_TIMER)
                     TimerOutputs.@timeit RUN_SIMULATION_TIMER "Execute Simulation" begin
-                        _execute!(sim; [k => v for (k, v) in kwargs if k != :in_memory]...)
+                        _execute!(
+                            sim;
+                            [k => v for (k, v) in kwargs if k != :in_memory]...,
+                        )
                     end
                     @info ("\n$(RUN_SIMULATION_TIMER)\n")
                     set_simulation_status!(sim, RunStatus.SUCCESSFULLY_FINALIZED)
-                    if isnothing(sim.internal.partitions)
-                        # Partitioned simulations serialize the systems once during build.
-                        _serialize_systems_to_store!(store, sim)
-                    end
                     log_cache_hit_percentages(store)
                 catch e
                     set_simulation_status!(sim, RunStatus.FAILED)
@@ -1161,21 +1156,12 @@ function execute!(sim::Simulation; kwargs...)
         close(logger)
     end
 
-    if !in_memory
+    if !in_memory && get_simulation_status(sim) == RunStatus.SUCCESSFULLY_FINALIZED
         IS.compute_file_hash(get_store_dir(sim), HDF_FILENAME)
     end
 
     serialize_status(sim)
     return get_simulation_status(sim)
-end
-
-struct SimulationSerializationWrapper
-    steps::Int
-    models::Vector{Symbol}
-    initial_time::Union{Nothing, Dates.DateTime}
-    sequence::Union{Nothing, SimulationSequence}
-    simulation_folder::String
-    name::String
 end
 
 function _empty_problem_caches!(sim::Simulation)
@@ -1186,119 +1172,26 @@ function _empty_problem_caches!(sim::Simulation)
     return
 end
 
-"""
-    serialize_simulation(sim::Simulation, path = ".")
-
-Serialize the simulation to a directory in path.
-
-Return the serialized simulation directory name that is created.
-
-# Arguments
-
-  - `sim::Simulation`: simulation to serialize
-  - `path = "."`: path in which to create the serialzed directory
-  - `force = false`: If true, delete the directory if it already exists. Otherwise, it will
-    throw an exception.
-"""
-function serialize_simulation(sim::Simulation; path = nothing, force = false)
-    if path === nothing
-        directory = get_simulation_files_dir(sim)
-    else
-        directory = path
-    end
-    problems = get_model_names(get_models(sim))
-
-    if !isempty(readdir(directory)) && !force
-        throw(
-            ArgumentError(
-                "$directory has files already: $(readdir(directory)). Please delete them or pass force = true.",
-            ),
-        )
-    end
-    rm(directory; recursive = true, force = true)
-    mkdir(directory)
-
-    filename = joinpath(directory, SIMULATION_SERIALIZATION_FILENAME)
-    obj = SimulationSerializationWrapper(
-        get_steps(sim),
-        problems,
-        get_initial_time(sim),
-        get_sequence(sim),
-        get_simulation_dir(sim),
-        get_name(sim),
-    )
-    Serialization.serialize(filename, obj)
-    @info "Serialized simulation name = $(get_name(sim))" directory
-    return directory
-end
-
-function _serialize_systems_to_store!(store::SimulationStore, sim::Simulation)
+function _serialize_systems_to_json(sim::Simulation)
     simulation_models = get_models(sim)
+    results = Dict{String, String}()
+    @debug Threads.threadid() "Serializing systems to JSON in parallel with model building"
     for dm in get_decision_models(simulation_models)
-        serialize_system!(store, get_system(dm))
+        sys = get_system(dm)
+        uuid = string(IS.get_uuid(sys))
+        if !haskey(results, uuid)
+            results[uuid] = PSY.to_json(sys)
+        end
     end
-
     em = get_emulation_model(simulation_models)
     if !isnothing(em)
-        serialize_system!(store, get_system(em))
+        sys = get_system(em)
+        uuid = string(IS.get_uuid(sys))
+        if !haskey(results, uuid)
+            results[uuid] = PSY.to_json(sys)
+        end
     end
-end
-
-function deserialize_model(
-    ::Type{Simulation},
-    directory::AbstractString,
-    problem_info::Dict,
-)
-    error("deserialization of a Simulation is not currently supported")
-    orig = pwd()
-    cd(directory)
-
-    try
-        filename = SIMULATION_SERIALIZATION_FILENAME
-        if !ispath(filename)
-            throw(ArgumentError("$filename does not exist"))
-        end
-
-        obj = Serialization.deserialize(filename)
-        if !(obj isa SimulationSerializationWrapper)
-            throw(
-                IS.DataFormatError("deserialized object has incorrect type $(typeof(obj))"),
-            )
-        end
-
-        models = Vector{DecisionModel{<:DecisionProblem}}()
-        for name in obj.models
-            model =
-                deserialize_problem(DecisionProblem, joinpath("problems", "$(name).bin"))
-            if !haskey(problem_info[key], "optimizer")
-                throw(ArgumentError("problem_info must define 'optimizer'"))
-            end
-            push!(
-                models,
-                wrapper.problem_type(
-                    name,
-                    wrapper.template,
-                    sys,
-                    restore_from_copy(
-                        wrapper.settings;
-                        optimizer = problem_info[key]["optimizer"],
-                    ),
-                    get(problem_info[key], "jump_model", nothing),
-                ),
-            )
-        end
-
-        sim = Simulation(;
-            name = obj.name,
-            steps = obj.steps,
-            models = SimulationModels(problems...),
-            problems_sequence = obj.sequence,
-            simulation_folder = obj.simulation_folder,
-        )
-        return sim
-    finally
-        cd(orig)
-    end
+    return results
 end
 
 function serialize_status(sim::Simulation)

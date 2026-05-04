@@ -54,6 +54,7 @@ const JumpSupportedLiterals =
 # Settings constants
 const UNSET_HORIZON = Dates.Millisecond(0)
 const UNSET_RESOLUTION = Dates.Millisecond(0)
+const UNSET_INTERVAL = Dates.Millisecond(0)
 const UNSET_INI_TIME = Dates.DateTime(0)
 
 # Tolerance of comparisons
@@ -63,6 +64,7 @@ const BALANCE_SLACK_COST = 1e6
 const CONSTRAINT_VIOLATION_SLACK_COST = 2e5
 const SERVICES_SLACK_COST = 1e5
 const COST_EPSILON = 1e-3
+const PTDF_ZERO_TOL = 1e-9
 const MISSING_INITIAL_CONDITIONS_TIME_COUNT = 999.0
 const SECONDS_IN_MINUTE = 60.0
 const MINUTES_IN_HOUR = 60.0
@@ -90,9 +92,7 @@ const LOWER_BOUND = "lb"
 const MAX_OPTIMIZE_TRIES = 2
 
 # File Names definitions
-const PROBLEM_SERIALIZATION_FILENAME = "operation_problem.bin"
 const PROBLEM_LOG_FILENAME = "operation_problem.log"
-const SIMULATION_SERIALIZATION_FILENAME = "simulation.bin"
 const SIMULATION_LOG_FILENAME = "simulation.log"
 const REQUIRED_RECORDERS = (:simulation_status, :execution)
 const KNOWN_SIMULATION_PATHS = [

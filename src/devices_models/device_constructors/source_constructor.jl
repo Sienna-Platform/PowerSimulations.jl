@@ -312,3 +312,57 @@ function construct_device!(
     add_constraint_dual!(container, sys, model)
     return
 end
+
+"""
+This function creates the arguments for the model for a FixedOutput formulation for Source devices
+"""
+function construct_device!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    ::ArgumentConstructStage,
+    model::DeviceModel{T, D},
+    network_model::NetworkModel{<:PM.AbstractActivePowerModel},
+) where {
+    T <: PSY.Source,
+    D <: FixedOutput,
+}
+    devices = get_available_components(model, sys)
+    add_parameters!(container, ActivePowerInTimeSeriesParameter, devices, model)
+    add_parameters!(container, ActivePowerOutTimeSeriesParameter, devices, model)
+
+    add_to_expression!(
+        container,
+        ActivePowerBalance,
+        ActivePowerInTimeSeriesParameter,
+        devices,
+        model,
+        network_model,
+    )
+    add_to_expression!(
+        container,
+        ActivePowerBalance,
+        ActivePowerOutTimeSeriesParameter,
+        devices,
+        model,
+        network_model,
+    )
+    add_event_arguments!(container, devices, model, network_model)
+    return
+end
+
+"""
+This function creates the constraints for the model for a FixedOutput formulation for Source devices (no constraints added for FixedOutput)
+"""
+function construct_device!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    ::ModelConstructStage,
+    model::DeviceModel{T, D},
+    network_model::NetworkModel{<:PM.AbstractActivePowerModel},
+) where {
+    T <: PSY.Source,
+    D <: FixedOutput,
+}
+    # FixedOutput doesn't add any constraints to the model.
+    return
+end

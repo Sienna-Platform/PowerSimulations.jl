@@ -1,15 +1,4 @@
 """
-Abstract type for models than employ PowerSimulations methods. For custom emulation problems
-    use EmulationProblem as the super type.
-"""
-abstract type DefaultEmulationProblem <: EmulationProblem end
-
-"""
-Default PowerSimulations Emulation Problem Type for unspecified problems
-"""
-struct GenericEmulationProblem <: DefaultEmulationProblem end
-
-"""
     EmulationModel{M}(
         template::AbstractProblemTemplate,
         sys::PSY.System,
@@ -28,7 +17,6 @@ Build the optimization problem of type M with the specific system and template.
   - `optimizer::Union{Nothing,MOI.OptimizerWithAttributes} = nothing` : The optimizer does
     not get serialized. Callers should pass whatever they passed to the original problem.
   - `warm_start::Bool = true`: True will use the current operation point in the system to initialize variable values. False initializes all variables to zero. Default is true
-  - `system_to_file::Bool = true:`: True to create a copy of the system used in the model.
   - `initialize_model::Bool = true`: Option to decide to initialize the model or not.
   - `initialization_file::String = ""`: This allows to pass pre-existing initialization values to avoid the solution of an optimization problem to find feasible initial conditions.
   - `deserialize_initial_conditions::Bool = false`: Option to deserialize conditions
@@ -95,7 +83,6 @@ function EmulationModel{M}(
     name = nothing,
     optimizer = nothing,
     warm_start = true,
-    system_to_file = true,
     initialize_model = true,
     initialization_file = "",
     deserialize_initial_conditions = false,
@@ -117,7 +104,6 @@ function EmulationModel{M}(
         optimizer = optimizer,
         time_series_cache_size = time_series_cache_size,
         warm_start = warm_start,
-        system_to_file = system_to_file,
         initialize_model = initialize_model,
         initialization_file = initialization_file,
         deserialize_initial_conditions = deserialize_initial_conditions,
@@ -199,38 +185,16 @@ function EmulationModel{M}(
     return EmulationModel{M}(template, sys, jump_model; kwargs...)
 end
 
-"""
-Construct an EmulationProblem from a serialized file.
+get_problem_type(::EmulationModel{M}) where {M <: EmulationProblem} = M
 
-# Arguments
-
-  - `directory::AbstractString`: Directory containing a serialized model.
-  - `optimizer::MOI.OptimizerWithAttributes`: The optimizer does not get serialized.
-    Callers should pass whatever they passed to the original problem.
-  - `jump_model::Union{Nothing, JuMP.Model}` = nothing: The JuMP model does not get
-    serialized. Callers should pass whatever they passed to the original problem.
-  - `system::Union{Nothing, PSY.System}`: Optionally, the system used for the model.
-    If nothing and sys_to_file was set to true when the model was created, the system will
-    be deserialized from a file.
-"""
-function EmulationModel(
-    directory::AbstractString,
-    optimizer::MOI.OptimizerWithAttributes;
-    jump_model::Union{Nothing, JuMP.Model} = nothing,
-    system::Union{Nothing, PSY.System} = nothing,
-    kwargs...,
-)
-    return deserialize_problem(
-        EmulationModel,
-        directory;
-        jump_model = jump_model,
-        optimizer = optimizer,
-        system = system,
-    )
+function validate_template(::EmulationModel{M}) where {M <: EmulationProblem}
+    error("validate_template is not implemented for EmulationModel{$M}")
 end
 
-get_problem_type(::EmulationModel{M}) where {M <: EmulationProblem} = M
-validate_template(::EmulationModel{<:EmulationProblem}) = nothing
+function validate_template(model::EmulationModel{<:DefaultEmulationProblem})
+    validate_template_impl!(model)
+    return
+end
 
 function validate_time_series!(model::EmulationModel{<:DefaultEmulationProblem})
     sys = get_system(model)
@@ -581,8 +545,6 @@ function run!(
                 end
                 if export_optimization_model
                     TimerOutputs.@timeit RUN_OPERATION_MODEL_TIMER "Serialize" begin
-                        optimizer = get(kwargs, :optimizer, nothing)
-                        serialize_problem(model; optimizer = optimizer)
                         serialize_optimization_model(model)
                     end
                 end

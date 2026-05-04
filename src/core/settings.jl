@@ -1,6 +1,7 @@
 struct Settings
     horizon::Base.RefValue{Dates.Millisecond}
     resolution::Base.RefValue{Dates.Millisecond}
+    interval::Base.RefValue{Dates.Millisecond}
     time_series_cache_size::Int
     warm_start::Base.RefValue{Bool}
     initial_time::Base.RefValue{Dates.DateTime}
@@ -9,7 +10,7 @@ struct Settings
     optimizer_solve_log_print::Bool
     detailed_optimizer_stats::Bool
     calculate_conflict::Bool
-    system_to_file::Bool
+    check_components::Bool
     initialize_model::Bool
     initialization_file::String
     deserialize_initial_conditions::Bool
@@ -29,12 +30,13 @@ function Settings(
     warm_start::Bool = true,
     horizon::Dates.Period = UNSET_HORIZON,
     resolution::Dates.Period = UNSET_RESOLUTION,
+    interval::Dates.Period = UNSET_INTERVAL,
     optimizer = nothing,
     direct_mode_optimizer::Bool = false,
     optimizer_solve_log_print::Bool = false,
     detailed_optimizer_stats::Bool = false,
     calculate_conflict::Bool = false,
-    system_to_file::Bool = true,
+    check_components::Bool = true,
     initialize_model::Bool = true,
     initialization_file = "",
     deserialize_initial_conditions::Bool = false,
@@ -64,6 +66,7 @@ function Settings(
     return Settings(
         Ref(IS.time_period_conversion(horizon)),
         Ref(IS.time_period_conversion(resolution)),
+        Ref(IS.time_period_conversion(interval)),
         time_series_cache_size,
         Ref(warm_start),
         Ref(initial_time),
@@ -72,7 +75,7 @@ function Settings(
         optimizer_solve_log_print,
         detailed_optimizer_stats,
         calculate_conflict,
-        system_to_file,
+        check_components,
         initialize_model,
         initialization_file,
         deserialize_initial_conditions,
@@ -99,48 +102,14 @@ function log_values(settings::Settings)
     @debug "Settings: $(join(text, ", "))" _group = LOG_GROUP_OPTIMIZATION_CONTAINER
 end
 
-function copy_for_serialization(settings::Settings)
-    vals = []
-    for name in fieldnames(Settings)
-        if name == :optimizer
-            # Cannot guarantee that the optimizer can be serialized.
-            val = nothing
-        else
-            val = getfield(settings, name)
-        end
-
-        push!(vals, val)
-    end
-
-    return deepcopy(Settings(vals...))
-end
-
-function restore_from_copy(
-    settings::Settings;
-    optimizer::Union{Nothing, MOI.OptimizerWithAttributes},
-)
-    vals = Dict{Symbol, Any}()
-    for name in fieldnames(Settings)
-        if name == :optimizer
-            vals[name] = optimizer
-        elseif name == :ext
-            continue
-        else
-            val = getfield(settings, name)
-            vals[name] = isa(val, Base.RefValue) ? val[] : val
-        end
-    end
-
-    return vals
-end
-
 get_horizon(settings::Settings) = settings.horizon[]
 get_resolution(settings::Settings) = settings.resolution[]
+get_interval(settings::Settings) = settings.interval[]
 get_initial_time(settings::Settings)::Dates.DateTime = settings.initial_time[]
 get_optimizer(settings::Settings) = settings.optimizer
 get_ext(settings::Settings) = settings.ext
 get_warm_start(settings::Settings) = settings.warm_start[]
-get_system_to_file(settings::Settings) = settings.system_to_file
+get_check_components(settings::Settings) = settings.check_components
 get_initialize_model(settings::Settings) = settings.initialize_model
 get_initialization_file(settings::Settings) = settings.initialization_file
 get_deserialize_initial_conditions(settings::Settings) =
@@ -164,6 +133,11 @@ end
 
 function set_resolution!(settings::Settings, resolution::Dates.TimePeriod)
     settings.resolution[] = IS.time_period_conversion(resolution)
+    return
+end
+
+function set_interval!(settings::Settings, interval::Dates.TimePeriod)
+    settings.interval[] = IS.time_period_conversion(interval)
     return
 end
 

@@ -256,8 +256,9 @@ end
     var2 = read_variable(results2, ActivePowerVariable, ThermalStandard)
     @test var1_a == var2
     @test get_system(results2) === nothing
-    get_system!(results2)
-    @test get_system(results2) isa PSY.System
+    # Commented out for now, as we no longer automatically serialize the system with results, but this should be added back in the future.
+    #get_system!(results2)
+    #@test get_system(results2) isa PSY.System
 
     # Serialize to a new directory with the exported function.
     results_path = joinpath(path, "results")
@@ -297,28 +298,6 @@ end
 
     file_list = sort!(collect(readdir(path)))
     @test PSI._JUMP_MODEL_FILENAME in file_list
-    @test PSI._SERIALIZED_MODEL_FILENAME in file_list
-    path2 = joinpath(path, "tmp")
-    model2 = EmulationModel(path, HiGHS_optimizer)
-    build!(model2; output_dir = path2)
-    @test run!(model2) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
-    results2 = OptimizationProblemResults(model2)
-    var2 = read_variable(results, ActivePowerVariable, ThermalStandard)
-
-    @test var1 == var2
-
-    # Deserialize with different optimizer attributes.
-    optimizer = JuMP.optimizer_with_attributes(HiGHS.Optimizer, "time_limit" => 110.0)
-    @test_logs (:warn, r"Original solver was .*, new solver is") match_mode = :any EmulationModel(
-        path,
-        optimizer,
-    )
-
-    # Deserialize with a different optimizer.
-    @test_logs (:warn, r"Original solver was .* new solver is") match_mode = :any EmulationModel(
-        path,
-        HiGHS_optimizer,
-    )
 end
 
 @testset "Test serialization of InitialConditionsData" begin

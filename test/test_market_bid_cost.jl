@@ -32,7 +32,6 @@ function test_market_bid_cost_models(sys::PSY.System,
         sys;
         name = "UC_test_mbc",
         optimizer = HiGHS_optimizer_small_gap,
-        system_to_file = false,
         optimizer_solve_log_print = true,
         store_variable_names = true,
     )
@@ -444,7 +443,7 @@ end
     # Scenario 1: hot and warm starts
     # TODO the process to empirically tune these values so the tests work everywhere is
     # absolutely horrible, we need a more robust system ASAP
-    # https://github.com/NREL-Sienna/PowerSimulations.jl/issues/1460
+    # https://github.com/Sienna-Platform/PowerSimulations.jl/issues/1460
     load_pow_mult_a = 1.01
     therm_pow_mult_a = 1.07
     therm_price_mult_a = 7.40
@@ -871,7 +870,6 @@ end
         sys_hourly;
         name = "VOM_hourly",
         optimizer = HiGHS_optimizer,
-        system_to_file = false,
         optimizer_solve_log_print = false,
     )
     @test build!(model_hourly; output_dir = test_path) == PSI.ModelBuildStatus.BUILT
@@ -919,7 +917,6 @@ end
         sys_30min;
         name = "VOM_30min",
         optimizer = HiGHS_optimizer,
-        system_to_file = false,
         optimizer_solve_log_print = false,
         resolution = Dates.Minute(30),  # Set 30-minute resolution here
     )
@@ -996,7 +993,6 @@ end
         sys_hourly;
         name = "MBC_VOM_hourly",
         optimizer = HiGHS_optimizer,
-        system_to_file = false,
         optimizer_solve_log_print = false,
     )
     @test build!(model_hourly; output_dir = test_path) == PSI.ModelBuildStatus.BUILT
@@ -1021,7 +1017,6 @@ end
         sys_30min;
         name = "MBC_VOM_30min",
         optimizer = HiGHS_optimizer,
-        system_to_file = false,
         optimizer_solve_log_print = false,
         resolution = Dates.Minute(30),
     )

@@ -173,115 +173,6 @@ end
     end
 end
 
-#= Disabled until we merge the SCUC branch
-@testset "Network DC-PF with VirtualPTDF Model and implementing Dynamic Branch Ratings" begin
-    line_device_model = DeviceModel(
-        Line,
-        StaticBranch;
-        time_series_names = Dict(
-            DynamicBranchRatingTimeSeriesParameter => "dynamic_line_ratings",
-        ))
-    TapTransf_device_model = DeviceModel(
-        TapTransformer,
-        StaticBranch;
-        time_series_names = Dict(
-            DynamicBranchRatingTimeSeriesParameter => "dynamic_line_ratings",
-        ))
-    c_sys5 = PSB.build_system(PSITestSystems, "c_sys5")
-    c_sys14 = PSB.build_system(PSITestSystems, "c_sys14")
-    c_sys14_dc = PSB.build_system(PSITestSystems, "c_sys14_dc")
-    systems = [c_sys5, c_sys14, c_sys14_dc]
-    objfuncs = [GAEVF, GQEVF, GQEVF]
-    constraint_keys = [
-        PSI.ConstraintKey(FlowRateConstraint, PSY.Line, "lb"),
-        PSI.ConstraintKey(FlowRateConstraint, PSY.Line, "ub"),
-        PSI.ConstraintKey(CopperPlateBalanceConstraint, PSY.System),
-        PSI.ConstraintKey(NetworkFlowConstraint, PSY.Line),
-    ]
-    PTDF_ref = IdDict{System, VirtualPTDF}(
-        c_sys5 => VirtualPTDF(c_sys5),
-        c_sys14 => VirtualPTDF(c_sys14),
-        c_sys14_dc => VirtualPTDF(c_sys14_dc),
-    )
-    branches_dlr = IdDict{System, Vector{String}}(
-        c_sys5 => ["1", "2", "6"],
-        c_sys14 => ["Line1", "Line2", "Line9", "Line10", "Line12", "Trans2"],
-        c_sys14_dc => ["Line1", "Line9", "Line10", "Line12", "Trans2"],
-    )
-    dlr_factors = vcat([fill(x, 6) for x in [1.15, 1.05, 1.1, 1]]...)
-    test_results = IdDict{System, Vector{Int}}(
-        c_sys5 => [264, 0, 264, 264, 168],
-        c_sys14 => [600, 0, 600, 600, 504],
-        c_sys14_dc => [600, 0, 648, 552, 456],
-    )
-    test_obj_values = IdDict{System, Float64}(
-        c_sys5 => 241293.703,
-        c_sys14 => 142000.0,
-        c_sys14_dc => 142000.0,
-    )
-    n_steps = 2
-    for (ix, sys) in enumerate(systems)
-        template = get_thermal_dispatch_template_network(
-            NetworkModel(
-                PTDFPowerModel;
-                PTDF_matrix = PTDF_ref[sys],
-            ),
-        )
-
-        set_device_model!(template, line_device_model)
-        set_device_model!(template, TapTransf_device_model)
-        ps_model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
-
-        for branch_name in branches_dlr[sys]
-            branch = get_component(PSY.ACTransmission, sys, branch_name)
-            dlr_data = SortedDict{Dates.DateTime, TimeSeries.TimeArray}()
-            data_ts = collect(
-                DateTime("1/1/2024  0:00:00", "d/m/y  H:M:S"):Hour(1):DateTime(
-                    "1/1/2024  23:00:00",
-                    "d/m/y  H:M:S",
-                ),
-            )
-
-            for t in 1:n_steps
-                ini_time = data_ts[1] + Day(t - 1)
-                dlr_data[ini_time] =
-                    TimeArray(
-                        data_ts + Day(t - 1),
-                        get_rating(branch) * get_base_power(sys) * dlr_factors,
-                    )
-            end
-
-            PSY.add_time_series!(
-                sys,
-                branch,
-                PSY.Deterministic(
-                    "dynamic_line_ratings",
-                    dlr_data;
-                    scaling_factor_multiplier = get_rating,
-                ),
-            )
-        end
-
-        @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
-              PSI.ModelBuildStatus.BUILT
-        psi_constraint_test(ps_model, constraint_keys)
-
-        moi_tests(
-            ps_model,
-            test_results[sys]...,
-            false,
-        )
-        psi_checkobjfun_test(ps_model, objfuncs[ix])
-        psi_checksolve_test(
-            ps_model,
-            [MOI.OPTIMAL, MOI.ALMOST_OPTIMAL],
-            test_obj_values[sys],
-            10000,
-        )
-    end
-end
-=#
-
 @testset "Network DC lossless -PF network with PowerModels DCPlosslessForm" begin
     c_sys5 = PSB.build_system(PSITestSystems, "c_sys5")
     c_sys14 = PSB.build_system(PSITestSystems, "c_sys14")
@@ -1723,6 +1614,67 @@ end
           PSI.ModelBuildStatus.BUILT
 end
 
+# Regression test for https://github.com/Sienna-Platform/PowerSimulations.jl/issues/1594
+# Combines a NetworkModel with radial + degree-two reductions, a Line DeviceModel
+# with a filter_function, and a request for FlowRateConstraint duals. Before the
+# fix in src/devices_models/devices/common/add_constraint_dual.jl, the dual
+# container was sized along PSY.get_name.(devices) — every device passing the
+# filter — while the FlowRateConstraint container was sized along the
+# post-reduction axis from get_branch_argument_constraint_axis. The resulting
+# axis mismatch raised DimensionMismatch in process_duals during dual
+# extraction. Building a model is enough to detect the regression: after the
+# fix, axes(dual)[1] must equal axes(constraint)[1] for every meta.
+@testset "FlowRateConstraint duals with branch filter and network reductions" begin
+    sys = build_system(PSITestSystems, "case11_network_reductions")
+    add_dummy_time_series_data!(sys)
+    nr = NetworkReduction[RadialReduction(), DegreeTwoReduction()]
+    ptdf = PTDF(sys; network_reductions = nr)
+
+    template = ProblemTemplate(
+        NetworkModel(PTDFPowerModel;
+            PTDF_matrix = ptdf,
+            duals = [CopperPlateBalanceConstraint],
+            reduce_radial_branches = PNM.has_radial_reduction(ptdf.network_reduction_data),
+            reduce_degree_two_branches = PNM.has_degree_two_reduction(
+                ptdf.network_reduction_data,
+            ),
+            use_slacks = false),
+    )
+    # Mirror the filter shape from issue #1594: a voltage threshold that selects
+    # all lines in this all-230 kV system. The filter is registered (so the
+    # filter_function code path runs) but does not exclude any branch from a
+    # series chain, so reductions still drop lines from the constraint axis.
+    set_device_model!(
+        template,
+        DeviceModel(
+            Line,
+            StaticBranch;
+            duals = [FlowRateConstraint],
+            attributes = Dict(
+                "filter_function" =>
+                    x -> PSY.get_base_voltage(PSY.get_from(PSY.get_arc(x))) >= 230.0,
+            ),
+        ),
+    )
+    set_device_model!(template, Transformer2W, StaticBranch)
+    ps_model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
+    @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+
+    container = PSI.get_optimization_container(ps_model)
+    # The unfiltered Line set has 12 entries; full reduction leaves 6 entries
+    # in the constraint axis. The dual container must use the same 6 entries.
+    for meta in ("lb", "ub")
+        cons_key = PSI.ConstraintKey(FlowRateConstraint, Line, meta)
+        cons = PSI.get_constraint(container, cons_key)
+        dual = PSI.get_duals(container)[cons_key]
+        @test axes(dual)[1] == axes(cons)[1]
+        @test length(axes(cons)[1]) <
+              length(collect(get_components(Line, sys)))
+        @test "4-5-i_1" in axes(cons)[1]
+    end
+end
+
 @testset "Branch bounds of parallel and series reductions" begin
     sys = build_system(PSITestSystems, "case11_network_reductions")
     add_dummy_time_series_data!(sys)
@@ -1814,6 +1766,32 @@ end
             n_vars_radial_d2 = JuMP.num_variables(JuMPmodel)
 
             @test n_vars_radial_d2 < n_vars_radial < n_vars
+        end
+    end
+end
+
+@testset "Network reductions - PowerModels with slacks" begin
+    sys = build_system(PSITestSystems, "case11_network_reductions")
+    add_dummy_time_series_data!(sys)
+    for (network_model, optimizer) in NETWORKS_FOR_TESTING
+        @testset "Network Model: $(network_model)" begin
+            template = ProblemTemplate(
+                NetworkModel(network_model;
+                    reduce_radial_branches = true,
+                    reduce_degree_two_branches = true,
+                    use_slacks = true),
+            )
+            set_device_model!(
+                template,
+                DeviceModel(Line, StaticBranch; use_slacks = true),
+            )
+            set_device_model!(
+                template,
+                DeviceModel(Transformer2W, StaticBranch; use_slacks = true),
+            )
+            ps_model = DecisionModel(template, sys; optimizer = optimizer)
+            @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
+                  PSI.ModelBuildStatus.BUILT
         end
     end
 end

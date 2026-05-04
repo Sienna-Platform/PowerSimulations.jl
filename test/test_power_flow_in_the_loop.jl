@@ -404,9 +404,8 @@ end
         atol = 1e-9,
         rtol = 0,
     )
-    # take into account losses in the HVDC line here. [Why does the above pass, then?]
+    # verify the line loss curve is exactly 10% so the loss-ratio check below is meaningful
     hvdc_loss_curve = get_loss(hvdc)
-    # check that our hard-coded numbers are correct.
     @assert hvdc_loss_curve isa PSY.LinearCurve
     @assert get_proportional_term(hvdc_loss_curve) == 0.1
     @assert get_constant_term(hvdc_loss_curve) == 0.0
@@ -416,7 +415,7 @@ end
     @test all(ten_percent_loss[nonzeros])
 
     @test isapprox(
-        data.bus_active_power_injections[bus_lookup[get_number(to)], :] * base_power * 0.9,
+        data.bus_active_power_injections[bus_lookup[get_number(to)], :] * base_power,
         -1 .* to_from,
         atol = 1e-9,
         rtol = 0,

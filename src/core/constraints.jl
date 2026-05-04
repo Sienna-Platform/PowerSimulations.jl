@@ -128,9 +128,6 @@ The specified constraint is formulated as:
 """
 struct FeedforwardLowerBoundConstraint <: ConstraintType end
 struct FeedforwardEnergyTargetConstraint <: ConstraintType end
-struct FlowActivePowerConstraint <: ConstraintType end #not being used
-struct FlowActivePowerFromToConstraint <: ConstraintType end #not being used
-struct FlowActivePowerToFromConstraint <: ConstraintType end #not being used
 """
 Struct to create the constraint that set the flow limits through a PhaseShiftingTransformer.
 
@@ -145,10 +142,6 @@ The specified constraint is formulated as:
 struct FlowLimitConstraint <: ConstraintType end
 struct FlowLimitFromToConstraint <: ConstraintType end
 struct FlowLimitToFromConstraint <: ConstraintType end
-
-struct FlowReactivePowerConstraint <: ConstraintType end #not being used
-struct FlowReactivePowerFromToConstraint <: ConstraintType end #not being used
-struct FlowReactivePowerToFromConstraint <: ConstraintType end #not being used
 """
 Struct to create the constraints that set the power balance across a lossy HVDC two-terminal line.
 
@@ -271,7 +264,7 @@ The specified constraint is formulated as:
 ```
 """
 struct FlowRateConstraint <: ConstraintType end
-struct PostContingencyEmergencyRateLimitConstrain <: PostContingencyConstraintType end
+struct PostContingencyEmergencyRateLimitConstraint <: PostContingencyConstraintType end
 
 """
 Struct to create the constraint for branch flow rate limits from the 'from' bus to the 'to' bus.
@@ -701,3 +694,56 @@ The specified constraint is formulated as:
 ```
 """
 struct CurrentAbsoluteValueConstraint <: ConstraintType end
+
+"""
+Struct to create the constraint to balance shifted power over the user-defined time horizons.
+For more information check the [`PowerLoadShift`](@ref) formulation.
+The specified constraints are formulated as:
+```math
+\\sum_{t \\in \\text{time horizon}_k } p_t^\\text{shift,up} - p_t^\\text{shift,dn} = 0 , \\quad \\forall k \\text{ time horizons}
+```
+"""
+struct ShiftedActivePowerBalanceConstraint <: ConstraintType end
+
+"""
+Struct to create the constraint to balance shifted power over the user-defined time horizons.
+For more information check the [`PowerLoadShift`](@ref) formulation.
+The specified constraints are formulated as:
+```math
+p_t^\\text{realized} \\ge 0.0 , \\quad \\forall k \\text{ time horizons}
+```
+"""
+struct RealizedShiftedLoadMinimumBoundConstraint <: ConstraintType end
+
+"""
+Struct to create the non-anticipativity constraint for the [`PowerLoadShift`](@ref) formulation.
+This enforces that shift up can only occur after an equal or greater amount of shift down has
+already been committed, preventing the optimizer from shifting load up before it has been
+shifted down. The constraint is formulated as:
+
+```math
+\\sum_{\\tau=1}^{t} \\left( p_\\tau^\\text{shift,dn} - p_\\tau^\\text{shift,up} \\right) \\ge 0,
+\\quad \\forall t \\in \\{1,\\dots,T\\}
+```
+"""
+struct NonAnticipativityConstraint <: ConstraintType end
+
+"""
+Struct to create the constraint to limit shifted power active power between upper and lower bounds.
+For more information check the [`PowerLoadShift`](@ref) formulation.
+The specified constraints are formulated as:
+```math
+0 \\le p_t^\\text{shift, up} \\le P_t^\\text{upper}, \\quad \\forall t \\in \\{1,\\dots,T\\}
+```
+"""
+struct ShiftUpActivePowerVariableLimitsConstraint <: PowerVariableLimitsConstraint end
+
+"""
+Struct to create the constraint to limit shifted power active power between upper and lower bounds.
+For more information check the [`PowerLoadShift`](@ref) formulation.
+The specified constraints are formulated as:
+```math
+0 \\le p_t^\\text{shift, dn} \\le P_t^\\text{lower}, \\quad \\forall t \\in \\{1,\\dots,T\\}
+```
+"""
+struct ShiftDownActivePowerVariableLimitsConstraint <: PowerVariableLimitsConstraint end

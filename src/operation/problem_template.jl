@@ -349,25 +349,7 @@ function _populate_aggregated_service_model!(template::ProblemTemplate, sys::PSY
     return
 end
 
-function _add_modeled_ac_branches!(template::ProblemTemplate, sys::PSY.System)
-    network_model = get_network_model(template)
-    branch_models = get_branch_models(template)
-    for v in values(branch_models)
-        component_type = get_component_type(v)
-        if !(component_type <: PSY.ACTransmission)
-            continue
-        end
-        if isempty(get_available_components(component_type, sys))
-            @warn "$(get_component_type(v)) is included in the template but no available components exist in the system"
-        else
-            push!(network_model.modeled_ac_branch_types, component_type)
-        end
-    end
-    return
-end
-
 function finalize_template!(template::ProblemTemplate, sys::PSY.System)
-    _add_modeled_ac_branches!(template, sys)
     _populate_aggregated_service_model!(template, sys)
     _populate_contributing_devices!(template, sys)
     _add_services_to_device_model!(template)

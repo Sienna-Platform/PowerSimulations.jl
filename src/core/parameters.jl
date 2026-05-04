@@ -246,6 +246,18 @@ function set_parameter!(
     return
 end
 
+# Overload for when a JuMP parameter VariableRef is passed directly (recurrent-solve
+# path where a parallel branch type reuses the VariableRef created by the first type).
+function set_parameter!(
+    container::ParameterContainer,
+    ::JuMP.Model,
+    parameter::JuMP.VariableRef,
+    ixs...,
+)
+    assign_maybe_broadcast!(get_parameter_array(container), parameter, ixs)
+    return
+end
+
 """
 Parameter to define active power time series
 """
@@ -265,6 +277,16 @@ struct ActivePowerOutTimeSeriesParameter <: TimeSeriesParameter end
 Parameter to define active power in time series
 """
 struct ActivePowerInTimeSeriesParameter <: TimeSeriesParameter end
+
+"""
+Parameter to define active power in time series
+"""
+struct ShiftUpActivePowerTimeSeriesParameter <: TimeSeriesParameter end
+
+"""
+Parameter to define active power in time series
+"""
+struct ShiftDownActivePowerTimeSeriesParameter <: TimeSeriesParameter end
 
 """
 Parameter to define requirement time series
@@ -414,6 +436,10 @@ convert_result_to_natural_units(
 ) = true
 convert_result_to_natural_units(::Type{ActivePowerTimeSeriesParameter}) = true
 convert_result_to_natural_units(::Type{ReactivePowerTimeSeriesParameter}) = true
+convert_result_to_natural_units(::Type{ActivePowerOutTimeSeriesParameter}) = true
+convert_result_to_natural_units(::Type{ActivePowerInTimeSeriesParameter}) = true
 convert_result_to_natural_units(::Type{RequirementTimeSeriesParameter}) = true
 convert_result_to_natural_units(::Type{UpperBoundValueParameter}) = true
 convert_result_to_natural_units(::Type{LowerBoundValueParameter}) = true
+convert_result_to_natural_units(::Type{ShiftUpActivePowerTimeSeriesParameter}) = true
+convert_result_to_natural_units(::Type{ShiftDownActivePowerTimeSeriesParameter}) = true

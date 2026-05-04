@@ -399,3 +399,65 @@ end
     @test !isempty(c.multiplier_array)
     @test !isempty(c.parameter_array)
 end
+
+@testset "Build with store_systems_in_results option" begin
+    models = create_simulation_build_test_problems(get_template_basic_uc_simulation())
+    sequence = SimulationSequence(;
+        models = models,
+        feedforwards = Dict(
+            "ED" => [
+                SemiContinuousFeedforward(;
+                    component_type = ThermalStandard,
+                    source = OnVariable,
+                    affected_values = [ActivePowerVariable],
+                ),
+            ],
+        ),
+        ini_cond_chronology = InterProblemChronology(),
+    )
+
+    # Test store_systems_in_results = true (default)
+    sim_with = Simulation(;
+        name = "test_with_systems",
+        steps = 1,
+        models = models,
+        sequence = sequence,
+        simulation_folder = mktempdir(; cleanup = true),
+    )
+    build_out = build!(sim_with; store_systems_in_results = true)
+    @test build_out == PSI.SimulationBuildStatus.BUILT
+    PSI.open_store(PSI.HdfSimulationStore, PSI.get_store_dir(sim_with), "r") do store
+        root = store.file["simulation"]
+        @test haskey(root, "systems")
+        @test length(keys(root["systems"])) > 0
+    end
+
+    # Test store_systems_in_results = false
+    models2 = create_simulation_build_test_problems(get_template_basic_uc_simulation())
+    sequence2 = SimulationSequence(;
+        models = models2,
+        feedforwards = Dict(
+            "ED" => [
+                SemiContinuousFeedforward(;
+                    component_type = ThermalStandard,
+                    source = OnVariable,
+                    affected_values = [ActivePowerVariable],
+                ),
+            ],
+        ),
+        ini_cond_chronology = InterProblemChronology(),
+    )
+    sim_without = Simulation(;
+        name = "test_without_systems",
+        steps = 1,
+        models = models2,
+        sequence = sequence2,
+        simulation_folder = mktempdir(; cleanup = true),
+    )
+    build_out = build!(sim_without; store_systems_in_results = false)
+    @test build_out == PSI.SimulationBuildStatus.BUILT
+    PSI.open_store(PSI.HdfSimulationStore, PSI.get_store_dir(sim_without), "r") do store
+        root = store.file["simulation"]
+        @test !haskey(root, "systems")
+    end
+end
