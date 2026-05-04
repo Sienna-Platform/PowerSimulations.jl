@@ -31,6 +31,7 @@ struct PostContingencyBranchFlow <: PostContingencyExpressions end
 struct PostContingencyActivePowerGeneration <: PostContingencyExpressions end
 struct PostContingencyNodalActivePowerDeployment <: PostContingencyExpressions end
 struct NetActivePower <: ExpressionType end
+struct RealizedShiftedLoad <: ExpressionType end
 """
 Struct for DC current balance in multi-terminal DC networks
 """
@@ -44,6 +45,7 @@ should_write_resulting_value(::Type{ActivePowerBalance}) = true
 should_write_resulting_value(::Type{ReactivePowerBalance}) = true
 should_write_resulting_value(::Type{DCCurrentBalance}) = true
 should_write_resulting_value(::Type{PTDFBranchFlow}) = true
+should_write_resulting_value(::Type{RealizedShiftedLoad}) = true
 #should_write_resulting_value(::Type{PostContingencyBranchFlow}) = true
 #should_write_resulting_value(::Type{PostContingencyActivePowerGeneration}) = true
 
@@ -51,3 +53,4 @@ convert_result_to_natural_units(::Type{InterfaceTotalFlow}) = true
 convert_result_to_natural_units(::Type{PostContingencyBranchFlow}) = true
 convert_result_to_natural_units(::Type{PostContingencyActivePowerGeneration}) = true
 convert_result_to_natural_units(::Type{PTDFBranchFlow}) = true
+convert_result_to_natural_units(::Type{RealizedShiftedLoad}) = true

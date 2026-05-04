@@ -10,7 +10,7 @@
 # where results from previous problems inform subsequent problems in a variety of ways. This
 # example demonstrates some of these capabilities to represent electricity market clearing.
 # This example is intended to be an extension of the tutorial on 
-# [Running a Simple-Step Problem](@ref).
+# [Running a Single-Step Problem](@ref).
 #
 # ### Load Packages
 
@@ -237,4 +237,4 @@ rm(path; force = true, recursive = true) #hide
 
 # ## Plotting
 #
-# Take a look at the plotting capabilities in [PowerGraphics.jl](https://nrel-sienna.github.io/PowerGraphics.jl/stable/)
+# Take a look at the plotting capabilities in [PowerGraphics.jl](https://sienna-platform.github.io/PowerGraphics.jl/stable/)

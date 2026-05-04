@@ -5,16 +5,13 @@ using DataStructures
 using DocumenterInterLinks
 using Literate
 
-# UPDATE FOR CURRENT MODULE NAME HERE
-const _DOCS_BASE_URL = "https://nrel-sienna.github.io/PowerSimulations.jl/stable"
-
 links = InterLinks(
     "Julia" => "https://docs.julialang.org/en/v1/",
-    "InfrastructureSystems" => "https://nrel-sienna.github.io/InfrastructureSystems.jl/stable/",
-    "PowerSystems" => "https://nrel-sienna.github.io/PowerSystems.jl/stable/",
-    "PowerSimulations" => "https://nrel-sienna.github.io/PowerSimulations.jl/stable/",
-    "StorageSystemsSimulations" => "https://nrel-sienna.github.io/StorageSystemsSimulations.jl/stable/",
-    "HydroPowerSimulations" => "https://nrel-sienna.github.io/HydroPowerSimulations.jl/dev/",
+    "InfrastructureSystems" => "https://sienna-platform.github.io/InfrastructureSystems.jl/stable/",
+    "PowerSystems" => "https://sienna-platform.github.io/PowerSystems.jl/stable/",
+    "PowerSimulations" => "https://sienna-platform.github.io/PowerSimulations.jl/stable/",
+    "StorageSystemsSimulations" => "https://sienna-platform.github.io/StorageSystemsSimulations.jl/stable/",
+    "HydroPowerSimulations" => "https://sienna-platform.github.io/HydroPowerSimulations.jl/dev/",
 )
 
 include(joinpath(@__DIR__, "make_tutorials.jl"))
@@ -74,7 +71,7 @@ makedocs(;
 )
 
 deploydocs(;
-    repo = "github.com/NREL-Sienna/PowerSimulations.jl.git",
+    repo = "github.com/Sienna-Platform/PowerSimulations.jl.git",
     target = "build",
     branch = "gh-pages",
     devbranch = "main",

@@ -430,7 +430,7 @@ function cost_due_to_time_varying_mbc(
                     _calc_pwi_cost.(
                         @rsubset(power_df, :name == gen_name).value,
                         TimeSeries.values(vc_ts),
-                    ) # could replace with direct evaluation, now that it is implemented in IS. (https://github.com/NREL-Sienna/PowerSimulations.jl/issues/1430)
+                    ) # could replace with direct evaluation, now that it is implemented in IS. (https://github.com/Sienna-Platform/PowerSimulations.jl/issues/1430)
             end
         end
         measure_vars = [x for x in names(step_df) if x != "DateTime"]
@@ -577,7 +577,7 @@ function run_mbc_obj_fun_test(
     return decisions1, decisions2
 end
 
-# TODO for https://github.com/NREL-Sienna/PowerSimulations.jl/issues/1430, reimplement this
+# TODO for https://github.com/Sienna-Platform/PowerSimulations.jl/issues/1430, reimplement this
 # by converting the implied IncrementalCurve into an InputOutputCurve and then evaluating
 # *its* `FunctionData`
 function _calc_pwi_cost(active_power::Float64, pwi::PiecewiseStepData)

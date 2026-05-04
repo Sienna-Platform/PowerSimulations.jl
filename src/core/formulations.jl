@@ -73,6 +73,11 @@ Formulation type to enable (continuous) load interruption dispatch
 """
 struct PowerLoadDispatch <: AbstractControllablePowerLoadFormulation end
 
+"""
+Formulation type to enable load shifting
+"""
+struct PowerLoadShift <: AbstractControllablePowerLoadFormulation end
+
 ############################ Regulation Device Formulations ################################
 abstract type AbstractRegulationFormulation <: AbstractDeviceFormulation end
 struct ReserveLimitedRegulation <: AbstractRegulationFormulation end

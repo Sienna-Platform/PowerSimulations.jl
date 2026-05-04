@@ -103,17 +103,36 @@ function psi_checksolve_test(model::DecisionModel, status, expected_result, tol 
 end
 
 function psi_ptdf_lmps(res::OptimizationProblemResults, ptdf)
-    cp_duals =
-        read_dual(res, PSI.ConstraintKey(CopperPlateBalanceConstraint, PSY.System))
+    cp_duals = read_dual(
+        res,
+        PSI.ConstraintKey(CopperPlateBalanceConstraint, PSY.System);
+        table_format = TableFormat.WIDE,
+    )
     λ = Matrix{Float64}(cp_duals[:, propertynames(cp_duals) .!= :DateTime])
 
-    flow_duals = read_dual(res, PSI.ConstraintKey(NetworkFlowConstraint, PSY.Line))
-    μ = Matrix{Float64}(flow_duals[:, PNM.get_branch_ax(ptdf)])
+    flow_ub = read_dual(
+        res,
+        PSI.ConstraintKey(FlowRateConstraint, PSY.Line, "ub");
+        table_format = TableFormat.WIDE,
+    )
+    flow_lb = read_dual(
+        res,
+        PSI.ConstraintKey(FlowRateConstraint, PSY.Line, "lb");
+        table_format = TableFormat.WIDE,
+    )
+    arcs = PNM.get_arc_axis(ptdf)
+    nr = PNM.get_network_reduction_data(ptdf)
+    branch_names = [PSY.get_name(nr.direct_branch_map[arc]) for arc in arcs]
+    μ =
+        Matrix{Float64}(flow_ub[:, branch_names]) .+
+        Matrix{Float64}(flow_lb[:, branch_names])
 
     buses = get_components(Bus, get_system(res))
     lmps = OrderedDict()
     for bus in buses
-        lmps[get_name(bus)] = μ * ptdf[:, get_number(bus)]
+        bus_number = get_number(bus)
+        ptdf_col = [ptdf[arc, bus_number] for arc in arcs]
+        lmps[get_name(bus)] = μ * ptdf_col
     end
     lmp = λ .+ DataFrames.DataFrame(lmps)
     return lmp[!, sort(propertynames(lmp))]

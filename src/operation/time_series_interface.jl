@@ -6,8 +6,12 @@ function get_time_series_values!(
     initial_time::Dates.DateTime,
     horizon::Int;
     ignore_scaling_factors = true,
+    interval::Dates.Millisecond = UNSET_INTERVAL,
 ) where {T <: PSY.Forecast}
-    if !use_time_series_cache(get_settings(model))
+    is_interval = _to_is_interval(interval)
+    settings = get_settings(model)
+    resolution = get_resolution(settings)
+    if !use_time_series_cache(settings)
         return IS.get_time_series_values(
             T,
             component,
@@ -15,11 +19,12 @@ function get_time_series_values!(
             start_time = initial_time,
             len = horizon,
             ignore_scaling_factors = ignore_scaling_factors,
+            interval = is_interval,
         )
     end
 
     cache = get_time_series_cache(model)
-    key = IS.TimeSeriesCacheKey(IS.get_uuid(component), T, name)
+    key = IS.TimeSeriesCacheKey(IS.get_uuid(component), T, name, resolution, is_interval)
     if haskey(cache, key)
         ts_cache = cache[key]
     else
@@ -30,6 +35,8 @@ function get_time_series_values!(
             initial_time,
             horizon;
             ignore_scaling_factors = ignore_scaling_factors,
+            interval = is_interval,
+            resolution = resolution,
         )
         cache[key] = ts_cache
     end
@@ -46,8 +53,13 @@ function get_time_series_values!(
     initial_time::Dates.DateTime,
     len::Int = 1;
     ignore_scaling_factors = true,
+    resolution::Dates.Millisecond = UNSET_RESOLUTION,
 ) where {T <: PSY.StaticTimeSeries, U <: PSY.Component}
-    if !use_time_series_cache(get_settings(model))
+    settings = get_settings(model)
+    key_resolution =
+        resolution == UNSET_RESOLUTION ? get_resolution(settings) : resolution
+    is_resolution = _to_is_resolution(key_resolution)
+    if !use_time_series_cache(settings)
         return IS.get_time_series_values(
             T,
             component,
@@ -55,11 +67,12 @@ function get_time_series_values!(
             start_time = initial_time,
             len = len,
             ignore_scaling_factors = ignore_scaling_factors,
+            resolution = is_resolution,
         )
     end
 
     cache = get_time_series_cache(model)
-    key = IS.TimeSeriesCacheKey(IS.get_uuid(component), T, name)
+    key = IS.TimeSeriesCacheKey(IS.get_uuid(component), T, name, key_resolution, nothing)
     if haskey(cache, key)
         ts_cache = cache[key]
     else
@@ -70,6 +83,7 @@ function get_time_series_values!(
             initial_time,
             len;
             ignore_scaling_factors = ignore_scaling_factors,
+            resolution = is_resolution,
         )
         cache[key] = ts_cache
     end

@@ -178,6 +178,22 @@ Docs abbreviation: ``\\theta``
 struct VoltageAngle <: VariableType end
 
 #########################################
+###### Power Load Shift Variables #######
+#########################################
+
+"""
+Struct to dispatch the creation of Shifted Active Power Variables
+Docs abbreviation: ``p^\\text{shift,up}``
+"""
+struct ShiftUpActivePowerVariable <: VariableType end
+
+"""
+Struct to dispatch the creation of Shifted Down Active Power Variables
+Docs abbreviation: ``p^\\text{shift,dn}``
+"""
+struct ShiftDownActivePowerVariable <: VariableType end
+
+#########################################
 ####### DC Converter Variables ##########
 #########################################
 

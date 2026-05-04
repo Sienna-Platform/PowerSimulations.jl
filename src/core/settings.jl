@@ -1,6 +1,7 @@
 struct Settings
     horizon::Base.RefValue{Dates.Millisecond}
     resolution::Base.RefValue{Dates.Millisecond}
+    interval::Base.RefValue{Dates.Millisecond}
     time_series_cache_size::Int
     warm_start::Base.RefValue{Bool}
     initial_time::Base.RefValue{Dates.DateTime}
@@ -29,6 +30,7 @@ function Settings(
     warm_start::Bool = true,
     horizon::Dates.Period = UNSET_HORIZON,
     resolution::Dates.Period = UNSET_RESOLUTION,
+    interval::Dates.Period = UNSET_INTERVAL,
     optimizer = nothing,
     direct_mode_optimizer::Bool = false,
     optimizer_solve_log_print::Bool = false,
@@ -64,6 +66,7 @@ function Settings(
     return Settings(
         Ref(IS.time_period_conversion(horizon)),
         Ref(IS.time_period_conversion(resolution)),
+        Ref(IS.time_period_conversion(interval)),
         time_series_cache_size,
         Ref(warm_start),
         Ref(initial_time),
@@ -101,6 +104,7 @@ end
 
 get_horizon(settings::Settings) = settings.horizon[]
 get_resolution(settings::Settings) = settings.resolution[]
+get_interval(settings::Settings) = settings.interval[]
 get_initial_time(settings::Settings)::Dates.DateTime = settings.initial_time[]
 get_optimizer(settings::Settings) = settings.optimizer
 get_ext(settings::Settings) = settings.ext
@@ -129,6 +133,11 @@ end
 
 function set_resolution!(settings::Settings, resolution::Dates.TimePeriod)
     settings.resolution[] = IS.time_period_conversion(resolution)
+    return
+end
+
+function set_interval!(settings::Settings, interval::Dates.TimePeriod)
+    settings.interval[] = IS.time_period_conversion(interval)
     return
 end
 

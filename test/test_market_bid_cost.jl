@@ -443,7 +443,7 @@ end
     # Scenario 1: hot and warm starts
     # TODO the process to empirically tune these values so the tests work everywhere is
     # absolutely horrible, we need a more robust system ASAP
-    # https://github.com/NREL-Sienna/PowerSimulations.jl/issues/1460
+    # https://github.com/Sienna-Platform/PowerSimulations.jl/issues/1460
     load_pow_mult_a = 1.01
     therm_pow_mult_a = 1.07
     therm_price_mult_a = 7.40

@@ -140,17 +140,26 @@ function get_branch_argument_parameter_axes(
     net_reduction_data::PNM.NetworkReductionData,
     ::IS.FlattenIteratorWrapper{T},
     ::Type{V},
-    ts_name::String,
+    ts_name::String;
+    interval::Dates.Millisecond = UNSET_INTERVAL,
 ) where {T <: PSY.ACTransmission, V <: PSY.TimeSeriesData}
-    return get_branch_argument_parameter_axes(net_reduction_data, T, V, ts_name)
+    return get_branch_argument_parameter_axes(
+        net_reduction_data,
+        T,
+        V,
+        ts_name;
+        interval = interval,
+    )
 end
 
 function get_branch_argument_parameter_axes(
     net_reduction_data::PNM.NetworkReductionData,
     ::Type{T},
     ::Type{V},
-    ts_name::String,
+    ts_name::String;
+    interval::Dates.Millisecond = UNSET_INTERVAL,
 ) where {T <: PSY.ACTransmission, V <: PSY.TimeSeriesData}
+    is_interval = _to_is_interval(interval)
     name_axis = Vector{String}()
     ts_uuid_axis = Vector{String}()
     for (name, (arc, reduction)) in net_reduction_data.name_to_arc_map[T]
@@ -161,7 +170,14 @@ function get_branch_argument_parameter_axes(
             push!(name_axis, name)
             push!(
                 ts_uuid_axis,
-                string(IS.get_time_series_uuid(V, device_with_time_series, ts_name)),
+                string(
+                    IS.get_time_series_uuid(
+                        V,
+                        device_with_time_series,
+                        ts_name;
+                        interval = is_interval,
+                    ),
+                ),
             )
         end
     end

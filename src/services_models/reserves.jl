@@ -132,6 +132,17 @@ function add_variable!(
     return
 end
 
+function _sum_reserve_variables(
+    vars::AbstractArray{<:JuMP.AbstractVariableRef},
+    extra::Int,
+)
+    acc = get_hinted_aff_expr(length(vars) + extra)
+    for v in vars
+        JuMP.add_to_expression!(acc, v)
+    end
+    return acc
+end
+
 ################################## Reserve Requirement Constraint ##########################
 function add_constraints!(
     container::OptimizationContainer,
@@ -161,35 +172,35 @@ function add_constraints!(
         get_variable(container, ActivePowerReserveVariable(), SR, service_name)
     use_slacks = get_use_slacks(model)
 
-    ts_vector = get_time_series(container, service, "requirement")
+    ts_vector = get_time_series(
+        container,
+        service,
+        "requirement";
+        interval = get_interval(get_settings(container)),
+    )
 
     use_slacks && (slack_vars = reserve_slacks!(container, service))
     requirement = PSY.get_requirement(service)
     jump_model = get_jump_model(container)
+    extra = use_slacks ? 1 : 0
     if built_for_recurrent_solves(container)
         param_container =
             get_parameter(container, RequirementTimeSeriesParameter(), SR, service_name)
         param = get_parameter_column_refs(param_container, service_name)
         for t in time_steps
-            if use_slacks
-                resource_expression = JuMP.@expression(
-                    jump_model, sum(@view reserve_variable[:, t]) + slack_vars[t])
-            else
-                resource_expression = JuMP.@expression(
-                    jump_model, sum(@view reserve_variable[:, t]))
-            end
+            resource_expression =
+                _sum_reserve_variables(@view(reserve_variable[:, t]), extra)
+            use_slacks &&
+                JuMP.add_to_expression!(resource_expression, slack_vars[t])
             constraint[service_name, t] =
                 JuMP.@constraint(jump_model, resource_expression >= param[t] * requirement)
         end
     else
         for t in time_steps
-            if use_slacks
-                resource_expression = JuMP.@expression(
-                    jump_model, sum(@view reserve_variable[:, t]) + slack_vars[t])
-            else
-                resource_expression = JuMP.@expression(
-                    jump_model, sum(@view reserve_variable[:, t]))
-            end
+            resource_expression =
+                _sum_reserve_variables(@view(reserve_variable[:, t]), extra)
+            use_slacks &&
+                JuMP.add_to_expression!(resource_expression, slack_vars[t])
             constraint[service_name, t] = JuMP.@constraint(
                 jump_model,
                 resource_expression >= ts_vector[t] * requirement
@@ -229,7 +240,12 @@ function add_constraints!(
     var_r = get_variable(container, ActivePowerReserveVariable(), SR, service_name)
     jump_model = get_jump_model(container)
     requirement = PSY.get_requirement(service)
-    ts_vector = get_time_series(container, service, "requirement")
+    ts_vector = get_time_series(
+        container,
+        service,
+        "requirement";
+        interval = get_interval(get_settings(container)),
+    )
     param_container =
         get_parameter(container, RequirementTimeSeriesParameter(), SR, service_name)
     param = get_parameter_column_refs(param_container, service_name)
@@ -281,14 +297,11 @@ function add_constraints!(
 
     requirement = PSY.get_requirement(service)
     jump_model = get_jump_model(container)
+    extra = use_slacks ? 1 : 0
     for t in time_steps
-        resource_expression = JuMP.GenericAffExpr{Float64, JuMP.VariableRef}()
-        JuMP.add_to_expression!(resource_expression,
-            JuMP.@expression(jump_model, sum(@view reserve_variable[:, t])))
-        # consider a for loop
-        if use_slacks
-            JuMP.add_to_expression!(resource_expression, slack_vars[t])
-        end
+        resource_expression =
+            _sum_reserve_variables(@view(reserve_variable[:, t]), extra)
+        use_slacks && JuMP.add_to_expression!(resource_expression, slack_vars[t])
         constraint[service_name, t] =
             JuMP.@constraint(jump_model, resource_expression >= requirement)
     end

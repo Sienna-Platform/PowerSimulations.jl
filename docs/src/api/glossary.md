@@ -29,7 +29,7 @@ Changing the attributes between `true` or `false` can enable/disable multiple as
 
 ## D
 
-  - *Decision Problem*: A decision problem calculates the desired system operation based on forecasts of uncertain inputs and information about the state of the system. The output of a decision problem represents the policies used to drive the set-points of the system's devices, like generators or switches, and depends on the purpose of the problem. See the tutorial on [Running a Simple-Step Problem](@ref) to learn more about solving individual problems.
+  - *Decision Problem*: A decision problem calculates the desired system operation based on forecasts of uncertain inputs and information about the state of the system. The output of a decision problem represents the policies used to drive the set-points of the system's devices, like generators or switches, and depends on the purpose of the problem. See the tutorial on [Running a Single-Step Problem](@ref) to learn more about solving individual problems.
 
   - *Device Formulation*: The model of a device that is incorporated into a large system optimization models. For instance, the storage device model used inside of a Unit Commitment (UC) problem. A device model needs to follow some requirements to be integrated into operation problems. For more information about valid `DeviceModel`s and their mathematical representations, check out the [Formulation Library](@ref formulation_intro).
 
@@ -43,15 +43,15 @@ Changing the attributes between `true` or `false` can enable/disable multiple as
 
 ## H
 
-  - *Horizon*: The number of steps in the look-ahead of a decision problem. For instance, a Day-Ahead problem usually has a 48 step horizon. Check the time [Time Series Data Section in PowerSystems.jl](https://nrel-sienna.github.io/PowerSystems.jl/stable/modeler_guide/time_series/)
+  - *Horizon*: The number of steps in the look-ahead of a decision problem. For instance, a Day-Ahead problem usually has a 48 step horizon. Check the time [Time Series Data Section in PowerSystems.jl](https://sienna-platform.github.io/PowerSystems.jl/stable/modeler_guide/time_series/)
 
 ## I
 
-  - *Interval*: The amount of time between updates to the decision problem. For instance, Day-Ahead problems usually have a 24-hour intervals and Real-Time problems have 5-minute intervals. Check the time [Time Series Data Section in PowerSystems.jl](https://nrel-sienna.github.io/PowerSystems.jl/stable/modeler_guide/time_series/)
+  - *Interval*: The amount of time between updates to the decision problem. For instance, Day-Ahead problems usually have a 24-hour intervals and Real-Time problems have 5-minute intervals. Check the time [Time Series Data Section in PowerSystems.jl](https://sienna-platform.github.io/PowerSystems.jl/stable/modeler_guide/time_series/)
 
 ## R
 
-  - *Resolution*: The amount of time between time steps in a simulation. For instance 1-hour or 5-minutes. In Julia these are defined using the syntax `Hour(1)` and `Minute(5)`. Check the time [Time Series Data Section in PowerSystems.jl](https://nrel-sienna.github.io/PowerSystems.jl/stable/modeler_guide/time_series/)
+  - *Resolution*: The amount of time between time steps in a simulation. For instance 1-hour or 5-minutes. In Julia these are defined using the syntax `Hour(1)` and `Minute(5)`. Check the time [Time Series Data Section in PowerSystems.jl](https://sienna-platform.github.io/PowerSystems.jl/stable/modeler_guide/time_series/)
 
   - *Results vs Realized Results*: In `PowerSimulations.jl` the term *results* is used to refer to the solution of all optimization problems in a *Simulation*. When using `read_variable(results, Variable)` in a `DecisionModel` of a simulation, the output is a dictionary with the values of such variable for every optimization problem solved, while `read_realized_variable(results, Variable)` will return the values of the specified interval and number of steps in the simulation. See the [Read Results page](@ref read_results) for more details.
 

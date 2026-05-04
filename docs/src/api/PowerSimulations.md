@@ -89,6 +89,14 @@ Private = false
 
 ```@raw html
 &nbsp;
+```
+
+```@docs
+GenericOpProblem
+```
+
+```@raw html
+&nbsp;
 &nbsp;
 ```
 
@@ -99,7 +107,6 @@ Private = false
 ```@docs
 EmulationModel
 EmulationModel(::Type{M} where {M <: EmulationProblem}, ::ProblemTemplate, ::PSY.System, ::Union{Nothing, JuMP.Model})
-EmulationModel(::AbstractString, ::MOI.OptimizerWithAttributes)
 build!(::EmulationModel)
 run!(::EmulationModel)
 solve!(::Int, ::EmulationModel{<:EmulationProblem}, ::Dates.DateTime, ::SimulationStore)
@@ -134,7 +141,6 @@ InitialCondition
 SimulationModels
 SimulationSequence
 Simulation
-Simulation(::AbstractString, ::Dict)
 build!(::Simulation)
 execute!(::Simulation)
 ```
@@ -200,6 +206,13 @@ ReservationVariable
 EnergyVariable
 ActivePowerOutVariable
 ActivePowerInVariable
+```
+
+### Load Variables
+
+```@docs
+ShiftUpActivePowerVariable
+ShiftDownActivePowerVariable
 ```
 
 ### Branches and Network Variables
@@ -293,6 +306,7 @@ PowerFlowBranchReactivePowerFromTo
 PowerFlowBranchReactivePowerToFrom
 PowerFlowBranchActivePowerFromTo
 PowerFlowBranchActivePowerToFrom
+PowerFlowBranchActivePowerLoss
 ```
 
 ```@raw html
@@ -361,6 +375,16 @@ EqualityConstraint
 
 ```@docs
 ImportExportBudgetConstraint
+```
+
+## Load Constraints
+
+```@docs
+ShiftDownActivePowerVariableLimitsConstraint
+NonAnticipativityConstraint
+ShiftUpActivePowerVariableLimitsConstraint
+RealizedShiftedLoadMinimumBoundConstraint
+ShiftedActivePowerBalanceConstraint
 ```
 
 ### Branches Constraints

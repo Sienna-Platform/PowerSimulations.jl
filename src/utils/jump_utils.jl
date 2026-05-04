@@ -1,5 +1,11 @@
 const IntegerAxis = Union{Vector{Int}, UnitRange{Int}}
 
+function get_hinted_aff_expr(size::Int)
+    expr = JuMP.AffExpr(0.0)
+    sizehint!(expr.terms, size)
+    return expr
+end
+
 #Given the changes in syntax in ParameterJuMP and the new format to create anonymous parameters
 function add_jump_parameter(jump_model::JuMP.Model, val::Number)
     param = JuMP.@variable(jump_model, base_name = "param")
