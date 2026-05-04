@@ -37,7 +37,7 @@ function _set_param_value!(
 end
 
 function _update_parameter_values!(
-    parameter_array::AbstractArray{T},
+    parameter_array::DenseAxisArray{T},
     ::W,
     attributes::TimeSeriesAttributes{U},
     ::Type{V},
@@ -103,7 +103,7 @@ end
 
 # Time-series parameter update for reduced ACTransmission branches
 function _update_parameter_values!(
-    parameter_array::AbstractArray{T},
+    parameter_array::DenseAxisArray{T},
     ::W,
     attributes::TimeSeriesAttributes{U},
     ::Type{V},
@@ -171,7 +171,7 @@ function _update_parameter_values!(
 end
 
 function _update_parameter_values!(
-    parameter_array::AbstractArray{T},
+    parameter_array::DenseAxisArray{T},
     ::ParameterType,
     attributes::TimeSeriesAttributes{U},
     service::V,
@@ -211,7 +211,7 @@ function _update_parameter_values!(
 end
 
 function _update_parameter_values!(
-    parameter_array::AbstractArray{T},
+    parameter_array::DenseAxisArray{T},
     ::ParameterType,
     attributes::TimeSeriesAttributes{U},
     ::Type{V},
@@ -252,7 +252,7 @@ function _update_parameter_values!(
 end
 
 function _update_parameter_values!(
-    parameter_array::AbstractArray{T},
+    parameter_array::DenseAxisArray{T},
     ::ParameterType,
     attributes::TimeSeriesAttributes{U},
     service::V,
@@ -284,7 +284,7 @@ function _update_parameter_values!(
 end
 
 function _update_parameter_values!(
-    parameter_array::AbstractArray{T},
+    parameter_array::DenseAxisArray{T},
     ::ParameterType,
     attributes::VariableValueAttributes,
     ::Type{<:PSY.Device},
@@ -335,7 +335,7 @@ function _update_parameter_values!(
 end
 
 function _update_parameter_values!(
-    parameter_array::AbstractArray{T},
+    parameter_array::DenseAxisArray{T},
     ::ParameterType,
     attributes::VariableValueAttributes,
     ::PSY.Reserve,
@@ -386,7 +386,7 @@ function _update_parameter_values!(
 end
 
 function _update_parameter_values!(
-    parameter_array::AbstractArray{T},
+    parameter_array::DenseAxisArray{T},
     ::ParameterType,
     attributes::VariableValueAttributes{VariableKey{OnVariable, U}},
     ::Type{U},
@@ -443,7 +443,7 @@ function _update_parameter_values!(
 end
 
 function _update_parameter_values!(
-    parameter_array::AbstractArray{T},
+    parameter_array::DenseAxisArray{T},
     ::ParameterType,
     attributes::VariableValueAttributes,
     ::Type{<:PSY.Component},
@@ -475,7 +475,7 @@ function _update_parameter_values!(
 end
 
 function _update_parameter_values!(
-    parameter_array::AbstractArray{T},
+    parameter_array::DenseAxisArray{T},
     ::ParameterType,
     attributes::VariableValueAttributes{VariableKey{OnVariable, U}},
     ::Type{<:PSY.Component},
@@ -569,7 +569,7 @@ function _update_parameter_values!(
 end
 
 function _update_parameter_values!(
-    parameter_array::AbstractArray{T},
+    parameter_array::DenseAxisArray{T},
     attributes::EventParametersAttributes{W, U},
     ::Type{V},
     model::DecisionModel,
@@ -626,7 +626,7 @@ function _update_parameter_values!(
 end
 
 function _update_parameter_values!(
-    parameter_array::AbstractArray{T},
+    parameter_array::DenseAxisArray{T},
     ::EventParametersAttributes{W, U},
     ::Type{V},
     model::EmulationModel,

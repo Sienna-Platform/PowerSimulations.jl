@@ -262,13 +262,6 @@ function _add_time_series_parameters!(
     # name -> ts_uuid cache built from the axis pair so the per-branch loop below
     # doesn't re-query IS.get_time_series_uuid for each branch.
     branch_ts_uuids = Dict{String, String}(zip(device_name_axis, ts_uuid_axis))
-    # ts_uuid -> integer index on the parameter container's first axis. Multiple
-    # branches may share a uuid (the axis was built from this parallel pair), but they
-    # all map to the same integer slot.
-    ts_uuid_to_idx = Dict{String, Int}()
-    for (i, uuid) in enumerate(ts_uuid_axis)
-        get!(ts_uuid_to_idx, uuid, i)
-    end
     additional_axes = ()
     param_container = add_param_container!(
         container,
@@ -286,6 +279,12 @@ function _add_time_series_parameters!(
     jump_model = get_jump_model(container)
     parent_param = get_parameter_array_data(param_container)
     parent_mult = get_multiplier_array_data(param_container)
+    # The param array's first axis is `ts_uuid_axis` (UUID-keyed) while the
+    # multiplier array's first axis is `device_name_axis` (name-keyed); we need
+    # two separate row lookups so parallel branches sharing a UUID still write
+    # their multiplier to the correct (per-branch-name) row.
+    param_lookup = get_parameter_array(param_container).lookup[1]
+    mult_lookup = get_multiplier_array(param_container).lookup[1]
     for (name, (arc, reduction)) in PNM.get_name_to_arc_map(net_reduction_data, D)
         reduction_entry = all_branch_maps_by_type[reduction][D][arc]
         if !PNM.has_time_series(reduction_entry, ts_type, ts_name)
@@ -294,7 +293,8 @@ function _add_time_series_parameters!(
         device_with_time_series =
             PNM.get_device_with_time_series(reduction_entry, ts_type, ts_name)
         ts_uuid = branch_ts_uuids[name]
-        i = ts_uuid_to_idx[ts_uuid]
+        i_param = param_lookup[ts_uuid]
+        i_mult = mult_lookup[name]
 
         has_entry, tracker_container = search_for_reduced_branch_parameter!(
             reduced_branch_tracker,
@@ -317,16 +317,16 @@ function _add_time_series_parameters!(
             @assert all(_size_wrapper.(ts_vals) .== Ref(length.(additional_axes)))
         end
         multiplier = get_multiplier_value(T(), reduction_entry, W())
-        _set_multiplier_at!(parent_mult, Float64(multiplier), i)
+        _set_multiplier_at!(parent_mult, Float64(multiplier), i_mult)
         for t in time_steps
             if !has_entry
                 # Store raw float in tracker for non-recurrent builds. For recurrent
                 # builds (JuMP parameters), read back the VariableRef that the fast-path
                 # setter just created so that parallel branch types share the same
                 # JuMP parameter.
-                _set_parameter_at!(parent_param, jump_model, ts_vals[t], i, t)
+                _set_parameter_at!(parent_param, jump_model, ts_vals[t], i_param, t)
                 if built_for_recurrent_solves(container)
-                    @inbounds tracker_container[t] = parent_param[i, t]
+                    tracker_container[t] = parent_param[i_param, t]
                 else
                     tracker_container[t] = ts_vals[t]
                 end
@@ -337,7 +337,7 @@ function _add_time_series_parameters!(
                     parent_param,
                     jump_model,
                     tracker_container[t],
-                    i,
+                    i_param,
                     t,
                 )
             end
