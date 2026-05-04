@@ -194,6 +194,8 @@ get_parameter_array(c::ParameterContainer) = c.parameter_array
 # returns the array itself, so reach for `.data` directly to bypass the axis-keyed lookup.
 get_parameter_array_data(c::ParameterContainer) = get_parameter_array(c).data
 get_multiplier_array(c::ParameterContainer) = c.multiplier_array
+# Same shortcut for the multiplier array — used by the integer-indexed fast path.
+get_multiplier_array_data(c::ParameterContainer) = get_multiplier_array(c).data
 get_attributes(c::ParameterContainer) = c.attributes
 Base.length(c::ParameterContainer) = length(c.parameter_array)
 Base.size(c::ParameterContainer) = size(c.parameter_array)
@@ -328,6 +330,110 @@ end
 )
     @inbounds for k in 1:size(parent_param, 2)
         parent_param[i, k, t] = add_jump_parameter(jump_model, value[k])
+    end
+    return
+end
+
+# Fast-path setters for the multiplier array, mirroring `_set_parameter_at!`.
+# Multipliers are always Float64-valued (or tuples-of-floats for piecewise
+# parameters), so a single typed family covers every call site. Callers should
+# hoist `parent_mult = get_multiplier_array_data(parameter_container)` once
+# above the device loop and pass the integer device row index.
+
+# 2D row fill: assigns `value` across the whole time slice for component `i`
+# (the canonical pattern at parameter-creation time, where the multiplier is
+# constant per device).
+@inline function _set_multiplier_at!(
+    parent_mult::Array{T, 2},
+    value::T,
+    i::Int,
+) where {T <: ValidDataParamEltypes}
+    @inbounds @views parent_mult[i, :] .= value
+    return
+end
+
+# 2D scalar write at a single (component, time) cell.
+@inline function _set_multiplier_at!(
+    parent_mult::Array{T, 2},
+    value::T,
+    i::Int,
+    t::Int,
+) where {T <: ValidDataParamEltypes}
+    @inbounds parent_mult[i, t] = value
+    return
+end
+
+# 3D row fill: assigns `value` across all (tranche, time) for component `i`.
+@inline function _set_multiplier_at!(
+    parent_mult::Array{T, 3},
+    value::T,
+    i::Int,
+) where {T <: ValidDataParamEltypes}
+    @inbounds @views parent_mult[i, :, :] .= value
+    return
+end
+
+# 3D point write at a single (component, tranche, time) cell.
+@inline function _set_multiplier_at!(
+    parent_mult::Array{T, 3},
+    value::T,
+    i::Int,
+    j::Int,
+    t::Int,
+) where {T <: ValidDataParamEltypes}
+    @inbounds parent_mult[i, j, t] = value
+    return
+end
+
+# Fast-path setters for the simulation-step parameter-VALUE update path.
+# Used by `_update_parameter_values!` and `_fix_parameter_value!` overloads
+# where the parameter container already exists and we are pushing new values
+# into it from upstream model results or time series. Caller hoists
+# `parent_param = get_parameter_array_data(parameter_container)` (and an
+# optional `parent_mult` / `parent_var`) above the device loop, then writes
+# by integer (i, t) — bypassing DenseAxisArray's string-keyed axis lookup.
+#
+# For Float64-typed storage we write directly; for `JuMP.VariableRef` storage
+# we update the JuMP parameter's bound via `JuMP.fix(...; force=true)`.
+@inline function _set_param_value_at!(
+    parent_param::Array{T, 2},
+    value::T,
+    i::Int,
+    t::Int,
+) where {T <: ValidDataParamEltypes}
+    @inbounds parent_param[i, t] = value
+    return
+end
+
+@inline function _set_param_value_at!(
+    parent_param::Array{JuMP.VariableRef, 2},
+    value::Float64,
+    i::Int,
+    t::Int,
+)
+    @inbounds JuMP.fix(parent_param[i, t], value; force = true)
+    return
+end
+
+# 3D paths for piecewise-tranche updates.
+@inline function _set_param_value_at!(
+    parent_param::Array{T, 3},
+    value::AbstractVector{<:T},
+    i::Int,
+    t::Int,
+) where {T <: ValidDataParamEltypes}
+    @inbounds @views parent_param[i, :, t] .= value
+    return
+end
+
+@inline function _set_param_value_at!(
+    parent_param::Array{JuMP.VariableRef, 3},
+    value::AbstractVector{Float64},
+    i::Int,
+    t::Int,
+)
+    @inbounds for k in 1:size(parent_param, 2)
+        JuMP.fix(parent_param[i, k, t], value[k]; force = true)
     end
     return
 end
