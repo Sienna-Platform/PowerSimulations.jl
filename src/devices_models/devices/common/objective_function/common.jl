@@ -99,11 +99,7 @@ function add_curtailment_cost!(
     ::U,
     devices::IS.FlattenIteratorWrapper{T},
     ::V,
-) where {
-    T <: Union{PSY.RenewableDispatch, PSY.RenewableGen},
-    U <: VariableType,
-    V <: AbstractDeviceFormulation,
-}
+) where {T <: PSY.RenewableGen, U <: VariableType, V <: AbstractDeviceFormulation}
     for d in devices
         op_cost_data = PSY.get_operation_cost(d)
         !hasproperty(op_cost_data, :curtailment_cost) && continue
