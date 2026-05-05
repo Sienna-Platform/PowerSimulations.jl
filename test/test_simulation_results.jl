@@ -196,7 +196,11 @@ function test_simulation_results(
         @test isempty(results)
 
         verify_export_results(results, export_path)
-        @test length(readdir(export_realized_results(results_ed))) === 22
+        exported = readdir(export_realized_results(results_ed))
+        @test length(exported) >= 22
+        @test any(contains.(exported, "ProductionCostExpression"))
+        @test any(contains.(exported, "FuelCostExpression"))
+        @test any(contains.(exported, "StartUpCostExpression"))
 
         # Test that you can't read a failed simulation.
         PSI.set_simulation_status!(sim, PSI.RunStatus.FAILED)
@@ -739,7 +743,7 @@ function test_emulation_problem_results(results::SimulationResults, in_memory)
     end
 
     expressions_keys = collect(keys(read_realized_expressions(results_em)))
-    @test length(expressions_keys) == 4
+    @test length(expressions_keys) == 12
     expressions_inputs = (
         [
             # "ProductionCostExpression__HydroEnergyReservoir",

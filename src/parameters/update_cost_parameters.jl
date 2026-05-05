@@ -226,6 +226,12 @@ get_update_multiplier(::DecrementalCostAtMinParameter) = -1.0
 get_update_multiplier(::IncrementalCostAtMinParameter) = 1.0
 get_update_multiplier(::ObjectiveFunctionParameter) = 1.0
 
+# Mirrors the per-component decomposition done at build time, so recurrent solves
+# update the same constituent expression that contributed to ProductionCostExpression.
+_constituent_cost_expression(::StartupCostParameter) = StartUpCostExpression
+_constituent_cost_expression(::ShutdownCostParameter) = ShutDownCostExpression
+_constituent_cost_expression(::AbstractCostAtMinParameter) = FixedCostExpression
+
 # General case
 function update_variable_cost!(
     parameter::ObjectiveFunctionParameter,
@@ -240,6 +246,7 @@ function update_variable_cost!(
     cost_data = parameter_array[component_name, time_period]
     mult_ = parameter_multiplier[component_name, time_period]
     mult2 = get_update_multiplier(parameter)
+    constituent_type = _constituent_cost_expression(parameter)
     for MyVariableType in get_variable_types(attributes)
         variable = get_variable(container, MyVariableType(), U)
         my_cost_data = _index_into_param(cost_data, MyVariableType())
@@ -248,11 +255,12 @@ function update_variable_cost!(
         add_to_objective_variant_expression!(container, cost_expr)
         set_expression!(
             container,
-            ProductionCostExpression, # for loads, this should be...?
+            ProductionCostExpression,
             cost_expr,
             component,
             time_period,
         )
+        set_expression!(container, constituent_type, cost_expr, component, time_period)
     end
     return
 end
@@ -291,6 +299,7 @@ function update_variable_cost!(
         )
     add_to_objective_variant_expression!(container, mult2 * mult_ * gen_cost)
     set_expression!(container, ProductionCostExpression, gen_cost, component, time_period)
+    set_expression!(container, FuelCostExpression, gen_cost, component, time_period)
     return
 end
 
@@ -315,5 +324,6 @@ function update_variable_cost!(
     cost_expr = expression[component_name, time_period] * fuel_cost * mult_
     add_to_objective_variant_expression!(container, cost_expr)
     set_expression!(container, ProductionCostExpression, cost_expr, component, time_period)
+    set_expression!(container, FuelCostExpression, cost_expr, component, time_period)
     return
 end
