@@ -36,83 +36,111 @@ const TIME1 = DateTime("2024-01-01T00:00:00")
                 "ProductionCostExpression__ThermalStandard";
                 table_format = TableFormat.WIDE,
             )
-            var_unit_cost = sum(expr[!, "Test Unit"])
+            unit = "Test Unit"
+            var_unit_cost = sum(expr[!, unit])
             @test isapprox(var_unit_cost, cost_reference; atol = 1)
             if thermal_formulation == ThermalBasicUnitCommitment
                 # Tests shut down cost
-                @test expr[!, "Test Unit"][end] == 0.75
+                @test expr[!, unit][end] == 0.75
+
+                # Decomposition: production == fuel + startup + shutdown + fixed + VOM
+                expr_fuel = read_expression(
+                    results, "FuelCostExpression__ThermalStandard";
+                    table_format = TableFormat.WIDE,
+                )
+                expr_su = read_expression(
+                    results, "StartUpCostExpression__ThermalStandard";
+                    table_format = TableFormat.WIDE,
+                )
+                expr_sd = read_expression(
+                    results, "ShutDownCostExpression__ThermalStandard";
+                    table_format = TableFormat.WIDE,
+                )
+                expr_fixed = read_expression(
+                    results, "FixedCostExpression__ThermalStandard";
+                    table_format = TableFormat.WIDE,
+                )
+                expr_VOM = read_expression(
+                    results, "VOMCostExpression__ThermalStandard";
+                    table_format = TableFormat.WIDE,
+                )
+                decomp_vec =
+                    expr_fuel[!, unit] .+ expr_su[!, unit] .+ expr_sd[!, unit] .+
+                    expr_fixed[!, unit] .+ expr_VOM[!, unit]
+                @test all(isapprox.(decomp_vec, expr[!, unit]; atol = 1e-6))
+                @test isapprox(sum(expr[!, unit]), sum(decomp_vec); atol = 1e-6)
+
+                # Nonnegativity (tolerate tiny numerical negatives)
+                tol = 1e-8
+                @test all(expr_fuel[!, unit] .>= -tol)
+                @test all(expr_su[!, unit] .>= -tol)
+                @test all(expr_sd[!, unit] .>= -tol)
+                @test all(expr_fixed[!, unit] .>= -tol)
+                @test all(expr_VOM[!, unit] .>= -tol)
             else
-                @test expr[!, "Test Unit"][end] == 0.0
+                @test expr[!, unit][end] == 0.0
             end
         end
     end
 
-    @testset "Test startup cost tracking - compare with and without startup" begin
-        # Run 1: Normal case (units already ON, no startup)
-        sys_no_startup = build_system(PSITestSystems, "c_linear_cost_test")
-
+    @testset "Test startup cost tracking" begin
         template = ProblemTemplate(NetworkModel(CopperPlatePowerModel))
         set_device_model!(template, ThermalStandard, ThermalBasicUnitCommitment)
         set_device_model!(template, PowerLoad, StaticPowerLoad)
+        unit = "Test Unit"
 
-        model_no_startup = DecisionModel(
-            template,
-            sys_no_startup;
+        # Run 1: units initially ON — no startup expected
+        sys_no_startup = build_system(PSITestSystems, "c_linear_cost_test")
+        model_no = DecisionModel(
+            template, sys_no_startup;
             name = "UC_no_startup",
             optimizer = HiGHS_optimizer,
             optimizer_solve_log_print = true,
         )
-        @test build!(model_no_startup; output_dir = test_path) == PSI.ModelBuildStatus.BUILT
-        @test solve!(model_no_startup) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
-
-        results_no_startup = OptimizationProblemResults(model_no_startup)
-        expr_no_startup = read_expression(
-            results_no_startup,
-            "ProductionCostExpression__ThermalStandard";
+        @test build!(model_no; output_dir = test_path) == PSI.ModelBuildStatus.BUILT
+        @test solve!(model_no) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+        res_no = OptimizationProblemResults(model_no)
+        prod_no = read_expression(
+            res_no, "ProductionCostExpression__ThermalStandard";
             table_format = TableFormat.WIDE,
         )
-        cost_no_startup = expr_no_startup[1, "Test Unit"]
+        cost_no_t1 = prod_no[1, unit]
 
-        # Run 2: With startup (units initially OFF)
-        sys_with_startup = build_system(PSITestSystems, "c_linear_cost_test")
-
-        # Set thermal units to initially be OFF to force a startup
-        thermal_units = collect(get_components(ThermalStandard, sys_with_startup))
-        for unit in thermal_units
-            set_status!(unit, false)  # Set unit to OFF initially
-            set_time_at_status!(unit, 10.0)  # Set time at OFF status > min down time
+        # Run 2: units initially OFF — startup forced in first timestep
+        sys_yes = build_system(PSITestSystems, "c_linear_cost_test")
+        for u in collect(get_components(ThermalStandard, sys_yes))
+            set_status!(u, false)
+            set_time_at_status!(u, 10.0)  # > min down time
         end
-
-        model_with_startup = DecisionModel(
-            template,
-            sys_with_startup;
+        model_yes = DecisionModel(
+            template, sys_yes;
             name = "UC_with_startup",
             optimizer = HiGHS_optimizer,
             optimizer_solve_log_print = true,
         )
-        @test build!(model_with_startup; output_dir = test_path) ==
-              PSI.ModelBuildStatus.BUILT
-        @test solve!(model_with_startup) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
-
-        results_with_startup = OptimizationProblemResults(model_with_startup)
-        expr_with_startup = read_expression(
-            results_with_startup,
-            "ProductionCostExpression__ThermalStandard";
+        @test build!(model_yes; output_dir = test_path) == PSI.ModelBuildStatus.BUILT
+        @test solve!(model_yes) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+        res_yes = OptimizationProblemResults(model_yes)
+        prod_yes = read_expression(
+            res_yes, "ProductionCostExpression__ThermalStandard";
             table_format = TableFormat.WIDE,
         )
-        cost_with_startup = expr_with_startup[1, "Test Unit"]
+        cost_yes_t1 = prod_yes[1, unit]
 
-        # Verify startup actually occurred
         start_vars = read_variable(
-            results_with_startup,
-            "StartVariable__ThermalStandard";
+            res_yes, "StartVariable__ThermalStandard";
             table_format = TableFormat.WIDE,
         )
-        @test start_vars[1, "Test Unit"] > 0.5  # Startup in first timestep
+        @test start_vars[1, unit] > 0.5
 
-        # The key test: cost with startup should be greater than without startup
-        # because it includes the startup cost in addition to generation costs
-        @test cost_with_startup > cost_no_startup
+        expr_su = read_expression(
+            res_yes, "StartUpCostExpression__ThermalStandard";
+            table_format = TableFormat.WIDE,
+        )
+        startup_cost_t1 = expr_su[1, unit]
+        @test startup_cost_t1 > 0.0
+        @test cost_yes_t1 > cost_no_t1
+        @test isapprox(cost_yes_t1 - cost_no_t1, startup_cost_t1; atol = 1e-6)
     end
 end
 
