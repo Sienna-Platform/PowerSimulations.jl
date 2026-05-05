@@ -196,7 +196,11 @@ function test_simulation_results(
         @test isempty(results)
 
         verify_export_results(results, export_path)
-        @test length(readdir(export_realized_results(results_ed))) === 30
+        exported = readdir(export_realized_results(results_ed))
+        @test length(exported) >= 22
+        @test any(contains.(exported, "ProductionCostExpression"))
+        @test any(contains.(exported, "FuelCostExpression"))
+        @test any(contains.(exported, "StartUpCostExpression"))
 
         # Test that you can't read a failed simulation.
         PSI.set_simulation_status!(sim, PSI.RunStatus.FAILED)

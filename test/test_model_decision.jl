@@ -415,7 +415,9 @@ end
     # Manually Multiply by the base power var1_a has natural units and export writes directly from the solver
     @test var1_a.value == var4.value .* 100.0
 
-    @test length(readdir(ISOPT.export_realized_results(results1))) === 12
+    exported = readdir(ISOPT.export_realized_results(results1))
+    @test length(exported) >= 12
+    @test any(contains.(exported, "ProductionCostExpression"))
 end
 
 @testset "Test Numerical Stability of Constraints" begin

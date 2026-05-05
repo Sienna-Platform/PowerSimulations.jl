@@ -2782,10 +2782,13 @@ end
 Adds all cost expression containers appropriate for the given device type and formulation
 in a single pass through the device list.
 
-The default method adds only `ProductionCostExpression`. Overloads for `PSY.ThermalGen`
-and `PSY.RenewableGen` add their full set of constituent cost expressions, which then
-automatically propagate into `ProductionCostExpression` via the `ConstituentCostExpression`
-dispatch on `add_to_expression!`.
+The default method adds only `ProductionCostExpression`. The `PSY.ThermalGen` overload
+adds its full set of `ConstituentCostExpression` subtypes (Fuel, StartUp, ShutDown,
+Fixed, VOM), which automatically propagate into `ProductionCostExpression` via the
+`ConstituentCostExpression` dispatch on `add_to_expression!`. The `PSY.RenewableGen`
+overload adds `FixedCostExpression` and `VOMCostExpression` (which propagate the same
+way) plus `CurtailmentCostExpression` (a direct `CostExpressions` subtype, recorded
+as a per-device reporting expression and not propagated to `ProductionCostExpression`).
 """
 function add_cost_expressions!(
     container::OptimizationContainer,
