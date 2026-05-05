@@ -600,6 +600,17 @@ _accumulate_headroom!(::PFS.PowerFlowData,
     ::Vector{Dict{Tuple{DataType, String}, Float64}},
 ) = nothing
 
+# needed to fix an ambiguity: ParameterType with Storage.
+_accumulate_headroom!(::PFS.PowerFlowData,
+    ::OptimizationContainer,
+    ::PSY.System,
+    ::OptimizationContainerKey{<:ISOPT.ParameterType, <:PSY.Storage},
+    ::Dict{String, Int64},
+    ::Int,
+    ::Matrix{PSY.ACBusTypes},
+    ::Vector{Dict{Tuple{DataType, String}, Float64}}
+) = nothing
+
 """
 Accumulate headroom for a single OptimizationContainerKey into `pf_data` and `computed_gspf`.
 The `where {U}` parameter makes the component type a compile-time constant, so
