@@ -13,6 +13,16 @@ end
 _get_variable_if_exists(::PSY.MarketBidCost) = nothing
 _get_variable_if_exists(cost::PSY.OperationalCost) = PSY.get_variable(cost)
 
+_is_fuel_curve(::Nothing) = false
+_is_fuel_curve(::PSY.CostCurve) = false
+_is_fuel_curve(::PSY.FuelCurve) = true
+
+_value_curve_is_quadratic(::PSY.LinearCurve) = false
+_value_curve_is_quadratic(::PSY.QuadraticCurve) = true
+_value_curve_is_quadratic(::PSY.PiecewisePointCurve) = false
+_value_curve_is_quadratic(::PSY.IncrementalCurve) = false
+_value_curve_is_quadratic(::PSY.AverageRateCurve) = false
+
 function add_expressions!(
     container::OptimizationContainer,
     ::Type{T},
@@ -45,11 +55,11 @@ function add_expressions!(
     for d in devices
         op_cost = PSY.get_operation_cost(d)
         fuel_curve = _get_variable_if_exists(op_cost)
-        if fuel_curve isa PSY.FuelCurve
+        if _is_fuel_curve(fuel_curve)
             push!(names, PSY.get_name(d))
             if !found_quad_fuel_functions
                 found_quad_fuel_functions =
-                    PSY.get_value_curve(fuel_curve) isa PSY.QuadraticCurve
+                    _value_curve_is_quadratic(PSY.get_value_curve(fuel_curve))
             end
         end
     end
@@ -2489,6 +2499,85 @@ function add_to_expression!(
     return
 end
 
+# Method-level dispatch on the value-curve type carried by the FuelCurve. One method per
+# concrete ValueCurve subtype defined by PowerSystems; non-Linear/Quadratic curves are
+# explicit no-ops, mirroring the silent skip of the original `if/elseif` chain.
+function _add_fuel_consumption_term!(
+    expression,
+    variable,
+    name::String,
+    var_cost::PSY.FuelCurve,
+    value_curve::PSY.LinearCurve,
+    base_power::Float64,
+    device_base_power::Float64,
+    dt::Float64,
+    time_steps,
+)
+    power_units = PSY.get_power_units(var_cost)
+    proportional_term = PSY.get_proportional_term(value_curve)
+    prop_term_per_unit = get_proportional_cost_per_system_unit(
+        proportional_term,
+        power_units,
+        base_power,
+        device_base_power,
+    )
+    for t in time_steps
+        JuMP.add_to_expression!(
+            expression[name, t],
+            prop_term_per_unit * dt,
+            variable[name, t],
+        )
+    end
+    return
+end
+
+function _add_fuel_consumption_term!(
+    expression,
+    variable,
+    name::String,
+    var_cost::PSY.FuelCurve,
+    value_curve::PSY.QuadraticCurve,
+    base_power::Float64,
+    device_base_power::Float64,
+    dt::Float64,
+    time_steps,
+)
+    power_units = PSY.get_power_units(var_cost)
+    proportional_term = PSY.get_proportional_term(value_curve)
+    quadratic_term = PSY.get_quadratic_term(value_curve)
+    prop_term_per_unit = get_proportional_cost_per_system_unit(
+        proportional_term,
+        power_units,
+        base_power,
+        device_base_power,
+    )
+    quad_term_per_unit = get_quadratic_cost_per_system_unit(
+        quadratic_term,
+        power_units,
+        base_power,
+        device_base_power,
+    )
+    for t in time_steps
+        fuel_expr =
+            (
+                variable[name, t] .^ 2 * quad_term_per_unit +
+                variable[name, t] * prop_term_per_unit
+            ) * dt
+        JuMP.add_to_expression!(
+            expression[name, t],
+            fuel_expr,
+        )
+    end
+    return
+end
+
+_add_fuel_consumption_term!(_, _, _::String, _::PSY.FuelCurve, ::PSY.PiecewisePointCurve,
+    _::Float64, _::Float64, _::Float64, _) = nothing
+_add_fuel_consumption_term!(_, _, _::String, _::PSY.FuelCurve, ::PSY.IncrementalCurve,
+    _::Float64, _::Float64, _::Float64, _) = nothing
+_add_fuel_consumption_term!(_, _, _::String, _::PSY.FuelCurve, ::PSY.AverageRateCurve,
+    _::Float64, _::Float64, _::Float64, _) = nothing
+
 function add_to_expression!(
     container::OptimizationContainer,
     ::Type{T},
@@ -2509,59 +2598,112 @@ function add_to_expression!(
     for d in devices
         op_cost = PSY.get_operation_cost(d)
         var_cost = _get_variable_if_exists(op_cost)
-        if !(var_cost isa PSY.FuelCurve)
-            continue
-        end
+        _is_fuel_curve(var_cost) || continue
         expression = get_expression(container, T(), V)
         name = PSY.get_name(d)
         device_base_power = PSY.get_base_power(d)
         value_curve = PSY.get_value_curve(var_cost)
-        if value_curve isa PSY.LinearCurve
-            power_units = PSY.get_power_units(var_cost)
-            proportional_term = PSY.get_proportional_term(value_curve)
-            prop_term_per_unit = get_proportional_cost_per_system_unit(
-                proportional_term,
-                power_units,
-                base_power,
-                device_base_power,
-            )
-            for t in time_steps
-                JuMP.add_to_expression!(
-                    expression[name, t],
-                    prop_term_per_unit * dt,
-                    variable[name, t],
-                )
-            end
-        elseif value_curve isa PSY.QuadraticCurve
-            power_units = PSY.get_power_units(var_cost)
-            proportional_term = PSY.get_proportional_term(value_curve)
-            quadratic_term = PSY.get_quadratic_term(value_curve)
-            prop_term_per_unit = get_proportional_cost_per_system_unit(
-                proportional_term,
-                power_units,
-                base_power,
-                device_base_power,
-            )
-            quad_term_per_unit = get_quadratic_cost_per_system_unit(
-                quadratic_term,
-                power_units,
-                base_power,
-                device_base_power,
-            )
-            for t in time_steps
-                fuel_expr =
-                    (
-                        variable[name, t] .^ 2 * quad_term_per_unit +
-                        variable[name, t] * prop_term_per_unit
-                    ) * dt
-                JuMP.add_to_expression!(
-                    expression[name, t],
-                    fuel_expr,
-                )
-            end
-        end
+        _add_fuel_consumption_term!(
+            expression,
+            variable,
+            name,
+            var_cost,
+            value_curve,
+            base_power,
+            device_base_power,
+            dt,
+            time_steps,
+        )
     end
+    return
 end
+
+function _add_compact_fuel_consumption_term!(
+    container::OptimizationContainer,
+    ::Type{W},
+    expression,
+    variable,
+    d::V,
+    var_cost::PSY.FuelCurve,
+    value_curve::PSY.LinearCurve,
+    base_power::Float64,
+    device_base_power::Float64,
+    dt::Float64,
+    time_steps,
+) where {V <: PSY.ThermalGen, W <: AbstractDeviceFormulation}
+    name = PSY.get_name(d)
+    P_min = PSY.get_active_power_limits(d).min
+    power_units = PSY.get_power_units(var_cost)
+    proportional_term = PSY.get_proportional_term(value_curve)
+    prop_term_per_unit = get_proportional_cost_per_system_unit(
+        proportional_term,
+        power_units,
+        base_power,
+        device_base_power,
+    )
+    for t in time_steps
+        sos_status = _get_sos_value(container, W, d)
+        if sos_status == SOSStatusVariable.NO_VARIABLE
+            JuMP.add_to_expression!(
+                expression[name, t],
+                P_min * prop_term_per_unit * dt,
+            )
+        elseif sos_status == SOSStatusVariable.PARAMETER
+            param = get_default_on_parameter(d)
+            bin = get_parameter(container, param, V).parameter_array[name, t]
+            JuMP.add_to_expression!(
+                expression[name, t],
+                P_min * prop_term_per_unit * dt,
+                bin,
+            )
+        elseif sos_status == SOSStatusVariable.VARIABLE
+            var = get_default_on_variable(d)
+            bin = get_variable(container, var, V)[name, t]
+            JuMP.add_to_expression!(
+                expression[name, t],
+                P_min * prop_term_per_unit * dt,
+                bin,
+            )
+        else
+            @assert false
+        end
+        JuMP.add_to_expression!(
+            expression[name, t],
+            prop_term_per_unit * dt,
+            variable[name, t],
+        )
+    end
+    return
+end
+
+function _add_compact_fuel_consumption_term!(
+    ::OptimizationContainer,
+    ::Type{W},
+    _,
+    _,
+    ::PSY.ThermalGen,
+    ::PSY.FuelCurve,
+    ::PSY.QuadraticCurve,
+    ::Float64,
+    ::Float64,
+    ::Float64,
+    _,
+) where {W <: AbstractDeviceFormulation}
+    error("Quadratic Curves are not accepted with Compact Formulation: $W")
+end
+
+_add_compact_fuel_consumption_term!(::OptimizationContainer,
+    ::Type{<:AbstractDeviceFormulation},
+    _, _, ::PSY.ThermalGen, ::PSY.FuelCurve, ::PSY.PiecewisePointCurve,
+    ::Float64, ::Float64, ::Float64, _) = nothing
+_add_compact_fuel_consumption_term!(::OptimizationContainer,
+    ::Type{<:AbstractDeviceFormulation},
+    _, _, ::PSY.ThermalGen, ::PSY.FuelCurve, ::PSY.IncrementalCurve,
+    ::Float64, ::Float64, ::Float64, _) = nothing
+_add_compact_fuel_consumption_term!(::OptimizationContainer,
+    ::Type{<:AbstractDeviceFormulation},
+    _, _, ::PSY.ThermalGen, ::PSY.FuelCurve, ::PSY.AverageRateCurve,
+    ::Float64, ::Float64, ::Float64, _) = nothing
 
 function add_to_expression!(
     container::OptimizationContainer,
@@ -2583,59 +2725,26 @@ function add_to_expression!(
     for d in devices
         op_cost = PSY.get_operation_cost(d)
         var_cost = _get_variable_if_exists(op_cost)
-        if !(var_cost isa PSY.FuelCurve)
-            continue
-        end
+        _is_fuel_curve(var_cost) || continue
         expression = get_expression(container, T(), V)
         name = PSY.get_name(d)
         device_base_power = PSY.get_base_power(d)
         value_curve = PSY.get_value_curve(var_cost)
-        P_min = PSY.get_active_power_limits(d).min
-        if value_curve isa PSY.LinearCurve
-            power_units = PSY.get_power_units(var_cost)
-            proportional_term = PSY.get_proportional_term(value_curve)
-            prop_term_per_unit = get_proportional_cost_per_system_unit(
-                proportional_term,
-                power_units,
-                base_power,
-                device_base_power,
-            )
-            for t in time_steps
-                sos_status = _get_sos_value(container, W, d)
-                if sos_status == SOSStatusVariable.NO_VARIABLE
-                    JuMP.add_to_expression!(
-                        expression[name, t],
-                        P_min * prop_term_per_unit * dt,
-                    )
-                elseif sos_status == SOSStatusVariable.PARAMETER
-                    param = get_default_on_parameter(d)
-                    bin = get_parameter(container, param, V).parameter_array[name, t]
-                    JuMP.add_to_expression!(
-                        expression[name, t],
-                        P_min * prop_term_per_unit * dt,
-                        bin,
-                    )
-                elseif sos_status == SOSStatusVariable.VARIABLE
-                    var = get_default_on_variable(d)
-                    bin = get_variable(container, var, V)[name, t]
-                    JuMP.add_to_expression!(
-                        expression[name, t],
-                        P_min * prop_term_per_unit * dt,
-                        bin,
-                    )
-                else
-                    @assert false
-                end
-                JuMP.add_to_expression!(
-                    expression[name, t],
-                    prop_term_per_unit * dt,
-                    variable[name, t],
-                )
-            end
-        elseif value_curve isa PSY.QuadraticCurve
-            error("Quadratic Curves are not accepted with Compact Formulation: $W")
-        end
+        _add_compact_fuel_consumption_term!(
+            container,
+            W,
+            expression,
+            variable,
+            d,
+            var_cost,
+            value_curve,
+            base_power,
+            device_base_power,
+            dt,
+            time_steps,
+        )
     end
+    return
 end
 
 function add_to_expression!(
@@ -2703,10 +2812,10 @@ function add_cost_expressions!(
         name = PSY.get_name(d)
         all_names[i] = name
         fuel_curve = _get_variable_if_exists(PSY.get_operation_cost(d))
-        if fuel_curve isa PSY.FuelCurve
+        if _is_fuel_curve(fuel_curve)
             push!(fuel_names, name)
             if !has_quad_fuel
-                has_quad_fuel = PSY.get_value_curve(fuel_curve) isa PSY.QuadraticCurve
+                has_quad_fuel = _value_curve_is_quadratic(PSY.get_value_curve(fuel_curve))
             end
         end
     end
