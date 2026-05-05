@@ -39,6 +39,10 @@ UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 # released. Remove once the PNM change merges and a registered version is
 # tagged.
 PowerNetworkMatrices = {url = "https://github.com/NREL-Sienna/PowerNetworkMatrices.jl.git", rev = "claude/klu-sparse-rhs-wrapper-jLAmX"}
+# PowerFlows branch with the matching PNM compat bump; without this pin
+# CI cannot resolve the test environment because the registered
+# PowerFlows version restricts PowerNetworkMatrices to a lower range.
+PowerFlows = {url = "https://github.com/NREL-Sienna/PowerFlows.jl.git", rev = "jd/bump_pnm"}
 
 [compat]
 HiGHS = "1"
