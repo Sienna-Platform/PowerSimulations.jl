@@ -608,7 +608,7 @@ _accumulate_headroom!(::PFS.PowerFlowData,
     ::Dict{String, Int64},
     ::Int,
     ::Matrix{PSY.ACBusTypes},
-    ::Vector{Dict{Tuple{DataType, String}, Float64}}
+    ::Vector{Dict{Tuple{DataType, String}, Float64}},
 ) = nothing
 
 """
