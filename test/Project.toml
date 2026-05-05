@@ -31,6 +31,15 @@ TimeSeries = "9e3dc215-6440-5c97-bce1-76c03772f85e"
 TimerOutputs = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
 UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 
+[sources]
+# Pin PowerNetworkMatrices to the dev branch carrying the process-wide
+# libklu lock (`@klu_lock` macro + `_LIBKLU_LOCK` in `KLUWrapper.jl`) and
+# the `KLU_POOL_DEBUG = true` instrumentation. Used to validate the
+# Windows klu_solve KLU_INVALID failure on CI before the change is
+# released. Remove once the PNM change merges and a registered version is
+# tagged.
+PowerNetworkMatrices = {url = "https://github.com/NREL-Sienna/PowerNetworkMatrices.jl.git", rev = "claude/klu-sparse-rhs-wrapper-jLAmX"}
+
 [compat]
 HiGHS = "1"
 Ipopt = "=1.4.0"
