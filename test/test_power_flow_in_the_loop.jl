@@ -612,18 +612,15 @@ end
     # so this exercises the static P_max path. The time-varying P_max path (using
     # min(static_limit, ts_param_value)) would need a system with renewable time series at a
     # REF/PV bus to be exercised.
-    results = OptimizationProblemResults(model)
-    vd = read_variables(results)
     for t in 1:n_time_steps
         for ((comp_type, comp_name), headroom) in computed_gspf[t]
             comp = get_component(comp_type, system, comp_name)
-            p_max_dev = PFS.get_active_power_limits_for_power_flow(comp).max
-            p_max_sys = p_max_dev * get_base_power(comp) / base_power
+            p_max_sys = PFS.get_active_power_limits_for_power_flow(comp).max
 
             # Look up the optimization set point for this generator at this time step
             var_key = PSI.VariableKey(PSI.ActivePowerVariable, comp_type)
             result_data = PSI.lookup_value(container, var_key)
-            p_setpoint = JuMP.value(result_data[comp_name, :][t])
+            p_setpoint = JuMP.value(result_data[comp_name, t])
 
             expected_headroom = p_max_sys - p_setpoint
             @test expected_headroom > 0.0
@@ -674,6 +671,11 @@ end
     system = build_system(PSITestSystems, "c_sys5_uc_re")
     re_gen = first(get_components(RenewableDispatch, system))
     re_name = get_name(re_gen)
+    # Force device_base != system_base so the unit-handling path is exercised. If headroom
+    # ever silently re-introduces a `* device_base / system_base` factor, the recomputed
+    # expected_headroom below will mismatch by 0.5×, failing the assertion.
+    PSY.set_units_base_system!(system, "SYSTEM_BASE")
+    PSY.set_base_power!(re_gen, get_base_power(re_gen) / 2)
 
     template = get_template_dispatch_with_network(
         NetworkModel(
@@ -697,14 +699,11 @@ end
     pf_e_data = only(PSI.get_power_flow_evaluation_data(container))
     data = PSI.get_power_flow_data(pf_e_data)
     computed_gspf = PFS.get_computed_gspf(data)
-    base_power = get_base_power(system)
     n_time_steps = length(PSI.get_time_steps(container))
 
     # Verify the renewable's headroom uses min(static_limit, ts_param) at each time step
     re_type = typeof(re_gen)
-    p_max_static =
-        PFS.get_active_power_limits_for_power_flow(re_gen).max *
-        get_base_power(re_gen) / base_power
+    p_max_static = PFS.get_active_power_limits_for_power_flow(re_gen).max
 
     var_key = PSI.VariableKey(PSI.ActivePowerVariable, re_type)
     var_values = PSI.lookup_value(container, var_key)
@@ -712,7 +711,7 @@ end
     ts_values = PSI.lookup_value(container, ts_key)
 
     for t in 1:n_time_steps
-        p_setpoint = JuMP.value(var_values[re_name, :][t])
+        p_setpoint = JuMP.value(var_values[re_name, t])
         p_max_ts = ts_values[re_name, t]
         p_max_t = min(p_max_static, p_max_ts)
         expected_headroom = p_max_t - p_setpoint
