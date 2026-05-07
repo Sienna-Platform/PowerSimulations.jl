@@ -922,20 +922,17 @@ function add_expressions!(
 
     jump_model = get_jump_model(container)
 
-    # `ptdf[arc, :]` is a KLU forward+backward solve that became thread-safe in
-    # PowerNetworkMatrices ≥ 0.21 (KLULinSolvePool + per-worker scratch +
-    # cache_lock). Moving the solve inside the spawned task lets multiple PTDF
-    # row solves run concurrently via the pool, instead of being serialized
-    # on the dispatcher with only the AffExpr build in parallel.
-    # The spawn-body try/catch logs the inner exception when a task fails.
-    # Without it, `build!()`'s error handler reports only the wrapping
-    # TaskFailedException, which leaves a low-frequency flake observed once
-    # on this code path undebuggable. The try/catch adds negligible overhead
-    # and rethrows unchanged, so it is correctness-neutral.
+    # `ptdf[arc, :]` is a KLU forward+backward solve. libklu cannot run safely
+    # under concurrent calls (even with distinct Numeric/Symbolic/Common per
+    # thread; see `_LIBKLU_LOCK` in PowerNetworkMatrices), so the solves run
+    # serially on the dispatcher and only the JuMP `AffExpr` build is
+    # parallelized via `Threads.@spawn`. The try/catch surfaces the inner
+    # exception — `build!`'s default error handler shows only the wrapping
+    # `TaskFailedException`, which makes spawn-task failures undebuggable.
     tasks = map(name_to_arc_map) do pair
         (name, (arc, _)) = pair
+        ptdf_col = ptdf[arc, :]
         Threads.@spawn try
-            ptdf_col = ptdf[arc, :]
             _make_flow_expressions!(
                 name,
                 time_steps,
@@ -943,7 +940,7 @@ function add_expressions!(
                 nodal_balance_expressions.data,
             )
         catch e
-            @error "PTDF parallel flow-expression task failed" name = name arc = arc exception =
+            @error "PTDF flow-expression task failed" name = name arc = arc exception =
                 (
                     e,
                     catch_backtrace(),

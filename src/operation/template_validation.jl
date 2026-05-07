@@ -104,5 +104,68 @@ function validate_template_impl!(model::OperationModel)
         delete!(model.template.branches, k)
     end
     validate_network_model(network_model, unmodeled_branch_types, model_has_branch_filters)
+    _build_post_contingency_flow_components!(network_model, template, system)
+    return
+end
+
+"""
+Populate `network_model.post_contingency_flow_components` with the per-outage,
+per-type set of monitored branch names. Skipped when the template does not use
+a security-constrained branch formulation. Empty `monitored_components` on an
+outage is treated as "monitor nothing" — a warning is emitted so users notice.
+A monitored component whose type is not modeled by the template is reported
+once per type with the offending outage UUIDs.
+"""
+function _build_post_contingency_flow_components!(
+    network_model::NetworkModel,
+    template::ProblemTemplate,
+    sys::PSY.System,
+)
+    branch_models = get_branch_models(template)
+    if !_template_uses_security_constrained_branch(branch_models)
+        return
+    end
+
+    flowgates = get_post_contingency_flow_components(network_model)
+    empty!(flowgates)
+
+    modeled_types = Set{DataType}(get_component_types(template))
+    uncovered_types = Dict{DataType, Vector{Base.UUID}}()
+
+    for outage in PSY.get_supplemental_attributes(PSY.Outage, sys)
+        outage_uuid = IS.get_uuid(outage)
+        monitored = PSY.get_monitored_components(outage)
+        if isempty(monitored)
+            @warn "Outage $(outage_uuid) ($(typeof(outage))) has empty monitored_components; no post-contingency variables or constraints will be created for this outage." _group =
+                LOG_GROUP_MODELS_VALIDATION
+            continue
+        end
+
+        per_type = Dict{DataType, Set{String}}()
+        for uuid in monitored
+            component = IS.get_component(sys, uuid)
+            if component === nothing
+                @warn "Outage $(outage_uuid) references monitored component UUID $(uuid) that is not present in the system; skipping." _group =
+                    LOG_GROUP_MODELS_VALIDATION
+                continue
+            end
+            comp_type = typeof(component)
+            if !(comp_type in modeled_types)
+                push!(get!(uncovered_types, comp_type, Base.UUID[]), outage_uuid)
+                continue
+            end
+            push!(get!(per_type, comp_type, Set{String}()), PSY.get_name(component))
+        end
+
+        if !isempty(per_type)
+            flowgates[outage_uuid] = per_type
+        end
+    end
+
+    for (comp_type, offending) in uncovered_types
+        unique_outages = unique(offending)
+        @warn "Monitored components of type $(comp_type) appear in outages $(unique_outages) but $(comp_type) is not modeled by the template; their post-contingency variables will be skipped." _group =
+            LOG_GROUP_MODELS_VALIDATION
+    end
     return
 end
