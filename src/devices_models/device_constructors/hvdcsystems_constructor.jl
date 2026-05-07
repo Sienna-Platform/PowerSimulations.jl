@@ -12,6 +12,7 @@ function construct_device!(
     add_variables!(container, ActivePowerVariable, devices, LosslessConverter())
     add_to_expression!(
         container,
+        sys,
         ActivePowerBalance,
         ActivePowerVariable,
         devices,
@@ -131,6 +132,7 @@ function construct_device!(
 
     add_to_expression!(
         container,
+        sys,
         ActivePowerBalance,
         ActivePowerVariable,
         devices,
@@ -139,6 +141,7 @@ function construct_device!(
     )
     add_to_expression!(
         container,
+        sys,
         DCCurrentBalance,
         ConverterCurrent,
         devices,

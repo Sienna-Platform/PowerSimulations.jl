@@ -228,6 +228,7 @@ end
 
 function add_to_expression!(
     container::OptimizationContainer,
+    ::PSY.System,
     ::Type{T},
     ::Type{U},
     devices::IS.FlattenIteratorWrapper{V},
@@ -253,6 +254,7 @@ end
 
 function add_to_expression!(
     container::OptimizationContainer,
+    ::PSY.System,
     ::Type{T},
     ::Type{U},
     devices::IS.FlattenIteratorWrapper{V},
@@ -278,6 +280,7 @@ end
 
 function _add_to_expression!(
     container::OptimizationContainer,
+    ::PSY.System,
     ::Type{T},
     ::Type{U},
     devices::IS.FlattenIteratorWrapper{V},
@@ -313,6 +316,7 @@ end
 
 function add_to_expression!(
     container::OptimizationContainer,
+    ::PSY.System,
     ::Type{T},
     ::Type{U},
     devices::IS.FlattenIteratorWrapper{V},
@@ -358,6 +362,7 @@ end
 
 function add_to_expression!(
     container::OptimizationContainer,
+    ::PSY.System,
     ::Type{T},
     ::Type{U},
     devices::IS.FlattenIteratorWrapper{V},
@@ -402,6 +407,7 @@ end
 
 function add_to_expression!(
     ::OptimizationContainer,
+    ::PSY.System,
     ::Type{T},
     ::Type{U},
     devices::IS.FlattenIteratorWrapper{V},
@@ -418,6 +424,7 @@ end
 
 function add_to_expression!(
     container::OptimizationContainer,
+    ::PSY.System,
     ::Type{T},
     ::Type{U},
     devices::IS.FlattenIteratorWrapper{V},
@@ -455,6 +462,7 @@ end
 
 function add_to_expression!(
     container::OptimizationContainer,
+    ::PSY.System,
     ::Type{T},
     ::Type{U},
     devices::IS.FlattenIteratorWrapper{V},
@@ -485,6 +493,7 @@ end
 
 function add_to_expression!(
     container::OptimizationContainer,
+    ::PSY.System,
     ::Type{T},
     ::Type{U},
     devices::IS.FlattenIteratorWrapper{V},
@@ -514,6 +523,7 @@ end
 
 function add_to_expression!(
     container::OptimizationContainer,
+    ::PSY.System,
     ::Type{T},
     ::Type{U},
     devices::IS.FlattenIteratorWrapper{V},
