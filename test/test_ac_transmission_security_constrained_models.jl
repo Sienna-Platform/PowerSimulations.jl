@@ -10,10 +10,12 @@
     # so this testset keeps that combination exercised even if other testsets
     # use a concrete PTDF.
     c_sys5 = PSB.build_system(PSITestSystems, "c_sys5")
+    all_branches = collect(get_components(ACTransmission, c_sys5))
     for line_name in ["1", "2", "3"]
         transition_data = GeometricDistributionForcedOutage(;
             mean_time_to_recovery = 10,
             outage_transition_probability = 0.9999,
+            monitored_components = all_branches,
         )
         component = get_component(ACTransmission, c_sys5, line_name)
         add_supplemental_attribute!(c_sys5, component, transition_data)
@@ -100,10 +102,12 @@ end
     )
     for (ix, sys) in enumerate(systems)
         # outages should be added before to MODF matrix computation
+        all_branches = collect(get_components(ACTransmission, sys))
         for line_name in lines_outages[sys]
             transition_data = GeometricDistributionForcedOutage(;
                 mean_time_to_recovery = 10,
                 outage_transition_probability = 0.9999,
+                monitored_components = all_branches,
             )
             component = get_component(ACTransmission, sys, line_name)
             add_supplemental_attribute!(sys, component, transition_data)
@@ -199,10 +203,12 @@ end
     )
     for (ix, sys) in enumerate(systems)
         # outages should be added before to MODF matrix computation
+        all_branches = collect(get_components(ACTransmission, sys))
         for line_name in lines_outages[sys]
             transition_data = GeometricDistributionForcedOutage(;
                 mean_time_to_recovery = 10,
                 outage_transition_probability = 0.9999,
+                monitored_components = all_branches,
             )
             component = get_component(ACTransmission, sys, line_name)
             add_supplemental_attribute!(sys, component, transition_data)
@@ -283,25 +289,33 @@ end
         c_sys14_dc => ["Line9"],
     )
 
+    # Counts are smaller than the dense-container era because each outage now
+    # monitors only its own line (rather than every branch under every outage),
+    # which is what allows the degree-two reduction to fire on the rest of the
+    # network. Objective values are correspondingly lower (fewer post-contingency
+    # constraints → cheaper dispatch).
     test_results = IdDict{System, Vector{Int}}(
-        c_sys5 => [120, 0, 696, 696, 24],
-        c_sys14 => [120, 0, 3480, 3480, 24],
-        c_sys14_dc => [168, 0, 1080, 984, 24],
+        c_sys5 => [120, 0, 336, 336, 24],
+        c_sys14 => [120, 0, 744, 744, 24],
+        c_sys14_dc => [168, 0, 672, 576, 24],
     )
 
     test_obj_values = IdDict{System, Float64}(
-        c_sys5 => 355231,
-        c_sys14 => 159087,
+        c_sys5 => 241294,
+        c_sys14 => 143365,
         c_sys14_dc => 154585.1,
     )
     for (ix, sys) in enumerate(systems)
-        # outages should be added before to MODF matrix computation
+        # In the reduction path each outage monitors only its own outaged line.
+        # Monitoring `all_branches` would pin every bus as irreducible and
+        # cancel the reduction the test exists to exercise.
         for line_name in lines_outages[sys]
+            component = get_component(ACTransmission, sys, line_name)
             transition_data = GeometricDistributionForcedOutage(;
                 mean_time_to_recovery = 10,
                 outage_transition_probability = 0.9999,
+                monitored_components = [component],
             )
-            component = get_component(ACTransmission, sys, line_name)
             add_supplemental_attribute!(sys, component, transition_data)
         end
         nr = NetworkReduction[DegreeTwoReduction()]
@@ -327,29 +341,47 @@ end
               PSI.ModelBuildStatus.BUILT
         psi_constraint_test(ps_model, constraint_keys)
 
-        # Tracker-state assertions on c_sys5 only: every arc registered in a
-        # per-type submap must appear exactly once in the dedupe set, so that
-        # constraint containers cannot silently pick up duplicate arcs under
-        # a reduction.
+        # Sparse-container state on c_sys5: each outage that monitors lines
+        # should produce a `PostContingencyEmergencyFlowRateConstraint`
+        # SparseAxisArray whose axis-1 (outage_id) covers exactly that outage
+        # set, and whose axis-2 (branch_name) is non-empty per outage. Reductions
+        # may redirect individual branch names to a representative reduction name
+        # in the container, so we don't assert on per-name keys here — the ground-
+        # truth testset later in this file does that structurally.
         if ix == 1
             nm = PSI.get_network_model(PSI.get_template(ps_model))
-            tracker = PSI.get_reduced_branch_tracker(nm)
-            c_dict = PSI.get_constraint_dict(tracker)
-            c_map = PSI.get_constraint_map_by_type(tracker)
-            pcfr = PostContingencyEmergencyFlowRateConstraint
-            @test haskey(c_dict, pcfr)
-            @test haskey(c_map, pcfr)
-            post_arc_set = c_dict[pcfr]
-            post_type_map = c_map[pcfr]
-            for (_, submap) in post_type_map
-                for (_, (arc, _)) in submap
-                    @test arc in post_arc_set
+            flowgates = PSI.get_post_contingency_flow_components(nm)
+            @test !isempty(flowgates)
+            container = PSI.get_optimization_container(ps_model)
+            time_steps = PSI.get_time_steps(container)
+            con_ub = PSI.get_constraint(
+                container,
+                PSI.ConstraintKey(
+                    PostContingencyEmergencyFlowRateConstraint, PSY.Line, "ub",
+                ),
+            )
+            ub_keys = collect(keys(con_ub.data))
+            ub_outages = Set(k[1] for k in ub_keys)
+            ub_names = Set(k[2] for k in ub_keys)
+            @test !isempty(ub_outages)
+            @test !isempty(ub_names)
+            # Every outage that monitors a Line should appear in the constraint
+            # container's outage-id axis.
+            line_monitoring_outages = Set(
+                string(uuid) for (uuid, per_type) in flowgates
+                if haskey(per_type, PSY.Line) && !isempty(per_type[PSY.Line])
+            )
+            @test ub_outages == line_monitoring_outages
+            # Each (outage_id, t) combination present in the container must be
+            # full-rank in time — i.e. every t in time_steps must have at least
+            # one (outage_id, *, t) key.
+            for outage_id in ub_outages
+                for t in time_steps
+                    @test any(
+                        k -> k[1] == outage_id && k[3] == t, ub_keys,
+                    )
                 end
             end
-            @test haskey(post_type_map, PSY.Line)
-            @test !isempty(post_type_map[PSY.Line])
-            total_submap_entries = sum(length(v) for v in values(post_type_map))
-            @test total_submap_entries == length(post_arc_set)
         end
 
         moi_tests(
@@ -378,11 +410,13 @@ end
     # `add_post_contingency_flow_expressions!`.
     c_sys14 = PSB.build_system(PSB.PSITestSystems, "c_sys14")
     outage_line_names = ["Line1", "Line2", "Line9", "Line10"]
+    all_branches = collect(get_components(ACTransmission, c_sys14))
     for line_name in outage_line_names
         line = get_component(ACTransmission, c_sys14, line_name)
         transition = GeometricDistributionForcedOutage(;
             mean_time_to_recovery = 10,
             outage_transition_probability = 0.9999,
+            monitored_components = all_branches,
         )
         add_supplemental_attribute!(c_sys14, line, transition)
     end
@@ -420,48 +454,38 @@ end
         PSI.get_expression(container, PSI.ActivePowerBalance(), PSY.ACBus).data
     time_steps = PSI.get_time_steps(container)
 
-    # Reproduce branch_type_data the same way add_post_contingency_flow_expressions!
-    # does, so we can resolve (name -> arc) for every entry in the container.
-    reduced_branch_tracker = PSI.get_reduced_branch_tracker(network_model)
+    # Walk every (V, (outage_id, name, t)) tuple stored in the sparse
+    # PostContingencyBranchFlow container and assert structural equality to
+    # the PNM-derived ground truth. A given V only has a container if outages
+    # monitored components of that type; skip the rest via has_container_key.
+    net_reduction_data = network_model.network_reduction
     modeled_branch_types = network_model.modeled_ac_branch_types
-    constraint_map = PSI.get_constraint_map_by_type(reduced_branch_tracker)[
-        PostContingencyEmergencyFlowRateConstraint,
-    ]
-
-    # Iterate every (V, outage, name, t) tuple in every modeled-branch container
-    # and assert structural equality to the PNM-derived ground truth. A given V
-    # only has a PostContingencyBranchFlow container if outages were registered
-    # for components of type V; skip the rest via has_container_key.
     n_checked = 0
     for V in modeled_branch_types
-        haskey(constraint_map, V) || continue
         PSI.has_container_key(container, PSI.PostContingencyBranchFlow, V) || continue
-        name_to_arc_map = constraint_map[V]
         pcbf = PSI.get_expression(container, PSI.PostContingencyBranchFlow(), V)
+        name_to_arc_map = PNM.get_name_to_arc_map(net_reduction_data, V)
         n_checked += 1
-        for outage_id_str in pcbf.axes[1]
+        for (outage_id_str, name, t) in keys(pcbf.data)
             uuid = Base.UUID(outage_id_str)
             ctg = ground_truth_registered[uuid]
-            for (name, (arc, _)) in name_to_arc_map
-                modf_col = ground_truth_modf[arc, ctg]
-                nz_idx =
-                    [i for i in eachindex(modf_col) if abs(modf_col[i]) > PSI.PTDF_ZERO_TOL]
-                # Mirror `_make_flow_expressions!` exactly (including
-                # `get_hinted_aff_expr`) so `JuMP.isequal_canonical` cannot
-                # diverge due to internal AffExpr capacity differences.
-                for t in time_steps
-                    expected = PSI.get_hinted_aff_expr(length(nz_idx))
-                    for i in nz_idx
-                        JuMP.add_to_expression!(
-                            expected,
-                            modf_col[i],
-                            nodal_balance[i, t],
-                        )
-                    end
-                    actual = pcbf[outage_id_str, name, t]
-                    @test JuMP.isequal_canonical(actual, expected)
-                end
+            arc = name_to_arc_map[name][1]
+            modf_col = ground_truth_modf[arc, ctg]
+            nz_idx =
+                [i for i in eachindex(modf_col) if abs(modf_col[i]) > PSI.PTDF_ZERO_TOL]
+            # Mirror `_make_flow_expressions!` exactly (including
+            # `get_hinted_aff_expr`) so `JuMP.isequal_canonical` cannot
+            # diverge due to internal AffExpr capacity differences.
+            expected = PSI.get_hinted_aff_expr(length(nz_idx))
+            for i in nz_idx
+                JuMP.add_to_expression!(
+                    expected,
+                    modf_col[i],
+                    nodal_balance[i, t],
+                )
             end
+            actual = pcbf[outage_id_str, name, t]
+            @test JuMP.isequal_canonical(actual, expected)
         end
     end
     # Sanity: at least one branch type should have had a container; otherwise
