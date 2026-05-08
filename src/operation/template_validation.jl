@@ -104,39 +104,70 @@ function validate_template_impl!(model::OperationModel)
         delete!(model.template.branches, k)
     end
     validate_network_model(network_model, unmodeled_branch_types, model_has_branch_filters)
-    _build_post_contingency_flow_components!(network_model, template, system)
+    _build_device_model_outages!(template, system)
     return
 end
 
+# Multi-dispatch outage subtype tag, avoids inline `isa` in the auto-discover
+# path. Default catch-all is `false`; specialized to `true` for `PlannedOutage`.
+_is_planned_outage(::PSY.PlannedOutage) = true
+_is_planned_outage(::PSY.Outage) = false
+
 """
-Populate `network_model.post_contingency_flow_components` with the per-outage,
-per-type set of monitored branch names. Skipped when the template does not use
-a security-constrained branch formulation. Empty `monitored_components` on an
-outage is treated as "monitor nothing" — a warning is emitted so users notice.
-A monitored component whose type is not modeled by the template is reported
-once per type with the offending outage UUIDs.
+Populate `device_model.outages` for every security-constrained branch device
+model in the template, in a single pass over the system's outage supplemental
+attributes. The outer-key set per device model `m::DeviceModel{D, B}` is the
+subset of outage UUIDs whose monitored components include at least one
+component of type `D`. The inner dict is the full per-modeled-type breakdown
+of monitored component names for that outage (the same shape that previously
+lived on `NetworkModel.post_contingency_flow_components`).
+
+Selection semantics:
+- If `m.outages` is non-empty when this runs, the user explicitly listed UUIDs
+  via the constructor kwarg. Restrict to those UUIDs only; warn for any
+  user-listed UUID that produced no `D`-type entry.
+- If `m.outages` is empty, auto-discover. Honor `"include_planned_outages"`
+  on `m`'s attributes (default `false`) — `PlannedOutage`s are skipped on the
+  auto-discover path unless the attribute is `true`. Explicit user selection
+  bypasses this filter (listing a planned outage explicitly is intent).
+
+Empty `monitored_components` on an outage is treated as "monitor nothing" — a
+warning is emitted. A monitored component whose type is not modeled by the
+template is reported once per type with the offending outage UUIDs.
 """
-function _build_post_contingency_flow_components!(
-    network_model::NetworkModel,
+function _build_device_model_outages!(
     template::ProblemTemplate,
     sys::PSY.System,
 )
     branch_models = get_branch_models(template)
-    if !_template_uses_security_constrained_branch(branch_models)
-        return
-    end
-
-    flowgates = get_post_contingency_flow_components(network_model)
-    empty!(flowgates)
+    sc_models = [
+        m for m in values(branch_models) if
+        get_formulation(m) <: AbstractSecurityConstrainedStaticBranch
+    ]
+    isempty(sc_models) && return
 
     modeled_types = Set{DataType}(get_component_types(template))
-    uncovered_types = Dict{DataType, Vector{Base.UUID}}()
+
+    selection = Dict{Symbol, Union{Nothing, Set{Base.UUID}}}()
+    for m in sc_models
+        sym = Symbol(get_component_type(m))
+        selection[sym] = if isempty(m.outages)
+            nothing
+        else
+            Set{Base.UUID}(keys(m.outages))
+        end
+        empty!(m.outages)
+    end
+
+    uncovered_types = Dict{DataType, Set{Base.UUID}}()
 
     for outage in PSY.get_supplemental_attributes(PSY.Outage, sys)
         outage_uuid = IS.get_uuid(outage)
         monitored = PSY.get_monitored_components(outage)
         if isempty(monitored)
-            @warn "Outage $(outage_uuid) ($(typeof(outage))) has empty monitored_components; no post-contingency variables or constraints will be created for this outage." _group =
+            @warn "Outage $(outage_uuid) ($(typeof(outage))) has empty \
+                   monitored_components; no post-contingency variables or \
+                   constraints will be created for this outage." _group =
                 LOG_GROUP_MODELS_VALIDATION
             continue
         end
@@ -145,27 +176,60 @@ function _build_post_contingency_flow_components!(
         for uuid in monitored
             component = IS.get_component(sys, uuid)
             if component === nothing
-                @warn "Outage $(outage_uuid) references monitored component UUID $(uuid) that is not present in the system; skipping." _group =
-                    LOG_GROUP_MODELS_VALIDATION
+                @warn "Outage $(outage_uuid) references monitored component \
+                       UUID $(uuid) that is not present in the system; \
+                       skipping." _group = LOG_GROUP_MODELS_VALIDATION
                 continue
             end
             comp_type = typeof(component)
             if !(comp_type in modeled_types)
-                push!(get!(uncovered_types, comp_type, Base.UUID[]), outage_uuid)
+                push!(
+                    get!(uncovered_types, comp_type, Set{Base.UUID}()),
+                    outage_uuid,
+                )
                 continue
             end
             push!(get!(per_type, comp_type, Set{String}()), PSY.get_name(component))
         end
+        isempty(per_type) && continue
 
-        if !isempty(per_type)
-            flowgates[outage_uuid] = per_type
+        for m in sc_models
+            D = get_component_type(m)
+            haskey(per_type, D) || continue
+            sel = selection[Symbol(D)]
+            if sel !== nothing
+                outage_uuid in sel || continue
+            else
+                include_planned =
+                    get_attribute(m, "include_planned_outages") === true
+                if _is_planned_outage(outage) && !include_planned
+                    continue
+                end
+            end
+            m.outages[outage_uuid] = per_type
         end
     end
 
     for (comp_type, offending) in uncovered_types
-        unique_outages = unique(offending)
-        @warn "Monitored components of type $(comp_type) appear in outages $(unique_outages) but $(comp_type) is not modeled by the template; their post-contingency variables will be skipped." _group =
+        @warn "Monitored components of type $(comp_type) appear in outages \
+               $(collect(offending)) but $(comp_type) is not modeled by the \
+               template; their post-contingency variables will be skipped." _group =
             LOG_GROUP_MODELS_VALIDATION
+    end
+
+    for m in sc_models
+        D = get_component_type(m)
+        sel = selection[Symbol(D)]
+        sel === nothing && continue
+        for uuid in sel
+            if !haskey(m.outages, uuid)
+                @warn "Outage $(uuid) listed on DeviceModel{$D, \
+                       $(get_formulation(m))} does not monitor any component \
+                       of type $D in the system — it will not contribute any \
+                       post-contingency constraints." _group =
+                    LOG_GROUP_MODELS_VALIDATION
+            end
+        end
     end
     return
 end

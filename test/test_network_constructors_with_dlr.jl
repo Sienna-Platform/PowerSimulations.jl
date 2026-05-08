@@ -143,10 +143,10 @@ end
     branches_dlr = ["1", "2", "6"]
     dlr_factors = vcat([fill(x, 6) for x in [0.99, 0.98, 1.0, 0.95]]...)
 
-    # DLR constraints are now correctly applied to parallel arcs shared between different branch types.
-    # The first two cases (parallel on lines "1" and "2") have DLR, resulting in a higher optimal cost.
+    # TimeSeriesBound constraints are now correctly applied to parallel arcs shared between different branch types.
+    # The first two cases (parallel on lines "1" and "2") have TimeSeriesBound, resulting in a higher optimal cost.
     test_obj_values = [375109.0, 320486.0, 241293.703]
-    parallel_lines_names_to_add = ["1", "2", "3"]#Add parallel lines in lines with and without DLRs
+    parallel_lines_names_to_add = ["1", "2", "3"]#Add parallel lines in lines with and without TimeSeriesBounds like TimeSeriesBound
     n_steps = 2
 
     for slack_flag in [false, true]
@@ -220,7 +220,7 @@ end
     end
 end
 
-@testset "Network DC-PF with PTDF Model and implementing Dynamic Branch Ratings with BranchesParallel of different types (MonitoredLine with DLR)" begin
+@testset "Network DC-PF with PTDF Model and implementing Dynamic Branch Ratings with BranchesParallel of different types (MonitoredLine with TimeSeriesBound)" begin
     objfuncs = [GAEVF, GQEVF, GQEVF]
     constraint_keys = [
         PSI.ConstraintKey(FlowRateConstraint, PSY.Line, "lb"),
@@ -231,7 +231,7 @@ end
     dlr_factors = vcat([fill(x, 6) for x in [0.99, 0.98, 1.0, 0.95]]...)
 
     test_obj_values = [375109.0, 320486.0, 241293.703]
-    parallel_lines_names_to_add = ["1", "2", "3"]#Add parallel lines in lines with and without DLRs
+    parallel_lines_names_to_add = ["1", "2", "3"]#Add parallel lines in lines with and without TimeSeriesBounds like TimeSeriesBound
     n_steps = 2
 
     for slack_flag in [false, true]
@@ -316,7 +316,7 @@ end
     dlr_factors = vcat([fill(x, 6) for x in [0.99, 0.98, 1.0, 0.95]]...)
 
     test_obj_values = [356577.0, 279735.0, 241293.703]
-    parallel_lines_names_to_add = ["1", "2", "3"]#Add parallel lines in lines with and without DLRs
+    parallel_lines_names_to_add = ["1", "2", "3"]#Add parallel lines in lines with and without TimeSeriesBounds like TimeSeriesBound
     n_steps = 2
 
     for slack_flag in [false, true]
@@ -398,7 +398,7 @@ end
     dlr_factors = vcat([fill(x, 6) for x in [0.99, 0.98, 1.0, 0.95]]...)
 
     test_obj_values = [356577.0, 279735.0, 241293.703]
-    parallel_lines_names_to_add = ["1", "2", "3"]#Add parallel lines in lines with and without DLRs
+    parallel_lines_names_to_add = ["1", "2", "3"]#Add parallel lines in lines with and without TimeSeriesBounds like TimeSeriesBound
     n_steps = 2
     test_results_slacks = Dict(
         1 => [456, 0, 288, 288, 24],
@@ -494,7 +494,7 @@ end
     branches_dlr = ["1", "2", "6"]
     dlr_factors = vcat([fill(x, 6) for x in [0.99, 0.98, 1.0, 0.95]]...)
 
-    parallel_lines_names_to_add = ["1", "2", "3"]#Add parallel lines in lines with and without DLRs
+    parallel_lines_names_to_add = ["1", "2", "3"]#Add parallel lines in lines with and without TimeSeriesBounds like TimeSeriesBound
     n_steps = 2
     test_results_slacks = Dict(
         1 => [600, 0, 288, 288, 24],

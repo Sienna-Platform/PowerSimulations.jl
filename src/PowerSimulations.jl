@@ -142,6 +142,7 @@ export set_network_model!
 export get_network_formulation
 export get_hvdc_network_model
 export set_hvdc_network_model!
+export get_outages
 ## Results interfaces
 export SimulationResultsExport
 export export_results

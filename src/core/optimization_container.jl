@@ -746,9 +746,9 @@ function build_impl!(
         )
     end
 
-    # # Sort branch models so that those with time series parameters (e.g. DLR) come first.
-    # # This ensures that DLR-aware constraint builders claim shared arcs before static builders,
-    # # preventing static constraints from overriding DLR constraints for parallel branches of
+    # # Sort branch models so that those with time series parameters (e.g. TimeSeriesBound) come first.
+    # # This ensures that TimeSeriesBound-aware constraint builders claim shared arcs before static builders,
+    # # preventing static constraints from overriding TimeSeriesBound constraints for parallel branches of
     # # different types sharing the same arc.
     # sorted_branch_models = sort(
     #     collect(values(template.branches));

@@ -349,9 +349,10 @@ end
         # in the container, so we don't assert on per-name keys here — the ground-
         # truth testset later in this file does that structurally.
         if ix == 1
-            nm = PSI.get_network_model(PSI.get_template(ps_model))
-            flowgates = PSI.get_post_contingency_flow_components(nm)
-            @test !isempty(flowgates)
+            template_under_test = PSI.get_template(ps_model)
+            line_dm = PSI.get_model(template_under_test, PSY.Line)
+            line_outages = PSI.get_outages(line_dm)
+            @test !isempty(line_outages)
             container = PSI.get_optimization_container(ps_model)
             time_steps = PSI.get_time_steps(container)
             con_ub = PSI.get_constraint(
@@ -365,10 +366,11 @@ end
             ub_names = Set(k[2] for k in ub_keys)
             @test !isempty(ub_outages)
             @test !isempty(ub_names)
-            # Every outage that monitors a Line should appear in the constraint
-            # container's outage-id axis.
+            # Every outage in the Line DeviceModel's outages dict that has a
+            # non-empty Line entry should appear in the constraint container's
+            # outage-id axis.
             line_monitoring_outages = Set(
-                string(uuid) for (uuid, per_type) in flowgates
+                string(uuid) for (uuid, per_type) in line_outages
                 if haskey(per_type, PSY.Line) && !isempty(per_type[PSY.Line])
             )
             @test ub_outages == line_monitoring_outages
@@ -563,4 +565,101 @@ end
         end
     end
     @test n_checked >= 1
+end
+
+@testset "SecurityConstrainedStaticBranch respects user-supplied outages on DeviceModel" begin
+    # Build a system with three line outages, then build two templates against
+    # the same system: one with default empty `outages` (auto-discover), one
+    # with explicit `outages = [outage_1, outage_2]`. The constraint container
+    # axis-1 (outage_id) for the explicit template must equal exactly the two
+    # listed UUIDs; the auto-discover template must include all three.
+    c_sys5 = PSB.build_system(PSITestSystems, "c_sys5")
+    all_branches = collect(get_components(ACTransmission, c_sys5))
+    outage_components = ["1", "2", "3"]
+    outage_uuids = Base.UUID[]
+    outage_objs = PSY.Outage[]
+    for line_name in outage_components
+        component = get_component(ACTransmission, c_sys5, line_name)
+        transition_data = GeometricDistributionForcedOutage(;
+            mean_time_to_recovery = 10,
+            outage_transition_probability = 0.9999,
+            monitored_components = all_branches,
+        )
+        add_supplemental_attribute!(c_sys5, component, transition_data)
+        push!(outage_uuids, IS.get_uuid(transition_data))
+        push!(outage_objs, transition_data)
+    end
+
+    # Auto-discover path: empty `outages` kwarg.
+    auto_template = get_thermal_dispatch_template_network(
+        NetworkModel(
+            PTDFPowerModel;
+            PTDF_matrix = PTDF(c_sys5),
+            MODF_matrix = VirtualMODF(c_sys5),
+        ),
+    )
+    set_device_model!(auto_template, Line, SecurityConstrainedStaticBranch)
+    set_device_model!(auto_template, Transformer2W, SecurityConstrainedStaticBranch)
+    set_device_model!(auto_template, TapTransformer, SecurityConstrainedStaticBranch)
+    auto_model = DecisionModel(auto_template, c_sys5; optimizer = HiGHS_optimizer)
+    @test build!(auto_model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+    auto_line_outages =
+        PSI.get_outages(PSI.get_model(PSI.get_template(auto_model), PSY.Line))
+    @test Set(keys(auto_line_outages)) == Set(outage_uuids)
+
+    # Explicit selection: only outages 1 and 2.
+    selected = outage_objs[1:2]
+    explicit_template = get_thermal_dispatch_template_network(
+        NetworkModel(
+            PTDFPowerModel;
+            PTDF_matrix = PTDF(c_sys5),
+            MODF_matrix = VirtualMODF(c_sys5),
+        ),
+    )
+    set_device_model!(
+        explicit_template,
+        DeviceModel(Line, SecurityConstrainedStaticBranch; outages = selected),
+    )
+    set_device_model!(
+        explicit_template, Transformer2W, SecurityConstrainedStaticBranch,
+    )
+    set_device_model!(
+        explicit_template, TapTransformer, SecurityConstrainedStaticBranch,
+    )
+    explicit_model =
+        DecisionModel(explicit_template, c_sys5; optimizer = HiGHS_optimizer)
+    @test build!(explicit_model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+    explicit_line_outages = PSI.get_outages(
+        PSI.get_model(PSI.get_template(explicit_model), PSY.Line),
+    )
+    @test Set(keys(explicit_line_outages)) == Set(outage_uuids[1:2])
+    @test !(outage_uuids[3] in keys(explicit_line_outages))
+
+    # Constraint container outage-id axis must reflect the selection.
+    container = PSI.get_optimization_container(explicit_model)
+    con_ub = PSI.get_constraint(
+        container,
+        PSI.ConstraintKey(
+            PostContingencyEmergencyFlowRateConstraint, PSY.Line, "ub",
+        ),
+    )
+    ub_outages = Set(k[1] for k in keys(con_ub.data))
+    @test ub_outages == Set(string(u) for u in outage_uuids[1:2])
+end
+
+@testset "DeviceModel.outages kwarg is dropped with a warning for non-SC formulations" begin
+    c_sys5 = PSB.build_system(PSITestSystems, "c_sys5")
+    line = first(get_components(ACTransmission, c_sys5))
+    transition = GeometricDistributionForcedOutage(;
+        mean_time_to_recovery = 10,
+        outage_transition_probability = 0.9999,
+        monitored_components = [line],
+    )
+    add_supplemental_attribute!(c_sys5, line, transition)
+    @test_logs (:warn, r"formulation does not support N-1 contingencies") begin
+        dm = DeviceModel(Line, StaticBranch; outages = [transition])
+        @test isempty(PSI.get_outages(dm))
+    end
 end

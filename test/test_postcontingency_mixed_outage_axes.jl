@@ -24,7 +24,7 @@
         return sys, unplanned, planned
     end
 
-    function _build_model(sys, attrs)
+    function _build_model(sys; attributes = Dict{String, Any}(), outages = PSY.Outage[])
         template = get_thermal_dispatch_template_network(
             NetworkModel(
                 PTDFPowerModel;
@@ -34,7 +34,11 @@
         )
         set_device_model!(
             template,
-            DeviceModel(PSY.Line, scb_formulation; attributes = attrs),
+            DeviceModel(
+                PSY.Line, scb_formulation;
+                attributes = attributes,
+                outages = outages,
+            ),
         )
         model = DecisionModel(template, sys)
         @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
@@ -62,7 +66,7 @@
 
     @testset "default: only UnplannedOutage appears in axes" begin
         sys, unplanned, planned = _build_mixed_outage_system()
-        model = _build_model(sys, Dict{String, Any}())  # default attribute
+        model = _build_model(sys)   # default: empty outages, no planned
 
         expr_ax, cons_ax = _axes(model)
         @test expr_ax == cons_ax
@@ -73,7 +77,7 @@
     @testset "include_planned_outages=true: both outages appear in axes" begin
         sys, unplanned, planned = _build_mixed_outage_system()
         model = _build_model(
-            sys, Dict{String, Any}("include_planned_outages" => true),
+            sys; attributes = Dict{String, Any}("include_planned_outages" => true),
         )
 
         expr_ax, cons_ax = _axes(model)
@@ -103,15 +107,12 @@
         @test length(unplanned_branches) != length(planned_branches)
     end
 
-    @testset "contingency_uuids filter selects a subset" begin
+    @testset "outages kwarg selects a subset" begin
+        # Replaces the legacy `contingency_uuids` attribute filter. Explicit
+        # `outages = [unplanned]` restricts the model to that one outage,
+        # bypassing the `include_planned_outages` type filter.
         sys, unplanned, planned = _build_mixed_outage_system()
-        model = _build_model(
-            sys,
-            Dict{String, Any}(
-                "include_planned_outages" => true,
-                "contingency_uuids" => [IS.get_uuid(unplanned)],
-            ),
-        )
+        model = _build_model(sys; outages = [unplanned])
 
         expr_ax, cons_ax = _axes(model)
         @test expr_ax == cons_ax

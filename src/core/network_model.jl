@@ -72,11 +72,6 @@ mutable struct NetworkModel{T <: PM.AbstractPowerModel}
     hvdc_network_model::Union{Nothing, AbstractHVDCNetworkModel}
     modeled_ac_branch_types::Vector{DataType}
     reduced_branch_tracker::BranchReductionOptimizationTracker
-    # outage UUID → branch type → set of monitored branch names of that type.
-    # Populated during template validation when the template uses a
-    # security-constrained branch formulation; consumed by the security-
-    # constrained constructors to drive sparse per-outage containers.
-    post_contingency_flow_components::Dict{Base.UUID, Dict{DataType, Set{String}}}
 
     function NetworkModel(
         ::Type{T};
@@ -109,7 +104,6 @@ mutable struct NetworkModel{T <: PM.AbstractPowerModel}
             hvdc_network_model,
             Vector{DataType}(),
             BranchReductionOptimizationTracker(),
-            Dict{Base.UUID, Dict{DataType, Set{String}}}(),
         )
     end
 end
@@ -130,7 +124,6 @@ get_power_flow_evaluation(m::NetworkModel) = m.power_flow_evaluation
 has_subnetworks(m::NetworkModel) = !isempty(m.bus_area_map)
 get_subsystem(m::NetworkModel) = m.subsystem
 get_hvdc_network_model(m::NetworkModel) = m.hvdc_network_model
-get_post_contingency_flow_components(m::NetworkModel) = m.post_contingency_flow_components
 
 set_subsystem!(m::NetworkModel, id::String) = m.subsystem = id
 set_hvdc_network_model!(m::NetworkModel, val::Union{Nothing, AbstractHVDCNetworkModel}) =
@@ -199,12 +192,12 @@ function _get_irreducible_buses_due_to_monitored_components(
 )
     @debug "Identifying buses that are irreducible due to monitored components"
     irreducible_buses = Set{Int64}()
-    _add_dlr_irreducible_buses!(irreducible_buses, sys, network_model, branch_models)
+    _add_timeseries_irreducible_buses!(irreducible_buses, sys, network_model, branch_models)
     _add_outage_monitored_irreducible_buses!(irreducible_buses, sys)
     return collect(irreducible_buses)
 end
 
-function _add_dlr_irreducible_buses!(
+function _add_timeseries_irreducible_buses!(
     irreducible_buses::Set{Int64},
     sys::PSY.System,
     network_model::NetworkModel,
@@ -246,14 +239,20 @@ function _add_outage_monitored_irreducible_buses!(
     for outage in PSY.get_supplemental_attributes(PSY.Outage, sys)
         for uuid in PSY.get_monitored_components(outage)
             component = IS.get_component(sys, uuid)
-            component === nothing && continue
+            if isnothing(component)
+                throw(
+                    IS.ConflictingInputsError(
+                        "Monitored component with UUID $(uuid) on outage $(IS.get_uuid(outage)) not found in system. Data requires correction",
+                    ),
+                )
+            end
             _push_component_buses!(irreducible_buses, component)
         end
     end
     return
 end
 
-_push_component_buses!(buses::Set{Int64}, branch::PSY.Branch) = begin
+function _push_component_buses!(buses::Set{Int64}, branch::PSY.Branch)
     arc = PSY.get_arc(branch)
     push!(buses, PSY.get_number(PSY.get_from(arc)))
     push!(buses, PSY.get_number(PSY.get_to(arc)))
@@ -264,10 +263,6 @@ function _push_component_buses!(buses::Set{Int64}, device::PSY.StaticInjection)
     push!(buses, PSY.get_number(PSY.get_bus(device)))
     return
 end
-
-# Catch-all: device types we don't know how to localize to a bus contribute
-# nothing. They still appear in monitored_components for downstream use.
-_push_component_buses!(::Set{Int64}, ::PSY.Component) = nothing
 
 function instantiate_network_model!(
     model::NetworkModel{T},
@@ -371,7 +366,7 @@ function instantiate_network_model!(
     )
     if get_PTDF_matrix(model) === nothing || !isempty(irreducible_buses)
         if get_PTDF_matrix(model) !== nothing
-            @warn "Provided PTDF Matrix is being ignored since irreducible buses were identified from monitored components (DLRs and/or outage-monitored devices). Recalculating PTDF Matrix with PowerNetworkMatrices.VirtualPTDF and the identified irreducible buses."
+            @warn "Provided PTDF Matrix is being ignored since irreducible buses were identified from monitored components (TimeSeriesBounds and/or outage-monitored devices). Recalculating PTDF Matrix with PowerNetworkMatrices.VirtualPTDF and the identified irreducible buses."
         else
             @info "No PTDF Matrix provided. Calculating using PowerNetworkMatrices.VirtualPTDF"
         end
@@ -465,7 +460,7 @@ function instantiate_network_model!(
                 network_reductions = _build_network_reductions(model, irreducible_buses),
             )
         elseif !isempty(irreducible_buses)
-            @warn "Provided MODF Matrix is being ignored since irreducible buses were identified from monitored components (DLRs and/or outage-monitored devices). Recalculating MODF Matrix with PowerNetworkMatrices.VirtualMODF and the identified irreducible buses."
+            @warn "Provided MODF Matrix is being ignored since irreducible buses were identified from monitored components (TimeSeriesBounds and/or outage-monitored devices). Recalculating MODF Matrix with PowerNetworkMatrices.VirtualMODF and the identified irreducible buses."
             model.MODF_matrix = PNM.VirtualMODF(
                 sys;
                 tol = PTDF_ZERO_TOL,

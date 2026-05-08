@@ -86,51 +86,30 @@ end
 """
 Outages registered on `modf_matrix` that monitor at least one component of
 branch type `V`, paired with the sorted set of monitored branch names of that
-type. The per-outage monitored set is read from
-`network_model.post_contingency_flow_components`, which is populated during
-template validation from `Outage.monitored_components`.
+type. Reads `device_model.outages`, which is populated during template
+validation by `_build_device_model_outages!` from the user's explicit
+selection (constructor kwarg) or — when no selection was given — by
+auto-discovery over the system's `Outage` supplemental attributes (subject to
+`"include_planned_outages"`).
 
-Two device-model attributes further filter the set:
-
-- `"include_planned_outages"::Bool` (default `false`) — when `true`, both
-  `PSY.UnplannedOutage` and `PSY.PlannedOutage` subtypes are considered;
-  otherwise only `PSY.UnplannedOutage` (standard SCUC N-1).
-- `"contingency_uuids"::Union{Nothing, AbstractVector{Base.UUID}, AbstractSet{Base.UUID}}`
-  (default `nothing`) — when non-`nothing`, only outages whose UUID is in
-  the collection are modeled.
-
-Returned pairs are sorted by UUID so expression and constraint containers have
-deterministic axes.
+Returned pairs are sorted by UUID so expression and constraint containers
+have deterministic axes.
 """
 function _post_contingency_outage_ids(
-    sys::PSY.System,
-    network_model::NetworkModel,
     modf_matrix::PNM.VirtualMODF,
     ::Type{V},
     device_model::DeviceModel,
 ) where {V <: PSY.ACTransmission}
-    include_planned = get_attribute(device_model, "include_planned_outages")
-    outage_type = include_planned === true ? PSY.Outage : PSY.UnplannedOutage
-
-    uuid_filter_raw = get_attribute(device_model, "contingency_uuids")
-    uuid_filter = uuid_filter_raw === nothing ? nothing : Set{Base.UUID}(uuid_filter_raw)
-
     registered = PNM.get_registered_contingencies(modf_matrix)
-    flowgates = get_post_contingency_flow_components(network_model)
-
     pairs = Pair{Base.UUID, Vector{String}}[]
-    for outage in PSY.get_supplemental_attributes(outage_type, sys)
-        uuid = IS.get_uuid(outage)
-        uuid_filter !== nothing && !(uuid in uuid_filter) && continue
-        if !haskey(registered, uuid)
-            @warn "Outage $(uuid) is not registered on the MODF matrix; skipping its post-contingency constraints." maxlog =
-                1
-            continue
-        end
-        per_type = get(flowgates, uuid, nothing)
-        per_type === nothing && continue
+    for (uuid, per_type) in get_outages(device_model)
         names = get(per_type, V, nothing)
         (names === nothing || isempty(names)) && continue
+        if !haskey(registered, uuid)
+            @warn "Outage $(uuid) is not registered on the MODF matrix; \
+                   skipping its post-contingency constraints." maxlog = 1
+            continue
+        end
         push!(pairs, uuid => sort!(collect(names)))
     end
     sort!(pairs; by = first)
@@ -253,8 +232,7 @@ function add_constraints!(
     time_steps = get_time_steps(container)
     modf_matrix = get_MODF_matrix(network_model)
 
-    monitored_pairs =
-        _post_contingency_outage_ids(sys, network_model, modf_matrix, V, device_model)
+    monitored_pairs = _post_contingency_outage_ids(modf_matrix, V, device_model)
     isempty(monitored_pairs) && return
 
     net_reduction_data = network_model.network_reduction
@@ -346,8 +324,7 @@ function add_post_contingency_flow_expressions!(
     modf_matrix = get_MODF_matrix(network_model)
     registered_contingencies = PNM.get_registered_contingencies(modf_matrix)
 
-    monitored_pairs =
-        _post_contingency_outage_ids(sys, network_model, modf_matrix, V, model)
+    monitored_pairs = _post_contingency_outage_ids(modf_matrix, V, model)
     isempty(monitored_pairs) && return
 
     net_reduction_data = network_model.network_reduction

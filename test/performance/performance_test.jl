@@ -63,7 +63,6 @@ function copy_single_time_series_across_systems!(dst_sys::System, src_sys::Syste
     )
         dst_component =
             PSY.get_component(typeof(src_component), dst_sys, PSY.get_name(src_component))
-        dst_component === nothing && continue
         for ts_metadata in IS.get_time_series_metadata(
             src_component;
             time_series_type = PSY.SingleTimeSeries,
