@@ -190,7 +190,12 @@ function get_parameter_values(
 end
 
 get_parameter_array(c::ParameterContainer) = c.parameter_array
+# Underlying dense storage of the parameter array. `parent` on a JuMP `DenseAxisArray`
+# returns the array itself, so reach for `.data` directly to bypass the axis-keyed lookup.
+get_parameter_array_data(c::ParameterContainer) = get_parameter_array(c).data
 get_multiplier_array(c::ParameterContainer) = c.multiplier_array
+# Same shortcut for the multiplier array — used by the integer-indexed fast path.
+get_multiplier_array_data(c::ParameterContainer) = get_multiplier_array(c).data
 get_attributes(c::ParameterContainer) = c.attributes
 Base.length(c::ParameterContainer) = length(c.parameter_array)
 Base.size(c::ParameterContainer) = size(c.parameter_array)
@@ -255,6 +260,181 @@ function set_parameter!(
     ixs...,
 )
     assign_maybe_broadcast!(get_parameter_array(container), parameter, ixs)
+    return
+end
+
+# Fast-path setters that skip DenseAxisArray's string-keyed axis lookup. Callers pass
+# `get_parameter_array_data(container)` once, then write into the underlying Array
+# by integer indices. The (i, t) layout matches the canonical (component, time) axis
+# order produced by `add_param_container!`.
+#
+# 2D scalar path: covers Float64 and Tuple{Vararg{Float64}} eltypes (the latter is
+# used by piecewise-cost MarketBid parameters whose storage is a Matrix of tuples).
+@inline function _set_parameter_at!(
+    parent_param::Array{T, 2},
+    ::JuMP.Model,
+    value::T,
+    i::Int,
+    t::Int,
+) where {T <: ValidDataParamEltypes}
+    parent_param[i, t] = value
+    return
+end
+
+# 2D recurrent-rebuild paths: param storage is `Array{JuMP.VariableRef, 2}`. Either we
+# need a fresh JuMP parameter (Float64 input) or we reuse one created by an earlier
+# parallel branch type (VariableRef input).
+@inline function _set_parameter_at!(
+    parent_param::Array{JuMP.VariableRef, 2},
+    jump_model::JuMP.Model,
+    value::Float64,
+    i::Int,
+    t::Int,
+)
+    parent_param[i, t] = add_jump_parameter(jump_model, value)
+    return
+end
+
+@inline function _set_parameter_at!(
+    parent_param::Array{JuMP.VariableRef, 2},
+    ::JuMP.Model,
+    parameter::JuMP.VariableRef,
+    i::Int,
+    t::Int,
+)
+    parent_param[i, t] = parameter
+    return
+end
+
+# 3D fast paths (parameter container with a middle additional axis, e.g. piecewise
+# tranches). The supplied `value` is a length-(size(parent_param, 2)) vector that fills
+# the middle axis at position (i, :, t). Eltype constrained to `ValidDataParamEltypes`
+# so tuples-of-floats are also accepted (piecewise breakpoint storage).
+@inline function _set_parameter_at!(
+    parent_param::Array{T, 3},
+    ::JuMP.Model,
+    value::AbstractVector{<:T},
+    i::Int,
+    t::Int,
+) where {T <: ValidDataParamEltypes}
+    @views parent_param[i, :, t] .= value
+    return
+end
+
+@inline function _set_parameter_at!(
+    parent_param::Array{JuMP.VariableRef, 3},
+    jump_model::JuMP.Model,
+    value::AbstractVector{Float64},
+    i::Int,
+    t::Int,
+)
+    for k in 1:size(parent_param, 2)
+        parent_param[i, k, t] = add_jump_parameter(jump_model, value[k])
+    end
+    return
+end
+
+# Fast-path setters for the multiplier array, mirroring `_set_parameter_at!`.
+# Multipliers are always Float64-valued (or tuples-of-floats for piecewise
+# parameters), so a single typed family covers every call site. Callers should
+# hoist `parent_mult = get_multiplier_array_data(parameter_container)` once
+# above the device loop and pass the integer device row index.
+
+# 2D row fill: assigns `value` across the whole time slice for component `i`
+# (the canonical pattern at parameter-creation time, where the multiplier is
+# constant per device).
+@inline function _set_multiplier_at!(
+    parent_mult::Array{T, 2},
+    value::T,
+    i::Int,
+) where {T <: ValidDataParamEltypes}
+    @views parent_mult[i, :] .= value
+    return
+end
+
+# 2D scalar write at a single (component, time) cell.
+@inline function _set_multiplier_at!(
+    parent_mult::Array{T, 2},
+    value::T,
+    i::Int,
+    t::Int,
+) where {T <: ValidDataParamEltypes}
+    parent_mult[i, t] = value
+    return
+end
+
+# 3D row fill: assigns `value` across all (tranche, time) for component `i`.
+@inline function _set_multiplier_at!(
+    parent_mult::Array{T, 3},
+    value::T,
+    i::Int,
+) where {T <: ValidDataParamEltypes}
+    @views parent_mult[i, :, :] .= value
+    return
+end
+
+# 3D point write at a single (component, tranche, time) cell.
+@inline function _set_multiplier_at!(
+    parent_mult::Array{T, 3},
+    value::T,
+    i::Int,
+    j::Int,
+    t::Int,
+) where {T <: ValidDataParamEltypes}
+    parent_mult[i, j, t] = value
+    return
+end
+
+# Fast-path setters for the simulation-step parameter-VALUE update path.
+# Used by `_update_parameter_values!` and `_fix_parameter_value!` overloads
+# where the parameter container already exists and we are pushing new values
+# into it from upstream model results or time series. Caller hoists
+# `parent_param = get_parameter_array_data(parameter_container)` (and an
+# optional `parent_mult` / `parent_var`) above the device loop, then writes
+# by integer (i, t) — bypassing DenseAxisArray's string-keyed axis lookup.
+#
+# For Float64-typed storage we write directly; for `JuMP.VariableRef` storage
+# we update the JuMP parameter's bound via `JuMP.fix(...; force=true)`.
+@inline function _set_param_value_at!(
+    parent_param::Array{T, 2},
+    value::T,
+    i::Int,
+    t::Int,
+) where {T <: ValidDataParamEltypes}
+    @inbounds parent_param[i, t] = value
+    return
+end
+
+@inline function _set_param_value_at!(
+    parent_param::Array{JuMP.VariableRef, 2},
+    value::Float64,
+    i::Int,
+    t::Int,
+)
+    @inbounds JuMP.fix(parent_param[i, t], value; force = true)
+    return
+end
+
+# 3D paths for piecewise-tranche updates.
+@inline function _set_param_value_at!(
+    parent_param::Array{T, 3},
+    value::AbstractVector{<:T},
+    i::Int,
+    t::Int,
+) where {T <: ValidDataParamEltypes}
+    @inbounds @views parent_param[i, :, t] .= value
+    return
+end
+
+@inline function _set_param_value_at!(
+    parent_param::Array{JuMP.VariableRef, 3},
+    value::AbstractVector{Float64},
+    i::Int,
+    t::Int,
+)
+    @inbounds for k in 1:size(parent_param, 2)
+        JuMP.fix(parent_param[i, k, t], value[k]; force = true)
+    end
     return
 end
 

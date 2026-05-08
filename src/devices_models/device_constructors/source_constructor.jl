@@ -56,7 +56,7 @@ function construct_device!(
         network_model,
     )
 
-    add_expressions!(container, ProductionCostExpression, devices, model)
+    add_cost_expressions!(container, devices, model)
 
     add_to_expression!(
         container,
@@ -220,7 +220,7 @@ function construct_device!(
         model,
     )
 
-    add_expressions!(container, ProductionCostExpression, devices, model)
+    add_cost_expressions!(container, devices, model)
 
     add_to_expression!(
         container,
