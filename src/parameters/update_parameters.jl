@@ -30,11 +30,25 @@ function _fix_parameter_value!(
 )
     affected_variable_keys = parameter_attributes.affected_keys
     @assert !isempty(affected_variable_keys)
+    # Hoist underlying dense storage for the parameter array once. The variable
+    # array's storage is hoisted per affected key (different arrays per key).
+    parent_param = parameter_array.data
+    component_names, time = axes(parameter_array)
+    param_lookup = parameter_array.lookup[1]
     for var_key in affected_variable_keys
         variable = get_variable(container, var_key)
-        component_names, time = axes(parameter_array)
-        for t in time, name in component_names
-            JuMP.fix(variable[name, t], parameter_array[name, t]; force = true)
+        parent_var = variable.data
+        var_lookup = variable.lookup[1]
+        for name in component_names
+            i_param = param_lookup[name]
+            i_var = var_lookup[name]
+            for t in time
+                JuMP.fix(
+                    parent_var[i_var, t],
+                    parent_param[i_param, t];
+                    force = true,
+                )
+            end
         end
     end
     return
