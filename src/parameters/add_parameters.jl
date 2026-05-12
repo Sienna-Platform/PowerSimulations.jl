@@ -316,7 +316,7 @@ function _add_time_series_parameters!(
                 _unwrap_for_param.(Ref(param_instance), raw_ts_vals, Ref(additional_axes))
             @assert all(_size_wrapper.(ts_vals) .== Ref(length.(additional_axes)))
         end
-        multiplier = get_multiplier_value(T(), reduction_entry, W())
+        multiplier = _resolve_branch_multiplier(T(), reduction_entry, W(), model)
         _set_multiplier_at!(parent_mult, Float64(multiplier), i_mult)
         for t in time_steps
             if !has_entry

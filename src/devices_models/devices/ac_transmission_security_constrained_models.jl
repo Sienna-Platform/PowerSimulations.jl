@@ -61,156 +61,95 @@ function get_emergency_min_max_limits(
 end
 
 """
-Min and max limits for monitored line
-"""
-function get_emergency_min_max_limits(
-    device::PSY.MonitoredLine,
-    ::Type{<:PostContingencyConstraintType},
-    ::Type{T},
-) where {T <: AbstractBranchFormulation}
-    if PSY.get_flow_limits(device).to_from != PSY.get_flow_limits(device).from_to
-        @warn(
-            "Flow limits in Line $(PSY.get_name(device)) aren't equal. The minimum will be used in formulation $(T)"
-        )
-    end
-    equivalent_rating = PNM.get_equivalent_emergency_rating(device)
-    limit = min(
-        equivalent_rating,
-        PSY.get_flow_limits(device).to_from,
-        PSY.get_flow_limits(device).from_to,
-    )
-    minmax = (min = -1 * limit, max = limit)
-    return minmax
-end
-
-"""
-Outages registered on `modf_matrix` that monitor at least one component of
-branch type `V`, paired with the sorted set of monitored branch names of that
-type. Reads `device_model.outages`, which is populated during template
-validation by `_build_device_model_outages!` from the user's explicit
-selection (constructor kwarg) or — when no selection was given — by
-auto-discovery over the system's `Outage` supplemental attributes (subject to
-`"include_planned_outages"`).
-
-Returned pairs are sorted by UUID so expression and constraint containers
-have deterministic axes.
-"""
-function _post_contingency_outage_ids(
-    modf_matrix::PNM.VirtualMODF,
-    ::Type{V},
-    device_model::DeviceModel,
-) where {V <: PSY.ACTransmission}
-    registered = PNM.get_registered_contingencies(modf_matrix)
-    pairs = Pair{Base.UUID, Vector{String}}[]
-    for (uuid, per_type) in get_outages(device_model)
-        names = get(per_type, V, nothing)
-        (names === nothing || isempty(names)) && continue
-        if !haskey(registered, uuid)
-            @warn "Outage $(uuid) is not registered on the MODF matrix; \
-                   skipping its post-contingency constraints." maxlog = 1
-            continue
-        end
-        push!(pairs, uuid => sort!(collect(names)))
-    end
-    sort!(pairs; by = first)
-    return pairs
-end
-
-"""
-Pre-allocate a `SparseAxisArray` keyed by `(outage_id::String, branch_name::String, t::Int)`
-holding `JuMP.AffExpr` zeros for every monitored (outage, branch) pair × time
-step. The container is registered on `container.expressions` under
-`ExpressionKey(T, V)` and returned to the caller.
+Pre-allocate a `SparseAxisArray` keyed by
+`(outage_id::String, monitored_name::String, t::Int)` holding `JuMP.AffExpr`
+zeros for every entry produced by `_resolve_monitored_arcs`. The pre-fill is
+required so the parallel PTDF expression build below cannot race on Dict
+resize. Registered on `container.expressions` under `ExpressionKey(T, V)`.
 """
 function _add_post_contingency_sparse_expression!(
     container::OptimizationContainer,
     ::Type{T},
     ::Type{V},
-    monitored_pairs::Vector{Pair{Base.UUID, Vector{String}}},
+    resolved::Vector{
+        Pair{Base.UUID, Vector{Tuple{DataType, String, Tuple{Int, Int}, String}}},
+    },
     time_steps::UnitRange{Int},
 ) where {T <: PostContingencyExpressions, V <: PSY.ACTransmission}
     contents = Dict{Tuple{String, String, Int}, JuMP.AffExpr}()
-    for (uuid, names) in monitored_pairs
+    for (uuid, entries) in resolved
         outage_id = string(uuid)
-        for name in names
-            for t in time_steps
-                contents[(outage_id, name, t)] = zero(JuMP.AffExpr)
-            end
+        for (_, name, _, _) in entries, t in time_steps
+            contents[(outage_id, name, t)] = zero(JuMP.AffExpr)
         end
     end
     expr_container = SparseAxisArray(contents)
-    expr_key = ExpressionKey(T, V)
-    _assign_container!(container.expressions, expr_key, expr_container)
+    _assign_container!(container.expressions, ExpressionKey(T, V), expr_container)
     return expr_container
 end
 
 """
-Pre-allocate a `SparseAxisArray` keyed by `(outage_id::String, branch_name::String, t::Int)`
-for the given constraint type and meta tag, with each slot initialized to
-`nothing` (filled in by `JuMP.@constraint` during the build).
+Register an empty `SparseAxisArray` keyed by
+`(outage_id::String, monitored_name::String, t::Int)` for the given constraint
+type and meta tag. Entries are populated by `JuMP.@constraint` assignments
+during the build. `V` here is the outaged component type the DeviceModel owns;
+the container's name axis spans every monitored type associated with those
+outages.
 """
 function _add_post_contingency_sparse_constraints!(
     container::OptimizationContainer,
     ::Type{T},
-    ::Type{V},
-    monitored_pairs::Vector{Pair{Base.UUID, Vector{String}}},
-    time_steps::UnitRange{Int};
+    ::Type{V};
     meta::String,
 ) where {T <: ConstraintType, V <: PSY.ACTransmission}
-    contents = Dict{Tuple{String, String, Int}, Union{Nothing, JuMP.ConstraintRef}}()
-    for (uuid, names) in monitored_pairs
-        outage_id = string(uuid)
-        for name in names
-            for t in time_steps
-                contents[(outage_id, name, t)] = nothing
-            end
-        end
-    end
-    cons_container = SparseAxisArray(contents)
-    cons_key = ConstraintKey(T, V, meta)
-    _assign_container!(container.constraints, cons_key, cons_container)
+    cons_container =
+        SparseAxisArray(Dict{Tuple{String, String, Int}, JuMP.ConstraintRef}())
+    _assign_container!(container.constraints, ConstraintKey(T, V, meta), cons_container)
     return cons_container
 end
 
 """
-Resolve each (outage, monitored-branch-name) pair to a unique arc, deduping
-within an outage when multiple monitored names alias to the same arc (parallel
-circuits). When a monitored name is the individual component (e.g. `"3"`,
-`"3_copy"`) but the active reduction maps both to a single representative
-(e.g. `"3double_circuit"`), the redirect is taken via
-`component_to_reduction_name_map` so the container key is the reduction name —
-matching what `name_to_arc_map` stores. Names with no resolution (component
-absent from the reduction graph) are dropped silently.
+For each outage in `device_model.outages`, resolve every monitored component
+(across every monitored type) to its arc in the active reduction graph —
+using `component_to_reduction_name_map` as a redirect when the monitored name
+is an individual component that was reduced into a representative (e.g. `"3"`,
+`"3_copy"` → `"3double_circuit"`). Duplicate arcs within an outage are
+collapsed per-type. Outages sorted by UUID for deterministic axes.
 
-Returns `Vector{Pair{UUID, Vector{Tuple{String, Tuple{Int, Int}, String}}}}`
-where each inner tuple is `(container_name, arc, reduction_kind)`.
+Template validation is expected to guarantee that every monitored type has an
+entry in the reduction maps and every monitored name resolves; missing entries
+will raise `KeyError` here.
+
+Returns `Vector{Pair{UUID, Vector{Tuple{Type, String, Tuple{Int, Int}, String}}}}`
+where each inner tuple is `(monitored_type, container_name, arc, reduction_kind)`.
+The `monitored_type` is needed by callers to fetch the correct post-contingency
+flow variable for that component.
 """
 function _resolve_monitored_arcs(
-    monitored_pairs::Vector{Pair{Base.UUID, Vector{String}}},
-    name_to_arc_map,
-    component_to_reduction_name_map,
+    device_model::DeviceModel,
+    net_reduction_data::PNM.NetworkReductionData,
 )
-    resolved = Pair{Base.UUID, Vector{Tuple{String, Tuple{Int, Int}, String}}}[]
-    for (uuid, names) in monitored_pairs
-        seen = Set{Tuple{Int, Int}}()
-        kept = Tuple{String, Tuple{Int, Int}, String}[]
-        for name in names
-            entry = get(name_to_arc_map, name, nothing)
-            container_name = name
-            if entry === nothing
-                reduction_name = get(component_to_reduction_name_map, name, nothing)
-                reduction_name === nothing && continue
-                entry = get(name_to_arc_map, reduction_name, nothing)
-                entry === nothing && continue
-                container_name = reduction_name
+    name_to_arc_maps = PNM.get_name_to_arc_maps(net_reduction_data)
+    c2r_maps = PNM.get_component_to_reduction_name_map(net_reduction_data)
+    resolved =
+        Pair{Base.UUID, Vector{Tuple{DataType, String, Tuple{Int, Int}, String}}}[]
+    for (uuid, per_type) in get_outages(device_model)
+        kept = Tuple{DataType, String, Tuple{Int, Int}, String}[]
+        for (T, names) in per_type
+            n2a = name_to_arc_maps[T]
+            c2r = get(c2r_maps, T, Dict{String, String}())
+            seen = Set{Tuple{Int, Int}}()
+            for name in sort!(collect(names))
+                container_name = haskey(n2a, name) ? name : c2r[name]
+                arc, reduction_kind = n2a[container_name]
+                arc in seen && continue
+                push!(seen, arc)
+                push!(kept, (T, container_name, arc, reduction_kind))
             end
-            arc = entry[1]
-            arc in seen && continue
-            push!(seen, arc)
-            push!(kept, (container_name, arc, entry[2]))
         end
-        isempty(kept) || push!(resolved, uuid => kept)
+        push!(resolved, uuid => kept)
     end
+    sort!(resolved; by = first)
     return resolved
 end
 
@@ -219,7 +158,6 @@ Add branch post-contingency rate limit constraints for ACBranch considering MODF
 """
 function add_constraints!(
     container::OptimizationContainer,
-    sys::PSY.System,
     cons_type::Type{T},
     device_model::DeviceModel{V, U},
     network_model::NetworkModel{X},
@@ -227,45 +165,25 @@ function add_constraints!(
     T <: PostContingencyEmergencyFlowRateConstraint,
     V <: PSY.ACTransmission,
     U <: AbstractSecurityConstrainedStaticBranch,
-    X <: AbstractPTDFModel,
+    X <: PM.AbstractPowerModel,
 }
     time_steps = get_time_steps(container)
-    modf_matrix = get_MODF_matrix(network_model)
-
-    monitored_pairs = _post_contingency_outage_ids(modf_matrix, V, device_model)
-    isempty(monitored_pairs) && return
 
     net_reduction_data = network_model.network_reduction
     all_branch_maps_by_type = PNM.get_all_branch_maps_by_type(net_reduction_data)
-    name_to_arc_map = PNM.get_name_to_arc_map(net_reduction_data, V)
-    component_to_reduction_name_map =
-        get(
-            PNM.get_component_to_reduction_name_map(net_reduction_data),
-            V,
-            Dict{String, String}(),
-        )
 
-    resolved = _resolve_monitored_arcs(
-        monitored_pairs, name_to_arc_map, component_to_reduction_name_map,
-    )
-    isempty(resolved) && return
+    resolved = _resolve_monitored_arcs(device_model, net_reduction_data)
 
-    name_only_pairs =
-        [uuid => [t[1] for t in entries] for (uuid, entries) in resolved]
-    con_lb = _add_post_contingency_sparse_constraints!(
-        container, T, V, name_only_pairs, time_steps; meta = "lb",
-    )
-    con_ub = _add_post_contingency_sparse_constraints!(
-        container, T, V, name_only_pairs, time_steps; meta = "ub",
-    )
+    con_lb = _add_post_contingency_sparse_constraints!(container, T, V; meta = "lb")
+    con_ub = _add_post_contingency_sparse_constraints!(container, T, V; meta = "ub")
 
     expressions = get_expression(container, PostContingencyBranchFlow(), V)
     jump_model = get_jump_model(container)
 
     for (uuid, entries) in resolved
         outage_id = string(uuid)
-        for (name, arc, reduction_kind) in entries
-            reduction_entry = all_branch_maps_by_type[reduction_kind][V][arc]
+        for (entry_type, name, arc, reduction_kind) in entries
+            reduction_entry = all_branch_maps_by_type[reduction_kind][entry_type][arc]
             limits = get_emergency_min_max_limits(reduction_entry, T, U)
             for t in time_steps
                 con_ub[outage_id, name, t] = JuMP.@constraint(
@@ -288,12 +206,12 @@ function _add_post_contingency_flow_expressions_for_outage!(
     outage_id::String,
     modf_cols::Dict{Tuple{String, Tuple{Int64, Int64}}, Vector{Float64}},
     nodal_balance_expressions::Matrix{JuMP.AffExpr},
-    entries::Vector{Tuple{String, Tuple{Int, Int}, String}},
+    entries::Vector{Tuple{DataType, String, Tuple{Int, Int}, String}},
 )
     # Pure JuMP `AffExpr` build — no libklu in this hot path. Each task only
     # writes to keys (outage_id, name, t) for a single outage_id, so there is
     # no writer-writer aliasing across tasks.
-    for (name, arc, _) in entries
+    for (_, name, arc, _) in entries
         modf_col = modf_cols[(outage_id, arc)]
         _, expressions = _make_flow_expressions!(
             name,
@@ -310,7 +228,6 @@ end
 
 function add_post_contingency_flow_expressions!(
     container::OptimizationContainer,
-    sys::PSY.System,
     ::Type{T},
     model::DeviceModel{V, F},
     network_model::NetworkModel{N},
@@ -324,26 +241,11 @@ function add_post_contingency_flow_expressions!(
     modf_matrix = get_MODF_matrix(network_model)
     registered_contingencies = PNM.get_registered_contingencies(modf_matrix)
 
-    monitored_pairs = _post_contingency_outage_ids(modf_matrix, V, model)
-    isempty(monitored_pairs) && return
-
     net_reduction_data = network_model.network_reduction
-    name_to_arc_map = PNM.get_name_to_arc_map(net_reduction_data, V)
-    component_to_reduction_name_map =
-        get(
-            PNM.get_component_to_reduction_name_map(net_reduction_data),
-            V,
-            Dict{String, String}(),
-        )
-    resolved = _resolve_monitored_arcs(
-        monitored_pairs, name_to_arc_map, component_to_reduction_name_map,
-    )
-    isempty(resolved) && return
+    resolved = _resolve_monitored_arcs(model, net_reduction_data)
 
-    name_only_pairs =
-        [uuid => [t[1] for t in entries] for (uuid, entries) in resolved]
     expression_container = _add_post_contingency_sparse_expression!(
-        container, T, V, name_only_pairs, time_steps,
+        container, T, V, resolved, time_steps,
     )
 
     nodal_balance_expressions =
@@ -355,7 +257,7 @@ function add_post_contingency_flow_expressions!(
     for (uuid, entries) in resolved
         outage_spec = registered_contingencies[uuid]
         outage_id = string(uuid)
-        for (_, arc, _) in entries
+        for (_, _, arc, _) in entries
             key = (outage_id, arc)
             haskey(modf_cols, key) && continue
             modf_cols[key] = modf_matrix[arc, outage_spec]
@@ -459,7 +361,6 @@ function construct_device!(
 
     add_post_contingency_flow_expressions!(
         container,
-        sys,
         PostContingencyBranchFlow,
         device_model,
         network_model,
@@ -467,11 +368,132 @@ function construct_device!(
 
     add_constraints!(
         container,
-        sys,
         PostContingencyEmergencyFlowRateConstraint,
         device_model,
         network_model,
     )
 
+    return
+end
+
+# PTDF needs a PTDFBranchFlow expression here; the lossy AC path doesn't —
+# its post-contingency expression is the FromTo flow variable directly.
+function construct_device!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    ::ArgumentConstructStage,
+    device_model::DeviceModel{T, F},
+    network_model::NetworkModel{<:PM.AbstractACPModel},
+) where {T <: PSY.ACTransmission, F <: AbstractSecurityConstrainedStaticBranch}
+    devices = get_available_components(device_model, sys)
+    if get_use_slacks(device_model)
+        add_variables!(
+            container,
+            FlowActivePowerSlackUpperBound,
+            network_model,
+            devices,
+            F(),
+        )
+        add_variables!(
+            container,
+            FlowActivePowerSlackLowerBound,
+            network_model,
+            devices,
+            F(),
+        )
+    end
+
+    if haskey(get_time_series_names(device_model), DynamicBranchRatingTimeSeriesParameter)
+        add_parameters!(
+            container,
+            DynamicBranchRatingTimeSeriesParameter,
+            devices,
+            device_model,
+        )
+    end
+
+    add_feedforward_arguments!(container, device_model, devices)
+    return
+end
+
+function construct_device!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    ::ModelConstructStage,
+    device_model::DeviceModel{V, F},
+    network_model::NetworkModel{X},
+) where {
+    V <: PSY.ACTransmission,
+    F <: AbstractSecurityConstrainedStaticBranch,
+    X <: PM.AbstractACPModel,
+}
+    devices = get_available_components(device_model, sys)
+
+    add_constraints!(
+        container, FlowRateConstraintFromTo, devices, device_model, network_model,
+    )
+    add_constraints!(
+        container, FlowRateConstraintToFrom, devices, device_model, network_model,
+    )
+    add_feedforward_constraints!(container, device_model, devices)
+    objective_function!(container, devices, device_model, X)
+    add_constraint_dual!(container, sys, device_model)
+
+    add_post_contingency_flow_expressions!(
+        container,
+        PostContingencyBranchFlow,
+        device_model,
+        network_model,
+    )
+
+    add_constraints!(
+        container,
+        PostContingencyEmergencyFlowRateConstraint,
+        device_model,
+        network_model,
+    )
+
+    return
+end
+
+# Lossy AC post-contingency flow expression. Preventive formulation:
+# `PostContingencyBranchFlow[outage, name, t]` is the from-to flow variable
+# itself, so the per-outage emergency-rate constraint bounds the same variable
+# for every outage by the emergency rating. Algebraically redundant across
+# outages (same var, same bound) but keeps the (outage, name, t) container
+# shape consistent with the PTDF path.
+function add_post_contingency_flow_expressions!(
+    container::OptimizationContainer,
+    ::Type{T},
+    model::DeviceModel{V, F},
+    network_model::NetworkModel{N},
+) where {
+    T <: PostContingencyBranchFlow,
+    V <: PSY.ACTransmission,
+    F <: AbstractSecurityConstrainedStaticBranch,
+    N <: PM.AbstractACPModel,
+}
+    time_steps = get_time_steps(container)
+    resolved = _resolve_monitored_arcs(model, network_model.network_reduction)
+
+    expression_container =
+        SparseAxisArray(Dict{Tuple{String, String, Int}, JuMP.AffExpr}())
+    _assign_container!(
+        container.expressions, ExpressionKey(T, V), expression_container,
+    )
+
+    flow_vars_by_type = Dict{DataType, Any}()
+    for (uuid, entries) in resolved
+        outage_id = string(uuid)
+        for (entry_type, name, _, _) in entries
+            flow_vars = get!(flow_vars_by_type, entry_type) do
+                get_variable(container, FlowActivePowerFromToVariable(), entry_type)
+            end
+            for t in time_steps
+                expression_container[outage_id, name, t] =
+                    1.0 * flow_vars[name, t]
+            end
+        end
+    end
     return
 end

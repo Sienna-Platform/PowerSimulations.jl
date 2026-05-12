@@ -28,7 +28,6 @@ get_parameter_multiplier(::UpperBoundValueParameter, ::PSY.ACTransmission, ::Abs
 get_variable_multiplier(::PhaseShifterAngle, d::PSY.PhaseShiftingTransformer, ::PhaseAngleControl) = 1.0/PSY.get_x(d)
 
 get_multiplier_value(::AbstractDynamicBranchRatingTimeSeriesParameter, d::PSY.ACTransmission, ::StaticBranch) = PSY.get_rating(d)
-get_multiplier_value(::AbstractDynamicBranchRatingTimeSeriesParameter, d::PNM.BranchesParallel, ::StaticBranch) = PNM.get_equivalent_rating(d)
 
 
 get_initial_conditions_device_model(::OperationModel, ::DeviceModel{T, U}) where {T <: PSY.ACTransmission, U <: AbstractBranchFormulation} = DeviceModel(T, U)
@@ -58,11 +57,22 @@ function get_default_time_series_names(
     )
 end
 
+"""
+DeviceModel attribute key selecting which `PowerNetworkMatrices` function aggregates
+the individual circuit ratings of a `PNM.BranchesParallel` into a single maximum flow
+limit. Valid values: `"single_element_contingency"` (default; N-1, post-trip surviving
+capacity), `"sum_of_max"` (plain Σ Sᵢ), `"impedance_averaged"` (susceptance-weighted
+average). `PNM.MixedBranchesParallel` groups always use `sum_of_max`.
+"""
+const PARALLEL_BRANCH_MAX_RATING_KEY = "parallel_branch_max_rating_method"
+
 function get_default_attributes(
     ::Type{U},
     ::Type{V},
 ) where {U <: PSY.ACTransmission, V <: AbstractBranchFormulation}
-    return Dict{String, Any}()
+    return Dict{String, Any}(
+        PARALLEL_BRANCH_MAX_RATING_KEY => "single_element_contingency",
+    )
 end
 
 function get_default_attributes(
@@ -70,8 +80,49 @@ function get_default_attributes(
     ::Type{V},
 ) where {U <: PSY.ACTransmission, V <: AbstractSecurityConstrainedStaticBranch}
     return Dict{String, Any}(
+        PARALLEL_BRANCH_MAX_RATING_KEY => "single_element_contingency",
         "include_planned_outages" => false,
     )
+end
+
+# Resolve the per-DeviceModel attribute to one of the explicit PNM rating functions.
+# `MixedBranchesParallel` ignores the attribute and always uses the plain sum, since
+# the constituent branches may carry different DeviceModel preferences and there is
+# no defensible way to pick one.
+function _get_parallel_branch_max_rating(
+    model::DeviceModel,
+    bp::PNM.BranchesParallel,
+)
+    name = get_attribute(model, PARALLEL_BRANCH_MAX_RATING_KEY)
+    name == "single_element_contingency" &&
+        return PNM.get_single_element_contingency_rating(bp)
+    name == "sum_of_max" && return PNM.get_sum_of_max_rating(bp)
+    name == "impedance_averaged" && return PNM.get_impedance_averaged_rating(bp)
+    error(
+        "Unknown $PARALLEL_BRANCH_MAX_RATING_KEY value: $(repr(name)). " *
+        "Valid: \"single_element_contingency\", \"sum_of_max\", \"impedance_averaged\".",
+    )
+end
+
+function _get_parallel_branch_max_rating(
+    ::DeviceModel,
+    mbp::PNM.MixedBranchesParallel,
+)
+    return PNM.get_sum_of_max_rating(mbp)
+end
+
+# Multi-dispatch helper used at parameter-build call sites. Generic devices fall
+# through to the existing `get_multiplier_value` arms; parallel groups consult the
+# DeviceModel attribute via `_get_parallel_branch_max_rating`.
+_resolve_branch_multiplier(p, d, f, ::DeviceModel) = get_multiplier_value(p, d, f)
+
+function _resolve_branch_multiplier(
+    ::AbstractDynamicBranchRatingTimeSeriesParameter,
+    d::PNM.AbstractBranchesParallel,
+    ::StaticBranch,
+    model::DeviceModel,
+)
+    return _get_parallel_branch_max_rating(model, d)
 end
 #################################### Flow Variable Bounds ##################################################
 

@@ -79,7 +79,7 @@ mutable struct DeviceModel{D <: PSY.Device, B <: AbstractDeviceFormulation}
 
         _check_device_formulation(D)
         _check_device_formulation(B)
-        outages_field = _seed_device_model_outages(D, B, outages)
+        outages_field = _add_device_model_outages(D, B, outages)
         new{D, B}(
             feedforwards,
             use_slacks,
@@ -95,7 +95,7 @@ mutable struct DeviceModel{D <: PSY.Device, B <: AbstractDeviceFormulation}
     end
 end
 
-function _seed_device_model_outages(
+function _add_device_model_outages(
     ::Type{D},
     ::Type{B},
     outages::AbstractVector{<:PSY.Outage},

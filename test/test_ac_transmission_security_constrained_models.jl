@@ -458,20 +458,31 @@ end
 
     # Walk every (V, (outage_id, name, t)) tuple stored in the sparse
     # PostContingencyBranchFlow container and assert structural equality to
-    # the PNM-derived ground truth. A given V only has a container if outages
-    # monitored components of that type; skip the rest via has_container_key.
+    # the PNM-derived ground truth. V indexes the outaged component type owned
+    # by the DeviceModel; the container's `name` axis spans every monitored
+    # type, so the arc lookup must scan all per-type reduction maps.
     net_reduction_data = network_model.network_reduction
     modeled_branch_types = network_model.modeled_ac_branch_types
+    name_to_arc_maps = PNM.get_name_to_arc_maps(net_reduction_data)
     n_checked = 0
     for V in modeled_branch_types
         PSI.has_container_key(container, PSI.PostContingencyBranchFlow, V) || continue
         pcbf = PSI.get_expression(container, PSI.PostContingencyBranchFlow(), V)
-        name_to_arc_map = PNM.get_name_to_arc_map(net_reduction_data, V)
         n_checked += 1
         for (outage_id_str, name, t) in keys(pcbf.data)
             uuid = Base.UUID(outage_id_str)
             ctg = ground_truth_registered[uuid]
-            arc = name_to_arc_map[name][1]
+            # The monitored component's type is whichever reduction map holds
+            # this `name` — names are unique across types within a system.
+            arc = nothing
+            for n2a in values(name_to_arc_maps)
+                if haskey(n2a, name)
+                    arc = n2a[name][1]
+                    break
+                end
+            end
+            @assert arc !== nothing "monitored name $name not found in any \
+                                     reduction map"
             modf_col = ground_truth_modf[arc, ctg]
             nz_idx =
                 [i for i in eachindex(modf_col) if abs(modf_col[i]) > PSI.PTDF_ZERO_TOL]
@@ -661,5 +672,53 @@ end
     @test_logs (:warn, r"formulation does not support N-1 contingencies") begin
         dm = DeviceModel(Line, StaticBranch; outages = [transition])
         @test isempty(PSI.get_outages(dm))
+    end
+end
+
+@testset "Security Constrained branch formulation builds for supported network formulations" begin
+    # Every NetworkModel formulation that has a construct_device! dispatch for
+    # SecurityConstrainedStaticBranch must build to completion and emit the
+    # post-contingency emergency-rate constraint container:
+    #   - <:AbstractPTDFModel  → PTDFPowerModel, AreaPTDFPowerModel
+    #   - <:PM.AbstractACPModel → ACPPowerModel
+    # `two_area_pjm_DA` carries PSY.Area components (required by AreaPTDFPowerModel)
+    # and PTDF/ACP build on it without modification.
+    sys = PSB.build_system(PSISystems, "two_area_pjm_DA")
+    transform_single_time_series!(sys, Hour(24), Hour(1))
+    all_branches = collect(get_components(ACTransmission, sys))
+    for line in Iterators.take(get_components(PSY.Line, sys), 3)
+        add_supplemental_attribute!(
+            sys,
+            line,
+            GeometricDistributionForcedOutage(;
+                mean_time_to_recovery = 10,
+                outage_transition_probability = 0.9999,
+                monitored_components = all_branches,
+            ),
+        )
+    end
+
+    constraint_keys = [
+        PSI.ConstraintKey(PostContingencyEmergencyFlowRateConstraint, PSY.Line, "lb"),
+        PSI.ConstraintKey(PostContingencyEmergencyFlowRateConstraint, PSY.Line, "ub"),
+    ]
+    for (label, NetFormulation, optimizer) in [
+        ("PTDFPowerModel", PTDFPowerModel, HiGHS_optimizer),
+        ("AreaPTDFPowerModel", AreaPTDFPowerModel, HiGHS_optimizer),
+        ("ACPPowerModel", ACPPowerModel, ipopt_optimizer),
+    ]
+        @testset "$label" begin
+            template = get_thermal_dispatch_template_network(
+                NetworkModel(NetFormulation; MODF_matrix = VirtualMODF(sys)),
+            )
+            set_device_model!(template, Line, SecurityConstrainedStaticBranch)
+            set_device_model!(template, Transformer2W, SecurityConstrainedStaticBranch)
+            set_device_model!(template, TapTransformer, SecurityConstrainedStaticBranch)
+
+            ps_model = DecisionModel(template, sys; optimizer = optimizer)
+            @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
+                  PSI.ModelBuildStatus.BUILT
+            psi_constraint_test(ps_model, constraint_keys)
+        end
     end
 end

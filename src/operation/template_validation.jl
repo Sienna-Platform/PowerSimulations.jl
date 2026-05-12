@@ -193,9 +193,14 @@ function _build_device_model_outages!(
         end
         isempty(per_type) && continue
 
+        # DeviceModel{D} owns the outage iff its attached component (the one
+        # going offline during the contingency) is of type D.
+        attached_types = Set{DataType}(
+            typeof(c) for c in PSY.get_associated_components(sys, outage)
+        )
         for m in sc_models
             D = get_component_type(m)
-            haskey(per_type, D) || continue
+            D in attached_types || continue
             sel = selection[Symbol(D)]
             if sel !== nothing
                 outage_uuid in sel || continue
@@ -224,7 +229,7 @@ function _build_device_model_outages!(
         for uuid in sel
             if !haskey(m.outages, uuid)
                 @warn "Outage $(uuid) listed on DeviceModel{$D, \
-                       $(get_formulation(m))} does not monitor any component \
+                       $(get_formulation(m))} is not attached to a component \
                        of type $D in the system — it will not contribute any \
                        post-contingency constraints." _group =
                     LOG_GROUP_MODELS_VALIDATION
