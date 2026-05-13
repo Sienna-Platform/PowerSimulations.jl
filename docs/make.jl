@@ -22,6 +22,7 @@ pages = OrderedDict(
     "Tutorials" => Any[
         "Single-step Problem" => "tutorials/generated_decision_problem.md",
         "Multi-stage Production Cost Simulation" => "tutorials/generated_pcm_simulation.md",
+        "Dynamic Line Ratings" => "tutorials/generated_dynamic_line_ratings.md",
     ],
     "How to..." => Any[
         "...register a variable in a custom operation model" => "how_to/register_variable.md",

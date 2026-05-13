@@ -480,8 +480,8 @@ CostFunctionParameter
 AvailableStatusChangeCountdownParameter
 AvailableStatusParameter
 ActivePowerOffsetParameter
-DynamicBranchRatingTimeSeriesParameter
-PostContingencyDynamicBranchRatingTimeSeriesParameter
+BranchRatingTimeSeriesParameter
+PostContingencyBranchRatingTimeSeriesParameter
 ```
 
 ## Results
