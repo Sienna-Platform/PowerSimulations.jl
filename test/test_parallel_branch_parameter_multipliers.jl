@@ -7,12 +7,12 @@
         Line,
         StaticBranch;
         time_series_names = Dict(
-            DynamicBranchRatingTimeSeriesParameter => "dynamic_line_ratings",
+            BranchRatingTimeSeriesParameter => "branch_rating",
         ),
     )
 
-    branches_dlr = ["1", "2", "6"]
-    dlr_factors = vcat([fill(x, 6) for x in [0.99, 0.98, 1.0, 0.95]]...)
+    branches_with_rating_ts = ["1", "2", "6"]
+    rating_factors = vcat([fill(x, 6) for x in [0.99, 0.98, 1.0, 0.95]]...)
 
     for parallel_line_name in ["1", "2", "3"]
         sys = PSB.build_system(PSITestSystems, "c_sys5")
@@ -22,11 +22,11 @@
             line_to_add_parallel,
             PSY.Line,
         )
-        add_dlr_to_system_branches!(
+        add_branch_rating_time_series_to_system!(
             sys,
-            branches_dlr,
+            branches_with_rating_ts,
             2,
-            dlr_factors;
+            rating_factors;
             initial_date = "2024-01-01",
         )
 
@@ -40,7 +40,7 @@
               PSI.ModelBuildStatus.BUILT
 
         container = PSI.get_optimization_container(ps_model)
-        param_key = PSI.ParameterKey(DynamicBranchRatingTimeSeriesParameter, Line)
+        param_key = PSI.ParameterKey(BranchRatingTimeSeriesParameter, Line)
         param_container = PSI.get_parameter(container, param_key)
         mult_array = PSI.get_multiplier_array(param_container)
         device_name_axis = axes(mult_array)[1]

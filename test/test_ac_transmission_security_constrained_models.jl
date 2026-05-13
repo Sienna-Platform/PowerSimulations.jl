@@ -722,3 +722,155 @@ end
         end
     end
 end
+
+@testset "SCUC constraint tracking: parallel circuits collapse to representative" begin
+    # Targeted regression for the BranchReductionOptimizationTracker under
+    # parallel-circuit reduction. After two parallel members collapse to a
+    # single reduction representative, the pre-contingency `FlowRateConstraint`
+    # tracker must record the arc once (representative-keyed) — never twice
+    # under the two individual names. The post-contingency constraint
+    # container's name axis must show the representative as well, not the
+    # individual branch names. Companion to the existing "PTDF/MODF Model and
+    # Reductions" testset, which exercises DegreeTwoReduction with a
+    # series-parallel topology and asserts only outage-axis correctness; this
+    # one isolates the reduction-tracker mechanics on a pure parallel pair.
+    sys = PSB.build_system(PSITestSystems, "c_sys5")
+    parallel_line_name = "1"
+    parallel_line = first(
+        get_components(b -> get_name(b) == parallel_line_name, PSY.ACTransmission, sys),
+    )
+    add_equivalent_ac_transmission_with_parallel_circuits!(
+        sys, parallel_line, typeof(parallel_line),
+    )
+
+    outage = GeometricDistributionForcedOutage(;
+        mean_time_to_recovery = 10,
+        outage_transition_probability = 0.9999,
+        monitored_components = [parallel_line],
+    )
+    add_supplemental_attribute!(sys, parallel_line, outage)
+    outage_uuid = string(IS.get_uuid(outage))
+
+    template = get_thermal_dispatch_template_network(
+        NetworkModel(PTDFPowerModel; MODF_matrix = VirtualMODF(sys)),
+    )
+    set_device_model!(template, Line, SecurityConstrainedStaticBranch)
+    ps_model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
+    @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+
+    container = PSI.get_optimization_container(ps_model)
+    network_model = PSI.get_network_model(PSI.get_template(ps_model))
+    tracker = PSI.get_reduced_branch_tracker(network_model)
+    net_reduction_data = PSI.get_network_reduction(network_model)
+
+    representative_name = parallel_line_name * "double_circuit"
+    c2r = PNM.get_component_to_reduction_name_map(net_reduction_data)
+    @test haskey(c2r, PSY.Line)
+    @test get(c2r[PSY.Line], parallel_line_name, nothing) == representative_name
+    @test get(c2r[PSY.Line], parallel_line_name * "_copy", nothing) ==
+          representative_name
+
+    # FlowRateConstraint tracker: representative-name key, no individual names.
+    flow_cmap =
+        PSI.get_constraint_map_by_type(tracker)[FlowRateConstraint][PSY.Line]
+    @test haskey(flow_cmap, representative_name)
+    @test !haskey(flow_cmap, parallel_line_name)
+    @test !haskey(flow_cmap, parallel_line_name * "_copy")
+
+    # Post-contingency container: name axis uses the representative; both
+    # individual member names are redirected, not stored.
+    con_ub = PSI.get_constraint(
+        container,
+        PSI.ConstraintKey(PostContingencyEmergencyFlowRateConstraint, PSY.Line, "ub"),
+    )
+    name_axis = Set(k[2] for k in keys(con_ub.data))
+    @test representative_name in name_axis
+    @test !(parallel_line_name in name_axis)
+    @test !(parallel_line_name * "_copy" in name_axis)
+    @test outage_uuid in Set(k[1] for k in keys(con_ub.data))
+end
+
+@testset "Multi-component outage: dual-claim + dedup at build" begin
+    # An outage attached to BOTH a Line and a Transformer2W is owned by both
+    # `DeviceModel{Line, SC}` and `DeviceModel{Transformer2W, SC}`. The
+    # post-contingency build dedups: the second DeviceModel's expression and
+    # constraint containers reference the first claimer's `AffExpr` /
+    # `ConstraintRef` rather than recomputing the MODF column or issuing a
+    # duplicate `@constraint` call.
+    sys = PSB.build_system(PSITestSystems, "c_sys14")
+    line = first(get_components(PSY.Line, sys))
+    transformer = first(get_components(PSY.Transformer2W, sys))
+    @test line !== nothing
+    @test transformer !== nothing
+
+    outage = GeometricDistributionForcedOutage(;
+        mean_time_to_recovery = 10,
+        outage_transition_probability = 0.9999,
+        monitored_components = [line, transformer],
+    )
+    add_supplemental_attribute!(sys, line, outage)
+    add_supplemental_attribute!(sys, transformer, outage)
+    outage_uuid = IS.get_uuid(outage)
+    outage_uuid_str = string(outage_uuid)
+
+    template = get_thermal_dispatch_template_network(
+        NetworkModel(PTDFPowerModel; MODF_matrix = VirtualMODF(sys)),
+    )
+    set_device_model!(template, Line, SecurityConstrainedStaticBranch)
+    set_device_model!(template, Transformer2W, SecurityConstrainedStaticBranch)
+    ps_model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
+    @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+
+    template_under_test = PSI.get_template(ps_model)
+    line_dm = PSI.get_model(template_under_test, PSY.Line)
+    transformer_dm = PSI.get_model(template_under_test, PSY.Transformer2W)
+
+    # Both SC DeviceModels claim the multi-component outage.
+    @test haskey(PSI.get_outages(line_dm), outage_uuid)
+    @test haskey(PSI.get_outages(transformer_dm), outage_uuid)
+
+    container = PSI.get_optimization_container(ps_model)
+    line_pcbf = PSI.get_expression(
+        container, PSI.PostContingencyBranchFlow(), PSY.Line,
+    )
+    transformer_pcbf = PSI.get_expression(
+        container, PSI.PostContingencyBranchFlow(), PSY.Transformer2W,
+    )
+
+    line_name = PSY.get_name(line)
+    transformer_name = PSY.get_name(transformer)
+    time_steps = PSI.get_time_steps(container)
+
+    # Expression-level dedup: the second-claimer's container holds the SAME
+    # `AffExpr` object (===) as the first-claimer's, not a re-computed copy.
+    for t in time_steps
+        @test line_pcbf[outage_uuid_str, line_name, t] ===
+              transformer_pcbf[outage_uuid_str, line_name, t]
+        @test line_pcbf[outage_uuid_str, transformer_name, t] ===
+              transformer_pcbf[outage_uuid_str, transformer_name, t]
+    end
+
+    # Constraint-level dedup: same `ConstraintRef` in both per-V containers.
+    for meta in ("lb", "ub")
+        line_cons = PSI.get_constraint(
+            container,
+            PSI.ConstraintKey(
+                PostContingencyEmergencyFlowRateConstraint, PSY.Line, meta,
+            ),
+        )
+        transformer_cons = PSI.get_constraint(
+            container,
+            PSI.ConstraintKey(
+                PostContingencyEmergencyFlowRateConstraint, PSY.Transformer2W, meta,
+            ),
+        )
+        for t in time_steps
+            @test line_cons[outage_uuid_str, line_name, t] ===
+                  transformer_cons[outage_uuid_str, line_name, t]
+            @test line_cons[outage_uuid_str, transformer_name, t] ===
+                  transformer_cons[outage_uuid_str, transformer_name, t]
+        end
+    end
+end
