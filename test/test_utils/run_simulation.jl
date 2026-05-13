@@ -13,6 +13,7 @@ function run_simulation(
     in_memory = false,
     uc_network_model = nothing,
     ed_network_model = nothing,
+    store_systems_in_results = true,
 )
     template_uc = get_template_basic_uc_simulation()
     template_ed = get_template_nomin_ed_simulation()
@@ -75,7 +76,11 @@ function run_simulation(
         simulation_folder = file_path,
     )
 
-    build_out = build!(sim; console_level = Logging.Error)
+    build_out = build!(
+        sim;
+        console_level = Logging.Error,
+        store_systems_in_results = store_systems_in_results,
+    )
     @test build_out == PSI.SimulationBuildStatus.BUILT
 
     exports = Dict(
