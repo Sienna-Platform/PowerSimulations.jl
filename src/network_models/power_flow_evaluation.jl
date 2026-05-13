@@ -1,6 +1,8 @@
 # Defines the order of precedence for each type of information that could be sent to PowerFlows.jl
 const PF_INPUT_KEY_PRECEDENCES = Dict(
     :active_power => [ActivePowerVariable, PowerOutput, ActivePowerTimeSeriesParameter],
+    :active_power_in => [ActivePowerInVariable],
+    :active_power_out => [ActivePowerOutVariable],
     :reactive_power => [ReactivePowerVariable, ReactivePowerTimeSeriesParameter],
     :voltage_angle_export => [PowerFlowVoltageAngle, VoltageAngle],
     :voltage_magnitude_export => [PowerFlowVoltageMagnitude, VoltageMagnitude],
@@ -37,15 +39,15 @@ end
 
 # Trait that determines which types of information are needed for each type of power flow
 pf_input_keys(::PFS.ABAPowerFlowData) =
-    [:active_power]
+    [:active_power, :active_power_in, :active_power_out]
 pf_input_keys(::PFS.PTDFPowerFlowData) =
-    [:active_power]
+    [:active_power, :active_power_in, :active_power_out]
 pf_input_keys(::PFS.vPTDFPowerFlowData) =
-    [:active_power]
+    [:active_power, :active_power_in, :active_power_out]
 pf_input_keys(::PFS.ACPowerFlowData) =
-    [:active_power, :reactive_power, :voltage_angle_opf, :voltage_magnitude_opf]
+    [:active_power, :active_power_in, :active_power_out, :reactive_power, :voltage_angle_opf, :voltage_magnitude_opf]
 pf_input_keys(::PFS.PSSEExporter) =
-    [:active_power, :reactive_power, :voltage_angle_export, :voltage_magnitude_export]
+    [:active_power, :active_power_in, :active_power_out, :reactive_power, :voltage_angle_export, :voltage_magnitude_export]
 pf_input_keys_hvdc_pst(::PFS.PowerFlowData) = DataType[]
 pf_input_keys_hvdc_pst(::PFS.ACPowerFlowData) =
     [:active_power_hvdc_pst_from_to, :active_power_hvdc_pst_to_from]
@@ -399,6 +401,24 @@ _update_pf_data_component!(
     t,
     value,
 ) = (pf_data.bus_active_power_withdrawals[index, t] -= value)
+# ActivePowerOutVariable represents power output (positive injection into the grid)
+_update_pf_data_component!(
+    pf_data::PFS.PowerFlowData,
+    ::Val{:active_power_out},
+    ::Type{<:PSY.StaticInjection},
+    index,
+    t,
+    value,
+) = (pf_data.bus_active_power_injections[index, t] += value)
+# ActivePowerInVariable represents power input (withdrawal from the grid, e.g. storage charging)
+_update_pf_data_component!(
+    pf_data::PFS.PowerFlowData,
+    ::Val{:active_power_in},
+    ::Type{<:PSY.StaticInjection},
+    index,
+    t,
+    value,
+) = (pf_data.bus_active_power_injections[index, t] -= value)
 _update_pf_data_component!(
     pf_data::PFS.PowerFlowData,
     ::Val{:reactive_power},
@@ -517,6 +537,12 @@ _update_component!(comp::PSY.Component, ::Val{:reactive_power}, value, sys_base)
     (comp.reactive_power = value * sys_base / PSY.get_base_power(comp))
 _update_component!(comp::PSY.ElectricLoad, ::Val{:reactive_power}, value, sys_base) =
     (comp.reactive_power = -value * sys_base / PSY.get_base_power(comp))
+# ActivePowerOutVariable represents power output (positive contribution to active_power)
+_update_component!(comp::PSY.Component, ::Val{:active_power_out}, value, sys_base) =
+    (comp.active_power += value * sys_base / PSY.get_base_power(comp))
+# ActivePowerInVariable represents power input / withdrawal (negative contribution to active_power)
+_update_component!(comp::PSY.Component, ::Val{:active_power_in}, value, sys_base) =
+    (comp.active_power -= value * sys_base / PSY.get_base_power(comp))
 _update_component!(
     comp::PSY.ACBus,
     ::Union{Val{:voltage_angle_export}, Val{:voltage_angle_opf}},
@@ -536,6 +562,17 @@ function update_pf_system!(
     input_map::Dict{Symbol, <:Dict{OptimizationContainerKey, <:Any}},
     time_step::Int,
 )
+    # Reset active_power to zero for components that use separate in/out variables
+    # (e.g. storage, import/export sources) before the additive += / -= updates.
+    for category in (:active_power_in, :active_power_out)
+        haskey(input_map, category) || continue
+        for (key, component_map) in input_map[category]
+            for (_, device_name) in component_map
+                comp = PSY.get_component(get_component_type(key), sys, device_name)
+                comp.active_power = 0.0
+            end
+        end
+    end
     for (category, inputs) in input_map
         @debug "Writing $category to (possibly internal) System"
         for (key, component_map) in inputs
