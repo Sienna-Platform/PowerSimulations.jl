@@ -145,6 +145,30 @@ function _template_uses_security_constrained_branch(branch_models::BranchModelCo
     return false
 end
 
+"""
+Drop outages from each SC-branch `DeviceModel` whose UUID isn't registered on
+`modf_matrix`; without this they'd `KeyError` downstream in
+`add_post_contingency_flow_expressions!`. PNM's `_register_outages!` silently
+skips outages it can't convert to a `NetworkModification`.
+"""
+function _consolidate_device_model_outages_with_modf!(
+    branch_models::BranchModelContainer,
+    modf_matrix::PNM.VirtualMODF,
+)
+    registered = PNM.get_registered_contingencies(modf_matrix)
+    for m in values(branch_models)
+        get_formulation(m) <: AbstractSecurityConstrainedStaticBranch || continue
+        for uuid in setdiff(keys(m.outages), keys(registered))
+            @warn "Outage $(uuid) (DeviceModel{$(get_component_type(m)), \
+                   $(get_formulation(m))}) is not registered on the MODF \
+                   matrix and will not contribute any post-contingency \
+                   constraints." _group = LOG_GROUP_MODELS_VALIDATION
+            delete!(m.outages, uuid)
+        end
+    end
+    return
+end
+
 function _build_network_reductions(
     model::NetworkModel,
     irreducible_buses::Vector{Int64},
@@ -177,8 +201,8 @@ end
 Buses that must be preserved through PNM reductions because something pinned to
 them is monitored by the simulation. Sources of pinning:
 
-- Branches carrying a `DynamicBranchRatingTimeSeriesParameter` (DLR) — both
-  endpoint buses are pinned.
+- Branches carrying a `BranchRatingTimeSeriesParameter` — both endpoint buses
+  are pinned.
 - `Outage.monitored_components` — for branch components both endpoints are
   pinned; for non-branch devices the connecting bus is pinned.
 
@@ -207,18 +231,18 @@ function _add_timeseries_irreducible_buses!(
         device_model = branch_models[Symbol(branch_type)]
         if !haskey(
             get_time_series_names(device_model),
-            DynamicBranchRatingTimeSeriesParameter,
+            BranchRatingTimeSeriesParameter,
         )
             continue
         end
 
         if branch_type == PSY.ThreeWindingTransformer
-            @warn "Dynamic branch ratings for ThreeWindingTransformers are not implemented yet. Skipping it."
+            @warn "Branch rating time series for ThreeWindingTransformers are not implemented yet. Skipping it."
             continue
         end
 
         ts_name =
-            get_time_series_names(device_model)[DynamicBranchRatingTimeSeriesParameter]
+            get_time_series_names(device_model)[BranchRatingTimeSeriesParameter]
         ts_type = PSY.Deterministic #TODO workaround since we dont have the container
 
         branches = PSY.get_available_components(branch_type, sys)
@@ -467,6 +491,9 @@ function instantiate_network_model!(
                 network_reductions = _build_network_reductions(model, irreducible_buses),
             )
         end
+        _consolidate_device_model_outages_with_modf!(
+            branch_models, get_MODF_matrix(model),
+        )
     end
     PNM.populate_branch_maps_by_type!(model.network_reduction, _get_filters(branch_models))
     empty!(model.reduced_branch_tracker)

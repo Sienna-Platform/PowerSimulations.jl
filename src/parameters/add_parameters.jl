@@ -196,18 +196,18 @@ function _add_parameters!(
     return
 end
 
-function _check_dynamic_branch_rating_ts(
+function _check_branch_rating_ts(
     ts::AbstractArray,
     ::T,
     device::PSY.Device,
     model::DeviceModel{D, W},
 ) where {D <: PSY.Component, T <: TimeSeriesParameter, W <: AbstractDeviceFormulation}
-    if !(T <: AbstractDynamicBranchRatingTimeSeriesParameter)
+    if !(T <: AbstractBranchRatingTimeSeriesParameter)
         return
     end
 
     rating = PSY.get_rating(device)
-    if (T <: PostContingencyDynamicBranchRatingTimeSeriesParameter)
+    if (T <: PostContingencyBranchRatingTimeSeriesParameter)
         if !(PSY.get_rating_b(device) === nothing)
             rating = PSY.get_rating_b(device)
         else
@@ -404,7 +404,7 @@ function _add_time_series_parameters!(
                     interval = model_interval,
                     resolution = model_resolution,
                 )
-            _check_dynamic_branch_rating_ts(initial_values[ts_uuid], param, device, model)
+            _check_branch_rating_ts(initial_values[ts_uuid], param, device, model)
         end
     end
 

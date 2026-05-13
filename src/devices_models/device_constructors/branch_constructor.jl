@@ -149,10 +149,10 @@ function construct_device!(
         )
     end
 
-    if haskey(get_time_series_names(device_model), DynamicBranchRatingTimeSeriesParameter)
+    if haskey(get_time_series_names(device_model), BranchRatingTimeSeriesParameter)
         add_branch_parameters!(
             container,
-            DynamicBranchRatingTimeSeriesParameter,
+            BranchRatingTimeSeriesParameter,
             devices,
             device_model,
             network_model,
@@ -161,11 +161,11 @@ function construct_device!(
 
     if haskey(
         get_time_series_names(device_model),
-        PostContingencyDynamicBranchRatingTimeSeriesParameter,
+        PostContingencyBranchRatingTimeSeriesParameter,
     )
         add_branch_parameters!(
             container,
-            PostContingencyDynamicBranchRatingTimeSeriesParameter,
+            PostContingencyBranchRatingTimeSeriesParameter,
             devices,
             device_model,
             network_model,
@@ -193,7 +193,7 @@ function construct_device!(
         device_model,
         network_model,
     )
-    if haskey(get_time_series_names(device_model), DynamicBranchRatingTimeSeriesParameter)
+    if haskey(get_time_series_names(device_model), BranchRatingTimeSeriesParameter)
         add_flow_rate_constraint_with_parameters!(
             container,
             FlowRateConstraint,
