@@ -768,13 +768,15 @@ end
     in_keys = collect(keys(input_key_map[:active_power_in]))
     out_keys = collect(keys(input_key_map[:active_power_out]))
     @test any(
-        k -> PSI.get_entry_type(k) == PSI.ActivePowerInVariable &&
-            PSI.get_component_type(k) == Source,
+        k ->
+            PSI.get_entry_type(k) == PSI.ActivePowerInVariable &&
+                PSI.get_component_type(k) == Source,
         in_keys,
     )
     @test any(
-        k -> PSI.get_entry_type(k) == PSI.ActivePowerOutVariable &&
-            PSI.get_component_type(k) == Source,
+        k ->
+            PSI.get_entry_type(k) == PSI.ActivePowerOutVariable &&
+                PSI.get_component_type(k) == Source,
         out_keys,
     )
 
@@ -797,30 +799,196 @@ end
     @test length(source_p_out) > 0
     @test length(source_p_in) > 0
 
-    # Verify net injection: the bus_active_power_injections at the source bus should include
-    # the source's net power (out - in) in per-unit. We can verify this by computing the
-    # total injection at the source's bus from optimization results and comparing.
-    # The source is at nodeC. Sum all injections at nodeC from all component types.
-    source_bus_number = get_number(get_bus(source))
-    # Collect all other generators/loads at the same bus
+    # The net bus injection (= injections − withdrawals) at the source bus must equal
+    # the sum of every `:active_power` contribution at that bus plus the source's
+    # (out − in). Loads are routed to `bus_active_power_withdrawals` under the same
+    # category, so subtracting withdrawals folds them back into the comparison.
     other_injection_at_bus = zeros(length(source_p_out))
-    active_power_inputs = input_key_map[:active_power]
-    for (key, comp_map) in active_power_inputs
+    for (key, comp_map) in input_key_map[:active_power]
         result_data = PSI.lookup_value(container, key)
         for (dev_name, bus_ix) in comp_map
-            if bus_ix == source_bus_ix
-                for t in eachindex(other_injection_at_bus)
-                    other_injection_at_bus[t] += JuMP.value(result_data[dev_name, t])
-                end
+            bus_ix == source_bus_ix || continue
+            for t in eachindex(other_injection_at_bus)
+                other_injection_at_bus[t] += PSI.jump_value(result_data[dev_name, t])
             end
         end
     end
-    # Net injection from source: out - in (in per-unit)
     source_net_pu = (source_p_out .- source_p_in) ./ base_power
-    expected_total_injection = other_injection_at_bus .+ source_net_pu
     @test isapprox(
-        data.bus_active_power_injections[source_bus_ix, :],
-        expected_total_injection;
+        data.bus_active_power_injections[source_bus_ix, :] .-
+        data.bus_active_power_withdrawals[source_bus_ix, :],
+        other_injection_at_bus .+ source_net_pu;
         atol = 1e-9,
     )
+end
+
+@testset "Headroom proportional slack with in/out active power variables (Source)" begin
+    # nodeC is a PV bus in c_sys5_uc, so a Source there can participate in headroom slack.
+    sys = make_5_bus_with_import_export(; add_single_time_series = false)
+
+    template = get_template_dispatch_with_network(
+        NetworkModel(
+            PTDFPowerModel;
+            PTDF_matrix = PTDF(sys),
+            power_flow_evaluation = ACPowerFlow(;
+                distribute_slack_proportional_to_headroom = true,
+                correct_bustypes = true,
+            ),
+        ),
+    )
+    set_device_model!(
+        template,
+        DeviceModel(
+            Source,
+            ImportExportSourceModel;
+            attributes = Dict("reservation" => false),
+        ),
+    )
+    model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+    @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    container = PSI.get_optimization_container(model)
+    pf_e_data = only(PSI.get_power_flow_evaluation_data(container))
+    data = PSI.get_power_flow_data(pf_e_data)
+    computed_gspf = PFS.get_computed_gspf(data)
+    n_time_steps = length(PSI.get_time_steps(container))
+
+    source = get_component(Source, sys, "source")
+    p_max_out = PSY.get_active_power_limits(source).max
+
+    in_key = PSI.VariableKey(PSI.ActivePowerInVariable, Source)
+    out_key = PSI.VariableKey(PSI.ActivePowerOutVariable, Source)
+    p_in_data = PSI.lookup_value(container, in_key)
+    p_out_data = PSI.lookup_value(container, out_key)
+
+    # When net = p_out - p_in is negative the source is charging and per spec gets zero
+    # headroom (omitted from `computed_gspf`); when net >= 0 the headroom is p_max_out - net.
+    for t in 1:n_time_steps
+        net = JuMP.value(p_out_data["source", t]) - JuMP.value(p_in_data["source", t])
+        if net < 0.0
+            @test !haskey(computed_gspf[t], (Source, "source"))
+        else
+            @test isapprox(
+                computed_gspf[t][(Source, "source")],
+                p_max_out - net;
+                atol = 1e-10,
+            )
+        end
+    end
+    # Guard against a regression that silently drops the in/out accumulation path.
+    @test any(haskey(d, (Source, "source")) for d in computed_gspf)
+end
+
+@testset "Power Flow in the loop with Source FixedOutput (parameter path)" begin
+    # Source under FixedOutput emits ActivePowerIn/OutTimeSeriesParameter and
+    # no In/Out Variables. Verifies that the parameter keys are picked up by
+    # PF_INPUT_KEY_PRECEDENCES (Luke Kiernan, PR #1612), and that the resulting
+    # bus injection follows the same out − in allocation rule as the variable path.
+    sys = make_5_bus_with_import_export(; add_single_time_series = true)
+    source = get_component(Source, sys, "source")
+
+    load = first(get_components(PowerLoad, sys))
+    tstamp = TimeSeries.timestamp(
+        get_time_series_array(SingleTimeSeries, load, "max_active_power"),
+    )
+    day_data = [
+        0.9, 0.85, 0.95, 0.2, 0.0, 0.0,
+        0.9, 0.85, 0.95, 0.2, 0.0, 0.0,
+        0.9, 0.85, 0.95, 0.2, 0.0, 0.0,
+        0.9, 0.85, 0.95, 0.2, 0.0, 0.0,
+    ]
+    ts_data = repeat(day_data, 2)
+    ts_out = SingleTimeSeries(
+        "max_active_power_out",
+        TimeArray(tstamp, ts_data);
+        scaling_factor_multiplier = get_max_active_power,
+    )
+    ts_in = SingleTimeSeries(
+        "max_active_power_in",
+        TimeArray(tstamp, ts_data);
+        scaling_factor_multiplier = get_max_active_power,
+    )
+    add_time_series!(sys, source, ts_out)
+    add_time_series!(sys, source, ts_in)
+    transform_single_time_series!(sys, Hour(24), Hour(24))
+
+    template = get_template_dispatch_with_network(
+        NetworkModel(
+            PTDFPowerModel;
+            PTDF_matrix = PTDF(sys),
+            power_flow_evaluation = PTDFDCPowerFlow(),
+        ),
+    )
+    set_device_model!(template, DeviceModel(Source, FixedOutput))
+    model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+    @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    container = PSI.get_optimization_container(model)
+    pf_e_data = only(PSI.get_power_flow_evaluation_data(container))
+    input_key_map = PSI.get_input_key_map(pf_e_data)
+
+    @test haskey(input_key_map, :active_power_in)
+    @test haskey(input_key_map, :active_power_out)
+
+    in_keys = collect(keys(input_key_map[:active_power_in]))
+    out_keys = collect(keys(input_key_map[:active_power_out]))
+    @test any(
+        k ->
+            PSI.get_entry_type(k) == PSI.ActivePowerInTimeSeriesParameter &&
+                PSI.get_component_type(k) == Source,
+        in_keys,
+    )
+    @test any(
+        k ->
+            PSI.get_entry_type(k) == PSI.ActivePowerOutTimeSeriesParameter &&
+                PSI.get_component_type(k) == Source,
+        out_keys,
+    )
+
+    # PF data injections at the source bus should equal the sum of every other
+    # device's contribution at that bus plus (out_param − in_param) from the
+    # FixedOutput source — same allocation rule as the in/out variable path.
+    data = PSI.get_power_flow_data(pf_e_data)
+    bus_lookup = PFS.get_bus_lookup(data)
+    source_bus_ix = bus_lookup[get_number(get_bus(source))]
+    n_time_steps = length(PSI.get_time_steps(container))
+
+    in_param = PSI.lookup_value(
+        container, PSI.ParameterKey(PSI.ActivePowerInTimeSeriesParameter, Source),
+    )
+    out_param = PSI.lookup_value(
+        container, PSI.ParameterKey(PSI.ActivePowerOutTimeSeriesParameter, Source),
+    )
+
+    other_injection_at_bus = zeros(n_time_steps)
+    for (key, comp_map) in input_key_map[:active_power]
+        result_data = PSI.lookup_value(container, key)
+        for (dev_name, bus_ix) in comp_map
+            bus_ix == source_bus_ix || continue
+            for t in 1:n_time_steps
+                other_injection_at_bus[t] += PSI.jump_value(result_data[dev_name, t])
+            end
+        end
+    end
+
+    source_net = [
+        PSI.jump_value(out_param["source", t]) - PSI.jump_value(in_param["source", t])
+        for t in 1:n_time_steps
+    ]
+    # Net bus injection = injections − withdrawals; loads route to withdrawals under
+    # the same `:active_power` category and the difference folds them back in.
+    @test isapprox(
+        data.bus_active_power_injections[source_bus_ix, 1:n_time_steps] .-
+        data.bus_active_power_withdrawals[source_bus_ix, 1:n_time_steps],
+        other_injection_at_bus .+ source_net;
+        atol = 1e-9,
+    )
+
+    # Guard against a regression that drives both parameters to zero — the test
+    # above would then pass trivially without exercising the parameter path.
+    @test !all(isapprox.(source_net, 0.0; atol = 1e-10))
 end
