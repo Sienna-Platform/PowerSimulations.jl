@@ -767,19 +767,17 @@ end
 
 function has_system(store::HdfSimulationStore, uuid::Base.UUID)
     root = store.file[HDF_SIMULATION_ROOT_PATH]
-    systems_group = _get_group_or_create(root, "systems")
-    return haskey(systems_group, string(uuid))
+    haskey(root, "systems") || return false
+    return haskey(root["systems"], string(uuid))
 end
 
 function deserialize_system(store::HdfSimulationStore, uuid::Base.UUID)
     root = store.file[HDF_SIMULATION_ROOT_PATH]
-    systems_group = _get_group_or_create(root, "systems")
     uuid_str = string(uuid)
-    if !haskey(systems_group, uuid_str)
+    if !haskey(root, "systems") || !haskey(root["systems"], uuid_str)
         error("No system with UUID $uuid_str is stored")
     end
-
-    json_text = HDF5.read(systems_group[uuid_str])
+    json_text = HDF5.read(root["systems"][uuid_str])
     return PSY.from_json(json_text, PSY.System)
 end
 
