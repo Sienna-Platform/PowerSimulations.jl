@@ -103,6 +103,11 @@ function SimulationResults(
         container_key_lookup = get_container_key_lookup(store)
         for (name, problem_params) in sim_params.decision_models_params
             name = string(name)
+            system = if has_system(store, get_system_uuid(problem_params))
+                deserialize_system(store, get_system_uuid(problem_params))
+            else
+                nothing
+            end
             problem_result = SimulationProblemResults(
                 DecisionModel,
                 store,
@@ -110,19 +115,27 @@ function SimulationResults(
                 problem_params,
                 sim_params,
                 execution_path,
-                container_key_lookup,
+                container_key_lookup;
+                system = system,
             )
             decision_problem_results[name] = problem_result
         end
 
+        em_params = get_emulation_model_params(sim_params)
+        em_system = if has_system(store, get_system_uuid(em_params))
+            deserialize_system(store, get_system_uuid(em_params))
+        else
+            nothing
+        end
         emulation_result = SimulationProblemResults(
             EmulationModel,
             store,
             string(first(keys(sim_params.emulation_model_params))),
-            first(values(sim_params.emulation_model_params)),
+            em_params,
             sim_params,
             execution_path,
-            container_key_lookup,
+            container_key_lookup;
+            system = em_system,
         )
 
         return SimulationResults(

@@ -765,6 +765,12 @@ function write_system_json!(store::HdfSimulationStore, uuid::String, json_text::
     return
 end
 
+function has_system(store::HdfSimulationStore, uuid::Base.UUID)
+    root = store.file[HDF_SIMULATION_ROOT_PATH]
+    systems_group = _get_group_or_create(root, "systems")
+    return haskey(systems_group, string(uuid))
+end
+
 function deserialize_system(store::HdfSimulationStore, uuid::Base.UUID)
     root = store.file[HDF_SIMULATION_ROOT_PATH]
     systems_group = _get_group_or_create(root, "systems")
