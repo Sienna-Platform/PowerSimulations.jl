@@ -564,14 +564,19 @@ function update_pf_system!(
 )
     # Reset active_power to zero for components that use separate in/out variables
     # (e.g. storage, import/export sources) before the additive += / -= updates.
+    # Collect unique (type, name) pairs to avoid resetting the same component twice.
+    reset_components = Set{Tuple{DataType, String}}()
     for category in (:active_power_in, :active_power_out)
         haskey(input_map, category) || continue
         for (key, component_map) in input_map[category]
             for (_, device_name) in component_map
-                comp = PSY.get_component(get_component_type(key), sys, device_name)
-                comp.active_power = 0.0
+                push!(reset_components, (get_component_type(key), device_name))
             end
         end
+    end
+    for (comp_type, device_name) in reset_components
+        comp = PSY.get_component(comp_type, sys, device_name)
+        comp.active_power = 0.0
     end
     for (category, inputs) in input_map
         @debug "Writing $category to (possibly internal) System"

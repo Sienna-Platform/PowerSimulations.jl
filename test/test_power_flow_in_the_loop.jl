@@ -794,13 +794,33 @@ end
     source_p_out = filter(row -> row[:name] == "source", p_out_results)[!, :value]
     source_p_in = filter(row -> row[:name] == "source", p_in_results)[!, :value]
 
-    # The net injection at the source bus from the source component should be (out - in)
-    # Note: bus_active_power_injections may also include contributions from generators at the same bus.
-    # We verify the net contribution by checking that (out - in) is correctly reflected.
-    # Since we can't easily isolate the source's contribution from other generators at the
-    # same bus, we verify that the input_key_map is correctly populated (tested above).
-    # The core fix ensures that both in and out variables contribute to the PF data
-    # with correct signs via _update_pf_data_component!.
     @test length(source_p_out) > 0
     @test length(source_p_in) > 0
+
+    # Verify net injection: the bus_active_power_injections at the source bus should include
+    # the source's net power (out - in) in per-unit. We can verify this by computing the
+    # total injection at the source's bus from optimization results and comparing.
+    # The source is at nodeC. Sum all injections at nodeC from all component types.
+    source_bus_number = get_number(get_bus(source))
+    # Collect all other generators/loads at the same bus
+    other_injection_at_bus = zeros(length(source_p_out))
+    active_power_inputs = input_key_map[:active_power]
+    for (key, comp_map) in active_power_inputs
+        result_data = PSI.lookup_value(container, key)
+        for (dev_name, bus_ix) in comp_map
+            if bus_ix == source_bus_ix
+                for t in eachindex(other_injection_at_bus)
+                    other_injection_at_bus[t] += JuMP.value(result_data[dev_name, t])
+                end
+            end
+        end
+    end
+    # Net injection from source: out - in (in per-unit)
+    source_net_pu = (source_p_out .- source_p_in) ./ base_power
+    expected_total_injection = other_injection_at_bus .+ source_net_pu
+    @test isapprox(
+        data.bus_active_power_injections[source_bus_ix, :],
+        expected_total_injection;
+        atol = 1e-9,
+    )
 end
