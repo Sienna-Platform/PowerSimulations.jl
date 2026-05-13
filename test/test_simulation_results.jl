@@ -1068,3 +1068,21 @@ end
     ts_counts = PSY.get_time_series_counts(sys_uc)
     @test ts_counts.forecast_count == 0
 end
+
+@testset "Test system is automatically populated from HDF5 store on file deserialization" begin
+    file_path = mktempdir(; cleanup = true)
+    export_path = mktempdir(; cleanup = true)
+    c_sys5_hy_uc = PSB.build_system(PSITestSystems, "c_sys5_hy_uc")
+    c_sys5_hy_ed = PSB.build_system(PSITestSystems, "c_sys5_hy_ed")
+    sim = run_simulation(
+        c_sys5_hy_uc,
+        c_sys5_hy_ed,
+        file_path,
+        export_path;
+        in_memory = false,
+        store_systems_in_results = false,
+    )
+
+    results = SimulationResults(PSI.get_simulation_folder(sim))
+    @test results isa SimulationResults
+end
