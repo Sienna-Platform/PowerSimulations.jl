@@ -27,7 +27,7 @@ get_parameter_multiplier(::UpperBoundValueParameter, ::PSY.ACTransmission, ::Abs
 
 get_variable_multiplier(::PhaseShifterAngle, d::PSY.PhaseShiftingTransformer, ::PhaseAngleControl) = 1.0/PSY.get_x(d)
 
-get_multiplier_value(::AbstractDynamicBranchRatingTimeSeriesParameter, d::PSY.ACTransmission, ::StaticBranch) = PSY.get_rating(d)
+get_multiplier_value(::AbstractBranchRatingTimeSeriesParameter, d::PSY.ACTransmission, ::StaticBranch) = PSY.get_rating(d)
 
 
 get_initial_conditions_device_model(::OperationModel, ::DeviceModel{T, U}) where {T <: PSY.ACTransmission, U <: AbstractBranchFormulation} = DeviceModel(T, U)
@@ -52,9 +52,7 @@ function get_default_time_series_names(
     ::Type{U},
     ::Type{V},
 ) where {U <: PSY.ACTransmission, V <: AbstractBranchFormulation}
-    return Dict{Type{<:TimeSeriesParameter}, String}(
-        DynamicBranchRatingTimeSeriesParameter => "dynamic_line_ratings",
-    )
+    return Dict{Type{<:TimeSeriesParameter}, String}()
 end
 
 """
@@ -117,7 +115,7 @@ end
 _resolve_branch_multiplier(p, d, f, ::DeviceModel) = get_multiplier_value(p, d, f)
 
 function _resolve_branch_multiplier(
-    ::AbstractDynamicBranchRatingTimeSeriesParameter,
+    ::AbstractBranchRatingTimeSeriesParameter,
     d::PNM.AbstractBranchesParallel,
     ::StaticBranch,
     model::DeviceModel,
@@ -346,7 +344,7 @@ end
 Min and max limits for Abstract Branch Formulation
 """
 function get_min_max_limits(
-    double_circuit::PNM.BranchesParallel{<:PSY.ACTransmission},
+    double_circuit::PNM.AbstractBranchesParallel,
     constraint_type::Type{<:ConstraintType},
     branch_formulation::Type{<:AbstractBranchFormulation},
 ) #  -> Union{Nothing, NamedTuple{(:min, :max), Tuple{Float64, Float64}}}
@@ -551,12 +549,12 @@ function _add_flow_rate_constraint_with_parameters!(
         slack_lb = get_variable(container, FlowActivePowerSlackLowerBound(), T)[name, :]
     end
     param_container =
-        get_parameter(container, DynamicBranchRatingTimeSeriesParameter(), T)
+        get_parameter(container, BranchRatingTimeSeriesParameter(), T)
     param = get_parameter_column_refs(param_container, name)
     mult = get_multiplier_array(param_container)[name, :]
 
     for t in time_steps
-        @debug "Dynamic Branch Rating applied for branch $(name) at time step $(t)"
+        @debug "Branch rating time series applied for branch $(name) at time step $(t)"
         con_ub[name, t] =
             JuMP.@constraint(
                 get_jump_model(container),
@@ -687,7 +685,7 @@ function add_flow_rate_constraint_with_parameters!(
 
     var_array = get_expression(container, PTDFBranchFlow(), T)
 
-    ts_name = get_time_series_names(device_model)[DynamicBranchRatingTimeSeriesParameter]
+    ts_name = get_time_series_names(device_model)[BranchRatingTimeSeriesParameter]
     ts_type = get_default_time_series_type(container)
     use_slacks = get_use_slacks(device_model)
     for (name, (arc, reduction)) in

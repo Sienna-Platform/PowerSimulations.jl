@@ -2,10 +2,13 @@
 # ------ RATING FUNCTIONS FOR EMERGENCY RATINGS -------
 # -----------------------------------------------------
 """
-Emergency Min and max limits for Abstract Branch Formulation and Post-Contingency conditions
+Emergency Min and max limits for Abstract Branch Formulation and Post-Contingency conditions.
+Covers both `PNM.BranchesParallel` (homogeneous) and `PNM.MixedBranchesParallel`
+groups; PNM's `get_equivalent_emergency_rating` aggregates the per-circuit
+emergency ratings as a sum-of-max, matching the max-flow capacity of the group.
 """
 function get_emergency_min_max_limits(
-    double_circuit::PNM.BranchesParallel{<:PSY.ACTransmission},
+    double_circuit::PNM.AbstractBranchesParallel,
     constraint_type::Type{<:PostContingencyConstraintType},
     branch_formulation::Type{<:AbstractBranchFormulation},
 ) #  -> Union{Nothing, NamedTuple{(:min, :max), Tuple{Float64, Float64}}}
@@ -58,6 +61,83 @@ function get_emergency_min_max_limits(
     ::Type{PhaseAngleControl},
 ) #  -> Union{Nothing, NamedTuple{(:min, :max), Tuple{Float64, Float64}}}
     return get_min_max_limits(entry, PhaseAngleControlLimit, PhaseAngleControl)
+end
+
+"""
+Multi-component outage dedup: when an outage's attached components span more
+than one type, every matching SC `DeviceModel` claims it; the first to run
+populates the post-contingency expressions/constraints and the rest reuse
+those AffExprs/ConstraintRefs by reference. Returns the source
+`SparseAxisArray` so the caller indexes `.data[(outage_id, name, t)]` per
+time step instead of re-scanning the container Dict per probe.
+"""
+function _find_shared_post_contingency_expression_source(
+    container::OptimizationContainer,
+    ::Type{T},
+    ::Type{V},
+    outage_id::String,
+    name::String,
+    t::Int,
+) where {T <: PostContingencyExpressions, V <: PSY.ACTransmission}
+    target = (outage_id, name, t)
+    for (key, ec) in get_expressions(container)
+        get_entry_type(key) === T || continue
+        get_component_type(key) === V && continue
+        ec isa SparseAxisArray || continue
+        haskey(ec.data, target) && return ec
+    end
+    return nothing
+end
+
+"""
+Constraint counterpart to `_find_shared_post_contingency_expression_source`.
+Returns `(lb_source, ub_source)` SparseAxisArrays in one scan; either slot
+is `nothing` when no shared container of that meta exists.
+"""
+function _find_shared_post_contingency_constraint_sources(
+    container::OptimizationContainer,
+    ::Type{T},
+    ::Type{V},
+    outage_id::String,
+    name::String,
+    t::Int,
+) where {T <: PostContingencyConstraintType, V <: PSY.ACTransmission}
+    target = (outage_id, name, t)
+    src_lb = nothing
+    src_ub = nothing
+    for (key, cc) in get_constraints(container)
+        get_entry_type(key) === T || continue
+        get_component_type(key) === V && continue
+        cc isa SparseAxisArray || continue
+        haskey(cc.data, target) || continue
+        if key.meta == "lb"
+            src_lb = cc
+        elseif key.meta == "ub"
+            src_ub = cc
+        end
+        src_lb !== nothing && src_ub !== nothing && break
+    end
+    return src_lb, src_ub
+end
+
+"""
+Fast-path precheck: returns `true` iff any container of entry type `T` exists
+under a component type other than `V`. The dedup probe scans `container.expressions`
+or `container.constraints` linearly per call; on the common single-component-outage
+path no other-V container exists yet and every probe returns nothing — so we
+short-circuit the entire pre-pass when this returns `false`.
+"""
+function _has_other_v_container(
+    container_dict,
+    ::Type{T},
+    ::Type{V},
+) where {T, V <: PSY.ACTransmission}
+    for key in keys(container_dict)
+        get_entry_type(key) === T || continue
+        get_component_type(key) === V && continue
+        return true
+    end
+    return false
 end
 
 """
@@ -180,9 +260,28 @@ function add_constraints!(
     expressions = get_expression(container, PostContingencyBranchFlow(), V)
     jump_model = get_jump_model(container)
 
+    # Multi-component outage dedup: if another SC DeviceModel already added
+    # constraints for `(outage_id, name, t)`, reuse its `ConstraintRef`s
+    # instead of issuing duplicate `@constraint`s. Precheck short-circuits
+    # the per-entry probe on the single-component-outage hot path.
+    has_other_v = _has_other_v_container(get_constraints(container), T, V)
     for (uuid, entries) in resolved
         outage_id = string(uuid)
         for (entry_type, name, arc, reduction_kind) in entries
+            if has_other_v
+                src_lb, src_ub = _find_shared_post_contingency_constraint_sources(
+                    container, T, V, outage_id, name, first(time_steps),
+                )
+                if src_lb !== nothing && src_ub !== nothing
+                    for t in time_steps
+                        con_ub[outage_id, name, t] =
+                            src_ub.data[(outage_id, name, t)]
+                        con_lb[outage_id, name, t] =
+                            src_lb.data[(outage_id, name, t)]
+                    end
+                    continue
+                end
+            end
             reduction_entry = all_branch_maps_by_type[reduction_kind][entry_type][arc]
             limits = get_emergency_min_max_limits(reduction_entry, T, U)
             for t in time_steps
@@ -200,18 +299,16 @@ function add_constraints!(
     return
 end
 
-function _add_post_contingency_flow_expressions_for_outage!(
-    expression_container::SparseAxisArray,
+function _build_post_contingency_flow_expressions_for_outage(
     time_steps::UnitRange{Int},
     outage_id::String,
     modf_cols::Dict{Tuple{String, Tuple{Int64, Int64}}, Vector{Float64}},
     nodal_balance_expressions::Matrix{JuMP.AffExpr},
     entries::Vector{Tuple{DataType, String, Tuple{Int, Int}, String}},
 )
-    # Pure JuMP `AffExpr` build — no libklu in this hot path. Each task only
-    # writes to keys (outage_id, name, t) for a single outage_id, so there is
-    # no writer-writer aliasing across tasks.
-    for (_, name, arc, _) in entries
+    results = Vector{Tuple{String, Vector{JuMP.AffExpr}}}(undef, length(entries))
+    for (i, entry) in enumerate(entries)
+        (_, name, arc, _) = entry
         modf_col = modf_cols[(outage_id, arc)]
         _, expressions = _make_flow_expressions!(
             name,
@@ -219,11 +316,9 @@ function _add_post_contingency_flow_expressions_for_outage!(
             modf_col,
             nodal_balance_expressions,
         )
-        for t in time_steps
-            expression_container[outage_id, name, t] = expressions[t]
-        end
+        results[i] = (name, expressions)
     end
-    return
+    return results
 end
 
 function add_post_contingency_flow_expressions!(
@@ -248,13 +343,24 @@ function add_post_contingency_flow_expressions!(
         container, T, V, resolved, time_steps,
     )
 
+    # Multi-component outage dedup: an outage attached to N>1 component types
+    # is claimed by N SC DeviceModels (see `_build_device_model_outages!`).
+    # The first DeviceModel to run populates the entries; subsequent ones
+    # reference those AffExprs instead of recomputing. Splits `resolved`
+    # into entries already populated (copied here) and entries needing
+    # fresh computation downstream.
+    fresh_resolved = _copy_existing_post_contingency_expressions!(
+        container, T, V, expression_container, resolved, time_steps,
+    )
+    isempty(fresh_resolved) && return
+
     nodal_balance_expressions =
         get_expression(container, ActivePowerBalance(), PSY.ACBus).data
 
     # Serial libklu pass: concurrent libklu calls are unsafe (PNM `_LIBKLU_LOCK`).
     # Each (outage, arc) pair is solved at most once.
     modf_cols = Dict{Tuple{String, Tuple{Int64, Int64}}, Vector{Float64}}()
-    for (uuid, entries) in resolved
+    for (uuid, entries) in fresh_resolved
         outage_spec = registered_contingencies[uuid]
         outage_id = string(uuid)
         for (_, _, arc, _) in entries
@@ -264,11 +370,13 @@ function add_post_contingency_flow_expressions!(
         end
     end
 
-    # Parallel pass: pure JuMP `AffExpr` build per outage, no libklu.
-    tasks = map(resolved) do (uuid, entries)
+    # Parallel JuMP `AffExpr` build (no libklu). Each task returns its results;
+    # the main thread does the serial writes into `expression_container`. Matches
+    # the PTDF flow-expression pattern in `AC_branches.jl` and avoids relying on
+    # SparseAxisArray's Dict being safe under concurrent setindex!.
+    tasks = map(fresh_resolved) do (uuid, entries)
         outage_id = string(uuid)
-        Threads.@spawn _add_post_contingency_flow_expressions_for_outage!(
-            expression_container,
+        Threads.@spawn _build_post_contingency_flow_expressions_for_outage(
             time_steps,
             outage_id,
             modf_cols,
@@ -276,8 +384,58 @@ function add_post_contingency_flow_expressions!(
             entries,
         )
     end
-    foreach(wait, tasks)
+    for (i, task) in enumerate(tasks)
+        (uuid, _) = fresh_resolved[i]
+        outage_id = string(uuid)
+        for (name, expressions) in fetch(task)
+            for t in time_steps
+                expression_container[outage_id, name, t] = expressions[t]
+            end
+        end
+    end
     return
+end
+
+"""
+Pre-pass for the multi-component outage dedup: copy already-built entries
+into `expression_container` and return the residual `resolved` shape that
+still needs fresh computation. Returns `resolved` unchanged when no other-V
+container exists (the single-component-outage hot path).
+"""
+function _copy_existing_post_contingency_expressions!(
+    container::OptimizationContainer,
+    ::Type{T},
+    ::Type{V},
+    expression_container::SparseAxisArray,
+    resolved::Vector{
+        Pair{Base.UUID, Vector{Tuple{DataType, String, Tuple{Int, Int}, String}}},
+    },
+    time_steps::UnitRange{Int},
+) where {T <: PostContingencyExpressions, V <: PSY.ACTransmission}
+    _has_other_v_container(get_expressions(container), T, V) || return resolved
+
+    fresh =
+        Pair{Base.UUID, Vector{Tuple{DataType, String, Tuple{Int, Int}, String}}}[]
+    for (uuid, entries) in resolved
+        outage_id = string(uuid)
+        unresolved = Tuple{DataType, String, Tuple{Int, Int}, String}[]
+        for entry in entries
+            (_, name, _, _) = entry
+            src_ec = _find_shared_post_contingency_expression_source(
+                container, T, V, outage_id, name, first(time_steps),
+            )
+            if src_ec === nothing
+                push!(unresolved, entry)
+            else
+                for t in time_steps
+                    expression_container[outage_id, name, t] =
+                        src_ec.data[(outage_id, name, t)]
+                end
+            end
+        end
+        isempty(unresolved) || push!(fresh, uuid => unresolved)
+    end
+    return fresh
 end
 
 # For DC Power only
@@ -306,10 +464,10 @@ function construct_device!(
         )
     end
 
-    if haskey(get_time_series_names(device_model), DynamicBranchRatingTimeSeriesParameter)
+    if haskey(get_time_series_names(device_model), BranchRatingTimeSeriesParameter)
         add_parameters!(
             container,
-            DynamicBranchRatingTimeSeriesParameter,
+            BranchRatingTimeSeriesParameter,
             devices,
             device_model,
         )
@@ -318,11 +476,11 @@ function construct_device!(
     # Deactivating this since it does not seem that the industry or we have data for this
     # if haskey(
     #     get_time_series_names(model),
-    #     PostContingencyDynamicBranchRatingTimeSeriesParameter,
+    #     PostContingencyBranchRatingTimeSeriesParameter,
     # )
     #     add_parameters!(
     #         container,
-    #         PostContingencyDynamicBranchRatingTimeSeriesParameter,
+    #         PostContingencyBranchRatingTimeSeriesParameter,
     #         devices,
     #         model,
     #     )
@@ -403,10 +561,10 @@ function construct_device!(
         )
     end
 
-    if haskey(get_time_series_names(device_model), DynamicBranchRatingTimeSeriesParameter)
+    if haskey(get_time_series_names(device_model), BranchRatingTimeSeriesParameter)
         add_parameters!(
             container,
-            DynamicBranchRatingTimeSeriesParameter,
+            BranchRatingTimeSeriesParameter,
             devices,
             device_model,
         )
@@ -482,10 +640,23 @@ function add_post_contingency_flow_expressions!(
         container.expressions, ExpressionKey(T, V), expression_container,
     )
 
+    has_other_v = _has_other_v_container(get_expressions(container), T, V)
     flow_vars_by_type = Dict{DataType, Any}()
     for (uuid, entries) in resolved
         outage_id = string(uuid)
         for (entry_type, name, _, _) in entries
+            if has_other_v
+                src_ec = _find_shared_post_contingency_expression_source(
+                    container, T, V, outage_id, name, first(time_steps),
+                )
+                if src_ec !== nothing
+                    for t in time_steps
+                        expression_container[outage_id, name, t] =
+                            src_ec.data[(outage_id, name, t)]
+                    end
+                    continue
+                end
+            end
             flow_vars = get!(flow_vars_by_type, entry_type) do
                 get_variable(container, FlowActivePowerFromToVariable(), entry_type)
             end

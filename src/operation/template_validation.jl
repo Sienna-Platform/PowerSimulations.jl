@@ -1,3 +1,45 @@
+function _any_component_has_branch_rating_ts(device_model::DeviceModel)
+    ts_name = get(
+        get_time_series_names(device_model),
+        BranchRatingTimeSeriesParameter,
+        nothing,
+    )
+    ts_name === nothing && return false
+    for c in get_device_cache(device_model)
+        if PSY.has_time_series(c, PSY.SingleTimeSeries, ts_name) ||
+           PSY.has_time_series(c, PSY.Deterministic, ts_name)
+            return true
+        end
+    end
+    return false
+end
+
+function _check_branch_rating_time_series_formulation!(branch_models::Dict)
+    for (_, device_model) in branch_models
+        _any_component_has_branch_rating_ts(device_model) || continue
+        D = get_component_type(device_model)
+        B = get_formulation(device_model)
+        if B <: StaticBranchUnbounded
+            @warn "BranchRatingTimeSeriesParameter time series attached to \
+                   $(D) components will be ignored: $(B) does not enforce flow \
+                   limits."
+        elseif B <: StaticBranch || B <: AbstractSecurityConstrainedStaticBranch
+            continue
+        else
+            throw(
+                IS.ConflictingInputsError(
+                    "BranchRatingTimeSeriesParameter is only supported with the \
+                    StaticBranch or AbstractSecurityConstrainedStaticBranch \
+                    formulations, but branch type $(D) was configured with $(B). \
+                    Remove the branch rating time series from the components or \
+                    change the formulation.",
+                ),
+            )
+        end
+    end
+    return
+end
+
 function _check_branch_network_compatibility(
     ::NetworkModel{T},
     unmodeled_branch_types::Vector{DataType},
@@ -103,6 +145,7 @@ function validate_template_impl!(model::OperationModel)
     for k in branch_keys_to_delete
         delete!(model.template.branches, k)
     end
+    _check_branch_rating_time_series_formulation!(model.template.branches)
     validate_network_model(network_model, unmodeled_branch_types, model_has_branch_filters)
     _build_device_model_outages!(template, system)
     return
@@ -116,11 +159,18 @@ _is_planned_outage(::PSY.Outage) = false
 """
 Populate `device_model.outages` for every security-constrained branch device
 model in the template, in a single pass over the system's outage supplemental
-attributes. The outer-key set per device model `m::DeviceModel{D, B}` is the
-subset of outage UUIDs whose monitored components include at least one
-component of type `D`. The inner dict is the full per-modeled-type breakdown
-of monitored component names for that outage (the same shape that previously
-lived on `NetworkModel.post_contingency_flow_components`).
+attributes. `DeviceModel{D, SC}` claims an outage iff `D` is among the types
+of the outaged (attached) components — so the OUTAGED component's type must
+be covered by an SC DeviceModel for the outage to contribute any constraints.
+For a multi-component outage tripping components of N>1 types, every matching
+SC DeviceModel claims it; the post-contingency build (`add_post_contingency_*`)
+deduplicates by referencing the first claimer's expressions/constraints.
+
+The inner dict carries the per-modeled-type breakdown of monitored component
+names. Monitored components do NOT need to be SC-formulated themselves: an
+SC `DeviceModel{Line, SC}` may claim an outage whose monitored set includes
+non-SC `Transformer2W` components, and the post-contingency build then bounds
+those Transformer flows under that outage.
 
 Selection semantics:
 - If `m.outages` is non-empty when this runs, the user explicitly listed UUIDs
@@ -139,6 +189,7 @@ function _build_device_model_outages!(
     template::ProblemTemplate,
     sys::PSY.System,
 )
+    # This code needs to be extended when adding G-1 models to check for injectors too.
     branch_models = get_branch_models(template)
     sc_models = [
         m for m in values(branch_models) if
@@ -193,14 +244,19 @@ function _build_device_model_outages!(
         end
         isempty(per_type) && continue
 
-        # DeviceModel{D} owns the outage iff its attached component (the one
-        # going offline during the contingency) is of type D.
+        # DeviceModel{D, SC} claims the outage iff D is among the OUTAGED
+        # (attached) component types. Multi-component outages get claimed by
+        # every matching SC DeviceModel; the post-contingency build dedups
+        # by referencing the first claimer's expressions/constraints rather
+        # than recomputing.
         attached_types = Set{DataType}(
             typeof(c) for c in PSY.get_associated_components(sys, outage)
         )
+        has_matching_sc_model = false
         for m in sc_models
             D = get_component_type(m)
             D in attached_types || continue
+            has_matching_sc_model = true
             sel = selection[Symbol(D)]
             if sel !== nothing
                 outage_uuid in sel || continue
@@ -212,6 +268,14 @@ function _build_device_model_outages!(
                 end
             end
             m.outages[outage_uuid] = per_type
+        end
+        if !has_matching_sc_model
+            @warn "Outage $(outage_uuid) is attached to component(s) of \
+                   type $(collect(attached_types)), but no DeviceModel with \
+                   an AbstractSecurityConstrainedStaticBranch formulation \
+                   covers those types; it will not contribute any \
+                   post-contingency constraints." _group =
+                LOG_GROUP_MODELS_VALIDATION
         end
     end
 
