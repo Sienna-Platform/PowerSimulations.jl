@@ -926,8 +926,7 @@ function test_simulation_results_from_file(path::AbstractString, c_sys5_hy_ed, c
     results_uc = get_decision_problem_results(results, "UC")
     results_ed = get_decision_problem_results(results, "ED")
 
-    # Verify this works without system.
-    @test get_system(results_uc) === nothing
+    @test !isnothing(get_system(results_uc))
     @test length(read_realized_variables(results_uc)) == length(UC_EXPECTED_VARS)
 
     @test_throws IS.InvalidValue set_system!(results_uc, c_sys5_hy_ed)
@@ -947,11 +946,8 @@ function test_decision_problem_results_kwargs_handling(
     results_uc = get_decision_problem_results(results, "UC")
     results_ed = get_decision_problem_results(results, "ED")
 
-    # Verify this works without system.
-    @test get_system(results_uc) === nothing
-
-    results_ed = get_decision_problem_results(results, "ED")
-    @test isnothing(get_system(results_ed))
+    @test !isnothing(get_system(results_uc))
+    @test !isnothing(get_system(results_ed))
 
     results_ed = get_decision_problem_results(results, "ED"; populate_system = true)
     @test !isnothing(get_system(results_ed))
@@ -1038,4 +1034,55 @@ function read_result_names(results, key::PSI.OptimizationContainerKey)
     first_result = only(values(result_data))
     columns_without_datetime = first_result[!, Not(:DateTime)]
     return Set(names(columns_without_datetime))
+end
+
+@testset "Test system is automatically populated from HDF5 store on file deserialization" begin
+    file_path = mktempdir(; cleanup = true)
+    export_path = mktempdir(; cleanup = true)
+    c_sys5_hy_uc = PSB.build_system(PSITestSystems, "c_sys5_hy_uc")
+    c_sys5_hy_ed = PSB.build_system(PSITestSystems, "c_sys5_hy_ed")
+    sim = run_simulation(
+        c_sys5_hy_uc,
+        c_sys5_hy_ed,
+        file_path,
+        export_path;
+        in_memory = false,
+    )
+
+    results = SimulationResults(PSI.get_simulation_folder(sim))
+    results_uc = get_decision_problem_results(results, "UC")
+    results_ed = get_decision_problem_results(results, "ED")
+    results_em = get_emulation_problem_results(results)
+
+    sys_uc = get_system(results_uc)
+    sys_ed = get_system(results_ed)
+    sys_em = get_system(results_em)
+    @test !isnothing(sys_uc)
+    @test !isnothing(sys_ed)
+    @test !isnothing(sys_em)
+
+    @test IS.get_uuid(sys_uc) == IS.get_uuid(c_sys5_hy_uc)
+    @test IS.get_uuid(sys_ed) == IS.get_uuid(c_sys5_hy_ed)
+
+    # Note: the system is serialized as a JSON string into the HDF5 store and does not include time series data
+    ts_counts = PSY.get_time_series_counts(sys_uc)
+    @test ts_counts.forecast_count == 0
+end
+
+@testset "Test system is automatically populated from HDF5 store on file deserialization" begin
+    file_path = mktempdir(; cleanup = true)
+    export_path = mktempdir(; cleanup = true)
+    c_sys5_hy_uc = PSB.build_system(PSITestSystems, "c_sys5_hy_uc")
+    c_sys5_hy_ed = PSB.build_system(PSITestSystems, "c_sys5_hy_ed")
+    sim = run_simulation(
+        c_sys5_hy_uc,
+        c_sys5_hy_ed,
+        file_path,
+        export_path;
+        in_memory = false,
+        store_systems_in_results = false,
+    )
+
+    results = SimulationResults(PSI.get_simulation_folder(sim))
+    @test results isa SimulationResults
 end
