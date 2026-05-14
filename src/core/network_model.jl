@@ -228,7 +228,7 @@ function _add_timeseries_irreducible_buses!(
     branch_models::BranchModelContainer,
 )
     for branch_type in network_model.modeled_ac_branch_types
-        device_model = branch_models[Symbol(branch_type)]
+        device_model = branch_models[nameof(branch_type)]
         if !haskey(
             get_time_series_names(device_model),
             BranchRatingTimeSeriesParameter,
