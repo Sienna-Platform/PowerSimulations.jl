@@ -159,15 +159,15 @@ end
     # between different branch types. The mixed parallel group's max rating is
     # the sum of its individual members (`get_sum_of_max_rating`), so adding a
     # parallel copy doubles the group capacity and lowers the optimum cost.
-    test_obj_values = [259395.96, 241417.66, 241293.703]
+    test_obj_values = [259395.96, 241417.66, 245042.86]
     parallel_lines_names_to_add = ["1", "2", "3"]#Add parallel lines in lines with and without TimeSeriesBounds like TimeSeriesBound
     n_steps = 2
 
     for slack_flag in [false, true]
         if slack_flag
-            test_results = [408, 0, 264, 264, 24]
+            test_results = [408, 0, 288, 288, 24]
         else
-            test_results = [120, 0, 264, 264, 24]
+            test_results = [120, 0, 288, 288, 24]
         end
         line_device_model = DeviceModel(
             Line,
@@ -246,15 +246,15 @@ end
 
     # Mixed parallel groups use `get_sum_of_max_rating` (sum of branch ratings),
     # so the group capacity is double the single-line case.
-    test_obj_values = [259395.96, 240206.07, 241293.703]
+    test_obj_values = [259395.96, 240206.07, 242012.67]
     parallel_lines_names_to_add = ["1", "2", "3"]#Add parallel lines in lines with and without TimeSeriesBounds like TimeSeriesBound
     n_steps = 2
 
     for slack_flag in [false, true]
         if slack_flag
-            test_results = [408, 0, 264, 264, 24]
+            test_results = [408, 0, 288, 288, 24]
         else
-            test_results = [120, 0, 264, 264, 24]
+            test_results = [120, 0, 288, 288, 24]
         end
         line_device_model = DeviceModel(
             Line,
@@ -331,7 +331,11 @@ end
     branches_with_rating_ts = ["1", "2", "6"]
     rating_factors = vcat([fill(x, 6) for x in [0.99, 0.98, 1.0, 0.95]]...)
 
-    test_obj_values = [356577.0, 279735.0, 241293.703]
+    # All three parallel placements converge to the same objective because
+    # the rating time series forces the parallel group's effective multiplier
+    # to `get_sum_of_max_rating`, which restores the pre-parallel R capacity
+    # regardless of which line is split.
+    test_obj_values = [243877.86, 243877.86, 243877.86]
     parallel_lines_names_to_add = ["1", "2", "3"]#Add parallel lines in lines with and without TimeSeriesBounds like TimeSeriesBound
     n_steps = 2
 
@@ -413,18 +417,18 @@ end
     branches_with_rating_ts = ["1", "2", "6"]
     rating_factors = vcat([fill(x, 6) for x in [0.99, 0.98, 1.0, 0.95]]...)
 
-    test_obj_values = [356577.0, 279735.0, 241293.703]
+    test_obj_values = [243859.89, 243884.35, 243877.86]
     parallel_lines_names_to_add = ["1", "2", "3"]#Add parallel lines in lines with and without TimeSeriesBounds like TimeSeriesBound
     n_steps = 2
     test_results_slacks = Dict(
         1 => [456, 0, 288, 288, 24],
         2 => [456, 0, 288, 288, 24],
-        3 => [408, 0, 264, 264, 24],
+        3 => [408, 0, 288, 288, 24],
     )
     test_results_no_slacks = Dict(
         1 => [120, 0, 288, 288, 24],
         2 => [120, 0, 288, 288, 24],
-        3 => [120, 0, 264, 264, 24],
+        3 => [120, 0, 288, 288, 24],
     )
 
     for slack_flag in [false, true]
@@ -515,12 +519,12 @@ end
     test_results_slacks = Dict(
         1 => [600, 0, 288, 288, 24],
         2 => [600, 0, 288, 288, 24],
-        3 => [552, 0, 264, 264, 24],
+        3 => [552, 0, 288, 288, 24],
     )
     test_results_no_slacks = Dict(
         1 => [264, 0, 288, 288, 24],
         2 => [264, 0, 288, 288, 24],
-        3 => [264, 0, 264, 264, 24],
+        3 => [264, 0, 288, 288, 24],
     )
 
     for slack_flag in [false, true]

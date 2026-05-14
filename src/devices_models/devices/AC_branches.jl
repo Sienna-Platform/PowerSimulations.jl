@@ -118,9 +118,18 @@ function _resolve_branch_multiplier(
     ::AbstractBranchRatingTimeSeriesParameter,
     d::PNM.AbstractBranchesParallel,
     ::StaticBranch,
-    model::DeviceModel,
+    ::DeviceModel,
 )
-    return _get_parallel_branch_max_rating(model, d)
+    # A rating time series attached to one member of a parallel group is
+    # ambiguous: PowerSimulations cannot infer how the time-varying factor
+    # should be distributed across the group's other circuits. The safe and
+    # explicit interpretation is to scale the group's combined rating
+    # (sum_of_max), which is what the time series effectively represents
+    # in this configuration. This overrides `parallel_branch_max_rating_method`.
+    @warn "Parallel reduction $(PNM.get_name(d)) has a member with a branch rating \
+           time series; using sum_of_max as the multiplier, regardless of the \
+           `parallel_branch_max_rating_method` attribute."
+    return PNM.get_sum_of_max_rating(d)
 end
 #################################### Flow Variable Bounds ##################################################
 
@@ -275,7 +284,7 @@ end
 
 function branch_rate_bounds!(
     container::OptimizationContainer,
-    ::DeviceModel{B, T},
+    device_model::DeviceModel{B, T},
     network_model::NetworkModel{<:PM.AbstractPowerModel},
 ) where {B <: PSY.ACTransmission, T <: AbstractBranchFormulation}
     time_steps = get_time_steps(container)
@@ -287,7 +296,7 @@ function branch_rate_bounds!(
             # It might have performance implications. Possibly separate this into other functions
             reduction_entry = all_branch_maps_by_type[reduction][B][arc]
             # Use the same limit values as FlowRateConstraint for consistency.
-            limits = get_min_max_limits(reduction_entry, FlowRateConstraint, T)
+            limits = min_max_flow_limits(reduction_entry, device_model)
             for t in time_steps
                 @assert limits.min <= limits.max "Infeasible rate limits for branch $(name)"
                 JuMP.set_upper_bound(var[name, t], limits.max)
@@ -420,6 +429,49 @@ function get_min_max_limits(
 end
 
 """
+Flow limits for an AC transmission reduction entry, honoring the DeviceModel's
+`PARALLEL_BRANCH_MAX_RATING_KEY` attribute for parallel groups. Use this in
+constraint construction where the line's DeviceModel is available; non-line
+formulations should continue to use `get_min_max_limits`.
+"""
+function min_max_flow_limits(
+    double_circuit::PNM.AbstractBranchesParallel,
+    model::DeviceModel,
+)
+    max_rating = _get_parallel_branch_max_rating(model, double_circuit)
+    return (min = -max_rating, max = max_rating)
+end
+
+function min_max_flow_limits(device::PSY.ACTransmission, ::DeviceModel)
+    rating = PNM.get_equivalent_rating(device)
+    return (min = -rating, max = rating)
+end
+
+function min_max_flow_limits(device::PSY.MonitoredLine, ::DeviceModel)
+    return get_min_max_limits(device, FlowRateConstraint, AbstractBranchFormulation)
+end
+
+function min_max_flow_limits(series_chain::PNM.BranchesSeries, model::DeviceModel)
+    min_max_by_segment =
+        [min_max_flow_limits(segment, model) for segment in series_chain]
+    return (
+        min = maximum(x.min for x in min_max_by_segment),
+        max = minimum(x.max for x in min_max_by_segment),
+    )
+end
+
+function min_max_flow_limits(
+    transformer_entry::PNM.ThreeWindingTransformerWinding,
+    ::DeviceModel,
+)
+    return get_min_max_limits(
+        transformer_entry,
+        FlowRateConstraint,
+        AbstractBranchFormulation,
+    )
+end
+
+"""
 Min and max limits for Abstract Branch Formulation
 """
 function get_min_max_limits(
@@ -432,7 +484,6 @@ end
 
 function _add_flow_rate_constraint!(
     container::OptimizationContainer,
-    ::Type{T},
     arc::Tuple{Int, Int},
     use_slacks::Bool,
     con_lb::DenseAxisArray,
@@ -440,6 +491,7 @@ function _add_flow_rate_constraint!(
     var::DenseAxisArray,
     branch_maps_by_type::Dict,
     name::String,
+    device_model::DeviceModel{T},
 ) where {T <: PSY.ACTransmission}
     reduction_entry = branch_maps_by_type[arc]
     time_steps = get_time_steps(container)
@@ -447,7 +499,7 @@ function _add_flow_rate_constraint!(
         slack_ub = get_variable(container, FlowActivePowerSlackUpperBound(), T)[name, :]
         slack_lb = get_variable(container, FlowActivePowerSlackLowerBound(), T)[name, :]
     end
-    limits = get_min_max_limits(reduction_entry, FlowRateConstraint, StaticBranch)
+    limits = min_max_flow_limits(reduction_entry, device_model)
     for t in time_steps
         con_ub[name, t] =
             JuMP.@constraint(
@@ -518,7 +570,6 @@ function add_constraints!(
         get_constraint_map_by_type(reduced_branch_tracker)[FlowRateConstraint][T]
         _add_flow_rate_constraint!(
             container,
-            T,
             arc,
             use_slacks,
             con_lb,
@@ -526,6 +577,7 @@ function add_constraints!(
             array,
             all_branch_maps_by_type[reduction][T],
             name,
+            device_model,
         )
     end
     return
@@ -623,7 +675,7 @@ function add_constraints!(
         # TODO: entry is not type stable here, it can return any type ACTransmission.
         # It might have performance implications. Possibly separate this into other functions
         reduction_entry = all_branch_maps_by_type[reduction][T][arc]
-        limits = get_min_max_limits(reduction_entry, FlowRateConstraint, U)
+        limits = min_max_flow_limits(reduction_entry, device_model)
         for t in time_steps
             con_ub[name, t] =
                 JuMP.@constraint(get_jump_model(container),
@@ -653,16 +705,14 @@ function add_flow_rate_constraint_with_parameters!(
 }
     time_steps = get_time_steps(container)
     net_reduction_data = network_model.network_reduction
-    reduced_branch_tracker = get_reduced_branch_tracker(network_model)
-
-    branch_names = get_branch_argument_constraint_axis(
-        net_reduction_data,
-        reduced_branch_tracker,
-        devices,
-        cons_type,
-    )
-
     all_branch_maps_by_type = PNM.get_all_branch_maps_by_type(net_reduction_data)
+
+    # `get_constraint_map_by_type[FlowRateConstraint][T]` drops arcs already
+    # claimed by another branch type's static FlowRateConstraint pass, which
+    # would silently skip the TS bound on shared parallel arcs. Walk
+    # `name_to_arc_map[T]` directly, matching `_add_time_series_parameters!`.
+    name_to_arc_map = PNM.get_name_to_arc_map(net_reduction_data, T)
+    branch_names = collect(keys(name_to_arc_map))
 
     con_lb =
         add_constraints_container!(
@@ -688,13 +738,9 @@ function add_flow_rate_constraint_with_parameters!(
     ts_name = get_time_series_names(device_model)[BranchRatingTimeSeriesParameter]
     ts_type = get_default_time_series_type(container)
     use_slacks = get_use_slacks(device_model)
-    for (name, (arc, reduction)) in
-        get_constraint_map_by_type(reduced_branch_tracker)[FlowRateConstraint][T]
-        if PNM.has_time_series(
-            all_branch_maps_by_type[reduction][T][arc],
-            ts_type,
-            ts_name,
-        )
+    for (name, (arc, reduction)) in name_to_arc_map
+        branch_map_T = all_branch_maps_by_type[reduction][T]
+        if PNM.has_time_series(branch_map_T[arc], ts_type, ts_name)
             _add_flow_rate_constraint_with_parameters!(
                 container,
                 T,
@@ -703,21 +749,21 @@ function add_flow_rate_constraint_with_parameters!(
                 con_lb,
                 con_ub,
                 var_array,
-                all_branch_maps_by_type[reduction][T],
+                branch_map_T,
                 name,
                 ts_name,
             )
         else
             _add_flow_rate_constraint!(
                 container,
-                T,
                 arc,
                 use_slacks,
                 con_lb,
                 con_ub,
                 var_array,
-                all_branch_maps_by_type[reduction][T],
+                branch_map_T,
                 name,
+                device_model,
             )
         end
     end
