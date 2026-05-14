@@ -39,6 +39,12 @@ VoltageDispatchHVDCNetworkModel
 HVDCTwoTerminalLCC
 ```
 
+### Security-Constrained Branch Formulations
+
+```@docs
+SecurityConstrainedStaticBranch
+```
+
 ### Converter Formulations
 
 ```@docs
@@ -419,6 +425,7 @@ DCCurrentBalance
 PostContingencyGenerationBalanceConstraint
 PostContingencyActivePowerVariableLimitsConstraint
 PostContingencyActivePowerReserveDeploymentVariableLimitsConstraint
+PostContingencyEmergencyFlowRateConstraint
 ```
 
 ### Market Bid Cost Constraints

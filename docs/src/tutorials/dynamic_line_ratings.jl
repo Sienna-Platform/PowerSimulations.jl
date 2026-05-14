@@ -102,9 +102,10 @@ end
 
 n_steps = 2       # simulation length in days
 initial_date = "2020-01-01"
+data_days = 366   # length of DLR time series in days; must span the system's TS window
 
 dlr_factors_daily = vcat([fill(x, 6) for x in [1.15, 1.05, 0.95, 0.95]]...)  # 24 values
-dlr_factor_ts = repeat(dlr_factors_daily, n_steps)
+dlr_factor_ts = repeat(dlr_factors_daily, data_days)
 
 # Select the branch names that will receive DLR time series. These names must match
 # branches present in the system.
@@ -114,7 +115,7 @@ branches_dlr = [
     "A7", "A17", "B14", "B15", "C7", "C17",
 ]
 
-add_dlr_to_system_branches!(sys, branches_dlr, n_steps, dlr_factor_ts; initial_date)
+add_dlr_to_system_branches!(sys, branches_dlr, data_days, dlr_factor_ts; initial_date)
 
 # Because the simulation uses a rolling horizon of 48 hours (2 days), we transform the
 # `SingleTimeSeries` into `Deterministic` forecasts with a 48-hour horizon and a 24-hour
@@ -193,7 +194,6 @@ model = DecisionModel(
     sys;
     name = "UC",
     optimizer = solver,
-    system_to_file = false,
     initialize_model = true,
     store_variable_names = true,
 )
