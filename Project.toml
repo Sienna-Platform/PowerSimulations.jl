@@ -61,3 +61,9 @@ SparseArrays = "1"
 TimeSeries = "~0.25"
 TimerOutputs = "~0.5"
 julia = "^1.10"
+
+[sources]
+# PowerFlows branch with the matching PNM compat bump; without this pin
+# CI cannot resolve the test environment because the registered
+# PowerFlows version restricts PowerNetworkMatrices to a lower range.
+PowerFlows = {url = "https://github.com/NREL-Sienna/PowerFlows.jl.git", rev = "jd/bump_pnm"}
