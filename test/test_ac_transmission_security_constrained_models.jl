@@ -470,7 +470,8 @@ end
         # Each outaged line monitors a different line to create non-trivial constraints
         for (idx, line_name) in enumerate(lines_outages[sys])
             outaged_component = get_component(ACTransmission, sys, line_name)
-            monitored_component = get_component(ACTransmission, sys, monitored_lines[sys][idx])
+            monitored_component =
+                get_component(ACTransmission, sys, monitored_lines[sys][idx])
             transition_data = GeometricDistributionForcedOutage(;
                 mean_time_to_recovery = 10,
                 outage_transition_probability = 0.9999,
