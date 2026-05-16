@@ -38,9 +38,9 @@ mutable struct SimulationModels
         emulation_model::Union{Nothing, EmulationModel} = nothing,
     )
         all_names = [get_name(x) for x in decision_models]
-        emulation_model !== nothing && push!(all_names, get_name(emulation_model))
+        !isnothing(emulation_model) && push!(all_names, get_name(emulation_model))
         model_count =
-            if emulation_model === nothing
+            if isnothing(emulation_model)
                 length(decision_models)
             else
                 length(decision_models) + 1
@@ -74,7 +74,7 @@ function get_simulation_model(models::SimulationModels, name::Symbol)
         end
     end
     em = models.emulation_model
-    if em !== nothing
+    if !isnothing(em)
         if get_name(em) == name
             return em
         end
@@ -113,7 +113,7 @@ function determine_horizons!(models::SimulationModels)
         end
     end
     em = models.emulation_model
-    if em !== nothing
+    if !isnothing(em)
         resolution = get_resolution(em)
         horizons[get_name(em)] = resolution
     end
@@ -136,7 +136,7 @@ function determine_intervals(models::SimulationModels)
         intervals[get_name(model)] = IS.time_period_conversion(interval)
     end
     em = models.emulation_model
-    if em !== nothing
+    if !isnothing(em)
         emulator_interval = get_resolution(em)
         if emulator_interval == Dates.Millisecond(0)
             throw(IS.InvalidValue("Emulator Resolution not set correctly"))
@@ -158,7 +158,7 @@ function determine_resolutions(models::SimulationModels)
         resolutions[get_name(model)] = IS.time_period_conversion(resolution)
     end
     em = models.emulation_model
-    if em !== nothing
+    if !isnothing(em)
         emulator_resolution = get_resolution(em)
         resolutions[get_name(em)] = IS.time_period_conversion(emulator_resolution)
     end
@@ -171,7 +171,7 @@ function initialize_simulation_internals!(models::SimulationModels, uuid::Base.U
         set_sequence_uuid!(model, uuid)
     end
     em = get_emulation_model(models)
-    if em !== nothing
+    if !isnothing(em)
         ix = length(get_decision_models(models)) + 1
         set_simulation_number!(em, ix)
         set_sequence_uuid!(em, uuid)
@@ -182,7 +182,7 @@ end
 function get_model_names(models::SimulationModels)
     all_names = get_name.(get_decision_models(models))
     em = get_emulation_model(models)
-    if em !== nothing
+    if !isnothing(em)
         push!(all_names, get_name(em))
     end
     return all_names

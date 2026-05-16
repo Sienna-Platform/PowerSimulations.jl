@@ -21,7 +21,7 @@ function get_available_components(
 ) where {T <: PSY.Component}
     subsystem = get_subsystem(model)
     filter_function = get_attribute(model, "filter_function")
-    if filter_function === nothing
+    if isnothing(filter_function)
         return PSY.get_components(
             PSY.get_available,
             T,
@@ -44,7 +44,7 @@ function get_available_components(
 ) where {T <: PSY.Component}
     subsystem = get_subsystem(model)
     filter_function = get_attribute(model, "filter_function")
-    if filter_function === nothing
+    if isnothing(filter_function)
         return PSY.get_components(
             PSY.get_available,
             T,
@@ -408,7 +408,7 @@ Return the set of distinct forecast intervals present in the system.
 """
 function get_forecast_intervals(sys::PSY.System)
     table = PSY.get_forecast_summary_table(sys)
-    return Set(row.interval for row in eachrow(table) if row.interval !== nothing)
+    return Set(row.interval for row in eachrow(table) if !isnothing(row.interval))
 end
 
 """

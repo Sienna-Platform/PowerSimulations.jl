@@ -160,14 +160,15 @@ function get_realization(
     start = time()
     Threads.@threads for key in collect(keys(results))
         results_by_time = results[key]
+        df = _make_dataframe(
+            results_by_time,
+            num_timestamps,
+            meta,
+            key,
+            Val(table_format),
+        )
         lock(lk) do
-            realized_values[key] = _make_dataframe(
-                results_by_time,
-                num_timestamps,
-                meta,
-                key,
-                Val(table_format),
-            )
+            realized_values[key] = df
         end
     end
 

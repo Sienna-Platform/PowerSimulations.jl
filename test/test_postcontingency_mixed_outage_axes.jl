@@ -54,7 +54,7 @@
         cons_ub = PSI.get_constraint(
             container,
             PSI.ConstraintKey(
-                PSI.PostContingencyEmergencyFlowRateConstraint,
+                PSI.PostContingencyFlowRateConstraint,
                 PSY.Line, "ub",
             ),
         )
@@ -119,4 +119,38 @@
         @test expr_ax == Set([string(IS.get_uuid(unplanned))])
         @test !(string(IS.get_uuid(planned)) in expr_ax)
     end
+end
+
+@testset "Outage pinning includes outaged-component buses (N3)" begin
+    # Regression: `_add_outage_monitored_irreducible_buses!` must pin both the
+    # MONITORED components' buses AND the OUTAGED (associated) components'
+    # buses. If only the monitored set is pinned, a degree-two reduction
+    # between the outaged arc's endpoints can collapse the contingency arc out
+    # of the reduced topology and PNM's MODF column for that contingency would
+    # have no matching arc to apply.
+    sys = PSB.build_system(PSITestSystems, "c_sys5")
+    lines = collect(PSY.get_components(PSY.Line, sys))
+    @assert length(lines) >= 3
+    outaged_line = lines[1]   # the contingency arc itself
+    monitored_only_line = lines[2]   # appears in monitored set but is not the outaged component
+    transition = PSY.GeometricDistributionForcedOutage(;
+        mean_time_to_recovery = 10,
+        outage_transition_probability = 0.9999,
+        monitored_components = [monitored_only_line],
+    )
+    PSY.add_supplemental_attribute!(sys, outaged_line, transition)
+
+    irreducible_buses = Set{Int64}()
+    PSI._add_outage_monitored_irreducible_buses!(irreducible_buses, sys)
+
+    monitored_arc = PSY.get_arc(monitored_only_line)
+    outaged_arc = PSY.get_arc(outaged_line)
+
+    # Monitored component endpoints must be present (existing behavior).
+    @test PSY.get_number(PSY.get_from(monitored_arc)) in irreducible_buses
+    @test PSY.get_number(PSY.get_to(monitored_arc)) in irreducible_buses
+
+    # Outaged component endpoints must also be present (N3 fix).
+    @test PSY.get_number(PSY.get_from(outaged_arc)) in irreducible_buses
+    @test PSY.get_number(PSY.get_to(outaged_arc)) in irreducible_buses
 end

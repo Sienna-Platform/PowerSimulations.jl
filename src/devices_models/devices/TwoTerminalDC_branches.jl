@@ -175,14 +175,14 @@ function _add_dense_pwl_loss_variables!(
             binary = binary
         )
         ub = get_variable_upper_bound(T(), d, formulation)
-        ub !== nothing && JuMP.set_upper_bound(variable[name, s, t], ub)
+        !isnothing(ub) && JuMP.set_upper_bound(variable[name, s, t], ub)
 
         lb = get_variable_lower_bound(T(), d, formulation)
-        lb !== nothing && JuMP.set_lower_bound(variable[name, s, t], lb)
+        !isnothing(lb) && JuMP.set_lower_bound(variable[name, s, t], lb)
 
         if get_warm_start(settings)
             init = get_variable_warm_start_value(T(), d, formulation)
-            init !== nothing && JuMP.set_start_value(variable[name, s, t], init)
+            !isnothing(init) && JuMP.set_start_value(variable[name, s, t], init)
         end
     end
 end
@@ -229,10 +229,10 @@ function _add_sparse_pwl_loss_variables!(
                         binary = binary_T
                     )
                 ub = get_variable_upper_bound(T(), d, formulation)
-                ub !== nothing && JuMP.set_upper_bound(var_container[name, i, t], ub)
+                !isnothing(ub) && JuMP.set_upper_bound(var_container[name, i, t], ub)
 
                 lb = get_variable_lower_bound(T(), d, formulation)
-                lb !== nothing && JuMP.set_lower_bound(var_container[name, i, t], lb)
+                !isnothing(lb) && JuMP.set_lower_bound(var_container[name, i, t], lb)
 
                 pwlvars_bin[i] =
                     var_container_binary[(name, i, t)] = JuMP.@variable(

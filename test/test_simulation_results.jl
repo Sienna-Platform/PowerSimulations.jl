@@ -927,7 +927,7 @@ function test_simulation_results_from_file(path::AbstractString, c_sys5_hy_ed, c
     results_ed = get_decision_problem_results(results, "ED")
 
     # Verify this works without system.
-    @test get_system(results_uc) === nothing
+    @test isnothing(get_system(results_uc))
     @test length(read_realized_variables(results_uc)) == length(UC_EXPECTED_VARS)
 
     @test_throws IS.InvalidValue set_system!(results_uc, c_sys5_hy_ed)
@@ -948,7 +948,7 @@ function test_decision_problem_results_kwargs_handling(
     results_ed = get_decision_problem_results(results, "ED")
 
     # Verify this works without system.
-    @test get_system(results_uc) === nothing
+    @test isnothing(get_system(results_uc))
 
     results_ed = get_decision_problem_results(results, "ED")
     @test isnothing(get_system(results_ed))

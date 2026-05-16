@@ -208,7 +208,7 @@ function _check_branch_rating_ts(
 
     rating = PSY.get_rating(device)
     if (T <: PostContingencyBranchRatingTimeSeriesParameter)
-        if !(PSY.get_rating_b(device) === nothing)
+        if !isnothing(PSY.get_rating_b(device))
             rating = PSY.get_rating_b(device)
         else
             @warn "Device $(typeof(device)) '$(PSY.get_name(device))' has Parameter $T but it has no static 'rating_b' defined."
@@ -314,7 +314,10 @@ function _add_time_series_parameters!(
             )
             ts_vals =
                 _unwrap_for_param.(Ref(param_instance), raw_ts_vals, Ref(additional_axes))
-            @assert all(_size_wrapper.(ts_vals) .== Ref(length.(additional_axes)))
+            all(_size_wrapper.(ts_vals) .== Ref(length.(additional_axes))) || error(
+                "Time series value shape $(_size_wrapper.(ts_vals)) does not match expected " *
+                "additional axis lengths $(length.(additional_axes))",
+            )
         end
         multiplier = _resolve_branch_multiplier(T(), reduction_entry, W(), model)
         _set_multiplier_at!(parent_mult, Float64(multiplier), i_mult)
@@ -453,7 +456,10 @@ function _add_time_series_parameters!(
     # above, so `initial_values`'s iteration order matches the container's first axis.
     for (i, (ts_uuid, raw_ts_vals)) in enumerate(initial_values)
         ts_vals = _unwrap_for_param.(Ref(param_instance), raw_ts_vals, Ref(additional_axes))
-        @assert all(_size_wrapper.(ts_vals) .== Ref(length.(additional_axes)))
+        all(_size_wrapper.(ts_vals) .== Ref(length.(additional_axes))) || error(
+            "Time series value shape $(_size_wrapper.(ts_vals)) does not match expected " *
+            "additional axis lengths $(length.(additional_axes))",
+        )
 
         for step in time_steps
             _set_parameter_at!(parent_param, jump_model, ts_vals[step], i, step)
@@ -644,7 +650,10 @@ function _unwrap_for_param(
 )
     max_len = length(only(expected_axs))
     y_coords = IS.get_y_coords(ts_elem)
-    @assert length(y_coords) <= max_len
+    length(y_coords) <= max_len || error(
+        "PiecewiseStepData y-coords ($(length(y_coords))) exceed expected axis length " *
+        "($max_len) for slope parameter",
+    )
     fill_value = 0.0  # pad with slope = 0 if necessary (see above)
     padded_y_coords = vcat(y_coords, fill(fill_value, max_len - length(y_coords)))
     return padded_y_coords
@@ -657,7 +666,10 @@ function _unwrap_for_param(
 )
     max_len = length(only(expected_axs))
     x_coords = IS.get_x_coords(ts_elem)
-    @assert length(x_coords) <= max_len
+    length(x_coords) <= max_len || error(
+        "PiecewiseStepData x-coords ($(length(x_coords))) exceed expected axis length " *
+        "($max_len) for breakpoint parameter",
+    )
     fill_value = x_coords[end]  # if padding is necessary, repeat the last breakpoint so dx = 0 (see above)
     padded_x_coords = vcat(x_coords, fill(fill_value, max_len - length(x_coords)))
     return padded_x_coords
@@ -730,7 +742,10 @@ function _add_parameters!(
             interval = ts_interval,
         )
         ts_vals = _unwrap_for_param.(Ref(param_instance), raw_ts_vals, Ref(additional_axes))
-        @assert all(_size_wrapper.(ts_vals) .== Ref(length.(additional_axes)))
+        all(_size_wrapper.(ts_vals) .== Ref(length.(additional_axes))) || error(
+            "Time series value shape $(_size_wrapper.(ts_vals)) does not match expected " *
+            "additional axis lengths $(length.(additional_axes))",
+        )
         # PWL/cost-function path: the parameter values flowing through
         # `_set_parameter_at!` below are tuples-of-floats from `_unwrap_for_param`;
         # the multiplier itself is a scalar Float64 (per-device cost weight).
@@ -824,7 +839,7 @@ function _add_parameters!(
             get_parameter_multiplier(T(), d, W()),
             i,
         )
-        if get_variable_warm_start_value(U(), d, W()) === nothing
+        if isnothing(get_variable_warm_start_value(U(), d, W()))
             inital_parameter_value = 0.0
         else
             inital_parameter_value = get_variable_warm_start_value(U(), d, W())
@@ -864,7 +879,7 @@ function _add_parameters!(
             get_parameter_multiplier(T(), d, W()),
             i,
         )
-        if get_variable_warm_start_value(U(), d, W()) === nothing
+        if isnothing(get_variable_warm_start_value(U(), d, W()))
             inital_parameter_value = 0.0
         else
             inital_parameter_value = get_variable_warm_start_value(U(), d, W())
@@ -903,7 +918,7 @@ function _add_parameters!(
             get_parameter_multiplier(T(), d, W()),
             i,
         )
-        if get_variable_warm_start_value(U(), d, W()) === nothing
+        if isnothing(get_variable_warm_start_value(U(), d, W()))
             inital_parameter_value = 0.0
         else
             inital_parameter_value = get_variable_warm_start_value(U(), d, W())

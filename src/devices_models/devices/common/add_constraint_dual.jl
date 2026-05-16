@@ -123,6 +123,38 @@ function _existing_constraint_metas(
     return metas
 end
 
+# Post-contingency flow-rate constraints are stored as `SparseAxisArray`s keyed
+# by (outage_id, name, t). The generic device method calls `axes(existing)[1]`,
+# which `SparseAxisArray` does not support, so dual retrieval needs a sparse
+# path: mirror the constraint's exact sparse keys into a Float64 dual container.
+function assign_dual_variable!(
+    container::OptimizationContainer,
+    constraint_type::Type{<:PostContingencyConstraintType},
+    devices::U,
+    ::Type{<:AbstractDeviceFormulation},
+) where {U <: Union{Vector{D}, IS.FlattenIteratorWrapper{D}}} where {D <: PSY.Device}
+    @assert !isempty(devices)
+    for meta in _existing_constraint_metas(container, constraint_type, D)
+        key = ConstraintKey(constraint_type, D, meta)
+        existing = get_constraint(container, key)
+        dual_container =
+            SparseAxisArray(Dict(k => zero(Float64) for k in keys(existing.data)))
+        _assign_container!(container.duals, key, dual_container)
+    end
+    return
+end
+
+# Sparse counterpart to the generic `_calculate_dual_variable_value!`:
+# `Iterators.product(axes(...)...)` is undefined for `SparseAxisArray`.
+function _calculate_dual_variable_value!(
+    container::OptimizationContainer,
+    key::ConstraintKey{T, D},
+    ::PSY.System,
+) where {T <: PostContingencyConstraintType, D <: Union{PSY.Component, PSY.System}}
+    _copy_dual_values!(get_duals(container)[key], get_constraint(container, key))
+    return
+end
+
 function assign_dual_variable!(
     container::OptimizationContainer,
     constraint_type::Type{<:ConstraintType},

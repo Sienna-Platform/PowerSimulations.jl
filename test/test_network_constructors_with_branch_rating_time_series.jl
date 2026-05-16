@@ -8,7 +8,7 @@ function check_branch_rating_time_series_flows!(
     for branch_name in branches_with_rating_ts
         branch = get_component(PSY.ACTransmission, sys, branch_name)
         is_parallel_group_flow =
-            add_parallel_line_name !== nothing &&
+            !isnothing(add_parallel_line_name) &&
             contains(branch_name, add_parallel_line_name)
         col_key = if is_parallel_group_flow
             replace(branch_name, "_copy" => "") * "double_circuit"
@@ -155,12 +155,12 @@ end
     branches_with_rating_ts = ["1", "2", "6"]
     rating_factors = vcat([fill(x, 6) for x in [0.99, 0.98, 1.0, 0.95]]...)
 
-    # TimeSeriesBound constraints are correctly applied to parallel arcs shared
+    # BranchRatingTimeSeriesParameter constraints are correctly applied to parallel arcs shared
     # between different branch types. The mixed parallel group's max rating is
     # the sum of its individual members (`get_sum_of_max_rating`), so adding a
     # parallel copy doubles the group capacity and lowers the optimum cost.
     test_obj_values = [259395.96, 241417.66, 245042.86]
-    parallel_lines_names_to_add = ["1", "2", "3"]#Add parallel lines in lines with and without TimeSeriesBounds like TimeSeriesBound
+    parallel_lines_names_to_add = ["1", "2", "3"]#Add parallel lines in lines  with and without BranchRatingTimeSeriesParameter
     n_steps = 2
 
     for slack_flag in [false, true]
@@ -234,7 +234,7 @@ end
     end
 end
 
-@testset "Network DC-PF with PTDF Model and implementing branch rating time series with BranchesParallel of different types (MonitoredLine with TimeSeriesBound)" begin
+@testset "Network DC-PF with PTDF Model and implementing branch rating time series with BranchesParallel of different types (MonitoredLine with BranchRatingTimeSeriesParameter)" begin
     objfuncs = [GAEVF, GQEVF, GQEVF]
     constraint_keys = [
         PSI.ConstraintKey(FlowRateConstraint, PSY.Line, "lb"),
@@ -247,7 +247,7 @@ end
     # Mixed parallel groups use `get_sum_of_max_rating` (sum of branch ratings),
     # so the group capacity is double the single-line case.
     test_obj_values = [259395.96, 240206.07, 242012.67]
-    parallel_lines_names_to_add = ["1", "2", "3"]#Add parallel lines in lines with and without TimeSeriesBounds like TimeSeriesBound
+    parallel_lines_names_to_add = ["1", "2", "3"]#Add parallel lines in lines  with and without BranchRatingTimeSeriesParameter
     n_steps = 2
 
     for slack_flag in [false, true]
@@ -336,7 +336,7 @@ end
     # to `get_sum_of_max_rating`, which restores the pre-parallel R capacity
     # regardless of which line is split.
     test_obj_values = [243877.86, 243877.86, 243877.86]
-    parallel_lines_names_to_add = ["1", "2", "3"]#Add parallel lines in lines with and without TimeSeriesBounds like TimeSeriesBound
+    parallel_lines_names_to_add = ["1", "2", "3"]#Add parallel lines in lines  with and without BranchRatingTimeSeriesParameter
     n_steps = 2
 
     for slack_flag in [false, true]
@@ -418,7 +418,7 @@ end
     rating_factors = vcat([fill(x, 6) for x in [0.99, 0.98, 1.0, 0.95]]...)
 
     test_obj_values = [243859.89, 243884.35, 243877.86]
-    parallel_lines_names_to_add = ["1", "2", "3"]#Add parallel lines in lines with and without TimeSeriesBounds like TimeSeriesBound
+    parallel_lines_names_to_add = ["1", "2", "3"]#Add parallel lines in lines  with and without BranchRatingTimeSeriesParameter
     n_steps = 2
     test_results_slacks = Dict(
         1 => [456, 0, 288, 288, 24],
@@ -514,7 +514,7 @@ end
     branches_with_rating_ts = ["1", "2", "6"]
     rating_factors = vcat([fill(x, 6) for x in [0.99, 0.98, 1.0, 0.95]]...)
 
-    parallel_lines_names_to_add = ["1", "2", "3"]#Add parallel lines in lines with and without TimeSeriesBounds like TimeSeriesBound
+    parallel_lines_names_to_add = ["1", "2", "3"]#Add parallel lines in lines  with and without BranchRatingTimeSeriesParameter
     n_steps = 2
     test_results_slacks = Dict(
         1 => [600, 0, 288, 288, 24],
@@ -677,4 +677,87 @@ end
         DecisionModel(template_unbounded, sys_unbounded; optimizer = HiGHS_optimizer)
     @test_logs (:warn, r"StaticBranchUnbounded does not enforce flow limits") match_mode =
         :any PSI.validate_template(model_unbounded)
+end
+
+# Verify the docstring claim that BranchRatingTimeSeriesParameter is supported
+# under any compatible network formulation: PTDF (covered above), full AC
+# (`PM.AbstractPowerModel`, e.g. `ACPPowerModel`), and DC OPF
+# (`PM.AbstractActivePowerModel`, e.g. `DCPPowerModel` / `NFAPowerModel`). The
+# constructor must add the parameter and the FlowRate constraint builder must
+# read it; otherwise the time-varying rating is silently ignored.
+
+@testset "Branch rating time series with full AC (ACPPowerModel) network" begin
+    branches_with_rating_ts = ["1", "2", "6"]
+    rating_factors = vcat([fill(x, 6) for x in [0.99, 0.98, 1.0, 0.95]]...)
+    n_steps = 2
+
+    sys = PSB.build_system(PSITestSystems, "c_sys5")
+    add_branch_rating_time_series_to_system!(
+        sys,
+        branches_with_rating_ts,
+        n_steps,
+        rating_factors;
+        initial_date = "2024-01-01",
+    )
+
+    template = get_thermal_dispatch_template_network(ACPPowerModel)
+    set_device_model!(
+        template,
+        DeviceModel(
+            Line,
+            StaticBranch;
+            time_series_names = Dict(
+                BranchRatingTimeSeriesParameter => "branch_rating",
+            ),
+        ),
+    )
+
+    model = DecisionModel(template, sys; optimizer = ipopt_optimizer)
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+
+    container = PSI.get_optimization_container(model)
+    # The parameter must exist for the configured branch type.
+    @test PSI.has_container_key(container, BranchRatingTimeSeriesParameter, Line)
+    # Both apparent-power-flow constraints must be built.
+    # FromTo/ToFrom constraints have no `meta` suffix.
+    @test PSI.has_container_key(container, FlowRateConstraintFromTo, Line)
+    @test PSI.has_container_key(container, FlowRateConstraintToFrom, Line)
+end
+
+@testset "Branch rating time series with DC OPF (DCPPowerModel) network" begin
+    branches_with_rating_ts = ["1", "2", "6"]
+    rating_factors = vcat([fill(x, 6) for x in [0.99, 0.98, 1.0, 0.95]]...)
+    n_steps = 2
+
+    sys = PSB.build_system(PSITestSystems, "c_sys5")
+    add_branch_rating_time_series_to_system!(
+        sys,
+        branches_with_rating_ts,
+        n_steps,
+        rating_factors;
+        initial_date = "2024-01-01",
+    )
+
+    template = get_thermal_dispatch_template_network(DCPPowerModel)
+    set_device_model!(
+        template,
+        DeviceModel(
+            Line,
+            StaticBranch;
+            time_series_names = Dict(
+                BranchRatingTimeSeriesParameter => "branch_rating",
+            ),
+        ),
+    )
+
+    model = DecisionModel(template, sys; optimizer = ipopt_optimizer)
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+
+    container = PSI.get_optimization_container(model)
+    @test PSI.has_container_key(container, BranchRatingTimeSeriesParameter, Line)
+    # The single-direction `FlowRateConstraint` is split into "lb" / "ub" containers.
+    @test PSI.has_container_key(container, FlowRateConstraint, Line, "lb")
+    @test PSI.has_container_key(container, FlowRateConstraint, Line, "ub")
 end

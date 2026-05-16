@@ -148,7 +148,7 @@ function add_constraints!(
 
     for d in devices
         ramp_limits = PSY.get_ramp_limits(d)
-        ramp_limits === nothing && continue
+        isnothing(ramp_limits) && continue
         scaling_factor = resolution * SECONDS_IN_MINUTE
         name = PSY.get_name(d)
         for t in time_steps

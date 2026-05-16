@@ -461,7 +461,7 @@ function device_duration_compact_retrospective!(
     end
     for c in [con_up, con_down]
         # Workaround to remove invalid key combinations
-        filter!(x -> x.second !== nothing, c.data)
+        filter!(x -> !isnothing(x.second), c.data)
     end
     return
 end

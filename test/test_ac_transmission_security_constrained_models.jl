@@ -37,11 +37,11 @@
 
     # MODF should have been auto-populated during build
     nm = PSI.get_network_model(PSI.get_template(ps_model))
-    @test PSI.get_MODF_matrix(nm) !== nothing
+    @test !isnothing(PSI.get_MODF_matrix(nm))
 
     constraint_keys = [
-        PSI.ConstraintKey(PostContingencyEmergencyFlowRateConstraint, PSY.Line, "lb"),
-        PSI.ConstraintKey(PostContingencyEmergencyFlowRateConstraint, PSY.Line, "ub"),
+        PSI.ConstraintKey(PostContingencyFlowRateConstraint, PSY.Line, "lb"),
+        PSI.ConstraintKey(PostContingencyFlowRateConstraint, PSY.Line, "ub"),
     ]
     psi_constraint_test(ps_model, constraint_keys)
 end
@@ -75,8 +75,8 @@ end
         PSI.ConstraintKey(FlowRateConstraint, PSY.Line, "lb"),
         PSI.ConstraintKey(FlowRateConstraint, PSY.Line, "ub"),
         PSI.ConstraintKey(CopperPlateBalanceConstraint, PSY.System),
-        PSI.ConstraintKey(PostContingencyEmergencyFlowRateConstraint, PSY.Line, "lb"),
-        PSI.ConstraintKey(PostContingencyEmergencyFlowRateConstraint, PSY.Line, "ub"),
+        PSI.ConstraintKey(PostContingencyFlowRateConstraint, PSY.Line, "lb"),
+        PSI.ConstraintKey(PostContingencyFlowRateConstraint, PSY.Line, "ub"),
     ]
     PTDF_ref = IdDict{System, PTDF}(
         c_sys5 => PTDF(c_sys5),
@@ -176,8 +176,8 @@ end
         PSI.ConstraintKey(FlowRateConstraint, PSY.Line, "lb"),
         PSI.ConstraintKey(FlowRateConstraint, PSY.Line, "ub"),
         PSI.ConstraintKey(CopperPlateBalanceConstraint, PSY.System),
-        PSI.ConstraintKey(PostContingencyEmergencyFlowRateConstraint, PSY.Line, "lb"),
-        PSI.ConstraintKey(PostContingencyEmergencyFlowRateConstraint, PSY.Line, "ub"),
+        PSI.ConstraintKey(PostContingencyFlowRateConstraint, PSY.Line, "lb"),
+        PSI.ConstraintKey(PostContingencyFlowRateConstraint, PSY.Line, "ub"),
     ]
     PTDF_ref = IdDict{System, PTDF}(
         c_sys5 => PTDF(c_sys5),
@@ -279,8 +279,8 @@ end
         PSI.ConstraintKey(FlowRateConstraint, PSY.Line, "lb"),
         PSI.ConstraintKey(FlowRateConstraint, PSY.Line, "ub"),
         PSI.ConstraintKey(CopperPlateBalanceConstraint, PSY.System),
-        PSI.ConstraintKey(PostContingencyEmergencyFlowRateConstraint, PSY.Line, "lb"),
-        PSI.ConstraintKey(PostContingencyEmergencyFlowRateConstraint, PSY.Line, "ub"),
+        PSI.ConstraintKey(PostContingencyFlowRateConstraint, PSY.Line, "lb"),
+        PSI.ConstraintKey(PostContingencyFlowRateConstraint, PSY.Line, "ub"),
     ]
 
     lines_outages = IdDict{System, Vector{String}}(
@@ -342,7 +342,7 @@ end
         psi_constraint_test(ps_model, constraint_keys)
 
         # Sparse-container state on c_sys5: each outage that monitors lines
-        # should produce a `PostContingencyEmergencyFlowRateConstraint`
+        # should produce a `PostContingencyFlowRateConstraint`
         # SparseAxisArray whose axis-1 (outage_id) covers exactly that outage
         # set, and whose axis-2 (branch_name) is non-empty per outage. Reductions
         # may redirect individual branch names to a representative reduction name
@@ -358,7 +358,7 @@ end
             con_ub = PSI.get_constraint(
                 container,
                 PSI.ConstraintKey(
-                    PostContingencyEmergencyFlowRateConstraint, PSY.Line, "ub",
+                    PostContingencyFlowRateConstraint, PSY.Line, "ub",
                 ),
             )
             ub_keys = collect(keys(con_ub.data))
@@ -481,7 +481,7 @@ end
                     break
                 end
             end
-            @assert arc !== nothing "monitored name $name not found in any \
+            @assert !isnothing(arc) "monitored name $name not found in any \
                                      reduction map"
             modf_col = ground_truth_modf[arc, ctg]
             nz_idx =
@@ -653,7 +653,7 @@ end
     con_ub = PSI.get_constraint(
         container,
         PSI.ConstraintKey(
-            PostContingencyEmergencyFlowRateConstraint, PSY.Line, "ub",
+            PostContingencyFlowRateConstraint, PSY.Line, "ub",
         ),
     )
     ub_outages = Set(k[1] for k in keys(con_ub.data))
@@ -699,8 +699,8 @@ end
     end
 
     constraint_keys = [
-        PSI.ConstraintKey(PostContingencyEmergencyFlowRateConstraint, PSY.Line, "lb"),
-        PSI.ConstraintKey(PostContingencyEmergencyFlowRateConstraint, PSY.Line, "ub"),
+        PSI.ConstraintKey(PostContingencyFlowRateConstraint, PSY.Line, "lb"),
+        PSI.ConstraintKey(PostContingencyFlowRateConstraint, PSY.Line, "ub"),
     ]
     for (label, NetFormulation, optimizer) in [
         ("PTDFPowerModel", PTDFPowerModel, HiGHS_optimizer),
@@ -782,7 +782,7 @@ end
     # individual member names are redirected, not stored.
     con_ub = PSI.get_constraint(
         container,
-        PSI.ConstraintKey(PostContingencyEmergencyFlowRateConstraint, PSY.Line, "ub"),
+        PSI.ConstraintKey(PostContingencyFlowRateConstraint, PSY.Line, "ub"),
     )
     name_axis = Set(k[2] for k in keys(con_ub.data))
     @test representative_name in name_axis
@@ -801,8 +801,8 @@ end
     sys = PSB.build_system(PSITestSystems, "c_sys14")
     line = first(get_components(PSY.Line, sys))
     transformer = first(get_components(PSY.Transformer2W, sys))
-    @test line !== nothing
-    @test transformer !== nothing
+    @test !isnothing(line)
+    @test !isnothing(transformer)
 
     outage = GeometricDistributionForcedOutage(;
         mean_time_to_recovery = 10,
@@ -857,13 +857,13 @@ end
         line_cons = PSI.get_constraint(
             container,
             PSI.ConstraintKey(
-                PostContingencyEmergencyFlowRateConstraint, PSY.Line, meta,
+                PostContingencyFlowRateConstraint, PSY.Line, meta,
             ),
         )
         transformer_cons = PSI.get_constraint(
             container,
             PSI.ConstraintKey(
-                PostContingencyEmergencyFlowRateConstraint, PSY.Transformer2W, meta,
+                PostContingencyFlowRateConstraint, PSY.Transformer2W, meta,
             ),
         )
         for t in time_steps
@@ -873,4 +873,107 @@ end
                   transformer_cons[outage_uuid_str, transformer_name, t]
         end
     end
+end
+
+function _attach_all_branch_outages!(sys)
+    branches = collect(get_components(ACTransmission, sys))
+    for line_name in ("1", "2", "3")
+        add_supplemental_attribute!(
+            sys,
+            get_component(ACTransmission, sys, line_name),
+            GeometricDistributionForcedOutage(;
+                mean_time_to_recovery = 10,
+                outage_transition_probability = 0.9999,
+                monitored_components = branches,
+            ),
+        )
+    end
+    return sys
+end
+
+function _test_post_contingency_line_duals(container)
+    duals = PSI.get_duals(container)
+    collected = Float64[]
+    for meta in ("lb", "ub")
+        cons_key = PSI.ConstraintKey(PostContingencyFlowRateConstraint, PSY.Line, meta)
+        cons = PSI.get_constraint(container, cons_key)
+        @test haskey(duals, cons_key)
+        dual = duals[cons_key]
+        # Dual container must mirror the sparse constraint's keys exactly.
+        @test Set(keys(dual.data)) == Set(keys(cons.data))
+        @test !isempty(dual.data)
+        @test all(isfinite, values(dual.data))
+        append!(collected, values(dual.data))
+    end
+    # Some post-contingency constraint binds in this congested system, so the
+    # duals are not all the zero-initialized default — proves the sparse path
+    # actually computed them rather than leaving the container untouched.
+    @test any(!iszero, collected)
+
+    # SparseAxisArray duals must also round-trip through `read_duals`.
+    dual_frames = PSI.read_duals(container)
+    for meta in ("lb", "ub")
+        df = dual_frames[PSI.ConstraintKey(
+            PostContingencyFlowRateConstraint,
+            PSY.Line,
+            meta,
+        )]
+        @test nrow(df) > 0
+        @test ncol(df) > 0
+        @test all(isfinite, Matrix(df))
+    end
+end
+
+@testset "Duals of post-contingency flow constraints (sparse dual path)" begin
+    # Exercises the sparse `assign_dual_variable!` / `_calculate_dual_variable_value!`
+    # path on an LP (thermal dispatch) so HiGHS returns dual values directly.
+    c_sys5 = _attach_all_branch_outages!(PSB.build_system(PSITestSystems, "c_sys5"))
+    template = get_thermal_dispatch_template_network(
+        NetworkModel(PTDFPowerModel; PTDF_matrix = PTDF(c_sys5)),
+    )
+    set_device_model!(
+        template,
+        DeviceModel(
+            Line,
+            SecurityConstrainedStaticBranch;
+            duals = [PostContingencyFlowRateConstraint],
+        ),
+    )
+    set_device_model!(template, Transformer2W, SecurityConstrainedStaticBranch)
+    set_device_model!(template, TapTransformer, SecurityConstrainedStaticBranch)
+
+    ps_model = DecisionModel(template, c_sys5; optimizer = HiGHS_optimizer)
+    @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+    @test solve!(ps_model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    _test_post_contingency_line_duals(PSI.get_optimization_container(ps_model))
+end
+
+@testset "Duals of post-contingency flow constraints (MILP / unit commitment path)" begin
+    # Unit-commitment binaries make this a MILP, so duals go through
+    # `process_duals` (relax integers, re-solve LP, copy duals) — the sparse
+    # `_copy_dual_values!` path the LP testset above does not reach.
+    c_sys5 = _attach_all_branch_outages!(PSB.build_system(PSITestSystems, "c_sys5"))
+    template = ProblemTemplate(NetworkModel(PTDFPowerModel; PTDF_matrix = PTDF(c_sys5)))
+    set_device_model!(template, PowerLoad, StaticPowerLoad)
+    set_device_model!(template, ThermalStandard, ThermalStandardUnitCommitment)
+    set_device_model!(
+        template,
+        DeviceModel(
+            Line,
+            SecurityConstrainedStaticBranch;
+            duals = [PostContingencyFlowRateConstraint],
+        ),
+    )
+    set_device_model!(template, Transformer2W, SecurityConstrainedStaticBranch)
+    set_device_model!(template, TapTransformer, SecurityConstrainedStaticBranch)
+
+    ps_model = DecisionModel(template, c_sys5; optimizer = HiGHS_optimizer)
+    @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+    @test PSI.is_milp(PSI.get_optimization_container(ps_model))
+    @test solve!(ps_model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    _test_post_contingency_line_duals(PSI.get_optimization_container(ps_model))
 end

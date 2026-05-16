@@ -71,6 +71,11 @@ those AffExprs/ConstraintRefs by reference. Returns the source
 `SparseAxisArray` so the caller indexes `.data[(outage_id, name, t)]` per
 time step instead of re-scanning the container Dict per probe.
 """
+# Dispatch (not an `isa` branch) skips non-sparse shared-arc containers: only
+# the post-contingency `SparseAxisArray`s are keyed by (outage_id, name, t).
+_post_contingency_match(c::SparseAxisArray, target::Tuple) = haskey(c.data, target)
+_post_contingency_match(::Any, ::Tuple) = false
+
 function _find_shared_post_contingency_expression_source(
     container::OptimizationContainer,
     ::Type{T},
@@ -83,8 +88,7 @@ function _find_shared_post_contingency_expression_source(
     for (key, ec) in get_expressions(container)
         get_entry_type(key) === T || continue
         get_component_type(key) === V && continue
-        ec isa SparseAxisArray || continue
-        haskey(ec.data, target) && return ec
+        _post_contingency_match(ec, target) && return ec
     end
     return nothing
 end
@@ -108,14 +112,13 @@ function _find_shared_post_contingency_constraint_sources(
     for (key, cc) in get_constraints(container)
         get_entry_type(key) === T || continue
         get_component_type(key) === V && continue
-        cc isa SparseAxisArray || continue
-        haskey(cc.data, target) || continue
+        _post_contingency_match(cc, target) || continue
         if key.meta == "lb"
             src_lb = cc
         elseif key.meta == "ub"
             src_ub = cc
         end
-        src_lb !== nothing && src_ub !== nothing && break
+        !isnothing(src_lb) && !isnothing(src_ub) && break
     end
     return src_lb, src_ub
 end
@@ -220,7 +223,18 @@ function _resolve_monitored_arcs(
             c2r = get(c2r_maps, T, Dict{String, String}())
             seen = Set{Tuple{Int, Int}}()
             for name in sort!(collect(names))
-                container_name = haskey(n2a, name) ? name : c2r[name]
+                if haskey(n2a, name)
+                    container_name = name
+                elseif haskey(c2r, name)
+                    container_name = c2r[name]
+                else
+                    error(
+                        "Monitored component \"$name\" (type $T) for outage $uuid is " *
+                        "absent from both the network-reduction name-to-arc map and the " *
+                        "component-to-reduction map. Verify the component exists in the " *
+                        "system and is modeled with a security-constrained branch formulation.",
+                    )
+                end
                 arc, reduction_kind = n2a[container_name]
                 arc in seen && continue
                 push!(seen, arc)
@@ -242,7 +256,7 @@ function add_constraints!(
     device_model::DeviceModel{V, U},
     network_model::NetworkModel{X},
 ) where {
-    T <: PostContingencyEmergencyFlowRateConstraint,
+    T <: PostContingencyFlowRateConstraint,
     V <: PSY.ACTransmission,
     U <: AbstractSecurityConstrainedStaticBranch,
     X <: PM.AbstractPowerModel,
@@ -272,7 +286,7 @@ function add_constraints!(
                 src_lb, src_ub = _find_shared_post_contingency_constraint_sources(
                     container, T, V, outage_id, name, first(time_steps),
                 )
-                if src_lb !== nothing && src_ub !== nothing
+                if !isnothing(src_lb) && !isnothing(src_ub)
                     for t in time_steps
                         con_ub[outage_id, name, t] =
                             src_ub.data[(outage_id, name, t)]
@@ -370,19 +384,26 @@ function add_post_contingency_flow_expressions!(
         end
     end
 
-    # Parallel JuMP `AffExpr` build (no libklu). Each task returns its results;
-    # the main thread does the serial writes into `expression_container`. Matches
-    # the PTDF flow-expression pattern in `AC_branches.jl` and avoids relying on
-    # SparseAxisArray's Dict being safe under concurrent setindex!.
+    # Parallel JuMP `AffExpr` build (no libklu): tasks return results, the main
+    # thread does the serial writes, so we never rely on SparseAxisArray's Dict
+    # being safe under concurrent setindex!. The try/catch surfaces the inner
+    # exception, since `build!` otherwise shows only the wrapping
+    # `TaskFailedException`. Mirrors the PTDF pattern in `AC_branches.jl`.
     tasks = map(fresh_resolved) do (uuid, entries)
         outage_id = string(uuid)
-        Threads.@spawn _build_post_contingency_flow_expressions_for_outage(
-            time_steps,
-            outage_id,
-            modf_cols,
-            nodal_balance_expressions,
-            entries,
-        )
+        Threads.@spawn try
+            _build_post_contingency_flow_expressions_for_outage(
+                time_steps,
+                outage_id,
+                modf_cols,
+                nodal_balance_expressions,
+                entries,
+            )
+        catch e
+            @error "Post-contingency flow-expression task failed" outage_id =
+                outage_id exception = (e, catch_backtrace())
+            rethrow()
+        end
     end
     for (i, task) in enumerate(tasks)
         (uuid, _) = fresh_resolved[i]
@@ -424,7 +445,7 @@ function _copy_existing_post_contingency_expressions!(
             src_ec = _find_shared_post_contingency_expression_source(
                 container, T, V, outage_id, name, first(time_steps),
             )
-            if src_ec === nothing
+            if isnothing(src_ec)
                 push!(unresolved, entry)
             else
                 for t in time_steps
@@ -515,7 +536,6 @@ function construct_device!(
     add_constraints!(container, FlowRateConstraint, devices, device_model, network_model)
     add_feedforward_constraints!(container, device_model, devices)
     objective_function!(container, devices, device_model, X)
-    add_constraint_dual!(container, sys, device_model)
 
     add_post_contingency_flow_expressions!(
         container,
@@ -526,10 +546,14 @@ function construct_device!(
 
     add_constraints!(
         container,
-        PostContingencyEmergencyFlowRateConstraint,
+        PostContingencyFlowRateConstraint,
         device_model,
         network_model,
     )
+
+    # Must run after the post-contingency constraints are built so their
+    # SparseAxisArray dual containers are registered alongside FlowRateConstraint.
+    add_constraint_dual!(container, sys, device_model)
 
     return
 end
@@ -595,7 +619,6 @@ function construct_device!(
     )
     add_feedforward_constraints!(container, device_model, devices)
     objective_function!(container, devices, device_model, X)
-    add_constraint_dual!(container, sys, device_model)
 
     add_post_contingency_flow_expressions!(
         container,
@@ -606,10 +629,14 @@ function construct_device!(
 
     add_constraints!(
         container,
-        PostContingencyEmergencyFlowRateConstraint,
+        PostContingencyFlowRateConstraint,
         device_model,
         network_model,
     )
+
+    # Must run after the post-contingency constraints are built so their
+    # SparseAxisArray dual containers are registered alongside FlowRateConstraint.
+    add_constraint_dual!(container, sys, device_model)
 
     return
 end
@@ -649,7 +676,7 @@ function add_post_contingency_flow_expressions!(
                 src_ec = _find_shared_post_contingency_expression_source(
                     container, T, V, outage_id, name, first(time_steps),
                 )
-                if src_ec !== nothing
+                if !isnothing(src_ec)
                     for t in time_steps
                         expression_container[outage_id, name, t] =
                             src_ec.data[(outage_id, name, t)]

@@ -4,7 +4,7 @@ function _any_component_has_branch_rating_ts(device_model::DeviceModel)
         BranchRatingTimeSeriesParameter,
         nothing,
     )
-    ts_name === nothing && return false
+    isnothing(ts_name) && return false
     for c in get_device_cache(device_model)
         if PSY.has_time_series(c, PSY.SingleTimeSeries, ts_name) ||
            PSY.has_time_series(c, PSY.Deterministic, ts_name)
@@ -138,7 +138,7 @@ function validate_template_impl!(model::OperationModel)
         else
             push!(network_model.modeled_ac_branch_types, get_component_type(device_model))
         end
-        if get_attribute(device_model, "filter_function") !== nothing
+        if !isnothing(get_attribute(device_model, "filter_function"))
             model_has_branch_filters = true
         end
     end
@@ -229,7 +229,7 @@ function _build_device_model_outages!(
         per_type = Dict{DataType, Set{String}}()
         for uuid in monitored
             component = IS.get_component(sys, uuid)
-            if component === nothing
+            if isnothing(component)
                 @warn "Outage $(outage_uuid) references monitored component \
                        UUID $(uuid) that is not present in the system; \
                        skipping." _group = LOG_GROUP_MODELS_VALIDATION
@@ -261,7 +261,7 @@ function _build_device_model_outages!(
             D in attached_types || continue
             has_matching_sc_model = true
             sel = selection[Symbol(D)]
-            if sel !== nothing
+            if !isnothing(sel)
                 outage_uuid in sel || continue
             else
                 include_planned =
@@ -292,7 +292,7 @@ function _build_device_model_outages!(
     for m in sc_models
         D = get_component_type(m)
         sel = selection[Symbol(D)]
-        sel === nothing && continue
+        isnothing(sel) && continue
         for uuid in sel
             if !haskey(m.outages, uuid)
                 @warn "Outage $(uuid) listed on DeviceModel{$D, \

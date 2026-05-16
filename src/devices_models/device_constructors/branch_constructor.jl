@@ -101,6 +101,16 @@ function construct_device!(
             StaticBranch(),
         )
     end
+
+    if haskey(get_time_series_names(device_model), BranchRatingTimeSeriesParameter)
+        add_parameters!(
+            container,
+            BranchRatingTimeSeriesParameter,
+            devices,
+            device_model,
+        )
+    end
+
     add_feedforward_arguments!(container, device_model, devices)
     return
 end
@@ -333,6 +343,16 @@ function construct_device!(
             StaticBranch(),
         )
     end
+
+    if haskey(get_time_series_names(device_model), BranchRatingTimeSeriesParameter)
+        add_parameters!(
+            container,
+            BranchRatingTimeSeriesParameter,
+            devices,
+            device_model,
+        )
+    end
+
     add_feedforward_arguments!(container, device_model, devices)
     return
 end

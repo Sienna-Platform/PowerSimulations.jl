@@ -67,7 +67,7 @@ function update_parameter_values!(
     parameter_array = get_parameter_array(optimization_container, key)
     parameter_attributes = get_parameter_attributes(optimization_container, key)
     service = PSY.get_component(T, get_system(model), key.meta)
-    @assert service !== nothing
+    @assert !isnothing(service)
     input = get_decision_states(simulation_state)
     _update_parameter_values!(
         parameter_array,

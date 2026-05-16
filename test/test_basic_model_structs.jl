@@ -14,7 +14,7 @@ end
     @test NetworkModel(
         PTDFPowerModel;
         use_slacks = true,
-        power_flow_evaluation = ACPowerFlow(;
+        power_flow_evaluation = ACPolarPowerFlow(;
             exporter =
             PSSEExportPowerFlow(
                 :v33,

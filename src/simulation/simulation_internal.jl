@@ -41,7 +41,7 @@ function SimulationInternal(
         for st in 1:model_count
             count_dict[s][st] = 0
         end
-        if get_emulation_model(models) !== nothing
+        if !isnothing(get_emulation_model(models))
             count_dict[s][model_count + 1] = 0
         end
     end

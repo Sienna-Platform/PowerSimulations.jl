@@ -597,9 +597,8 @@ function update_pf_system!(
         for (key, component_map) in inputs
             result = lookup_value(container, key)
             for (device_id, device_name) in component_map
-                injection_values = result[device_id, :]
                 comp = PSY.get_component(get_component_type(key), sys, device_name)
-                val = jump_value(injection_values[time_step])
+                val = jump_value(result[device_id, time_step])
                 _update_component!(comp, Val(category), val, get_base_power(container))
             end
         end
@@ -706,7 +705,7 @@ function _accumulate_headroom!(
 
         # limits.max is already in SYSTEM_BASE because PSI sets units at init
         p_max_static = PFS.get_active_power_limits_for_power_flow(comp).max
-        has_ts = ts_axis !== nothing && device_name ∈ ts_axis
+        has_ts = !isnothing(ts_axis) && device_name ∈ ts_axis
 
         for t in 1:n_time_steps
             bus_types[bus_ix, t] ∈ (PSY.ACBusTypes.REF, PSY.ACBusTypes.PV) || continue
@@ -920,9 +919,21 @@ function solve_power_flow!(
             PFS.solve_power_flow!(pf_data)
         end
     end
-    pf_e_data.is_solved = true
+    pf_e_data.is_solved = _check_pf_converged(pf_data)
     return
 end
+
+# Containers that actually solve a power flow report convergence via `get_converged`;
+# pure exporters (PSSEExporter) never solve and are always considered "solved".
+function _check_pf_converged(pf_data::PFS.PowerFlowData)
+    converged = all(PFS.get_converged(pf_data))
+    converged || @error(
+        "Power flow evaluation $(typeof(pf_data)) failed to converge for one or " *
+        "more time steps; downstream aux-variable values would contain NaNs",
+    )
+    return converged
+end
+_check_pf_converged(::PFS.PSSEExporter) = true
 
 # Currently nothing to write back to the optimization container from a PSSEExporter
 calculate_aux_variable_value!(::OptimizationContainer,

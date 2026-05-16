@@ -112,7 +112,7 @@ function open_store(
         store = HdfSimulationStore(joinpath(directory, filename), mode)
         return func(store)
     finally
-        if store !== nothing
+        if !isnothing(store)
             close(store)
         end
     end
@@ -126,7 +126,7 @@ function Base.close(store::HdfSimulationStore)
 end
 
 function Base.isopen(store::HdfSimulationStore)
-    return store.file === nothing ? false : HDF5.isopen(store.file)
+    return isnothing(store.file) ? false : HDF5.isopen(store.file)
 end
 
 function Base.flush(store::HdfSimulationStore)

@@ -20,13 +20,13 @@ function SimulationResultsExport(
     # This end time is outside the bounds of the simulation.
     sim_end_time = params.initial_time + params.step_resolution * params.num_steps
 
-    if start_time === nothing
+    if isnothing(start_time)
         start_time = params.initial_time
     elseif start_time < params.initial_time || start_time >= sim_end_time
         throw(IS.InvalidValue("invalid start_time: $start_time"))
     end
 
-    if end_time === nothing
+    if isnothing(end_time)
         # Reduce the end_time to be within the simulation.
         end_time = sim_end_time - Dates.Second(1)
     elseif end_time < params.initial_time || end_time >= sim_end_time
