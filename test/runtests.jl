@@ -5,16 +5,8 @@ import Aqua
 Aqua.test_undefined_exports(PowerSimulations)
 Aqua.test_ambiguities(PowerSimulations)
 Aqua.test_stale_deps(PowerSimulations)
-# `find_persistent_tasks_deps` and `test_persistent_tasks` spawn a fresh
-# sub-environment via Pkg.develop and re-resolve the full dependency graph.
-# That sub-env does not inherit the `[sources]` overrides from
-# `test/Project.toml`, so it cannot satisfy
-# `PowerSimulations`' `PowerNetworkMatrices = "^0.21"` compat (PNM 0.21 is not
-# yet registered) nor `PowerFlows` from the `jd/bump_pnm` branch. Re-enable
-# both calls once PNM 0.21 is registered and the matching PowerFlows is
-# tagged.
-# Aqua.find_persistent_tasks_deps(PowerSimulations)
-# Aqua.test_persistent_tasks(PowerSimulations)
+Aqua.find_persistent_tasks_deps(PowerSimulations)
+Aqua.test_persistent_tasks(PowerSimulations)
 Aqua.test_unbound_args(PowerSimulations)
 
 const LOG_FILE = "power-simulations-test.log"

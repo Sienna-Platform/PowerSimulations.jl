@@ -157,20 +157,21 @@ _is_planned_outage(::PSY.PlannedOutage) = true
 _is_planned_outage(::PSY.Outage) = false
 
 """
-Populate `device_model.outages` for every security-constrained branch device
-model in the template, in a single pass over the system's outage supplemental
-attributes. `DeviceModel{D, SC}` claims an outage iff `D` is among the types
-of the outaged (attached) components — so the OUTAGED component's type must
-be covered by an SC DeviceModel for the outage to contribute any constraints.
-For a multi-component outage tripping components of N>1 types, every matching
-SC DeviceModel claims it; the post-contingency build (`add_post_contingency_*`)
-deduplicates by referencing the first claimer's expressions/constraints.
+Populate `device_model.outages` for every security-constrained (SC) branch
+device model in the template, in a single pass over the system's outage
+supplemental attributes. `DeviceModel{D, SC}` claims an outage iff `D` is
+among the types of the outaged (attached) components — so the OUTAGED
+component's type must be covered by an SC `DeviceModel` for the outage to
+contribute any constraints. For a multi-component outage tripping components
+of N>1 types, every matching SC `DeviceModel` claims it; the post-contingency
+build (`add_post_contingency_*`) deduplicates by referencing the first
+claimer's expressions/constraints.
 
 The inner dict carries the per-modeled-type breakdown of monitored component
-names. Monitored components do NOT need to be SC-formulated themselves: an
-SC `DeviceModel{Line, SC}` may claim an outage whose monitored set includes
-non-SC `Transformer2W` components, and the post-contingency build then bounds
-those Transformer flows under that outage.
+names. Monitored components do NOT need to be security-constrained themselves:
+an SC `DeviceModel{Line, SecurityConstrainedStaticBranch}` may claim an outage
+whose monitored set includes non-SC `Transformer2W` components, and the
+post-contingency build then bounds those Transformer flows under that outage.
 
 Selection semantics:
 - If `m.outages` is non-empty when this runs, the user explicitly listed UUIDs
@@ -183,7 +184,9 @@ Selection semantics:
 
 Empty `monitored_components` on an outage is treated as "monitor nothing" — a
 warning is emitted. A monitored component whose type is not modeled by the
-template is reported once per type with the offending outage UUIDs.
+template is reported once per type with the offending outage UUIDs and is
+silently skipped: no post-contingency variables or constraints are built for
+that monitored component under any outage.
 """
 function _build_device_model_outages!(
     template::ProblemTemplate,

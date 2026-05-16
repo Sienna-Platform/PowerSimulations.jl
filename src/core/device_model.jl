@@ -40,11 +40,13 @@ feedforward to enable passing values between operation model at simulation time
   - `time_series_names::Dict{Type{<:TimeSeriesParameter}, String} = get_default_time_series_names(D, B)` : use to specify time series names associated to the device`
   - `attributes::Dict{String, Any} = get_default_attributes(D, B)` : use to specify attributes to the device
   - `outages::AbstractVector{<:PSY.Outage} = PSY.Outage[]` : N-1 contingencies to model
-    when the formulation is security-constrained. The constructor records the user's UUID
-    selection; template validation later expands each entry to its per-type set of monitored
-    component names. An empty default triggers auto-discovery of every outage in the system
-    that monitors at least one component of type `D`. If `B` is not security-constrained,
-    a non-empty value is dropped with a warning.
+    when the formulation is security-constrained. The constructor stores the
+    `IS.get_uuid(outage)` of each entry as a key in the model's
+    `outages::Dict{UUID, Dict{DataType, Set{String}}}` field with empty inner maps;
+    template validation later fills the inner maps with the per-type set of monitored
+    component names that each outage carries. An empty default triggers auto-discovery
+    of every outage in the system that monitors at least one component of type `D`.
+    If `B` is not security-constrained, a non-empty value is dropped with a warning.
 
 # Example
 ```julia

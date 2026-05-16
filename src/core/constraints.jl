@@ -275,12 +275,12 @@ each monitored arc m, the post-contingency flow constraint is:
 
 ```math
 \\begin{align*}
-&  -R_m \\leq \\sum_{j} \text{PTDF}^\\text{post}_{m,c}[j] \\cdot p_j \\leq R_m,\\quad \\forall t \\in \\{1,\\dots, T\\} \\\\
-&  \\text{PTDF}^{\\text{post}}_{m,c} = vmodf[m, c] \\\\
+&  -R_m \\leq \\sum_{j} \\text{PTDF}^{\\text{post}}_{m,c}[j] \\cdot p_j \\leq R_m,\\quad \\forall t \\in \\{1,\\dots, T\\} \\\\
+&  \\text{PTDF}^{\\text{post}}_{m,c} = vmodf[m, c]
 \\end{align*}
 ```
 """
-struct PostContingencyEmergencyFlowRateConstraint <: PostContingencyConstraintType end
+struct PostContingencyFlowRateConstraint <: PostContingencyConstraintType end
 
 """
 Struct to create the constraint for branch flow rate limits from the 'from' bus to the 'to' bus.

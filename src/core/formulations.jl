@@ -140,7 +140,43 @@ struct StaticBranchUnbounded <: AbstractBranchFormulation end
 abstract type AbstractSecurityConstrainedStaticBranch <: AbstractBranchFormulation end
 
 """
-Branch formulation to formulate N-1 constraints in ACTransmission Branches that uses inequalties
+Security-constrained branch formulation that enforces post-contingency
+emergency flow limits as inequality constraints on ACTransmission branches
+under N-k contingency scenarios. The set of contingencies modeled is the
+union of `outages` configured on each `DeviceModel{<:ACTransmission, <:AbstractSecurityConstrainedStaticBranch}`
+in the template.
+
+Concretely, for every monitored ACTransmission branch and every claimed
+outage, this formulation adds:
+
+```
+-rate_emergency ≤ post_contingency_flow ≤ rate_emergency
+```
+
+where `post_contingency_flow` is derived from the modification factors
+(MODF) provided by `PowerNetworkMatrices` and `rate_emergency` comes from
+the branch's `rating` (or `rating_b` when a `PostContingencyBranchRatingTimeSeriesParameter`
+is attached).
+
+Outage modeling notes:
+- An outage UUID is "claimed" by `DeviceModel{D, SC}` iff the type of every
+  outaged (associated) component on that outage is `D`. The OUTAGED
+  component's type — not the monitored components — must be covered by an
+  SC `DeviceModel` for the outage to contribute any constraints.
+- A monitored component whose type is not modeled by the template is
+  silently skipped (warned once per type at template validation; no
+  post-contingency constraints are built for it).
+- `PSY.PlannedOutage` instances are excluded by default; set
+  `attributes = Dict("include_planned_outages" => true)` on the
+  `DeviceModel` to include them.
+- Both the monitored AND the outaged component endpoints are pinned in the
+  network reduction (added to `irreducible_buses`). This prevents radial /
+  degree-two reductions from collapsing the contingency arc out of the
+  reduced topology, which would otherwise leave PNM's MODF column without a
+  matching arc to apply.
+
+See `_build_device_model_outages!` for the full claim algorithm and the
+internal docstring on outage discovery.
 """
 struct SecurityConstrainedStaticBranch <: AbstractSecurityConstrainedStaticBranch end
 
