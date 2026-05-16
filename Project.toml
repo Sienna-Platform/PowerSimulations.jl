@@ -49,10 +49,10 @@ JuMP = "^1.28"
 LinearAlgebra = "1"
 Logging = "1"
 MathOptInterface = "1"
-PowerFlows = "^0.16"
+PowerFlows = "^0.17"
 PowerModels = "^0.21.5"
 PowerNetworkMatrices = "^0.21"
-PowerSystems = "^5.8"
+PowerSystems = "^5.10"
 PrettyTables = "2.4, 3.1"
 ProgressMeter = "^1.5"
 Random = "^1.10"
@@ -61,9 +61,3 @@ SparseArrays = "1"
 TimeSeries = "~0.25"
 TimerOutputs = "~0.5"
 julia = "^1.10"
-
-[sources]
-# PowerFlows branch with the matching PNM compat bump; without this pin
-# CI cannot resolve the test environment because the registered
-# PowerFlows version restricts PowerNetworkMatrices to a lower range.
-PowerFlows = {url = "https://github.com/NREL-Sienna/PowerFlows.jl.git", rev = "jd/bump_pnm"}
