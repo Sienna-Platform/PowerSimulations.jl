@@ -190,7 +190,7 @@ function _get_filters(branch_models::BranchModelContainer)
     filters = Dict{DataType, Function}()
     for v in values(branch_models)
         filter_func = get_attribute(v, "filter_function")
-        if filter_func !== nothing
+        if !isnothing(filter_func)
             filters[get_component_type(v)] = filter_func
         end
     end
@@ -217,7 +217,12 @@ function _get_irreducible_buses_due_to_monitored_components(
     @debug "Identifying buses that are irreducible due to monitored components"
     irreducible_buses = Set{Int64}()
     _add_timeseries_irreducible_buses!(irreducible_buses, sys, network_model, branch_models)
-    _add_outage_monitored_irreducible_buses!(irreducible_buses, sys)
+    # Outage-monitored components only matter when an SC formulation actually consumes them.
+    # Otherwise stray Outage attributes in the system would force a provided PTDF to be
+    # discarded and recomputed for every non-SC build.
+    if _template_uses_security_constrained_branch(branch_models)
+        _add_outage_monitored_irreducible_buses!(irreducible_buses, sys)
+    end
     return collect(irreducible_buses)
 end
 
@@ -261,6 +266,8 @@ function _add_outage_monitored_irreducible_buses!(
     sys::PSY.System,
 )
     for outage in PSY.get_supplemental_attributes(PSY.Outage, sys)
+        # Monitored-component buses must remain visible so post-contingency
+        # flow constraints reference real bus numbers.
         for uuid in PSY.get_monitored_components(outage)
             component = IS.get_component(sys, uuid)
             if isnothing(component)
@@ -272,6 +279,15 @@ function _add_outage_monitored_irreducible_buses!(
             end
             _push_component_buses!(irreducible_buses, component)
         end
+        # Outaged-component buses must also remain visible: PNM's MODF column
+        # for the contingency is keyed by the outaged arc's endpoints. If the
+        # network reduction collapses those buses (e.g., a degree-two reduction
+        # between them), the contingency arc no longer exists as a discrete
+        # element in the reduced topology and the MODF column would be missing
+        # or apply to the wrong arc.
+        for component in PSY.get_associated_components(sys, outage)
+            _push_component_buses!(irreducible_buses, component)
+        end
     end
     return
 end
@@ -280,6 +296,18 @@ function _push_component_buses!(buses::Set{Int64}, branch::PSY.Branch)
     arc = PSY.get_arc(branch)
     push!(buses, PSY.get_number(PSY.get_from(arc)))
     push!(buses, PSY.get_number(PSY.get_to(arc)))
+    return
+end
+
+function _push_component_buses!(buses::Set{Int64}, branch::PSY.ThreeWindingTransformer)
+    for arc in (
+        PSY.get_primary_star_arc(branch),
+        PSY.get_secondary_star_arc(branch),
+        PSY.get_tertiary_star_arc(branch),
+    )
+        push!(buses, PSY.get_number(PSY.get_from(arc)))
+        push!(buses, PSY.get_number(PSY.get_to(arc)))
+    end
     return
 end
 
@@ -388,8 +416,8 @@ function instantiate_network_model!(
         model,
         branch_models,
     )
-    if get_PTDF_matrix(model) === nothing || !isempty(irreducible_buses)
-        if get_PTDF_matrix(model) !== nothing
+    if isnothing(get_PTDF_matrix(model)) || !isempty(irreducible_buses)
+        if !isnothing(get_PTDF_matrix(model))
             @warn "Provided PTDF Matrix is being ignored since irreducible buses were identified from monitored components (TimeSeriesBounds and/or outage-monitored devices). Recalculating PTDF Matrix with PowerNetworkMatrices.VirtualPTDF and the identified irreducible buses."
         else
             @info "No PTDF Matrix provided. Calculating using PowerNetworkMatrices.VirtualPTDF"
@@ -476,7 +504,7 @@ function instantiate_network_model!(
         _assign_subnetworks_to_buses(model, sys)
     end
     if _template_uses_security_constrained_branch(branch_models)
-        if get_MODF_matrix(model) === nothing
+        if isnothing(get_MODF_matrix(model))
             @info "No MODF Matrix provided. Calculating using PowerNetworkMatrices.VirtualMODF"
             model.MODF_matrix = PNM.VirtualMODF(
                 sys;

@@ -37,7 +37,8 @@ Base.isempty(
 ) =
     isempty(reduction_tracker.variable_dict) &&
     isempty(reduction_tracker.parameter_dict) &&
-    isempty(reduction_tracker.constraint_dict)
+    isempty(reduction_tracker.constraint_dict) &&
+    isempty(reduction_tracker.constraint_map_by_type)
 
 Base.empty!(
     reduction_tracker::BranchReductionOptimizationTracker,
@@ -45,6 +46,7 @@ Base.empty!(
     empty!(reduction_tracker.variable_dict)
     empty!(reduction_tracker.parameter_dict)
     empty!(reduction_tracker.constraint_dict)
+    empty!(reduction_tracker.constraint_map_by_type)
 end
 
 function BranchReductionOptimizationTracker()
@@ -166,7 +168,7 @@ function get_branch_argument_parameter_axes(
         reduction_entry = net_reduction_data.all_branch_maps_by_type[reduction][T][arc]
         device_with_time_series =
             PNM.get_device_with_time_series(reduction_entry, V, ts_name)
-        if device_with_time_series !== nothing
+        if !isnothing(device_with_time_series)
             push!(name_axis, name)
             push!(
                 ts_uuid_axis,
