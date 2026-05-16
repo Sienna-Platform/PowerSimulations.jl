@@ -20,6 +20,21 @@ function _round_cache_values!(cache::SparseAxisArray)
     return
 end
 
+# DenseAxisArray duals broadcast over the backing array. Post-contingency
+# duals are SparseAxisArray (Dict-backed), where `.data .= …` is undefined, so
+# copy per key instead.
+function _copy_dual_values!(dual::DenseAxisArray, constraint::DenseAxisArray)
+    dual.data .= jump_value.(constraint).data
+    return
+end
+
+function _copy_dual_values!(dual::SparseAxisArray, constraint::SparseAxisArray)
+    for (k, cref) in constraint.data
+        dual.data[k] = jump_value(cref)
+    end
+    return
+end
+
 function process_duals(container::OptimizationContainer, lp_optimizer)
     var_container = get_variables(container)
     for (k, v) in var_container
@@ -87,7 +102,7 @@ function process_duals(container::OptimizationContainer, lp_optimizer)
     if JuMP.has_duals(jump_model)
         for (key, dual) in get_duals(container)
             constraint = get_constraint(container, key)
-            dual.data .= jump_value.(constraint).data
+            _copy_dual_values!(dual, constraint)
         end
     end
 
@@ -97,10 +112,10 @@ function process_duals(container::OptimizationContainer, lp_optimizer)
         end
         info = cache[key]
         JuMP.unfix.(variable)
-        if info.lb !== nothing
+        if !isnothing(info.lb)
             JuMP.set_lower_bound.(variable, info.lb)
         end
-        if info.ub !== nothing
+        if !isnothing(info.ub)
             JuMP.set_upper_bound.(variable, info.ub)
         end
         if info.is_integer
@@ -108,7 +123,7 @@ function process_duals(container::OptimizationContainer, lp_optimizer)
         else
             JuMP.set_binary.(variable)
         end
-        if info.fixed_int_value !== nothing
+        if !isnothing(info.fixed_int_value)
             JuMP.fix.(variable, info.fixed_int_value)
         end
     end
