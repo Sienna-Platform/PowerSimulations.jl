@@ -64,7 +64,7 @@ function get_variable_upper_bound(
     if l1 == 0.0 && l0 == 0.0
         return 0.0
     else
-        return nothing
+        return
     end
 end
 

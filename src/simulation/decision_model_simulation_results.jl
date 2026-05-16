@@ -657,7 +657,7 @@ function load_results!(
     end
     set_results_timestamps!(res, new_timestamps)
 
-    return nothing
+    return
 end
 
 function _read_optimizer_stats(

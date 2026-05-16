@@ -74,7 +74,7 @@ time step instead of re-scanning the container Dict per probe.
 # Dispatch (not an `isa` branch) skips non-sparse shared-arc containers: only
 # the post-contingency `SparseAxisArray`s are keyed by (outage_id, name, t).
 _post_contingency_match(c::SparseAxisArray, target::Tuple) = haskey(c.data, target)
-_post_contingency_match(::Any, ::Tuple) = false
+_post_contingency_match(::AbstractArray, ::Tuple) = false
 
 function _find_shared_post_contingency_expression_source(
     container::OptimizationContainer,
@@ -90,7 +90,7 @@ function _find_shared_post_contingency_expression_source(
         get_component_type(key) === V && continue
         _post_contingency_match(ec, target) && return ec
     end
-    return nothing
+    return
 end
 
 """
