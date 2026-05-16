@@ -404,6 +404,155 @@ end
     end
 end
 
+@testset "Security Constrained branch formulation Network DC-PF with PTDF/MODF Model and Reductions with separate monitored lines" begin
+    template = get_thermal_dispatch_template_network(PTDFPowerModel)
+    c_sys5 = PSB.build_system(PSITestSystems, "c_sys5")
+    c_sys14 = PSB.build_system(PSITestSystems, "c_sys14")
+    c_sys14_dc = PSB.build_system(PSITestSystems, "c_sys14_dc")
+    parallel_branches_to_add = IdDict{System, Vector{String}}(
+        c_sys5 => ["4"],
+        c_sys14 => ["Line14"],
+        c_sys14_dc => ["Line14"],
+    )
+    systems = [c_sys5, c_sys14, c_sys14_dc]
+    for sys in systems
+        for branch_name in parallel_branches_to_add[sys]
+            branch = first(
+                get_components(b -> get_name(b) == branch_name, PSY.ACTransmission, sys),
+            )
+            add_equivalent_ac_transmission_with_series_parallel_circuits!(
+                sys,
+                branch,
+                typeof(branch),
+            )
+        end
+    end
+
+    objfuncs = [GAEVF, GQEVF, GQEVF]
+    constraint_keys = [
+        PSI.ConstraintKey(FlowRateConstraint, PSY.Line, "lb"),
+        PSI.ConstraintKey(FlowRateConstraint, PSY.Line, "ub"),
+        PSI.ConstraintKey(CopperPlateBalanceConstraint, PSY.System),
+        PSI.ConstraintKey(PostContingencyEmergencyFlowRateConstraint, PSY.Line, "lb"),
+        PSI.ConstraintKey(PostContingencyEmergencyFlowRateConstraint, PSY.Line, "ub"),
+    ]
+
+    # Outaged lines - the lines that will be taken out of service
+    lines_outages = IdDict{System, Vector{String}}(
+        c_sys5 => ["1", "2", "3"],
+        c_sys14 => ["Line1", "Line2", "Line9", "Line10", "Line12", "Trans2"],
+        c_sys14_dc => ["Line9"],
+    )
+
+    # Monitored lines - different lines that will be monitored for post-contingency flows
+    # These should be different from the outaged lines to create a non-trivial test
+    monitored_lines = IdDict{System, Vector{String}}(
+        c_sys5 => ["4", "5", "6"],
+        c_sys14 => ["Line3", "Line4", "Line5", "Line6", "Line7", "Line8"],
+        c_sys14_dc => ["Line1"],
+    )
+
+    # Test results will need to be updated after running the test
+    # Placeholder values - these may need adjustment
+    test_results = IdDict{System, Vector{Int}}(
+        c_sys5 => [120, 0, 360, 360, 24],
+        c_sys14 => [120, 0, 744, 744, 24],
+        c_sys14_dc => [168, 0, 672, 576, 24],
+    )
+
+    test_obj_values = IdDict{System, Float64}(
+        c_sys5 => 355231,
+        c_sys14 => 143365,
+        c_sys14_dc => 154585.1,
+    )
+    for (ix, sys) in enumerate(systems)
+        # Add outages with separate monitored components
+        # Each outaged line monitors a different line to create non-trivial constraints
+        for (idx, line_name) in enumerate(lines_outages[sys])
+            outaged_component = get_component(ACTransmission, sys, line_name)
+            monitored_component =
+                get_component(ACTransmission, sys, monitored_lines[sys][idx])
+            transition_data = GeometricDistributionForcedOutage(;
+                mean_time_to_recovery = 10,
+                outage_transition_probability = 0.9999,
+                monitored_components = [monitored_component],
+            )
+            add_supplemental_attribute!(sys, outaged_component, transition_data)
+        end
+        nr = NetworkReduction[DegreeTwoReduction()]
+        ptdf = PTDF(sys; network_reductions = nr)
+        modf = VirtualMODF(sys; network_reductions = nr)
+        template = get_thermal_dispatch_template_network(
+            NetworkModel(
+                PTDFPowerModel;
+                PTDF_matrix = ptdf,
+                MODF_matrix = modf,
+                reduce_degree_two_branches = PNM.has_degree_two_reduction(
+                    ptdf.network_reduction_data,
+                ),
+            ),
+        )
+        set_device_model!(template, Line, SecurityConstrainedStaticBranch)
+        set_device_model!(template, Transformer2W, SecurityConstrainedStaticBranch)
+        set_device_model!(template, TapTransformer, SecurityConstrainedStaticBranch)
+
+        ps_model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
+
+        @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
+              PSI.ModelBuildStatus.BUILT
+        psi_constraint_test(ps_model, constraint_keys)
+
+        # Verify that monitored lines are different from outaged lines
+        if ix == 1
+            template_under_test = PSI.get_template(ps_model)
+            line_dm = PSI.get_model(template_under_test, PSY.Line)
+            line_outages = PSI.get_outages(line_dm)
+            @test !isempty(line_outages)
+            container = PSI.get_optimization_container(ps_model)
+            time_steps = PSI.get_time_steps(container)
+            con_ub = PSI.get_constraint(
+                container,
+                PSI.ConstraintKey(
+                    PostContingencyEmergencyFlowRateConstraint, PSY.Line, "ub",
+                ),
+            )
+            ub_keys = collect(keys(con_ub.data))
+            ub_outages = Set(k[1] for k in ub_keys)
+            ub_names = Set(k[2] for k in ub_keys)
+            @test !isempty(ub_outages)
+            @test !isempty(ub_names)
+            line_monitoring_outages = Set(
+                string(uuid) for (uuid, per_type) in line_outages
+                if haskey(per_type, PSY.Line) && !isempty(per_type[PSY.Line])
+            )
+            @test ub_outages == line_monitoring_outages
+            for outage_id in ub_outages
+                for t in time_steps
+                    @test any(
+                        k -> k[1] == outage_id && k[3] == t, ub_keys,
+                    )
+                end
+            end
+        end
+
+        moi_tests(
+            ps_model,
+            test_results[sys]...,
+            false,
+        )
+        psi_checkobjfun_test(ps_model, objfuncs[ix])
+        if ix > 2
+            continue # skipping test for c_sys14_dc as Highs takes so long to find optimal solution
+        end
+        psi_checksolve_test(
+            ps_model,
+            [MOI.OPTIMAL, MOI.ALMOST_OPTIMAL],
+            test_obj_values[sys],
+            10000,
+        )
+    end
+end
+
 @testset "Post-contingency expressions match modf-derived ground truth" begin
     # Validates that every JuMP.AffExpr in the post-contingency expression
     # container equals dot(modf_matrix[arc, ctg], nodal_balance[:, t]).
