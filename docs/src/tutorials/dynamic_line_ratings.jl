@@ -20,11 +20,15 @@
 #
 # !!! note
 #
-#     Dynamic Line Ratings are **only** supported for the `StaticBranch` formulation
-#     combined with a `PTDFPowerModel` (or any `AbstractPTDFModel`) network model.
-#     Using `BranchRatingTimeSeriesParameter` with `StaticBranchBounds`,
-#     `StaticBranchUnbounded`, or a non-PTDF network model will raise an error during
-#     `build!`.
+#     Dynamic Line Ratings are **only** supported for the `StaticBranch` (or
+#     `SecurityConstrainedStaticBranch`) formulation combined with a `PTDFPowerModel`
+#     (or any `AbstractPTDFModel`) network model. Other configurations are rejected
+#     during `build!`:
+#     - `StaticBranchBounds` and other unsupported formulations raise an error.
+#     - Non-PTDF network models raise an error (the time-series rating would
+#       otherwise be silently ignored).
+#     - `StaticBranchUnbounded` emits a warning and the time series is ignored
+#       because the formulation does not enforce flow limits.
 
 # ### Load packages
 

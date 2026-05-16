@@ -425,7 +425,7 @@ DCCurrentBalance
 PostContingencyGenerationBalanceConstraint
 PostContingencyActivePowerVariableLimitsConstraint
 PostContingencyActivePowerReserveDeploymentVariableLimitsConstraint
-PostContingencyEmergencyFlowRateConstraint
+PostContingencyFlowRateConstraint
 ```
 
 ### Market Bid Cost Constraints
