@@ -40,6 +40,25 @@ function _check_branch_rating_time_series_formulation!(branch_models::Dict)
     return
 end
 
+function _check_security_constrained_three_winding_transformer!(branch_models::Dict)
+    for (_, device_model) in branch_models
+        D = get_component_type(device_model)
+        B = get_formulation(device_model)
+        if D <: PSY.ThreeWindingTransformer &&
+           B <: AbstractSecurityConstrainedStaticBranch
+            throw(
+                IS.ConflictingInputsError(
+                    "Security-constrained branch formulations are not implemented \
+                    yet for $(D), but it was configured with $(B). Use a non \
+                    security-constrained formulation (e.g. StaticBranch) for \
+                    $(D), or remove it from the template.",
+                ),
+            )
+        end
+    end
+    return
+end
+
 function _check_branch_network_compatibility(
     ::NetworkModel{T},
     unmodeled_branch_types::Vector{DataType},
@@ -146,6 +165,7 @@ function validate_template_impl!(model::OperationModel)
         delete!(model.template.branches, k)
     end
     _check_branch_rating_time_series_formulation!(model.template.branches)
+    _check_security_constrained_three_winding_transformer!(model.template.branches)
     validate_network_model(network_model, unmodeled_branch_types, model_has_branch_filters)
     _build_device_model_outages!(template, system)
     return

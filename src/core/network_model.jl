@@ -203,8 +203,10 @@ them is monitored by the simulation. Sources of pinning:
 
 - Branches carrying a `BranchRatingTimeSeriesParameter` — both endpoint buses
   are pinned.
-- `Outage.monitored_components` — for branch components both endpoints are
-  pinned; for non-branch devices the connecting bus is pinned.
+- Outages registered on an SC-formulated branch `DeviceModel` — their
+  `monitored_components` and `associated_components` pin buses (for branch
+  components both endpoints, for non-branch devices the connecting bus).
+  Outages on non-SC devices are not consumed and do not pin anything.
 
 The result is unioned and consumed by `_build_network_reductions` and the
 matrix constructors in `instantiate_network_model!`.
@@ -217,12 +219,13 @@ function _get_irreducible_buses_due_to_monitored_components(
     @debug "Identifying buses that are irreducible due to monitored components"
     irreducible_buses = Set{Int64}()
     _add_timeseries_irreducible_buses!(irreducible_buses, sys, network_model, branch_models)
-    # Outage-monitored components only matter when an SC formulation actually consumes them.
-    # Otherwise stray Outage attributes in the system would force a provided PTDF to be
-    # discarded and recomputed for every non-SC build.
-    if _template_uses_security_constrained_branch(branch_models)
-        _add_outage_monitored_irreducible_buses!(irreducible_buses, sys)
-    end
+    # Outage-monitored components only matter when an SC formulation actually
+    # consumes them. The scoping is per-DeviceModel: only outages registered on
+    # an SC-formulated branch model pin buses. A system Outage attached solely
+    # to a device whose formulation is not security constrained (e.g. a
+    # transformer modeled with a non-SC formulation) is ignored, so those
+    # branches stay reducible unless monitored by an SC outage.
+    _add_outage_monitored_irreducible_buses!(irreducible_buses, sys, branch_models)
     return collect(irreducible_buses)
 end
 
@@ -293,8 +296,21 @@ end
 function _add_outage_monitored_irreducible_buses!(
     irreducible_buses::Set{Int64},
     sys::PSY.System,
+    branch_models::BranchModelContainer,
 )
-    for outage in PSY.get_supplemental_attributes(PSY.Outage, sys)
+    # Only outages registered on an SC-formulated branch DeviceModel are
+    # consumed by post-contingency constraints. `DeviceModel.outages` is
+    # populated exclusively when `_formulation_supports_outages` is true, so
+    # iterating these keys naturally excludes outages on non-SC devices
+    # without traversing every Outage in the system.
+    outage_uuids = Set{Base.UUID}()
+    for m in values(branch_models)
+        get_formulation(m) <: AbstractSecurityConstrainedStaticBranch || continue
+        union!(outage_uuids, keys(get_outages(m)))
+    end
+
+    for outage_uuid in outage_uuids
+        outage = PSY.get_supplemental_attribute(sys, outage_uuid)
         # Monitored-component buses must remain visible so post-contingency
         # flow constraints reference real bus numbers.
         for uuid in PSY.get_monitored_components(outage)
