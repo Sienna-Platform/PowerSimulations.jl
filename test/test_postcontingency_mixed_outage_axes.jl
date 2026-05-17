@@ -140,8 +140,14 @@ end
     )
     PSY.add_supplemental_attribute!(sys, outaged_line, transition)
 
+    # The outage only pins buses when it is registered on an SC-formulated
+    # branch DeviceModel; a raw system attribute on a non-SC device is ignored.
+    branch_models = PSI.BranchModelContainer()
+    branch_models[nameof(PSY.Line)] =
+        DeviceModel(PSY.Line, SecurityConstrainedStaticBranch; outages = [transition])
+
     irreducible_buses = Set{Int64}()
-    PSI._add_outage_monitored_irreducible_buses!(irreducible_buses, sys)
+    PSI._add_outage_monitored_irreducible_buses!(irreducible_buses, sys, branch_models)
 
     monitored_arc = PSY.get_arc(monitored_only_line)
     outaged_arc = PSY.get_arc(outaged_line)
@@ -153,4 +159,32 @@ end
     # Outaged component endpoints must also be present (N3 fix).
     @test PSY.get_number(PSY.get_from(outaged_arc)) in irreducible_buses
     @test PSY.get_number(PSY.get_to(outaged_arc)) in irreducible_buses
+end
+
+@testset "Outage on a non-SC device pins nothing" begin
+    # Scoping regression: a system Outage attribute whose branch is modeled
+    # with a non-SC formulation must NOT pin buses. Otherwise a stray Outage
+    # would force a provided PTDF to be discarded and recomputed on every
+    # non-SC build.
+    sys = PSB.build_system(PSITestSystems, "c_sys5")
+    lines = collect(PSY.get_components(PSY.Line, sys))
+    @assert length(lines) >= 2
+    outaged_line = lines[1]
+    transition = PSY.GeometricDistributionForcedOutage(;
+        mean_time_to_recovery = 10,
+        outage_transition_probability = 0.9999,
+        monitored_components = [lines[2]],
+    )
+    PSY.add_supplemental_attribute!(sys, outaged_line, transition)
+
+    # `StaticBranch` is not security constrained, so `outages` is not
+    # registered on the DeviceModel and the attribute is ignored.
+    branch_models = PSI.BranchModelContainer()
+    branch_models[nameof(PSY.Line)] =
+        DeviceModel(PSY.Line, StaticBranch; outages = [transition])
+
+    irreducible_buses = Set{Int64}()
+    PSI._add_outage_monitored_irreducible_buses!(irreducible_buses, sys, branch_models)
+
+    @test isempty(irreducible_buses)
 end

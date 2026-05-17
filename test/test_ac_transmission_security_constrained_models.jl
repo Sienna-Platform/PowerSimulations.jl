@@ -1126,3 +1126,26 @@ end
 
     _test_post_contingency_line_duals(PSI.get_optimization_container(ps_model))
 end
+
+@testset "Security-constrained formulation rejected for ThreeWindingTransformer" begin
+    # SC branch formulations are not implemented yet for ThreeWindingTransformer.
+    # Configuring one must raise at template validation, not fail deep in the
+    # post-contingency build.
+    branch_models = PSI.BranchModelContainer()
+    branch_models[nameof(PSY.Transformer3W)] =
+        DeviceModel(PSY.Transformer3W, SecurityConstrainedStaticBranch)
+    @test_throws IS.ConflictingInputsError PSI._check_security_constrained_three_winding_transformer!(
+        branch_models,
+    )
+
+    # Allowed combinations must pass: non-SC formulation on a 3WT, and an SC
+    # formulation on a supported branch type.
+    ok_models = PSI.BranchModelContainer()
+    ok_models[nameof(PSY.Transformer3W)] =
+        DeviceModel(PSY.Transformer3W, StaticBranch)
+    ok_models[nameof(PSY.Line)] =
+        DeviceModel(PSY.Line, SecurityConstrainedStaticBranch)
+    @test isnothing(
+        PSI._check_security_constrained_three_winding_transformer!(ok_models),
+    )
+end
