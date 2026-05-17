@@ -22,12 +22,6 @@ function apply_simulation_events!(simulation::Simulation)
     end
 end
 
-# Device types that the event-extension state-projection logic supports today.
-# RenewableDispatch is intentionally excluded: its outage affect is applied via
-# `apply_affect!` but the per-period countdown projection here is not yet implemented.
-_supports_event_extension(::Type{<:PSY.Component}) = true
-_supports_event_extension(::Type{PSY.RenewableDispatch}) = false
-
 function extend_event_parameters!(simulation::Simulation, event_model)
     sequence = get_sequence(simulation)
     sim_state = get_simulation_state(simulation)
@@ -38,7 +32,6 @@ function extend_event_parameters!(simulation::Simulation, event_model)
         event_model.attribute_device_map[model_name]
         sim_time = get_current_time(simulation)
         for (dtype, device_names) in device_type_maps
-            _supports_event_extension(dtype) || continue
             em_model = get_emulation_model(get_models(simulation))
             status_change_countdown_data = get_decision_state_data(
                 sim_state,
