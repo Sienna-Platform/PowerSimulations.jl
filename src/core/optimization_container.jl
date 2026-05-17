@@ -1831,9 +1831,19 @@ function _calculate_dual_variable_value!(
     key::ConstraintKey{T, D},
     ::PSY.System,
 ) where {T <: ConstraintType, D <: Union{PSY.Component, PSY.System}}
-    constraint_duals = jump_value.(get_constraint(container, key))
+    constraint_container = get_constraint(container, key)
     dual_variable_container = get_duals(container)[key]
 
+    if constraint_container isa SparseAxisArray
+        # SparseAxisArray (Dict-backed, e.g. post-contingency constraints keyed
+        # by (outage_id, name, t)) has no `axes`, so `Iterators.product` is
+        # undefined. Copy per stored key instead; the dual container was
+        # mirrored from the same keys in `assign_dual_variable!`.
+        _copy_dual_values!(dual_variable_container, constraint_container)
+        return
+    end
+
+    constraint_duals = jump_value.(constraint_container)
     # Needs to loop since the container ordering might not match in the DenseAxisArray
     for index in Iterators.product(axes(constraint_duals)...)
         dual_variable_container[index...] = constraint_duals[index...]

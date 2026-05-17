@@ -84,16 +84,27 @@ function assign_dual_variable!(
     if isempty(metas)
         device_names = PSY.get_name.(devices)
         add_dual_container!(container, constraint_type, D, device_names, time_steps)
-    else
-        # Reuse the existing constraint container's row axis so the dual axis
-        # matches the constraint exactly. Network reductions (radial /
-        # degree-two) drop branches that pass the device-model filter, so the
-        # constraint axis is a strict subset of PSY.get_name.(devices). Sizing
-        # the dual from the device list would leave the dual broadcast in
-        # process_duals incompatible with the constraint matrix.
-        for meta in metas
-            existing =
-                get_constraint(container, ConstraintKey(constraint_type, D, meta))
+        return
+    end
+    for meta in metas
+        key = ConstraintKey(constraint_type, D, meta)
+        existing = get_constraint(container, key)
+        if existing isa SparseAxisArray
+            # Sparse constraints (e.g. post-contingency flow-rate constraints
+            # keyed by (outage_id, name, t)) have no `axes`. Mirror the
+            # constraint's exact sparse keys into a Float64 dual container so
+            # the dual matches the constraint storage one-to-one.
+            dual_container =
+                SparseAxisArray(Dict(k => zero(Float64) for k in keys(existing.data)))
+            _assign_container!(container.duals, key, dual_container)
+        else
+            # Reuse the existing constraint container's row axis so the dual
+            # axis matches the constraint exactly. Network reductions (radial /
+            # degree-two) drop branches that pass the device-model filter, so
+            # the constraint axis is a strict subset of PSY.get_name.(devices).
+            # Sizing the dual from the device list would leave the dual
+            # broadcast in process_duals incompatible with the constraint
+            # matrix.
             row_axis = axes(existing)[1]
             add_dual_container!(
                 container,
@@ -121,38 +132,6 @@ function _existing_constraint_metas(
         end
     end
     return metas
-end
-
-# Post-contingency flow-rate constraints are stored as `SparseAxisArray`s keyed
-# by (outage_id, name, t). The generic device method calls `axes(existing)[1]`,
-# which `SparseAxisArray` does not support, so dual retrieval needs a sparse
-# path: mirror the constraint's exact sparse keys into a Float64 dual container.
-function assign_dual_variable!(
-    container::OptimizationContainer,
-    constraint_type::Type{<:PostContingencyConstraintType},
-    devices::U,
-    ::Type{<:AbstractDeviceFormulation},
-) where {U <: Union{Vector{D}, IS.FlattenIteratorWrapper{D}}} where {D <: PSY.Device}
-    @assert !isempty(devices)
-    for meta in _existing_constraint_metas(container, constraint_type, D)
-        key = ConstraintKey(constraint_type, D, meta)
-        existing = get_constraint(container, key)
-        dual_container =
-            SparseAxisArray(Dict(k => zero(Float64) for k in keys(existing.data)))
-        _assign_container!(container.duals, key, dual_container)
-    end
-    return
-end
-
-# Sparse counterpart to the generic `_calculate_dual_variable_value!`:
-# `Iterators.product(axes(...)...)` is undefined for `SparseAxisArray`.
-function _calculate_dual_variable_value!(
-    container::OptimizationContainer,
-    key::ConstraintKey{T, D},
-    ::PSY.System,
-) where {T <: PostContingencyConstraintType, D <: Union{PSY.Component, PSY.System}}
-    _copy_dual_values!(get_duals(container)[key], get_constraint(container, key))
-    return
 end
 
 function assign_dual_variable!(
