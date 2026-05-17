@@ -76,6 +76,101 @@ time step instead of re-scanning the container Dict per probe.
 _post_contingency_match(c::SparseAxisArray, target::Tuple) = haskey(c.data, target)
 _post_contingency_match(::AbstractArray, ::Tuple) = false
 
+# A container is a reusable shared post-contingency source iff it has entry type
+# `T`, belongs to a component type *other* than the outaged `V` (a same-`V`
+# container is the one currently being built, not a source), and is keyed by
+# `target`. Single predicate shared by the expression and constraint scans below.
+function _is_shared_post_contingency_source(
+    key::OptimizationContainerKey,
+    c,
+    target::Tuple,
+    ::Type{T},
+    ::Type{V},
+) where {T, V <: PSY.ACTransmission}
+    return get_entry_type(key) === T &&
+           get_component_type(key) !== V &&
+           _post_contingency_match(c, target)
+end
+
+# Names of components of type `D` monitored by at least one outage on this
+# device model. `PostContingencyBranchRatingTimeSeriesParameter` is only
+# meaningful for these (the components whose flows are bounded under
+# contingencies), so the parameter is scoped to them at construction.
+function _monitored_component_names(device_model::DeviceModel, ::Type{D}) where {D}
+    names = Set{String}()
+    for (_, per_type) in get_outages(device_model)
+        for (mon_type, mon_names) in per_type
+            mon_type <: D || continue
+            union!(names, mon_names)
+        end
+    end
+    return names
+end
+
+# True when a `PostContingencyBranchRatingTimeSeriesParameter` column exists
+# for `name` under `entry_type` (i.e. that monitored component carries the
+# series). A pure `Bool` predicate so the constraint builder dispatches on a
+# boolean rather than a `nothing`-sentinel return; the caller separately gates
+# on whether the parameter is configured at all (a loop-invariant check kept
+# out of here).
+function _has_post_contingency_rate(
+    container::OptimizationContainer,
+    entry_type::DataType,
+    name::String,
+)
+    has_container_key(
+        container,
+        PostContingencyBranchRatingTimeSeriesParameter,
+        entry_type,
+    ) || return false
+    param_container = get_parameter(
+        container,
+        PostContingencyBranchRatingTimeSeriesParameter(),
+        entry_type,
+    )
+    return name in axes(get_multiplier_array(param_container))[1]
+end
+
+# The `(parameter column refs, multiplier slice)` for `name`'s post-contingency
+# rate limit. Valid only when `_has_post_contingency_rate` is true; always
+# returns a concrete tuple (never `nothing`), keeping the limit type stable.
+function _post_contingency_rate_columns(
+    container::OptimizationContainer,
+    entry_type::DataType,
+    name::String,
+)
+    param_container = get_parameter(
+        container,
+        PostContingencyBranchRatingTimeSeriesParameter(),
+        entry_type,
+    )
+    return get_parameter_column_refs(param_container, name),
+    get_multiplier_array(param_container)[name, :]
+end
+
+# Reactivated post-contingency branch-rating time series parameter. Scoped to
+# the monitored components only: the parameter is exclusively consumed as the
+# limit in the post-contingency flow inequalities, which exist only for
+# monitored components, so building columns for unmonitored branches would be
+# dead weight. The caller gates on the parameter being configured (mirroring
+# the `BranchRatingTimeSeriesParameter` block) so the check stays visible.
+function _add_post_contingency_branch_rating_parameter!(
+    container::OptimizationContainer,
+    device_model::DeviceModel{T},
+    devices,
+) where {T <: PSY.ACTransmission}
+    monitored = _monitored_component_names(device_model, T)
+    monitored_devices = [d for d in devices if PSY.get_name(d) in monitored]
+    isempty(monitored_devices) && return
+    add_parameters!(
+        container,
+        PostContingencyBranchRatingTimeSeriesParameter,
+        monitored_devices,
+        device_model,
+    )
+    return
+end
+
 function _find_shared_post_contingency_expression_source(
     container::OptimizationContainer,
     ::Type{T},
@@ -86,9 +181,7 @@ function _find_shared_post_contingency_expression_source(
 ) where {T <: PostContingencyExpressions, V <: PSY.ACTransmission}
     target = (outage_id, name, t)
     for (key, ec) in get_expressions(container)
-        get_entry_type(key) === T || continue
-        get_component_type(key) === V && continue
-        _post_contingency_match(ec, target) && return ec
+        _is_shared_post_contingency_source(key, ec, target, T, V) && return ec
     end
     return
 end
@@ -110,9 +203,7 @@ function _find_shared_post_contingency_constraint_sources(
     src_lb = nothing
     src_ub = nothing
     for (key, cc) in get_constraints(container)
-        get_entry_type(key) === T || continue
-        get_component_type(key) === V && continue
-        _post_contingency_match(cc, target) || continue
+        _is_shared_post_contingency_source(key, cc, target, T, V) || continue
         if key.meta == "lb"
             src_lb = cc
         elseif key.meta == "ub"
@@ -279,6 +370,12 @@ function add_constraints!(
     # instead of issuing duplicate `@constraint`s. Precheck short-circuits
     # the per-entry probe on the single-component-outage hot path.
     has_other_v = _has_other_v_container(get_constraints(container), T, V)
+    # Loop-invariant: whether the post-contingency rating time series is
+    # configured at all. Checked once here rather than per (outage, entry).
+    has_pc_rating = haskey(
+        get_time_series_names(device_model),
+        PostContingencyBranchRatingTimeSeriesParameter,
+    )
     for (uuid, entries) in resolved
         outage_id = string(uuid)
         for (entry_type, name, arc, reduction_kind) in entries
@@ -297,16 +394,35 @@ function add_constraints!(
                 end
             end
             reduction_entry = all_branch_maps_by_type[reduction_kind][entry_type][arc]
-            limits = get_emergency_min_max_limits(reduction_entry, T, U)
-            for t in time_steps
-                con_ub[outage_id, name, t] = JuMP.@constraint(
-                    jump_model,
-                    expressions[outage_id, name, t] <= limits.max,
-                )
-                con_lb[outage_id, name, t] = JuMP.@constraint(
-                    jump_model,
-                    expressions[outage_id, name, t] >= limits.min,
-                )
+            # The post-contingency branch-rating time series parameter, when
+            # configured and available for this monitored component, replaces
+            # the static emergency rating as the inequality limit; otherwise
+            # the static emergency rating is used.
+            if has_pc_rating && _has_post_contingency_rate(container, entry_type, name)
+                param, multiplier =
+                    _post_contingency_rate_columns(container, entry_type, name)
+                for t in time_steps
+                    con_ub[outage_id, name, t] = JuMP.@constraint(
+                        jump_model,
+                        expressions[outage_id, name, t] <= param[t] * multiplier[t],
+                    )
+                    con_lb[outage_id, name, t] = JuMP.@constraint(
+                        jump_model,
+                        expressions[outage_id, name, t] >= -1.0 * param[t] * multiplier[t],
+                    )
+                end
+            else
+                limits = get_emergency_min_max_limits(reduction_entry, T, U)
+                for t in time_steps
+                    con_ub[outage_id, name, t] = JuMP.@constraint(
+                        jump_model,
+                        expressions[outage_id, name, t] <= limits.max,
+                    )
+                    con_lb[outage_id, name, t] = JuMP.@constraint(
+                        jump_model,
+                        expressions[outage_id, name, t] >= limits.min,
+                    )
+                end
             end
         end
     end
@@ -494,18 +610,12 @@ function construct_device!(
         )
     end
 
-    # Deactivating this since it does not seem that the industry or we have data for this
-    # if haskey(
-    #     get_time_series_names(model),
-    #     PostContingencyBranchRatingTimeSeriesParameter,
-    # )
-    #     add_parameters!(
-    #         container,
-    #         PostContingencyBranchRatingTimeSeriesParameter,
-    #         devices,
-    #         model,
-    #     )
-    # end
+    if haskey(
+        get_time_series_names(device_model),
+        PostContingencyBranchRatingTimeSeriesParameter,
+    )
+        _add_post_contingency_branch_rating_parameter!(container, device_model, devices)
+    end
 
     add_feedforward_arguments!(container, device_model, devices)
 
@@ -592,6 +702,13 @@ function construct_device!(
             devices,
             device_model,
         )
+    end
+
+    if haskey(
+        get_time_series_names(device_model),
+        PostContingencyBranchRatingTimeSeriesParameter,
+    )
+        _add_post_contingency_branch_rating_parameter!(container, device_model, devices)
     end
 
     add_feedforward_arguments!(container, device_model, devices)

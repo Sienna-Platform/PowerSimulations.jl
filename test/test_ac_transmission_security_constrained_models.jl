@@ -433,8 +433,8 @@ end
         PSI.ConstraintKey(FlowRateConstraint, PSY.Line, "lb"),
         PSI.ConstraintKey(FlowRateConstraint, PSY.Line, "ub"),
         PSI.ConstraintKey(CopperPlateBalanceConstraint, PSY.System),
-        PSI.ConstraintKey(PostContingencyEmergencyFlowRateConstraint, PSY.Line, "lb"),
-        PSI.ConstraintKey(PostContingencyEmergencyFlowRateConstraint, PSY.Line, "ub"),
+        PSI.ConstraintKey(PostContingencyFlowRateConstraint, PSY.Line, "lb"),
+        PSI.ConstraintKey(PostContingencyFlowRateConstraint, PSY.Line, "ub"),
     ]
 
     # Outaged lines - the lines that will be taken out of service
@@ -513,7 +513,7 @@ end
             con_ub = PSI.get_constraint(
                 container,
                 PSI.ConstraintKey(
-                    PostContingencyEmergencyFlowRateConstraint, PSY.Line, "ub",
+                    PostContingencyFlowRateConstraint, PSY.Line, "ub",
                 ),
             )
             ub_keys = collect(keys(con_ub.data))
