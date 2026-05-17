@@ -232,12 +232,43 @@ function _add_timeseries_irreducible_buses!(
     network_model::NetworkModel,
     branch_models::BranchModelContainer,
 )
+    ts_type = get_deterministic_time_series_type(sys)
+    _add_rating_timeseries_irreducible_buses!(
+        irreducible_buses,
+        sys,
+        network_model,
+        branch_models,
+        BranchRatingTimeSeriesParameter,
+        ts_type,
+    )
+    # Post-contingency branch ratings only pin buses when an SC formulation
+    # actually consumes them. Otherwise a stray PostContingency rating
+    # attribute would force a provided PTDF to be discarded and recomputed
+    # for every non-SC build.
+    if _template_uses_security_constrained_branch(branch_models)
+        _add_rating_timeseries_irreducible_buses!(
+            irreducible_buses,
+            sys,
+            network_model,
+            branch_models,
+            PostContingencyBranchRatingTimeSeriesParameter,
+            ts_type,
+        )
+    end
+    return
+end
+
+function _add_rating_timeseries_irreducible_buses!(
+    irreducible_buses::Set{Int64},
+    sys::PSY.System,
+    network_model::NetworkModel,
+    branch_models::BranchModelContainer,
+    param_type::Type{<:TimeSeriesParameter},
+    ts_type::Type{<:PSY.AbstractDeterministic},
+)
     for branch_type in network_model.modeled_ac_branch_types
         device_model = branch_models[nameof(branch_type)]
-        if !haskey(
-            get_time_series_names(device_model),
-            BranchRatingTimeSeriesParameter,
-        )
+        if !haskey(get_time_series_names(device_model), param_type)
             continue
         end
 
@@ -246,9 +277,7 @@ function _add_timeseries_irreducible_buses!(
             continue
         end
 
-        ts_name =
-            get_time_series_names(device_model)[BranchRatingTimeSeriesParameter]
-        ts_type = PSY.Deterministic #TODO workaround since we dont have the container
+        ts_name = get_time_series_names(device_model)[param_type]
 
         branches = PSY.get_available_components(branch_type, sys)
         for branch in branches
