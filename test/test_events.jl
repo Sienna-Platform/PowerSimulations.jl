@@ -237,6 +237,47 @@ end
     end
 end
 
+@testset "Renewable outage projected into decision model" begin
+    # Regression for removal of the `_supports_event_extension` gate that used
+    # to skip RenewableDispatch in `extend_event_parameters!`. The existing
+    # "Renewable outage" testset only checks the emulator; this asserts the
+    # outage is also projected into the D2 *decision* model's status/power.
+    dates_ts = collect(
+        DateTime("2024-01-01T00:00:00"):Hour(1):DateTime("2024-01-02T23:00:00"),
+    )
+    outage_data = fill!(Vector{Int64}(undef, 48), 0)
+    outage_data[3] = 1
+    outage_data[10:11] .= 1
+    outage_data[23:22] .= 1
+    outage_timeseries = TimeArray(dates_ts, outage_data)
+    res = run_fixed_forced_outage_sim_with_timeseries(;
+        sys = build_system(PSITestSystems, "c_sys5_events"),
+        networks = repeat([PSI.CopperPlatePowerModel], 3),
+        optimizers = repeat([HiGHS_optimizer_small_gap], 3),
+        outage_status_timeseries = outage_timeseries,
+        device_type = RenewableDispatch,
+        device_names = ["WindBus1"],
+        renewable_formulation = RenewableFullDispatch,
+    )
+    d2 = PSI.get_decision_problem_results(res, "D2")
+    status = read_realized_variable(
+        d2,
+        "AvailableStatusParameter__RenewableDispatch";
+        table_format = TableFormat.WIDE,
+    )
+    apv = read_realized_variable(
+        d2,
+        "ActivePowerVariable__RenewableDispatch";
+        table_format = TableFormat.WIDE,
+    )
+    for (ix, x) in enumerate(outage_data[1:24])
+        @test x != Int64(status[!, "WindBus1"][ix])
+        if Int64(status[!, "WindBus1"][ix]) == 0.0
+            @test apv[!, "WindBus1"][ix] == 0.0
+        end
+    end
+end
+
 @testset "Load outage" begin
     dates_ts = collect(
         DateTime("2024-01-01T00:00:00"):Hour(1):DateTime("2024-01-02T23:00:00"),
