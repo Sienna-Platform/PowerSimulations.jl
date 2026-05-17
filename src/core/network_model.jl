@@ -235,35 +235,49 @@ function _add_timeseries_irreducible_buses!(
     network_model::NetworkModel,
     branch_models::BranchModelContainer,
 )
-    ts_type = get_deterministic_time_series_type(sys)
-    _add_rating_timeseries_irreducible_buses!(
-        irreducible_buses,
-        sys,
-        network_model,
-        branch_models,
-        BranchRatingTimeSeriesParameter,
-        ts_type,
-    )
+    param_types = Type{<:TimeSeriesParameter}[BranchRatingTimeSeriesParameter]
     # Post-contingency branch ratings only pin buses when an SC formulation
     # actually consumes them. Otherwise a stray PostContingency rating
     # attribute would force a provided PTDF to be discarded and recomputed
     # for every non-SC build.
     if _template_uses_security_constrained_branch(branch_models)
+        push!(param_types, PostContingencyBranchRatingTimeSeriesParameter)
+    end
+    # Resolve the forecast type only when a branch rating time series is
+    # actually configured: `get_deterministic_time_series_type` throws for
+    # systems without forecast data (e.g. single-step emulation models), and
+    # nothing pins buses without a configured rating parameter anyway.
+    any(
+        pt -> _any_branch_model_configures_param(network_model, branch_models, pt),
+        param_types,
+    ) || return
+    ts_type = get_deterministic_time_series_type(sys)
+    for pt in param_types
         _add_rating_timeseries_irreducible_buses!(
             irreducible_buses,
-            sys,
             network_model,
             branch_models,
-            PostContingencyBranchRatingTimeSeriesParameter,
+            pt,
             ts_type,
         )
     end
     return
 end
 
+function _any_branch_model_configures_param(
+    network_model::NetworkModel,
+    branch_models::BranchModelContainer,
+    param_type::Type{<:TimeSeriesParameter},
+)
+    for branch_type in network_model.modeled_ac_branch_types
+        device_model = branch_models[nameof(branch_type)]
+        haskey(get_time_series_names(device_model), param_type) && return true
+    end
+    return false
+end
+
 function _add_rating_timeseries_irreducible_buses!(
     irreducible_buses::Set{Int64},
-    sys::PSY.System,
     network_model::NetworkModel,
     branch_models::BranchModelContainer,
     param_type::Type{<:TimeSeriesParameter},
@@ -271,22 +285,24 @@ function _add_rating_timeseries_irreducible_buses!(
 )
     for branch_type in network_model.modeled_ac_branch_types
         device_model = branch_models[nameof(branch_type)]
-        if !haskey(get_time_series_names(device_model), param_type)
-            continue
-        end
+        ts_name = get(get_time_series_names(device_model), param_type, nothing)
+        # No rating time series configured in the template for this branch
+        # model: nothing pins buses. Same gate as
+        # `_any_component_has_branch_rating_ts` in template validation.
+        isnothing(ts_name) && continue
 
-        if branch_type == PSY.ThreeWindingTransformer
+        if branch_type <: PSY.ThreeWindingTransformer
             @warn "Branch rating time series for ThreeWindingTransformers are not implemented yet. Skipping it."
             continue
         end
 
-        ts_name = get_time_series_names(device_model)[param_type]
-
-        branches = PSY.get_available_components(branch_type, sys)
-        for branch in branches
-            if !PSY.has_time_series(branch, ts_type, ts_name)
-                continue
-            end
+        # Reuse the device cache built during template validation: it is the
+        # exact set of modeled components (available + filter_function), so a
+        # branch excluded by the device model never pins buses and we avoid a
+        # second full PSY component query. The `has_time_series(_, ts_type,
+        # ts_name)` test is the same modeled-ts definition validation uses.
+        for branch in get_device_cache(device_model)
+            PSY.has_time_series(branch, ts_type, ts_name) || continue
             _push_component_buses!(irreducible_buses, branch)
         end
     end

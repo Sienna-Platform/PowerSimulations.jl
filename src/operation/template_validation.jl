@@ -1,22 +1,29 @@
-function _any_component_has_branch_rating_ts(device_model::DeviceModel)
+function _any_component_has_branch_rating_ts(device_model::DeviceModel, sys::PSY.System)
     ts_name = get(
         get_time_series_names(device_model),
         BranchRatingTimeSeriesParameter,
         nothing,
     )
     isnothing(ts_name) && return false
-    for c in get_device_cache(device_model)
-        if PSY.has_time_series(c, PSY.SingleTimeSeries, ts_name) ||
-           PSY.has_time_series(c, PSY.Deterministic, ts_name)
-            return true
-        end
-    end
-    return false
+    # Only the modeled forecast matters: operations consume a
+    # Deterministic-family forecast, never a bare SingleTimeSeries. Use the
+    # same `ts_type` the reduction path resolves so both pathways agree on
+    # what "has the branch rating time series" means. Resolved lazily — branch
+    # models without the parameter configured returned above and never reach
+    # `get_deterministic_time_series_type`.
+    ts_type = get_deterministic_time_series_type(sys)
+    return any(
+        c -> PSY.has_time_series(c, ts_type, ts_name),
+        get_device_cache(device_model),
+    )
 end
 
-function _check_branch_rating_time_series_formulation!(branch_models::Dict)
+function _check_branch_rating_time_series_formulation!(
+    branch_models::Dict,
+    sys::PSY.System,
+)
     for (_, device_model) in branch_models
-        _any_component_has_branch_rating_ts(device_model) || continue
+        _any_component_has_branch_rating_ts(device_model, sys) || continue
         D = get_component_type(device_model)
         B = get_formulation(device_model)
         if B <: StaticBranchUnbounded
@@ -164,7 +171,7 @@ function validate_template_impl!(model::OperationModel)
     for k in branch_keys_to_delete
         delete!(model.template.branches, k)
     end
-    _check_branch_rating_time_series_formulation!(model.template.branches)
+    _check_branch_rating_time_series_formulation!(model.template.branches, system)
     _check_security_constrained_three_winding_transformer!(model.template.branches)
     validate_network_model(network_model, unmodeled_branch_types, model_has_branch_filters)
     _build_device_model_outages!(template, system)
@@ -213,32 +220,16 @@ function _build_device_model_outages!(
     sys::PSY.System,
 )
     # This code needs to be extended when adding G-1 models to check for injectors too.
-    branch_models = get_branch_models(template)
-    sc_models = [
-        m for m in values(branch_models) if
-        get_formulation(m) <: AbstractSecurityConstrainedStaticBranch
-    ]
+    sc_models = _sc_branch_models(template)
     isempty(sc_models) && return
 
     modeled_types = Set{DataType}(get_component_types(template))
-
-    selection = Dict{Symbol, Union{Nothing, Set{Base.UUID}}}()
-    for m in sc_models
-        sym = Symbol(get_component_type(m))
-        selection[sym] = if isempty(m.outages)
-            nothing
-        else
-            Set{Base.UUID}(keys(m.outages))
-        end
-        empty!(m.outages)
-    end
-
+    selection = _take_outage_selection!(sc_models)
     uncovered_types = Dict{DataType, Set{Base.UUID}}()
 
     for outage in PSY.get_supplemental_attributes(PSY.Outage, sys)
         outage_uuid = IS.get_uuid(outage)
-        monitored = PSY.get_monitored_components(outage)
-        if isempty(monitored)
+        if isempty(PSY.get_monitored_components(outage))
             @warn "Outage $(outage_uuid) ($(typeof(outage))) has empty \
                    monitored_components; no post-contingency variables or \
                    constraints will be created for this outage." _group =
@@ -246,53 +237,23 @@ function _build_device_model_outages!(
             continue
         end
 
-        per_type = Dict{DataType, Set{String}}()
-        for uuid in monitored
-            component = IS.get_component(sys, uuid)
-            if isnothing(component)
-                @warn "Outage $(outage_uuid) references monitored component \
-                       UUID $(uuid) that is not present in the system; \
-                       skipping." _group = LOG_GROUP_MODELS_VALIDATION
-                continue
-            end
-            comp_type = typeof(component)
-            if !(comp_type in modeled_types)
-                push!(
-                    get!(uncovered_types, comp_type, Set{Base.UUID}()),
-                    outage_uuid,
-                )
-                continue
-            end
-            push!(get!(per_type, comp_type, Set{String}()), PSY.get_name(component))
+        per_type, uncovered =
+            _monitored_components_by_modeled_type(outage, outage_uuid, sys, modeled_types)
+        for comp_type in uncovered
+            push!(get!(uncovered_types, comp_type, Set{Base.UUID}()), outage_uuid)
         end
         isempty(per_type) && continue
 
-        # DeviceModel{D, SC} claims the outage iff D is among the OUTAGED
-        # (attached) component types. Multi-component outages get claimed by
-        # every matching SC DeviceModel; the post-contingency build dedups
-        # by referencing the first claimer's expressions/constraints rather
-        # than recomputing.
-        attached_types = Set{DataType}(
-            typeof(c) for c in PSY.get_associated_components(sys, outage)
+        attached_types = _attached_component_types(outage, sys)
+        covered = _assign_outage_to_sc_models!(
+            sc_models,
+            selection,
+            outage,
+            outage_uuid,
+            per_type,
+            attached_types,
         )
-        has_matching_sc_model = false
-        for m in sc_models
-            D = get_component_type(m)
-            D in attached_types || continue
-            has_matching_sc_model = true
-            sel = selection[Symbol(D)]
-            if !isnothing(sel)
-                outage_uuid in sel || continue
-            else
-                include_planned =
-                    get_attribute(m, "include_planned_outages") === true
-                if _is_planned_outage(outage) && !include_planned
-                    continue
-                end
-            end
-            m.outages[outage_uuid] = per_type
-        end
-        if !has_matching_sc_model
+        if !covered
             @warn "Outage $(outage_uuid) is attached to component(s) of \
                    type $(collect(attached_types)), but no DeviceModel with \
                    an AbstractSecurityConstrainedStaticBranch formulation \
@@ -302,25 +263,132 @@ function _build_device_model_outages!(
         end
     end
 
+    _warn_uncovered_monitored_types(uncovered_types)
+    _warn_unmatched_user_outages(sc_models, selection)
+    return
+end
+
+# SC branch device models in the template. Extend alongside G-1 injector
+# models when those are added.
+function _sc_branch_models(template::ProblemTemplate)
+    return [
+        m for m in values(get_branch_models(template)) if
+        get_formulation(m) <: AbstractSecurityConstrainedStaticBranch
+    ]
+end
+
+# Per SC-model component type, the user's explicit outage-UUID selection (from
+# the constructor kwarg) or `nothing` for auto-discovery. Clears `m.outages`
+# so the main pass can repopulate it; the cleared UUIDs survive in the
+# returned selection map.
+function _take_outage_selection!(sc_models)
+    selection = Dict{Symbol, Union{Nothing, Set{Base.UUID}}}()
+    for m in sc_models
+        sym = Symbol(get_component_type(m))
+        selection[sym] =
+            isempty(m.outages) ? nothing : Set{Base.UUID}(keys(m.outages))
+        empty!(m.outages)
+    end
+    return selection
+end
+
+# Monitored-component names grouped by their concrete (modeled) type. Returns
+# `(per_type, uncovered)` where `uncovered` is the set of monitored component
+# types the template does not model — the caller records the offending outage
+# against them. Pure except for the not-in-system warning.
+function _monitored_components_by_modeled_type(
+    outage,
+    outage_uuid::Base.UUID,
+    sys::PSY.System,
+    modeled_types::Set{DataType},
+)
+    per_type = Dict{DataType, Set{String}}()
+    uncovered = Set{DataType}()
+    for uuid in PSY.get_monitored_components(outage)
+        component = IS.get_component(sys, uuid)
+        if isnothing(component)
+            @warn "Outage $(outage_uuid) references monitored component \
+                   UUID $(uuid) that is not present in the system; \
+                   skipping." _group = LOG_GROUP_MODELS_VALIDATION
+            continue
+        end
+        comp_type = typeof(component)
+        if comp_type in modeled_types
+            push!(get!(per_type, comp_type, Set{String}()), PSY.get_name(component))
+        else
+            push!(uncovered, comp_type)
+        end
+    end
+    return per_type, uncovered
+end
+
+function _attached_component_types(outage, sys::PSY.System)
+    return Set{DataType}(
+        typeof(c) for c in PSY.get_associated_components(sys, outage)
+    )
+end
+
+# Whether SC model `m` claims `outage`, given the selection for its component
+# type: a `nothing` selection is auto-discovery (PlannedOutages skipped unless
+# the model opts in via the boolean `"include_planned_outages"` attribute);
+# otherwise the outage must be in the user's explicit list.
+function _sc_model_claims_outage(m, outage, outage_uuid::Base.UUID, sel)
+    isnothing(sel) || return outage_uuid in sel
+    if _is_planned_outage(outage)
+        return get_attribute(m, "include_planned_outages")
+    end
+    return true
+end
+
+# Assign `per_type` to every SC model whose component type is among the
+# outage's attached types and that claims the outage. Returns whether any SC
+# model *covered* an attached type (independent of whether it claimed it); the
+# caller warns when nothing covers the outage. `DeviceModel{D, SC}` claims an
+# outage iff `D` is among the outaged (attached) component types; multi-type
+# outages are claimed by every matching SC model and the post-contingency
+# build dedups by referencing the first claimer.
+function _assign_outage_to_sc_models!(
+    sc_models,
+    selection,
+    outage,
+    outage_uuid::Base.UUID,
+    per_type,
+    attached_types::Set{DataType},
+)
+    covered = false
+    for m in sc_models
+        D = get_component_type(m)
+        D in attached_types || continue
+        covered = true
+        if _sc_model_claims_outage(m, outage, outage_uuid, selection[Symbol(D)])
+            m.outages[outage_uuid] = per_type
+        end
+    end
+    return covered
+end
+
+function _warn_uncovered_monitored_types(uncovered_types)
     for (comp_type, offending) in uncovered_types
         @warn "Monitored components of type $(comp_type) appear in outages \
                $(collect(offending)) but $(comp_type) is not modeled by the \
                template; their post-contingency variables will be skipped." _group =
             LOG_GROUP_MODELS_VALIDATION
     end
+    return
+end
 
+function _warn_unmatched_user_outages(sc_models, selection)
     for m in sc_models
         D = get_component_type(m)
         sel = selection[Symbol(D)]
         isnothing(sel) && continue
         for uuid in sel
-            if !haskey(m.outages, uuid)
-                @warn "Outage $(uuid) listed on DeviceModel{$D, \
-                       $(get_formulation(m))} is not attached to a component \
-                       of type $D in the system — it will not contribute any \
-                       post-contingency constraints." _group =
-                    LOG_GROUP_MODELS_VALIDATION
-            end
+            haskey(m.outages, uuid) && continue
+            @warn "Outage $(uuid) listed on DeviceModel{$D, \
+                   $(get_formulation(m))} is not attached to a component \
+                   of type $D in the system — it will not contribute any \
+                   post-contingency constraints." _group =
+                LOG_GROUP_MODELS_VALIDATION
         end
     end
     return
