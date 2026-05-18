@@ -285,11 +285,10 @@ function _add_rating_timeseries_irreducible_buses!(
 )
     for branch_type in network_model.modeled_ac_branch_types
         device_model = branch_models[nameof(branch_type)]
-        ts_name = get(get_time_series_names(device_model), param_type, nothing)
-        # No rating time series configured in the template for this branch
-        # model: nothing pins buses. Same gate as
-        # `_any_component_has_branch_rating_ts` in template validation.
-        isnothing(ts_name) && continue
+        # No rating time series configured for this branch model: nothing pins
+        # buses. Same gate as `_any_component_has_branch_rating_ts`.
+        haskey(get_time_series_names(device_model), param_type) || continue
+        ts_name = get_time_series_names(device_model)[param_type]
 
         if branch_type <: PSY.ThreeWindingTransformer
             @warn "Branch rating time series for ThreeWindingTransformers are not implemented yet. Skipping it."

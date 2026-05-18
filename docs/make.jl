@@ -38,6 +38,7 @@ pages = OrderedDict(
         "explanation/feedforward.md",
         "explanation/chronologies.md",
         "explanation/sequencing.md",
+        "explanation/branch_rating_limits.md",
     ],
     "Reference" => Any[
         "Glossary and Acronyms" => "api/glossary.md",

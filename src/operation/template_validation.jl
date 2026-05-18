@@ -1,10 +1,7 @@
 function _any_component_has_branch_rating_ts(device_model::DeviceModel, sys::PSY.System)
-    ts_name = get(
-        get_time_series_names(device_model),
-        BranchRatingTimeSeriesParameter,
-        nothing,
-    )
-    isnothing(ts_name) && return false
+    haskey(get_time_series_names(device_model), BranchRatingTimeSeriesParameter) ||
+        return false
+    ts_name = get_time_series_names(device_model)[BranchRatingTimeSeriesParameter]
     # Only the modeled forecast matters: operations consume a
     # Deterministic-family forecast, never a bare SingleTimeSeries. Use the
     # same `ts_type` the reduction path resolves so both pathways agree on
@@ -19,19 +16,25 @@ function _any_component_has_branch_rating_ts(device_model::DeviceModel, sys::PSY
 end
 
 function _check_branch_rating_time_series_formulation!(
-    branch_models::Dict,
+    branch_models::BranchModelContainer,
     sys::PSY.System,
 )
     for (_, device_model) in branch_models
         _any_component_has_branch_rating_ts(device_model, sys) || continue
         D = get_component_type(device_model)
         B = get_formulation(device_model)
-        if B <: StaticBranchUnbounded
-            @warn "BranchRatingTimeSeriesParameter time series attached to \
-                   $(D) components will be ignored: $(B) does not enforce flow \
-                   limits."
-        elseif B <: StaticBranch || B <: AbstractSecurityConstrainedStaticBranch
+        if B <: StaticBranch || B <: AbstractSecurityConstrainedStaticBranch
             continue
+        elseif B <: StaticBranchUnbounded
+            throw(
+                IS.ConflictingInputsError(
+                    "BranchRatingTimeSeriesParameter is attached to $(D) \
+                    components but $(B) does not enforce flow limits, so the \
+                    time series cannot be honored. Remove the branch rating \
+                    time series or use StaticBranch / \
+                    AbstractSecurityConstrainedStaticBranch.",
+                ),
+            )
         else
             throw(
                 IS.ConflictingInputsError(
@@ -47,7 +50,9 @@ function _check_branch_rating_time_series_formulation!(
     return
 end
 
-function _check_security_constrained_three_winding_transformer!(branch_models::Dict)
+function _check_security_constrained_three_winding_transformer!(
+    branch_models::BranchModelContainer,
+)
     for (_, device_model) in branch_models
         D = get_component_type(device_model)
         B = get_formulation(device_model)
@@ -178,11 +183,6 @@ function validate_template_impl!(model::OperationModel)
     return
 end
 
-# Multi-dispatch outage subtype tag, avoids inline `isa` in the auto-discover
-# path. Default catch-all is `false`; specialized to `true` for `PlannedOutage`.
-_is_planned_outage(::PSY.PlannedOutage) = true
-_is_planned_outage(::PSY.Outage) = false
-
 """
 Populate `device_model.outages` for every security-constrained (SC) branch
 device model in the template, in a single pass over the system's outage
@@ -271,22 +271,22 @@ end
 # SC branch device models in the template. Extend alongside G-1 injector
 # models when those are added.
 function _sc_branch_models(template::ProblemTemplate)
-    return [
+    return DeviceModelForBranches[
         m for m in values(get_branch_models(template)) if
         get_formulation(m) <: AbstractSecurityConstrainedStaticBranch
     ]
 end
 
-# Per SC-model component type, the user's explicit outage-UUID selection (from
-# the constructor kwarg) or `nothing` for auto-discovery. Clears `m.outages`
-# so the main pass can repopulate it; the cleared UUIDs survive in the
-# returned selection map.
-function _take_outage_selection!(sc_models)
-    selection = Dict{Symbol, Union{Nothing, Set{Base.UUID}}}()
+# Per SC-model component type, the user's explicit outage-UUID allow-list from
+# the constructor kwarg: a non-empty set restricts auto-discovery to those
+# UUIDs; an empty set means auto-discover all. Clears `m.outages` so the main
+# pass can repopulate it; the cleared UUIDs survive in the returned map.
+function _take_outage_selection!(sc_models::Vector{DeviceModelForBranches})
+    selection = Dict{Symbol, Set{Base.UUID}}()
     for m in sc_models
-        sym = Symbol(get_component_type(m))
-        selection[sym] =
-            isempty(m.outages) ? nothing : Set{Base.UUID}(keys(m.outages))
+        # `keys(m.outages)` is already empty when the user listed nothing, so
+        # this yields the empty (auto-discover) set with no special case.
+        selection[nameof(get_component_type(m))] = Set{Base.UUID}(keys(m.outages))
         empty!(m.outages)
     end
     return selection
@@ -297,7 +297,7 @@ end
 # types the template does not model — the caller records the offending outage
 # against them. Pure except for the not-in-system warning.
 function _monitored_components_by_modeled_type(
-    outage,
+    outage::PSY.Outage,
     outage_uuid::Base.UUID,
     sys::PSY.System,
     modeled_types::Set{DataType},
@@ -322,19 +322,24 @@ function _monitored_components_by_modeled_type(
     return per_type, uncovered
 end
 
-function _attached_component_types(outage, sys::PSY.System)
+function _attached_component_types(outage::PSY.Outage, sys::PSY.System)
     return Set{DataType}(
         typeof(c) for c in PSY.get_associated_components(sys, outage)
     )
 end
 
-# Whether SC model `m` claims `outage`, given the selection for its component
-# type: a `nothing` selection is auto-discovery (PlannedOutages skipped unless
-# the model opts in via the boolean `"include_planned_outages"` attribute);
-# otherwise the outage must be in the user's explicit list.
-function _sc_model_claims_outage(m, outage, outage_uuid::Base.UUID, sel)
-    isnothing(sel) || return outage_uuid in sel
-    if _is_planned_outage(outage)
+# Whether SC model `m` claims `outage`. `sel` is `m`'s component-type slice of
+# the user's explicit outage allow-list: non-empty restricts to those UUIDs;
+# empty means auto-discover (claim all, skipping `PlannedOutage`s unless the
+# model opts in via the `"include_planned_outages"` attribute).
+function _sc_model_claims_outage(
+    m::DeviceModelForBranches,
+    outage::PSY.Outage,
+    outage_uuid::Base.UUID,
+    sel::Set{Base.UUID},
+)
+    isempty(sel) || return outage_uuid in sel
+    if outage isa PSY.PlannedOutage
         return get_attribute(m, "include_planned_outages")
     end
     return true
@@ -348,11 +353,11 @@ end
 # outages are claimed by every matching SC model and the post-contingency
 # build dedups by referencing the first claimer.
 function _assign_outage_to_sc_models!(
-    sc_models,
-    selection,
-    outage,
+    sc_models::Vector{DeviceModelForBranches},
+    selection::Dict{Symbol, Set{Base.UUID}},
+    outage::PSY.Outage,
     outage_uuid::Base.UUID,
-    per_type,
+    per_type::Dict{DataType, Set{String}},
     attached_types::Set{DataType},
 )
     covered = false
@@ -360,14 +365,16 @@ function _assign_outage_to_sc_models!(
         D = get_component_type(m)
         D in attached_types || continue
         covered = true
-        if _sc_model_claims_outage(m, outage, outage_uuid, selection[Symbol(D)])
+        if _sc_model_claims_outage(m, outage, outage_uuid, selection[nameof(D)])
             m.outages[outage_uuid] = per_type
         end
     end
     return covered
 end
 
-function _warn_uncovered_monitored_types(uncovered_types)
+function _warn_uncovered_monitored_types(
+    uncovered_types::Dict{DataType, Set{Base.UUID}},
+)
     for (comp_type, offending) in uncovered_types
         @warn "Monitored components of type $(comp_type) appear in outages \
                $(collect(offending)) but $(comp_type) is not modeled by the \
@@ -377,11 +384,14 @@ function _warn_uncovered_monitored_types(uncovered_types)
     return
 end
 
-function _warn_unmatched_user_outages(sc_models, selection)
+function _warn_unmatched_user_outages(
+    sc_models::Vector{DeviceModelForBranches},
+    selection::Dict{Symbol, Set{Base.UUID}},
+)
     for m in sc_models
         D = get_component_type(m)
-        sel = selection[Symbol(D)]
-        isnothing(sel) && continue
+        sel = selection[nameof(D)]
+        isempty(sel) && continue
         for uuid in sel
             haskey(m.outages, uuid) && continue
             @warn "Outage $(uuid) listed on DeviceModel{$D, \

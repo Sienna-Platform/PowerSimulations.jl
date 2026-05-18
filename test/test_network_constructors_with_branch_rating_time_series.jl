@@ -651,7 +651,8 @@ end
         DecisionModel(template_bounds, sys_bounds; optimizer = HiGHS_optimizer)
     @test_throws IS.ConflictingInputsError PSI.validate_template(model_bounds)
 
-    # Case 2: StaticBranchUnbounded with rating time series must only warn, not error.
+    # Case 2: StaticBranchUnbounded with a rating time series must error — the
+    # formulation enforces no flow limits, so the series cannot be honored.
     sys_unbounded = PSB.build_system(PSITestSystems, "c_sys5")
     add_branch_rating_time_series_to_system!(
         sys_unbounded,
@@ -675,8 +676,7 @@ end
     )
     model_unbounded =
         DecisionModel(template_unbounded, sys_unbounded; optimizer = HiGHS_optimizer)
-    @test_logs (:warn, r"StaticBranchUnbounded does not enforce flow limits") match_mode =
-        :any PSI.validate_template(model_unbounded)
+    @test_throws IS.ConflictingInputsError PSI.validate_template(model_unbounded)
 end
 
 # Verify the docstring claim that BranchRatingTimeSeriesParameter is supported
