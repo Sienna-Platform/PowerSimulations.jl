@@ -131,12 +131,15 @@ are a per-unit multiplier of a static rating, and the static rating is supplied
 as the parameter *multiplier*. The right-hand side that the solver sees is
 therefore:
 
-  - Linear models: `parameter[t] * multiplier`
-  - Nonlinear models: `(parameter[t] * multiplier)^2`
+  - Linear models: `parameter[t] * multiplier`, equal to the time-varying
+    rating `rating(t)`.
+  - Nonlinear models: `parameter[t] * multiplier`, equal to `rating(t)^2`.
 
-so the effective limit at time `t` is `ts(t) · R` (and `(ts(t) · R)^2` for
-apparent power). The simulation update policy refreshes only the normalized
-parameter value each window; the multiplier is fixed at build time.
+PSI parameter objects are **never squared** in a constraint expression (a
+squared parameter is not a valid parametric term). So for the apparent-power
+limit the right-hand side stays linear in the parameter — `parameter * multiplier` — and the parameter and multiplier are instead configured so their
+product is `rating(t)^2` directly. The simulation update policy refreshes only
+the parameter value each window; the multiplier is fixed at build time.
 
 The multiplier is resolved with the **same type-aware aggregation as the static
 path**, so series chains, three-winding windings and single elements all scale
