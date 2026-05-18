@@ -651,8 +651,10 @@ end
         DecisionModel(template_bounds, sys_bounds; optimizer = HiGHS_optimizer)
     @test_throws IS.ConflictingInputsError PSI.validate_template(model_bounds)
 
-    # Case 2: StaticBranchUnbounded with a rating time series must error — the
-    # formulation enforces no flow limits, so the series cannot be honored.
+    # Case 2: StaticBranchUnbounded with a rating time series must NOT error.
+    # The formulation enforces no flow limits, so the series cannot be honored;
+    # template validation emits a warning and the branch rating time series is
+    # ignored (the model still builds).
     sys_unbounded = PSB.build_system(PSITestSystems, "c_sys5")
     add_branch_rating_time_series_to_system!(
         sys_unbounded,
@@ -676,7 +678,11 @@ end
     )
     model_unbounded =
         DecisionModel(template_unbounded, sys_unbounded; optimizer = HiGHS_optimizer)
-    @test_throws IS.ConflictingInputsError PSI.validate_template(model_unbounded)
+    # Template validation must not throw for StaticBranchUnbounded; it warns and
+    # ignores the series.
+    @test (PSI.validate_template(model_unbounded); true)
+    @test build!(model_unbounded; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
 end
 
 # Verify the docstring claim that BranchRatingTimeSeriesParameter is supported
@@ -723,6 +729,39 @@ end
     # FromTo/ToFrom constraints have no `meta` suffix.
     @test PSI.has_container_key(container, FlowRateConstraintFromTo, Line)
     @test PSI.has_container_key(container, FlowRateConstraintToFrom, Line)
+
+    # Invariant: the AC apparent-power limit is `P^2 + Q^2 <= rating^2` while the
+    # equivalent linear (DCP) model enforces `flow <= rating`. The PSI parameter
+    # object is never squared in the constraint expression; instead the
+    # parameter/multiplier machinery resolves the AC right-hand side to `R^2` and
+    # the linear one to `R` for the same branch. Therefore, for every
+    # branch-rating-TS branch, the AC FromTo/ToFrom RHS must equal the square of
+    # the DCP rate-limit RHS. Verified numerically (e.g. branch "1" in c_sys5:
+    # AC RHS = 10.8241 = 3.29^2, DCP RHS = 3.29 = R). Discriminating since
+    # R != R^2. See memory: project-n1-modf-branch.
+    dc_template = get_thermal_dispatch_template_network(DCPPowerModel)
+    set_device_model!(
+        dc_template,
+        DeviceModel(
+            Line,
+            StaticBranch;
+            time_series_names = Dict(
+                BranchRatingTimeSeriesParameter => "branch_rating",
+            ),
+        ),
+    )
+    dc_model = DecisionModel(dc_template, sys; optimizer = ipopt_optimizer)
+    @test build!(dc_model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+    dc_container = PSI.get_optimization_container(dc_model)
+    ac_ft = PSI.get_constraint(container, FlowRateConstraintFromTo(), Line)
+    ac_tf = PSI.get_constraint(container, FlowRateConstraintToFrom(), Line)
+    dc_ub = PSI.get_constraint(dc_container, FlowRateConstraint(), Line, "ub")
+    for name in branches_with_rating_ts, t in 1:n_steps
+        dc_rhs = JuMP.normalized_rhs(dc_ub[name, t])  # = rating(t)
+        @test isapprox(JuMP.normalized_rhs(ac_ft[name, t]), dc_rhs^2; rtol = 1e-6)
+        @test isapprox(JuMP.normalized_rhs(ac_tf[name, t]), dc_rhs^2; rtol = 1e-6)
+    end
 end
 
 @testset "Branch rating time series with DC OPF (DCPPowerModel) network" begin

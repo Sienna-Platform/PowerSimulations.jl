@@ -1,7 +1,10 @@
-function _any_component_has_branch_rating_ts(device_model::DeviceModel, sys::PSY.System)
-    haskey(get_time_series_names(device_model), BranchRatingTimeSeriesParameter) ||
-        return false
-    ts_name = get_time_series_names(device_model)[BranchRatingTimeSeriesParameter]
+function _any_component_has_branch_rating_ts(
+    ::Type{P},
+    device_model::DeviceModel,
+    sys::PSY.System,
+) where {P <: AbstractBranchRatingTimeSeriesParameter}
+    haskey(get_time_series_names(device_model), P) || return false
+    ts_name = get_time_series_names(device_model)[P]
     # Only the modeled forecast matters: operations consume a
     # Deterministic-family forecast, never a bare SingleTimeSeries. Use the
     # same `ts_type` the reduction path resolves so both pathways agree on
@@ -15,36 +18,44 @@ function _any_component_has_branch_rating_ts(device_model::DeviceModel, sys::PSY
     )
 end
 
+# Both `BranchRatingTimeSeriesParameter` and
+# `PostContingencyBranchRatingTimeSeriesParameter` are only honored by the
+# `StaticBranch` (pre-contingency, PTDF) and
+# `AbstractSecurityConstrainedStaticBranch` constructors. Any other
+# formulation that carries either series passes validation but never builds a
+# usable parameter container, so the series would be silently ignored —
+# reject it up front instead.
 function _check_branch_rating_time_series_formulation!(
     branch_models::BranchModelContainer,
     sys::PSY.System,
 )
     for (_, device_model) in branch_models
-        _any_component_has_branch_rating_ts(device_model, sys) || continue
         D = get_component_type(device_model)
         B = get_formulation(device_model)
-        if B <: StaticBranch || B <: AbstractSecurityConstrainedStaticBranch
-            continue
-        elseif B <: StaticBranchUnbounded
-            throw(
-                IS.ConflictingInputsError(
-                    "BranchRatingTimeSeriesParameter is attached to $(D) \
-                    components but $(B) does not enforce flow limits, so the \
-                    time series cannot be honored. Remove the branch rating \
-                    time series or use StaticBranch / \
-                    AbstractSecurityConstrainedStaticBranch.",
-                ),
-            )
-        else
-            throw(
-                IS.ConflictingInputsError(
-                    "BranchRatingTimeSeriesParameter is only supported with the \
-                    StaticBranch or AbstractSecurityConstrainedStaticBranch \
-                    formulations, but branch type $(D) was configured with $(B). \
-                    Remove the branch rating time series from the components or \
-                    change the formulation.",
-                ),
-            )
+        for P in (
+            BranchRatingTimeSeriesParameter,
+            PostContingencyBranchRatingTimeSeriesParameter,
+        )
+            _any_component_has_branch_rating_ts(P, device_model, sys) || continue
+            if B <: StaticBranch || B <: AbstractSecurityConstrainedStaticBranch
+                continue
+            elseif B <: StaticBranchUnbounded
+                @warn "$(P) is attached to $(D) components but $(B) does not \
+                       enforce flow limits; the branch rating time series will \
+                       be ignored for these branches." _group =
+                    LOG_GROUP_MODELS_VALIDATION
+                continue
+            else
+                throw(
+                    IS.ConflictingInputsError(
+                        "$(P) is only supported with the StaticBranch or \
+                        AbstractSecurityConstrainedStaticBranch formulations, \
+                        but branch type $(D) was configured with $(B). Remove \
+                        the branch rating time series from the components or \
+                        change the formulation.",
+                    ),
+                )
+            end
         end
     end
     return
@@ -64,6 +75,42 @@ function _check_security_constrained_three_winding_transformer!(
                     yet for $(D), but it was configured with $(B). Use a non \
                     security-constrained formulation (e.g. StaticBranch) for \
                     $(D), or remove it from the template.",
+                ),
+            )
+        end
+    end
+    return
+end
+
+# Whether `SecurityConstrainedStaticBranch` has a `construct_device!` path for
+# this network model. PTDF and ACP build full post-contingency limits;
+# NFA/CopperPlate/AreaBalance are intentional no-ops. Dispatched (no `isa`):
+# the fallback returns `false` so unsupported networks (e.g. DCP, whose
+# angle-based path is pending) fail fast at validation instead of hitting a
+# `MethodError` during build.
+_sc_branch_network_supported(::NetworkModel{<:AbstractPTDFModel}) = true
+_sc_branch_network_supported(::NetworkModel{<:PM.AbstractACPModel}) = true
+_sc_branch_network_supported(::NetworkModel{NFAPowerModel}) = true
+_sc_branch_network_supported(::NetworkModel{CopperPlatePowerModel}) = true
+_sc_branch_network_supported(::NetworkModel{AreaBalancePowerModel}) = true
+_sc_branch_network_supported(::NetworkModel) = false
+
+function _check_security_constrained_network!(
+    branch_models::BranchModelContainer,
+    network_model::NetworkModel,
+)
+    _sc_branch_network_supported(network_model) && return
+    for (_, device_model) in branch_models
+        B = get_formulation(device_model)
+        if B <: AbstractSecurityConstrainedStaticBranch
+            throw(
+                IS.ConflictingInputsError(
+                    "$(B) is not supported with network model \
+                    $(get_network_formulation(network_model)). Use a PTDF \
+                    (AbstractPTDFModel) or ACP network model. DCP support \
+                    (angle-based post-contingency) is pending; NFA, \
+                    CopperPlate and AreaBalance are inert for \
+                    security-constrained branches.",
                 ),
             )
         end
@@ -178,6 +225,7 @@ function validate_template_impl!(model::OperationModel)
     end
     _check_branch_rating_time_series_formulation!(model.template.branches, system)
     _check_security_constrained_three_winding_transformer!(model.template.branches)
+    _check_security_constrained_network!(model.template.branches, network_model)
     validate_network_model(network_model, unmodeled_branch_types, model_has_branch_filters)
     _build_device_model_outages!(template, system)
     return
@@ -209,11 +257,19 @@ Selection semantics:
   auto-discover path unless the attribute is `true`. Explicit user selection
   bypasses this filter (listing a planned outage explicitly is intent).
 
-Empty `monitored_components` on an outage is treated as "monitor nothing" — a
-warning is emitted. A monitored component whose type is not modeled by the
-template is reported once per type with the offending outage UUIDs and is
-silently skipped: no post-contingency variables or constraints are built for
-that monitored component under any outage.
+There is no implicit "monitor everything" default. The monitored set is
+exactly what each outage lists in its `monitored_components`; an outage with
+empty `monitored_components` is treated as "monitor nothing" — a warning is
+emitted and it contributes no post-contingency constraints. This is
+intentional: defaulting to monitoring every branch under every outage would
+silently build an N-1-everything-by-everything problem that is intractable
+for realistic systems, so monitoring is strictly opt-in per branch.
+
+A monitored component whose type is not a modeled `PSY.ACTransmission` branch
+type (either not in the template, or modeled but not a branch) is reported
+once per type with the offending outage UUIDs and is skipped: no
+post-contingency variables or constraints are built for that monitored
+component under any outage.
 """
 function _build_device_model_outages!(
     template::ProblemTemplate,
@@ -313,7 +369,12 @@ function _monitored_components_by_modeled_type(
             continue
         end
         comp_type = typeof(component)
-        if comp_type in modeled_types
+        # Post-contingency flow limits only make sense on branch arcs: the
+        # post-contingency builder resolves every `per_type` key through
+        # `name_to_arc_maps`, which is keyed by ACTransmission branch types
+        # only. A monitored component that is either not modeled or not a
+        # branch type would `KeyError` there, so route it to the skip path.
+        if comp_type <: PSY.ACTransmission && comp_type in modeled_types
             push!(get!(per_type, comp_type, Set{String}()), PSY.get_name(component))
         else
             push!(uncovered, comp_type)
@@ -377,8 +438,9 @@ function _warn_uncovered_monitored_types(
 )
     for (comp_type, offending) in uncovered_types
         @warn "Monitored components of type $(comp_type) appear in outages \
-               $(collect(offending)) but $(comp_type) is not modeled by the \
-               template; their post-contingency variables will be skipped." _group =
+               $(collect(offending)) but $(comp_type) is not a modeled \
+               ACTransmission branch type; their post-contingency variables \
+               will be skipped." _group =
             LOG_GROUP_MODELS_VALIDATION
     end
     return

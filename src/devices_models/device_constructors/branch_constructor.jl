@@ -103,11 +103,12 @@ function construct_device!(
     end
 
     if haskey(get_time_series_names(device_model), BranchRatingTimeSeriesParameter)
-        add_parameters!(
+        add_branch_parameters!(
             container,
             BranchRatingTimeSeriesParameter,
             devices,
             device_model,
+            network_model,
         )
     end
 
@@ -345,11 +346,12 @@ function construct_device!(
     end
 
     if haskey(get_time_series_names(device_model), BranchRatingTimeSeriesParameter)
-        add_parameters!(
+        add_branch_parameters!(
             container,
             BranchRatingTimeSeriesParameter,
             devices,
             device_model,
+            network_model,
         )
     end
 

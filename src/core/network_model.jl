@@ -465,6 +465,28 @@ function instantiate_network_model!(
     return
 end
 
+# Verify a user-provided MODF Matrix was built with the same network reduction
+# as the active reduction (derived from the PTDF Matrix). Equality of the bus
+# reduction map is the decisive check: it fixes the reduced bus/arc numbering
+# the post-contingency builder uses to index `modf_matrix[arc, outage_spec]`.
+function _validate_provided_modf_reduction!(
+    modf::PNM.VirtualMODF,
+    network_reduction::PNM.NetworkReductionData,
+)
+    if PNM.get_bus_reduction_map(modf.network_reduction_data) !=
+       PNM.get_bus_reduction_map(network_reduction)
+        throw(
+            IS.ConflictingInputsError(
+                "The provided MODF Matrix was built with a different network \
+                reduction than the active reduction derived from the PTDF \
+                Matrix. Rebuild the MODF with a consistent network reduction, \
+                or omit it so it is recalculated automatically.",
+            ),
+        )
+    end
+    return
+end
+
 function instantiate_network_model!(
     model::NetworkModel{<:AbstractPTDFModel},
     branch_models::BranchModelContainer,
@@ -577,6 +599,17 @@ function instantiate_network_model!(
                 sys;
                 tol = PTDF_ZERO_TOL,
                 network_reductions = _build_network_reductions(model, irreducible_buses),
+            )
+        else
+            # The provided MODF is kept verbatim. The post-contingency
+            # expression builder resolves monitored arcs from
+            # `model.network_reduction` (taken from the PTDF) and then indexes
+            # `modf_matrix[arc, outage_spec]`; a MODF built with a different
+            # network reduction or bus numbering would silently mis-key or
+            # KeyError, so reject the mismatch up front.
+            _validate_provided_modf_reduction!(
+                get_MODF_matrix(model),
+                model.network_reduction,
             )
         end
         _consolidate_device_model_outages_with_modf!(

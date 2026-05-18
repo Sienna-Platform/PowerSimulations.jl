@@ -20,7 +20,7 @@ function add_branch_parameters!(
     ::Type{T},
     devices::U,
     model::DeviceModel{D, W},
-    network_model::NetworkModel{<:AbstractPTDFModel},
+    network_model::NetworkModel{<:PM.AbstractPowerModel},
 ) where {
     T <: ParameterType,
     U <: Union{Vector{D}, IS.FlattenIteratorWrapper{D}},
@@ -226,10 +226,15 @@ end
 _size_wrapper(elem) = size(elem)
 _size_wrapper(::Tuple) = ()
 
+# Reduction-aware branch time-series parameter builder. The body only touches
+# `network_model.network_reduction` and the reduced-branch tracker, so it
+# applies to every PM network model that builds a branch-arc reduction (PTDF,
+# DC `AbstractActivePowerModel`, full AC). CopperPlate/AreaBalance never reach
+# here — their StaticBranch constructors are dedicated no-ops.
 function _add_time_series_parameters!(
     container::OptimizationContainer,
     param::T,
-    network_model::NetworkModel{<:AbstractPTDFModel},
+    network_model::NetworkModel{<:PM.AbstractPowerModel},
     devices,
     model::DeviceModel{D, W},
 ) where {D <: PSY.ACTransmission, T <: TimeSeriesParameter, W <: AbstractDeviceFormulation}

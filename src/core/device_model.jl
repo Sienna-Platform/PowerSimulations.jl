@@ -45,7 +45,9 @@ feedforward to enable passing values between operation model at simulation time
     `outages::Dict{UUID, Dict{DataType, Set{String}}}` field with empty inner maps;
     template validation later fills the inner maps with the per-type set of monitored
     component names that each outage carries. An empty default triggers auto-discovery
-    of every outage in the system that monitors at least one component of type `D`.
+    of every outage in the system whose outaged (associated) components include at least
+    one component of type `D`; the monitored component types only populate the inner maps
+    and do not determine which `DeviceModel` claims the outage.
     If `B` is not security-constrained, a non-empty value is dropped with a warning.
 
 # Example

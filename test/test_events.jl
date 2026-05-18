@@ -170,7 +170,7 @@ end
     outage_data = fill!(Vector{Int64}(undef, 48), 0)
     outage_data[3] = 1
     outage_data[10:11] .= 1
-    outage_data[23:22] .= 1
+    outage_data[22:23] .= 1
     outage_timeseries = TimeArray(dates_ts, outage_data)
     res = run_fixed_forced_outage_sim_with_timeseries(;
         sys = build_system(PSITestSystems, "c_sys5_events"),
@@ -207,7 +207,7 @@ end
     outage_data = fill!(Vector{Int64}(undef, 48), 0)
     outage_data[3] = 1
     outage_data[10:11] .= 1
-    outage_data[23:22] .= 1
+    outage_data[22:23] .= 1
     outage_timeseries = TimeArray(dates_ts, outage_data)
     res = run_fixed_forced_outage_sim_with_timeseries(;
         sys = build_system(PSITestSystems, "c_sys5_events"),
@@ -248,7 +248,7 @@ end
     outage_data = fill!(Vector{Int64}(undef, 48), 0)
     outage_data[3] = 1
     outage_data[10:11] .= 1
-    outage_data[23:22] .= 1
+    outage_data[22:23] .= 1
     outage_timeseries = TimeArray(dates_ts, outage_data)
     res = run_fixed_forced_outage_sim_with_timeseries(;
         sys = build_system(PSITestSystems, "c_sys5_events"),
@@ -285,7 +285,7 @@ end
     outage_data = fill!(Vector{Int64}(undef, 48), 0)
     outage_data[3] = 1
     outage_data[10:11] .= 1
-    outage_data[23:22] .= 1
+    outage_data[22:23] .= 1
     outage_timeseries = TimeArray(dates_ts, outage_data)
     res = run_fixed_forced_outage_sim_with_timeseries(;
         sys = build_system(PSITestSystems, "c_sys5_events"),
@@ -340,7 +340,7 @@ end
         )
     outage_data[3] = 1
     outage_data[10:11] .= 1
-    outage_data[23:22] .= 1
+    outage_data[22:23] .= 1
     outage_timeseries = TimeArray(dates_ts, outage_data)
     res = run_fixed_forced_outage_sim_with_timeseries(;
         sys = build_system(PSITestSystems, "c_sys5_events"),
@@ -406,7 +406,7 @@ end
         )
     outage_data[3] = 1
     outage_data[10:11] .= 1
-    outage_data[23:22] .= 1
+    outage_data[22:23] .= 1
     outage_timeseries = TimeArray(dates_ts, outage_data)
     res = run_fixed_forced_outage_sim_with_timeseries(;
         sys = build_system(PSITestSystems, "c_sys5_events"),

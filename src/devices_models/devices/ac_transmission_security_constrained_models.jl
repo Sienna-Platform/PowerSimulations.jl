@@ -158,15 +158,20 @@ function _add_post_contingency_branch_rating_parameter!(
     container::OptimizationContainer,
     device_model::DeviceModel{T},
     devices,
+    network_model::NetworkModel{<:PM.AbstractPowerModel},
 ) where {T <: PSY.ACTransmission}
     monitored = _monitored_component_names(device_model, T)
     monitored_devices = [d for d in devices if PSY.get_name(d) in monitored]
     isempty(monitored_devices) && return
-    add_parameters!(
+    # Route through the reduction-aware builder so monitored columns are keyed
+    # by the reduced container names and use the emergency multiplier, matching
+    # what the post-contingency constraint builder looks up.
+    add_branch_parameters!(
         container,
         PostContingencyBranchRatingTimeSeriesParameter,
         monitored_devices,
         device_model,
+        network_model,
     )
     return
 end
@@ -602,11 +607,12 @@ function construct_device!(
     end
 
     if haskey(get_time_series_names(device_model), BranchRatingTimeSeriesParameter)
-        add_parameters!(
+        add_branch_parameters!(
             container,
             BranchRatingTimeSeriesParameter,
             devices,
             device_model,
+            network_model,
         )
     end
 
@@ -614,7 +620,12 @@ function construct_device!(
         get_time_series_names(device_model),
         PostContingencyBranchRatingTimeSeriesParameter,
     )
-        _add_post_contingency_branch_rating_parameter!(container, device_model, devices)
+        _add_post_contingency_branch_rating_parameter!(
+            container,
+            device_model,
+            devices,
+            network_model,
+        )
     end
 
     add_feedforward_arguments!(container, device_model, devices)
@@ -696,11 +707,12 @@ function construct_device!(
     end
 
     if haskey(get_time_series_names(device_model), BranchRatingTimeSeriesParameter)
-        add_parameters!(
+        add_branch_parameters!(
             container,
             BranchRatingTimeSeriesParameter,
             devices,
             device_model,
+            network_model,
         )
     end
 
@@ -708,7 +720,12 @@ function construct_device!(
         get_time_series_names(device_model),
         PostContingencyBranchRatingTimeSeriesParameter,
     )
-        _add_post_contingency_branch_rating_parameter!(container, device_model, devices)
+        _add_post_contingency_branch_rating_parameter!(
+            container,
+            device_model,
+            devices,
+            network_model,
+        )
     end
 
     add_feedforward_arguments!(container, device_model, devices)
@@ -810,5 +827,43 @@ function add_post_contingency_flow_expressions!(
             end
         end
     end
+    return
+end
+
+# `SecurityConstrainedStaticBranch` is intentionally inert under network models
+# that carry no branch-flow representation: NFA, CopperPlate and AreaBalance
+# build nothing rather than erroring (mirrors the StaticBranch no-ops). Defined
+# on concrete network types to avoid ambiguity with the PTDF/ACP methods.
+function construct_device!(
+    ::OptimizationContainer,
+    ::PSY.System,
+    ::ArgumentConstructStage,
+    ::DeviceModel{T, F},
+    ::Union{
+        NetworkModel{NFAPowerModel},
+        NetworkModel{CopperPlatePowerModel},
+        NetworkModel{AreaBalancePowerModel},
+    },
+) where {T <: PSY.ACTransmission, F <: AbstractSecurityConstrainedStaticBranch}
+    @debug "No argument construction for $F under NFA/CopperPlate/AreaBalance; \
+            security-constrained branch limits are inert for these network \
+            models." _group = LOG_GROUP_BRANCH_CONSTRUCTIONS
+    return
+end
+
+function construct_device!(
+    ::OptimizationContainer,
+    ::PSY.System,
+    ::ModelConstructStage,
+    ::DeviceModel{T, F},
+    ::Union{
+        NetworkModel{NFAPowerModel},
+        NetworkModel{CopperPlatePowerModel},
+        NetworkModel{AreaBalancePowerModel},
+    },
+) where {T <: PSY.ACTransmission, F <: AbstractSecurityConstrainedStaticBranch}
+    @debug "No model construction for $F under NFA/CopperPlate/AreaBalance; \
+            security-constrained branch limits are inert for these network \
+            models." _group = LOG_GROUP_BRANCH_CONSTRUCTIONS
     return
 end

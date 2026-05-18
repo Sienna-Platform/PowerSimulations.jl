@@ -159,12 +159,24 @@ the branch's `rating` (or `rating_b` when a `PostContingencyBranchRatingTimeSeri
 is attached).
 
 Outage modeling notes:
-- An outage UUID is "claimed" by `DeviceModel{D, SC}` iff the type of every
-  outaged (associated) component on that outage is `D`. The OUTAGED
+- An outage UUID is "claimed" by `DeviceModel{D, SC}` iff `D` is among the
+  types of the outaged (associated) components on that outage. A
+  multi-component outage is therefore claimed by every SC `DeviceModel`
+  whose component type appears in its outaged set; the post-contingency
+  build deduplicates by referencing the first claimer. The OUTAGED
   component's type — not the monitored components — must be covered by an
   SC `DeviceModel` for the outage to contribute any constraints.
-- A monitored component whose type is not modeled by the template is
-  silently skipped (warned once per type at template validation; no
+- The monitored set is whatever each outage explicitly lists in its
+  `monitored_components`. There is no implicit "monitor everything" default:
+  an outage with empty `monitored_components` monitors nothing (a warning is
+  emitted) and contributes no post-contingency constraints. This is
+  deliberate — defaulting to monitoring every branch under every outage would
+  silently produce an N-1-everything-by-everything problem that is
+  intractable for realistic systems; the user must opt in to each monitored
+  branch.
+- A monitored component whose type is not a modeled `PSY.ACTransmission`
+  branch type (either absent from the template, or modeled but not a branch)
+  is skipped (warned once per type at template validation; no
   post-contingency constraints are built for it).
 - `PSY.PlannedOutage` instances are excluded by default; set
   `attributes = Dict("include_planned_outages" => true)` on the

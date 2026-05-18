@@ -449,9 +449,15 @@ function add_constraints!(
     array = get_variable(container, FlowActivePowerVariable(), T)
 
     use_slacks = get_use_slacks(device_model)
-    has_ts_rating =
-        haskey(get_time_series_names(device_model), BranchRatingTimeSeriesParameter)
-    if has_ts_rating
+    # Gate on the parameter container actually existing, not merely on the
+    # time-series name being configured: when the name is set but no branch of
+    # this type carries the series, `add_parameters!` skips creating the
+    # container and `get_parameter_array` would throw. An empty
+    # `ts_branch_names` then routes every arc through the static-rating path,
+    # which is the intended fallback. `name in ts_branch_names` is
+    # self-sufficient at the call site.
+    ts_branch_names = String[]
+    if has_container_key(container, BranchRatingTimeSeriesParameter, T)
         ts_name = get_time_series_names(device_model)[BranchRatingTimeSeriesParameter]
         param = get_parameter_array(container, BranchRatingTimeSeriesParameter(), T)
         ts_branch_names = axes(param, 1)
@@ -459,7 +465,7 @@ function add_constraints!(
 
     for (name, (arc, reduction)) in
         get_constraint_map_by_type(reduced_branch_tracker)[FlowRateConstraint][T]
-        if has_ts_rating && name in ts_branch_names
+        if name in ts_branch_names
             _add_flow_rate_constraint_with_parameters!(
                 container,
                 T,
@@ -725,15 +731,22 @@ function add_constraints!(
         slack_ub = get_variable(container, FlowActivePowerSlackUpperBound(), B)
     end
 
-    has_ts_rating =
-        haskey(get_time_series_names(device_model), BranchRatingTimeSeriesParameter)
-    if has_ts_rating
+    # Gate on the parameter container actually existing, not merely on the
+    # time-series name being configured: when the name is set but no branch of
+    # this type carries the series, `add_parameters!` skips creating the
+    # container and `get_parameter_array` would throw. An empty
+    # `ts_branch_names` then routes every arc through the static-rating path,
+    # which is the intended fallback. `name in ts_branch_names` is
+    # self-sufficient at the call site.
+    ts_branch_names = String[]
+    if has_container_key(container, BranchRatingTimeSeriesParameter, B)
         param = get_parameter_array(container, BranchRatingTimeSeriesParameter(), B)
         mult = get_parameter_multiplier_array(
             container,
             BranchRatingTimeSeriesParameter(),
             B,
         )
+        ts_branch_names = axes(param, 1)
     end
 
     for (name, (arc, reduction)) in
@@ -742,18 +755,26 @@ function add_constraints!(
         # It might have performance implications. Possibly separate this into other functions
         reduction_entry = all_branch_maps_by_type[reduction][B][arc]
         # Per-name (not per-timestep): the TS membership does not depend on `t`.
-        name_has_ts = has_ts_rating && name in axes(param, 1)
-        for t in time_steps
-            branch_rate = if name_has_ts
-                param[name, t] * mult[name, t]
-            else
-                branch_rating(reduction_entry, device_model)
+        # The time-series `param * mult` is built to equal `rating^2` directly, so
+        # it is NOT squared here; the static path squares the scalar rating.
+        if name in ts_branch_names
+            for t in time_steps
+                constraint[name, t] = JuMP.@constraint(
+                    get_jump_model(container),
+                    var1[name, t]^2 + var2[name, t]^2 -
+                    (use_slacks ? slack_ub[name, t] : 0.0) <=
+                    param[name, t] * mult[name, t]
+                )
             end
-            constraint[name, t] = JuMP.@constraint(
-                get_jump_model(container),
-                var1[name, t]^2 + var2[name, t]^2 -
-                (use_slacks ? slack_ub[name, t] : 0.0) <= branch_rate^2
-            )
+        else
+            branch_rate = branch_rating(reduction_entry, device_model)
+            for t in time_steps
+                constraint[name, t] = JuMP.@constraint(
+                    get_jump_model(container),
+                    var1[name, t]^2 + var2[name, t]^2 -
+                    (use_slacks ? slack_ub[name, t] : 0.0) <= branch_rate^2
+                )
+            end
         end
     end
     return
@@ -799,15 +820,25 @@ function add_constraints!(
         slack_ub = get_variable(container, FlowActivePowerSlackUpperBound(), B)
     end
 
-    has_ts_rating =
-        haskey(get_time_series_names(device_model), BranchRatingTimeSeriesParameter)
-    if has_ts_rating
+    # Gate on the parameter container actually existing, not merely on the
+    # time-series name being configured: when the name is set but no branch of
+    # this type carries the series, `add_parameters!` skips creating the
+    # container and `get_parameter_array` would throw. An empty
+    # `ts_branch_names` then routes every arc through the static-rating path,
+    # which is the intended fallback. `name in ts_branch_names` is
+    # self-sufficient at the call site.
+    ts_branch_names = String[]
+    if has_container_key(container, BranchRatingTimeSeriesParameter, B)
+        # In this case the value of the multiplier and the param need to equal to rating^2.
+        # The updating needs to happen in a clever way to avoid performance issues. The param and multiplier are
+        # stored separately to allow the time series to be updated without needing to rebuild the multiplier, which is more expensive to update since it requires updating all entries instead of just the ones in the time series.
         param = get_parameter_array(container, BranchRatingTimeSeriesParameter(), B)
         mult = get_parameter_multiplier_array(
             container,
             BranchRatingTimeSeriesParameter(),
             B,
         )
+        ts_branch_names = axes(param, 1)
     end
 
     for (name, (arc, reduction)) in
@@ -816,18 +847,24 @@ function add_constraints!(
         # It might have performance implications. Possibly separate this into other functions
         reduction_entry = all_branch_maps_by_type[reduction][B][arc]
         # Per-name (not per-timestep): the TS membership does not depend on `t`.
-        name_has_ts = has_ts_rating && name in axes(param, 1)
-        for t in time_steps
-            branch_rate = if name_has_ts
-                param[name, t] * mult[name, t]
-            else
-                branch_rating(reduction_entry, device_model)
+        if name in ts_branch_names
+            for t in time_steps
+                constraint[name, t] = JuMP.@constraint(
+                    get_jump_model(container),
+                    var1[name, t]^2 + var2[name, t]^2 -
+                    (use_slacks ? slack_ub[name, t] : 0.0) <=
+                    param[name, t] * mult[name, t]
+                )
             end
-            constraint[name, t] = JuMP.@constraint(
-                get_jump_model(container),
-                var1[name, t]^2 + var2[name, t]^2 -
-                (use_slacks ? slack_ub[name, t] : 0.0) <= branch_rate^2
-            )
+        else
+            branch_rate = branch_rating(reduction_entry, device_model)
+            for t in time_steps
+                constraint[name, t] = JuMP.@constraint(
+                    get_jump_model(container),
+                    var1[name, t]^2 + var2[name, t]^2 -
+                    (use_slacks ? slack_ub[name, t] : 0.0) <= branch_rate^2
+                )
+            end
         end
     end
     return

@@ -25,14 +25,14 @@ end
 function extend_event_parameters!(simulation::Simulation, event_model)
     sequence = get_sequence(simulation)
     sim_state = get_simulation_state(simulation)
+    # `apply_simulation_events!` already errored if there is no emulation
+    # model, and it is the only caller — `em_model` cannot be nothing here.
     em_model = get_emulation_model(get_models(simulation))
-    isnothing(em_model) && return
     model_name = get_name(em_model)
     for (event_uuid, device_type_maps) in
         event_model.attribute_device_map[model_name]
         sim_time = get_current_time(simulation)
         for (dtype, device_names) in device_type_maps
-            em_model = get_emulation_model(get_models(simulation))
             status_change_countdown_data = get_decision_state_data(
                 sim_state,
                 ParameterKey(AvailableStatusChangeCountdownParameter, dtype),
