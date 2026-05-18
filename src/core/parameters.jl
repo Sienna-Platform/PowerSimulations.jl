@@ -474,21 +474,21 @@ Parameter to define requirement time series
 struct RequirementTimeSeriesParameter <: TimeSeriesParameter end
 
 """
-Abstract type for dynamic ratings of AC branches
+Abstract type for time-series-driven ratings of AC branches
 """
-abstract type AbstractDynamicBranchRatingTimeSeriesParameter <: TimeSeriesParameter end
+abstract type AbstractBranchRatingTimeSeriesParameter <: TimeSeriesParameter end
 
 """
-Parameter to define the dynamic rating time series of a branch
+Parameter to define the rating time series of a branch
 """
-struct DynamicBranchRatingTimeSeriesParameter <:
-       AbstractDynamicBranchRatingTimeSeriesParameter end
+struct BranchRatingTimeSeriesParameter <:
+       AbstractBranchRatingTimeSeriesParameter end
 
 """
-Parameter to define the dynamic ratings time series of an AC branch for post-contingency condition
+Parameter to define the rating time series of an AC branch for post-contingency condition
 """
-struct PostContingencyDynamicBranchRatingTimeSeriesParameter <:
-       AbstractDynamicBranchRatingTimeSeriesParameter end
+struct PostContingencyBranchRatingTimeSeriesParameter <:
+       AbstractBranchRatingTimeSeriesParameter end
 
 """
 Parameter to define Flow From_To limit time series
@@ -610,9 +610,9 @@ should_write_resulting_value(::Type{<:AbstractCostAtMinParameter}) = true
 should_write_resulting_value(::Type{<:AbstractPiecewiseLinearSlopeParameter}) = true
 should_write_resulting_value(::Type{<:AbstractPiecewiseLinearBreakpointParameter}) = true
 
-convert_result_to_natural_units(::Type{DynamicBranchRatingTimeSeriesParameter}) = true
+convert_result_to_natural_units(::Type{BranchRatingTimeSeriesParameter}) = true
 convert_result_to_natural_units(
-    ::Type{PostContingencyDynamicBranchRatingTimeSeriesParameter},
+    ::Type{PostContingencyBranchRatingTimeSeriesParameter},
 ) = true
 convert_result_to_natural_units(::Type{ActivePowerTimeSeriesParameter}) = true
 convert_result_to_natural_units(::Type{ReactivePowerTimeSeriesParameter}) = true

@@ -273,20 +273,20 @@ function list_simulation_events(
     step = nothing,
     model_name::Union{String, Nothing} = nothing,
 ) where {T <: IS.AbstractRecorderEvent}
-    if model_name !== nothing && step === nothing
+    if !isnothing(model_name) && isnothing(step)
         throw(ArgumentError("step is required if model_name is passed"))
     end
 
     recorder_file = _get_simulation_recorder_filename(output_dir)
     events = IS.list_recorder_events(T, recorder_file, filter_func)
 
-    if step !== nothing
+    if !isnothing(step)
         recorder_file = _get_simulation_status_recorder_filename(output_dir)
         step_range = get_simulation_step_range(recorder_file, step)
         _filter_by_type_range!(events, step_range)
     end
 
-    if model_name !== nothing
+    if !isnothing(model_name)
         recorder_file = _get_simulation_status_recorder_filename(output_dir)
         model_range = get_simulation_model_range(recorder_file, step, model_name)
         _filter_by_type_range!(events, model_range)

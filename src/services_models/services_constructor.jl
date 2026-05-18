@@ -41,7 +41,7 @@ function construct_services!(
             network_model,
         )
     end
-    groupservice === nothing || construct_service!(
+    isnothing(groupservice) || construct_service!(
         container,
         sys,
         stage,
@@ -81,7 +81,7 @@ function construct_services!(
             network_model,
         )
     end
-    groupservice === nothing || construct_service!(
+    isnothing(groupservice) || construct_service!(
         container,
         sys,
         stage,

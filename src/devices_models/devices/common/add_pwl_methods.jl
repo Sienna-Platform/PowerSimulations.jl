@@ -135,11 +135,11 @@ function add_sparse_pwl_interpolation_variables!(
 
                 # Set upper bound if specified by the device formulation
                 ub = get_variable_upper_bound(T(), d, V())
-                ub !== nothing && JuMP.set_upper_bound(var_container[name, i, t], ub)
+                !isnothing(ub) && JuMP.set_upper_bound(var_container[name, i, t], ub)
 
                 # Set lower bound if specified by the device formulation  
                 lb = get_variable_lower_bound(T(), d, V())
-                lb !== nothing && JuMP.set_lower_bound(var_container[name, i, t], lb)
+                !isnothing(lb) && JuMP.set_lower_bound(var_container[name, i, t], lb)
             end
         end
     end

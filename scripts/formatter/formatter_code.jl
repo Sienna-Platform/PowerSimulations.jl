@@ -5,7 +5,7 @@ Pkg.update()
 
 using JuliaFormatter
 
-main_paths = ["."]
+main_paths = ["./src", "./test", "./docs"]
 for main_path in main_paths
     for (root, dir, files) in walkdir(main_path)
         for f in files

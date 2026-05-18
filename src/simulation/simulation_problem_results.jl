@@ -36,7 +36,7 @@ function SimulationProblemResults{T}(
     results_output_path = nothing,
     system = nothing,
 ) where {T <: OperationModelSimulationResults}
-    if results_output_path === nothing
+    if isnothing(results_output_path)
         results_output_path = joinpath(path, "results")
     end
 

@@ -112,7 +112,7 @@ function open_store(
         store = HdfSimulationStore(joinpath(directory, filename), mode)
         return func(store)
     finally
-        if store !== nothing
+        if !isnothing(store)
             close(store)
         end
     end
@@ -126,7 +126,7 @@ function Base.close(store::HdfSimulationStore)
 end
 
 function Base.isopen(store::HdfSimulationStore)
-    return store.file === nothing ? false : HDF5.isopen(store.file)
+    return isnothing(store.file) ? false : HDF5.isopen(store.file)
 end
 
 function Base.flush(store::HdfSimulationStore)
@@ -676,6 +676,35 @@ function write_result!(
     #if is_full(store.cache)
     #    _flush_data!(store.cache, store)
     #end
+
+    @debug "write_result" get_size(store.cache) encode_key_as_string(key)
+    return
+end
+
+"""
+Write a decision-model result whose container is a `SparseAxisArray`. The
+sparse container is flattened to a `(horizon × n_cols)` `Matrix{Float64}` via
+`to_matrix`, where columns are the unique non-time tuple keys (e.g. for
+post-contingency flows: `(outage_id, branch_name)`). Cache and HDF5 dataset
+shapes match the 3D dense path: `(horizon, n_cols, num_results)`.
+"""
+function write_result!(
+    store::HdfSimulationStore,
+    model_name::Symbol,
+    key::OptimizationContainerKey,
+    index::DecisionModelIndexType,
+    ::Dates.DateTime,
+    data::SparseAxisArray{Float64},
+)
+    output_cache = get_output_cache(store.cache, model_name, key)
+    cur_size = get_size(store.cache)
+    add_result!(output_cache, index, to_matrix(data), is_full(store.cache, cur_size))
+
+    if get_dirty_size(output_cache) >= get_min_flush_size(store.cache)
+        discard = !should_keep_in_cache(output_cache)
+        size_flushed = _flush_data!(output_cache, store, model_name, key, discard)
+        @debug "flushed data" LOG_GROUP_SIMULATION_STORE key size_flushed discard cur_size
+    end
 
     @debug "write_result" get_size(store.cache) encode_key_as_string(key)
     return

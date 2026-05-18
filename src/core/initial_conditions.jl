@@ -42,7 +42,7 @@ end
 function get_condition(
     ::InitialCondition{T, Nothing},
 ) where {T <: InitialConditionType}
-    return nothing
+    return
 end
 
 get_component(ic::InitialCondition) = ic.component

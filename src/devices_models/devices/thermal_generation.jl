@@ -374,7 +374,7 @@ function add_variable!(
             )
             if get_warm_start(settings)
                 init = get_variable_warm_start_value(variable_type, d, formulation)
-                init !== nothing && JuMP.set_start_value(variable[name, t], init)
+                !isnothing(init) && JuMP.set_start_value(variable[name, t], init)
             end
         end
     end
@@ -1187,7 +1187,7 @@ function add_constraints!(
     end
     for c in con
         # Workaround to remove invalid key combinations
-        filter!(x -> x.second !== nothing, c.data)
+        filter!(x -> !isnothing(x.second), c.data)
     end
     return
 end
@@ -1323,7 +1323,7 @@ function add_constraints!(
     end
     for c in [con_ub, con_lb]
         # Workaround to remove invalid key combinations
-        filter!(x -> x.second !== nothing, c.data)
+        filter!(x -> !isnothing(x.second), c.data)
     end
     return
 end
@@ -1351,7 +1351,7 @@ function _get_data_for_tdc(
         IS.@assert_op g == get_component(initial_conditions_off[ix])
         time_limits = PSY.get_time_limits(g)
         name = PSY.get_name(g)
-        if time_limits !== nothing
+        if !isnothing(time_limits)
             if (time_limits.up <= fraction_of_hour) & (time_limits.down <= fraction_of_hour)
                 @debug "Generator $(name) has a nonbinding time limits. Constraints Skipped"
                 continue

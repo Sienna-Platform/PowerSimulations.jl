@@ -184,7 +184,7 @@ end
         val2 = container.constraints[key].data[index]
         @test val1 == val2
     end
-    @test get_constraint_index(model, length(constraint_indices) + 1) === nothing
+    @test isnothing(get_constraint_index(model, length(constraint_indices) + 1))
 
     var_keys = PSI.get_all_variable_keys(model)
     var_index = get_all_variable_index(model)
@@ -197,7 +197,7 @@ end
         val2 = container.variables[key].data[index]
         @test val1 == val2
     end
-    @test get_variable_index(model, length(var_index) + 1) === nothing
+    @test isnothing(get_variable_index(model, length(var_index) + 1))
 end
 
 @testset "Decision Model Solve with Slacks" begin
@@ -405,7 +405,7 @@ end
     results3 = OptimizationProblemResults(results_path)
     var3 = read_variable(results3, ActivePowerVariable, ThermalStandard)
     @test var1_a == var3
-    @test get_system(results3) === nothing
+    @test isnothing(get_system(results3))
     set_system!(results3, get_system(results1))
     @test get_system(results3) isa PSY.System
 

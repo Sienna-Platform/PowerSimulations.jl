@@ -11,7 +11,7 @@
         @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
               PSI.ModelBuildStatus.BUILT
         opt_container = PSI.get_optimization_container(ps_model)
-        @test opt_container.pm !== nothing
+        @test !isnothing(opt_container.pm)
         @test PSI.has_container_key(opt_container, ActivePowerBalance, ACBus)
     end
 end
@@ -337,7 +337,7 @@ end
             test_results[network][sys][5],
             false,
         )
-        @test PSI.get_optimization_container(ps_model).pm !== nothing
+        @test !isnothing(PSI.get_optimization_container(ps_model).pm)
     end
 end
 
@@ -381,7 +381,7 @@ end
             test_results[network][sys][5],
             false,
         )
-        @test PSI.get_optimization_container(ps_model).pm !== nothing
+        @test !isnothing(PSI.get_optimization_container(ps_model).pm)
         psi_checksolve_test(
             ps_model,
             [MOI.OPTIMAL, MOI.LOCALLY_SOLVED],
@@ -837,7 +837,7 @@ end
         ps_model = DecisionModel(template, new_sys; optimizer = solver)
         @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
               PSI.ModelBuildStatus.BUILT
-        @test PSI.get_optimization_container(ps_model).pm !== nothing
+        @test !isnothing(PSI.get_optimization_container(ps_model).pm)
     end
 end
 

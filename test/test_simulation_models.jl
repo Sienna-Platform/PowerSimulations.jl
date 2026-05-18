@@ -27,7 +27,7 @@
     )
 
     @test length(PSI.get_decision_models(models)) == 3
-    @test PSI.get_emulation_model(models) !== nothing
+    @test !isnothing(PSI.get_emulation_model(models))
 
     @test_throws ErrorException SimulationModels(
         [

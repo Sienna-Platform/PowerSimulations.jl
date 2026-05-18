@@ -94,7 +94,7 @@ function OptimizationContainer(
         error("Default Time Series Type $V can't be abstract")
     end
 
-    if jump_model !== nothing && get_direct_mode_optimizer(settings)
+    if !isnothing(jump_model) && get_direct_mode_optimizer(settings)
         throw(
             IS.ConflictingInputsError(
                 "Externally provided JuMP models are not compatible with the direct model keyword argument. Use JuMP.direct_model before passing the custom model",
@@ -103,7 +103,7 @@ function OptimizationContainer(
     end
 
     return OptimizationContainer(
-        jump_model === nothing ? JuMP.Model() : jump_model,
+        isnothing(jump_model) ? JuMP.Model() : jump_model,
         1:1,
         settings,
         OrderedDict{VariableKey, AbstractArray}(),
@@ -274,7 +274,7 @@ end
 
 function _finalize_jump_model!(container::OptimizationContainer, settings::Settings)
     @debug "Instantiating the JuMP model" _group = LOG_GROUP_OPTIMIZATION_CONTAINER
-    if built_for_recurrent_solves(container) && get_optimizer(settings) === nothing
+    if built_for_recurrent_solves(container) && isnothing(get_optimizer(settings))
         throw(
             IS.ConflictingInputsError(
                 "Optimizer can not be nothing when building for recurrent solves",
@@ -285,7 +285,7 @@ function _finalize_jump_model!(container::OptimizationContainer, settings::Setti
     if get_direct_mode_optimizer(settings)
         optimizer = () -> MOI.instantiate(get_optimizer(settings))
         container.JuMPmodel = JuMP.direct_model(optimizer())
-    elseif get_optimizer(settings) === nothing
+    elseif isnothing(get_optimizer(settings))
         @debug "The optimization model has no optimizer attached" _group =
             LOG_GROUP_OPTIMIZATION_CONTAINER
     else
@@ -746,14 +746,6 @@ function build_impl!(
         )
     end
 
-    # # Sort branch models so that those with time series parameters (e.g. DLR) come first.
-    # # This ensures that DLR-aware constraint builders claim shared arcs before static builders,
-    # # preventing static constraints from overriding DLR constraints for parallel branches of
-    # # different types sharing the same arc.
-    # sorted_branch_models = sort(
-    #     collect(values(template.branches));
-    #     by = b -> isempty(get_time_series_names(b)) ? 1 : 0,
-    # )
     for branch_model in values(template.branches)
         @debug "Building Arguments for $(get_component_type(branch_model)) with $(get_formulation(branch_model)) formulation" _group =
             LOG_GROUP_OPTIMIZATION_CONTAINER
@@ -1071,7 +1063,7 @@ end
 
 function get_variable(container::OptimizationContainer, key::VariableKey)
     var = get(container.variables, key, nothing)
-    if var === nothing
+    if isnothing(var)
         name = ISOPT.encode_key(key)
         keys = ISOPT.encode_key.(get_variable_keys(container))
         throw(IS.InvalidValue("variable $name is not stored. $keys"))
@@ -1113,7 +1105,7 @@ end
 
 function get_aux_variable(container::OptimizationContainer, key::AuxVarKey)
     aux = get(container.aux_variables, key, nothing)
-    if aux === nothing
+    if isnothing(aux)
         name = ISOPT.encode_key(key)
         keys = ISOPT.encode_key.(get_aux_variable_keys(container))
         throw(IS.InvalidValue("Auxiliary variable $name is not stored. $keys"))
@@ -1192,7 +1184,7 @@ end
 
 function get_constraint(container::OptimizationContainer, key::ConstraintKey)
     var = get(container.constraints, key, nothing)
-    if var === nothing
+    if isnothing(var)
         name = ISOPT.encode_key(key)
         keys = ISOPT.encode_key.(get_constraint_keys(container))
         throw(IS.InvalidValue("constraint $name is not stored. $keys"))
@@ -1449,7 +1441,7 @@ end
 
 function get_parameter(container::OptimizationContainer, key::ParameterKey)
     param_container = get(container.parameters, key, nothing)
-    if param_container === nothing
+    if isnothing(param_container)
         name = ISOPT.encode_key(key)
         throw(
             IS.InvalidValue(
@@ -1524,7 +1516,7 @@ end
 function read_parameters(container::OptimizationContainer)
     params_dict = Dict{ParameterKey, DenseAxisArray}()
     parameters = get_parameters(container)
-    (parameters === nothing || isempty(parameters)) && return params_dict
+    (isnothing(parameters) || isempty(parameters)) && return params_dict
     for (k, v) in parameters
         # TODO: all functions similar to calculate_parameter_values should be in one
         # place and be consistent in behavior.
@@ -1613,7 +1605,7 @@ end
 
 function get_expression(container::OptimizationContainer, key::ExpressionKey)
     var = get(container.expressions, key, nothing)
-    if var === nothing
+    if isnothing(var)
         throw(
             IS.InvalidValue(
                 "expression $key is not stored. $(collect(keys(container.expressions)))",
@@ -1686,7 +1678,7 @@ end
 
 function get_initial_condition(container::OptimizationContainer, key::InitialConditionKey)
     initial_conditions = get(container.initial_conditions, key, nothing)
-    if initial_conditions === nothing
+    if isnothing(initial_conditions)
         throw(IS.InvalidValue("initial conditions are not stored for $(key)"))
     end
     return initial_conditions
@@ -1831,9 +1823,19 @@ function _calculate_dual_variable_value!(
     key::ConstraintKey{T, D},
     ::PSY.System,
 ) where {T <: ConstraintType, D <: Union{PSY.Component, PSY.System}}
-    constraint_duals = jump_value.(get_constraint(container, key))
+    constraint_container = get_constraint(container, key)
     dual_variable_container = get_duals(container)[key]
 
+    if constraint_container isa SparseAxisArray
+        # SparseAxisArray (Dict-backed, e.g. post-contingency constraints keyed
+        # by (outage_id, name, t)) has no `axes`, so `Iterators.product` is
+        # undefined. Copy per stored key instead; the dual container was
+        # mirrored from the same keys in `assign_dual_variable!`.
+        _copy_dual_values!(dual_variable_container, constraint_container)
+        return
+    end
+
+    constraint_duals = jump_value.(constraint_container)
     # Needs to loop since the container ordering might not match in the DenseAxisArray
     for index in Iterators.product(axes(constraint_duals)...)
         dual_variable_container[index...] = constraint_duals[index...]

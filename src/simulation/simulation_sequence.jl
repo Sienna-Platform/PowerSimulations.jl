@@ -134,7 +134,7 @@ function _add_feedforward_to_model(
     ::Type{U},
 ) where {T <: AbstractAffectFeedforward, U <: PSY.Device}
     device_model = get_model(get_template(sim_model), get_component_type(ff))
-    if device_model === nothing
+    if isnothing(device_model)
         model_name = get_name(sim_model)
         throw(
             IS.ConflictingInputsError(
@@ -158,7 +158,7 @@ function _add_feedforward_to_model(
             get_component_type(ff),
             get_feedforward_meta(ff),
         )
-        if service_model === nothing
+        if isnothing(service_model)
             throw(
                 IS.ConflictingInputsError(
                     "Service model $(get_component_type(ff)) not found in model $(get_name(sim_model))",
@@ -219,7 +219,7 @@ function _validate_event_timeseries_data(
 )
     devices_with_attribute = PSY.get_components(sys, event)
     for (k, v) in event_model.timeseries_mapping
-        if v !== nothing
+        if !isnothing(v)
             try
                 PSY.get_time_series(
                     IS.SingleTimeSeries,
@@ -240,7 +240,7 @@ function _validate_event_timeseries_data(
                 "Key $k passed as part of event time series mapping does not correspond to a parameter.",
             )
         end
-        if k == :outage_status && v === nothing
+        if k == :outage_status && isnothing(v)
             error(
                 "FixedForcedOutage requires a timeseries mapping for :outage_status parameter",
             )

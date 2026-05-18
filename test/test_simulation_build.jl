@@ -26,7 +26,7 @@
 
     for field in fieldnames(SimulationSequence)
         if fieldtype(SimulationSequence, field) == Union{Dates.DateTime, Nothing}
-            @test getfield(sim.sequence, field) !== nothing
+            @test !isnothing(getfield(sim.sequence, field))
         end
     end
 
@@ -81,7 +81,7 @@ end
 
     for field in fieldnames(SimulationSequence)
         if fieldtype(SimulationSequence, field) == Union{Dates.DateTime, Nothing}
-            @test getfield(sim.sequence, field) !== nothing
+            @test !isnothing(getfield(sim.sequence, field))
         end
     end
 

@@ -171,7 +171,7 @@ function _add_feedforward_arguments!(
     contributing_devices::Vector,
     ff::UpperBoundFeedforward,
 ) where {T <: PSY.AbstractReserve, U <: AbstractServiceFormulation}
-    parameter_type = get_default_parameter_type(ff, SR)
+    parameter_type = get_default_parameter_type(ff, T)
     add_parameters!(container, parameter_type, ff, model, contributing_devices)
     if get_slacks(ff)
         _add_feedforward_slack_variables!(

@@ -61,22 +61,21 @@ function _determine_bin_lhs(
     period::Int) where {T <: PSY.Component}
     name = PSY.get_name(component)
     if sos_status == SOSStatusVariable.NO_VARIABLE
-        return 1.0
         @debug "Using Piecewise Linear cost function but no variable/parameter ref for ON status is passed. Default status will be set to online (1.0)" _group =
             LOG_GROUP_COST_FUNCTIONS
-
+        return 1.0
     elseif sos_status == SOSStatusVariable.PARAMETER
-        param = get_default_on_parameter(component)
-        return get_parameter(container, param, T).parameter_array[name, period]
         @debug "Using Piecewise Linear cost function with parameter OnStatusParameter, $T" _group =
             LOG_GROUP_COST_FUNCTIONS
+        param = get_default_on_parameter(component)
+        return get_parameter(container, param, T).parameter_array[name, period]
     elseif sos_status == SOSStatusVariable.VARIABLE
-        var = get_default_on_variable(component)
-        return get_variable(container, var, T)[name, period]
         @debug "Using Piecewise Linear cost function with variable OnVariable $T" _group =
             LOG_GROUP_COST_FUNCTIONS
+        var = get_default_on_variable(component)
+        return get_variable(container, var, T)[name, period]
     else
-        @assert false
+        error("Unhandled SOSStatusVariable value $sos_status")
     end
 end
 
@@ -192,7 +191,7 @@ function _add_pwl_constraint!(
         @debug "Using Piecewise Linear cost function with variable OnVariable $T" _group =
             LOG_GROUP_COST_FUNCTIONS
     else
-        @assert false
+        error("Unhandled SOSStatusVariable value $sos_status")
     end
     P_min = PSY.get_active_power_limits(component).min
 

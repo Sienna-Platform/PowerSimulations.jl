@@ -59,7 +59,7 @@ function DecisionModel{M}(
     jump_model::Union{Nothing, JuMP.Model} = nothing;
     name = nothing,
 ) where {M <: DecisionProblem}
-    if name === nothing
+    if isnothing(name)
         name = nameof(M)
     elseif name isa String
         name = Symbol(name)

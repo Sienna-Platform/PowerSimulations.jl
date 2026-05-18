@@ -22,7 +22,7 @@ function _get_flow_bounds(d::PSY.TModelHVDCLine)
     elseif to_min <= 0.0 && from_min >= 0.0
         min_rate = to_min
     else
-        @assert false
+        error("Unreachable: invalid sign combination for HVDC line $(PSY.get_name(d)) min limits (from=$from_min, to=$to_min)")
     end
 
     if from_max >= 0.0 && to_max >= 0.0
@@ -34,7 +34,7 @@ function _get_flow_bounds(d::PSY.TModelHVDCLine)
     elseif from_max >= 0.0 && to_max <= 0.0
         max_rate = to_max
     else
-        @assert false
+        error("Unreachable: invalid sign combination for HVDC line $(PSY.get_name(d)) max limits (from=$from_max, to=$to_max)")
     end
 
     return min_rate, max_rate

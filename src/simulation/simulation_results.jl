@@ -273,14 +273,14 @@ function _populate_system_in_results!(
             error("Can't find the system file or retrieve the system error=$e")
         end
 
-        if populate_units !== nothing
+        if !isnothing(populate_units)
             PSY.set_units_base_system!(PSI.get_system(results), populate_units)
         else
             PSY.set_units_base_system!(PSI.get_system(results), IS.UnitSystem.NATURAL_UNITS)
         end
 
     else
-        (populate_units === nothing) ||
+        (isnothing(populate_units)) ||
             throw(
                 ArgumentError(
                     "populate_units=$populate_units is unaccepted when populate_system=$populate_system",
@@ -363,7 +363,7 @@ function export_results(results::SimulationResults, exports, store::SimulationSt
     for problem_results in values(results.decision_problem_results)
         problem_exports = get_problem_exports(exports, problem_results.problem)
         path =
-            exports.path === nothing ? problem_results.results_output_folder : exports.path
+            isnothing(exports.path) ? problem_results.results_output_folder : exports.path
         for timestamp in get_timestamps(problem_results)
             !should_export(exports, timestamp) && continue
 

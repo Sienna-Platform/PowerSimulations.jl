@@ -70,7 +70,7 @@ function _get_state_params(models::SimulationModels, simulation_step::Dates.Mill
         end
     end
     model = get_emulation_model(models)
-    if model !== nothing
+    if !isnothing(model)
         container = get_optimization_container(model)
         model_resolution = get_resolution(model)
         for type in fieldnames(DatasetContainer)
@@ -78,7 +78,8 @@ function _get_state_params(models::SimulationModels, simulation_step::Dates.Mill
             for key in keys(field_containers)
                 !should_write_resulting_value(key) && continue
                 if !haskey(params, key)
-                    @debug "New parameter $key found in emulator only"
+                    @warn "New parameter $key found in emulator only; \
+                        not registered by any decision model"
                 else
                     params[key] = (
                         horizon = params[key].horizon,
@@ -263,7 +264,7 @@ function update_decision_state!(
     for t in result_time_index
         state_range = state_data_index:(state_data_index + offset)
         for name in column_names, (ix, i) in enumerate(state_range)
-            state_data.values[name, i] = maximum([0.0, store_data[name, t] - ix + 1])
+            state_data.values[name, i] = max(0.0, store_data[name, t] - ix + 1)
         end
         set_last_recorded_row!(state_data, state_range[end])
         state_data_index += resolution_ratio
@@ -344,7 +345,7 @@ function update_decision_state!(
             subsequent_outage_occurence_data =
                 Vector(event_occurrence_data.values[name, outage_index:end])
             n_remaining_indices = findfirst(x -> x == 1.0, subsequent_outage_occurence_data)
-            if n_remaining_indices === nothing
+            if isnothing(n_remaining_indices)
                 n_remaining_indices = length(subsequent_outage_occurence_data)
             end
             for ix in outage_index:(state_data_index + n_remaining_indices)
@@ -405,7 +406,7 @@ function _get_time_to_recover(
     simulation_time,
 )
     timeseries_mapping = event_model.timeseries_mapping
-    if timeseries_mapping[:mean_time_to_recovery] === nothing
+    if isnothing(timeseries_mapping[:mean_time_to_recovery])
         return PSY.get_mean_time_to_recovery(event)
     else
         ts_mttr = PSY.get_time_series(
@@ -432,7 +433,7 @@ function _get_time_to_recover(
         start_time = simulation_time,
     )
     vals = TimeSeries.values(ts_outage_status.data)
-    if length(vals) < 3 || findfirst(isequal(0.0), vals[3:end]) === nothing
+    if length(vals) < 3 || isnothing(findfirst(isequal(0.0), vals[3:end]))
         return length(vals)
     else
         return findfirst(isequal(0.0), vals[3:end])
@@ -518,7 +519,7 @@ function update_decision_state!(
             subsequent_outage_occurence_data =
                 Vector(event_occurrence_data.values[name, outage_index:end])
             n_remaining_indices = findfirst(x -> x == 1.0, subsequent_outage_occurence_data)
-            if n_remaining_indices === nothing
+            if isnothing(n_remaining_indices)
                 n_remaining_indices = length(subsequent_outage_occurence_data)
             end
             for ix in outage_index:(state_data_index + n_remaining_indices)
@@ -845,7 +846,7 @@ function _get_outage_occurrence(
     current_time,
 )
     timeseries_mapping = event_model.timeseries_mapping
-    if timeseries_mapping[:outage_transition_probability] === nothing
+    if isnothing(timeseries_mapping[:outage_transition_probability])
         λ = PSY.get_outage_transition_probability(event)
     else
         ts_outage_prob = PSY.get_time_series(
@@ -945,6 +946,9 @@ function update_system_state!(
         if current_status == 1.0 && current_status_change == 1.0
             active_power_offset_parameter.values[name, 1] =
                 -1.0 * active_power_timeseries_parameter_values[name]
+        else
+            # Clear stale offset when the device is no longer in an active outage state.
+            active_power_offset_parameter.values[name, 1] = 0.0
         end
     end
     return
@@ -1039,23 +1043,14 @@ function update_system_state!(
     # simulation time since the value might have not been updated yet
     ts = get_value_timestamp(decision_dataset, simulation_time)
     system_dataset = get_dataset(state, key)
-    get_update_timestamp(system_dataset)
     if ts == get_update_timestamp(system_dataset)
-        # Uncomment for debugging
-        #@warn "Skipped overwriting data with the same timestamp \\
-        #       key: $(encode_key_as_string(key)), $(simulation_time), $ts"
         return
     end
 
-    # Note: This protection is disabled because the rate of update of the emulator
-    # is now higher than the decision rate. If the event happens in the middle of an "hourly"
-    # rate decision variable then the whole hour is updated creating a problem.
-
-    # New logic will be needed to maintain the protection.
-    #if get_update_timestamp(system_dataset) > ts
-    #    error("Trying to update with past data a future state timestamp \\
-    #        key: $(encode_key_as_string(key)), $(simulation_time), $ts")
-    #end
+    # TODO: past-timestamp protection (`get_update_timestamp(system_dataset) > ts`)
+    # was removed because the emulator now updates at a higher cadence than the decision
+    # rate, so an event firing inside an hourly decision variable would update the whole
+    # hour and trip the guard. New ordering logic is required to restore the safety net.
 
     # Writes the timestamp of the value used for the update
     set_update_timestamp!(system_dataset, ts)
@@ -1086,15 +1081,9 @@ function update_system_state!(
     decision_state_value = get_dataset_value(decision_dataset, simulation_time)
 
     if ts == get_update_timestamp(system_dataset)
-        # Uncomment for debugging
-        #@warn "Skipped overwriting data with the same timestamp \\
-        #       key: $(encode_key_as_string(key)), $(simulation_time), $ts"
         return
     end
-    #if get_update_timestamp(system_dataset) > ts
-    #    error("Trying to update with past data a future state timestamp \\
-    #        key: $(encode_key_as_string(key)), $(simulation_time), $ts")
-    #end
+    # TODO: past-timestamp protection removed; see note in the dataset variant above.
 
     # Writes the timestamp of the value used for the update
     set_update_timestamp!(system_dataset, ts)

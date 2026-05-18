@@ -1,0 +1,190 @@
+@testset "Post-contingency outage axes — attribute drives inclusion" begin
+    scb_formulation = SecurityConstrainedStaticBranch
+
+    # `PSY.UnplannedOutage` is abstract; use the concrete `GeometricDistributionForcedOutage`.
+    # The two outages intentionally monitor different-sized sets so the
+    # `include_planned_outages=true` testset can assert that sparse containers
+    # carry per-outage axes, not a shared global axis.
+    function _build_mixed_outage_system()
+        sys = PSB.build_system(PSITestSystems, "c_sys5")
+        lines = collect(PSY.get_components(PSY.Line, sys))
+        @assert length(lines) >= 3
+        all_branches = collect(PSY.get_components(PSY.ACTransmission, sys))
+        unplanned = PSY.GeometricDistributionForcedOutage(;
+            mean_time_to_recovery = 10,
+            outage_transition_probability = 0.9999,
+            monitored_components = all_branches,
+        )
+        planned = PSY.PlannedOutage(;
+            outage_schedule = "planned_outage_ts",
+            monitored_components = [lines[3]],
+        )
+        PSY.add_supplemental_attribute!(sys, lines[1], unplanned)
+        PSY.add_supplemental_attribute!(sys, lines[2], planned)
+        return sys, unplanned, planned
+    end
+
+    function _build_model(sys; attributes = Dict{String, Any}(), outages = PSY.Outage[])
+        template = get_thermal_dispatch_template_network(
+            NetworkModel(
+                PTDFPowerModel;
+                use_slacks = false,
+                MODF_matrix = PNM.VirtualMODF(sys),
+            ),
+        )
+        set_device_model!(
+            template,
+            DeviceModel(
+                PSY.Line, scb_formulation;
+                attributes = attributes,
+                outages = outages,
+            ),
+        )
+        model = DecisionModel(template, sys)
+        @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+              PSI.ModelBuildStatus.BUILT
+        return model
+    end
+
+    function _axes(model)
+        container = PSI.get_optimization_container(model)
+        expr = PSI.get_expression(
+            container, PSI.PostContingencyBranchFlow(), PSY.Line,
+        )
+        cons_ub = PSI.get_constraint(
+            container,
+            PSI.ConstraintKey(
+                PSI.PostContingencyFlowRateConstraint,
+                PSY.Line, "ub",
+            ),
+        )
+        # SparseAxisArray stores tuple keys; project axis 1 (outage_id).
+        expr_outages = Set(k[1] for k in keys(expr.data))
+        cons_outages = Set(k[1] for k in keys(cons_ub.data))
+        return expr_outages, cons_outages
+    end
+
+    @testset "default: only UnplannedOutage appears in axes" begin
+        sys, unplanned, planned = _build_mixed_outage_system()
+        model = _build_model(sys)   # default: empty outages, no planned
+
+        expr_ax, cons_ax = _axes(model)
+        @test expr_ax == cons_ax
+        @test expr_ax == Set([string(IS.get_uuid(unplanned))])
+        @test !(string(IS.get_uuid(planned)) in expr_ax)
+    end
+
+    @testset "include_planned_outages=true: both outages appear in axes" begin
+        sys, unplanned, planned = _build_mixed_outage_system()
+        model = _build_model(
+            sys; attributes = Dict{String, Any}("include_planned_outages" => true),
+        )
+
+        expr_ax, cons_ax = _axes(model)
+        @test expr_ax == cons_ax
+        @test expr_ax == Set([
+            string(IS.get_uuid(unplanned)),
+            string(IS.get_uuid(planned)),
+        ])
+
+        # Different-size monitored sets: unplanned monitors all `ACTransmission`
+        # branches in c_sys5 (6 lines, all on distinct arcs), planned monitors
+        # one. Sparse containers must carry per-outage branch sets — not a
+        # shared global axis — so the (outage, branch_name) projection sizes
+        # differ between the two outages.
+        container = PSI.get_optimization_container(model)
+        expr = PSI.get_expression(
+            container, PSI.PostContingencyBranchFlow(), PSY.Line,
+        )
+        unplanned_id = string(IS.get_uuid(unplanned))
+        planned_id = string(IS.get_uuid(planned))
+        unplanned_branches =
+            Set(k[2] for k in keys(expr.data) if k[1] == unplanned_id)
+        planned_branches =
+            Set(k[2] for k in keys(expr.data) if k[1] == planned_id)
+        @test length(unplanned_branches) == 6
+        @test length(planned_branches) == 1
+        @test length(unplanned_branches) != length(planned_branches)
+    end
+
+    @testset "outages kwarg selects a subset" begin
+        # Replaces the legacy `contingency_uuids` attribute filter. Explicit
+        # `outages = [unplanned]` restricts the model to that one outage,
+        # bypassing the `include_planned_outages` type filter.
+        sys, unplanned, planned = _build_mixed_outage_system()
+        model = _build_model(sys; outages = [unplanned])
+
+        expr_ax, cons_ax = _axes(model)
+        @test expr_ax == cons_ax
+        @test expr_ax == Set([string(IS.get_uuid(unplanned))])
+        @test !(string(IS.get_uuid(planned)) in expr_ax)
+    end
+end
+
+@testset "Outage pinning includes outaged-component buses (N3)" begin
+    # Regression: `_add_outage_monitored_irreducible_buses!` must pin both the
+    # MONITORED components' buses AND the OUTAGED (associated) components'
+    # buses. If only the monitored set is pinned, a degree-two reduction
+    # between the outaged arc's endpoints can collapse the contingency arc out
+    # of the reduced topology and PNM's MODF column for that contingency would
+    # have no matching arc to apply.
+    sys = PSB.build_system(PSITestSystems, "c_sys5")
+    lines = collect(PSY.get_components(PSY.Line, sys))
+    @assert length(lines) >= 3
+    outaged_line = lines[1]   # the contingency arc itself
+    monitored_only_line = lines[2]   # appears in monitored set but is not the outaged component
+    transition = PSY.GeometricDistributionForcedOutage(;
+        mean_time_to_recovery = 10,
+        outage_transition_probability = 0.9999,
+        monitored_components = [monitored_only_line],
+    )
+    PSY.add_supplemental_attribute!(sys, outaged_line, transition)
+
+    # The outage only pins buses when it is registered on an SC-formulated
+    # branch DeviceModel; a raw system attribute on a non-SC device is ignored.
+    branch_models = PSI.BranchModelContainer()
+    branch_models[nameof(PSY.Line)] =
+        DeviceModel(PSY.Line, SecurityConstrainedStaticBranch; outages = [transition])
+
+    irreducible_buses = Set{Int64}()
+    PSI._add_outage_monitored_irreducible_buses!(irreducible_buses, sys, branch_models)
+
+    monitored_arc = PSY.get_arc(monitored_only_line)
+    outaged_arc = PSY.get_arc(outaged_line)
+
+    # Monitored component endpoints must be present (existing behavior).
+    @test PSY.get_number(PSY.get_from(monitored_arc)) in irreducible_buses
+    @test PSY.get_number(PSY.get_to(monitored_arc)) in irreducible_buses
+
+    # Outaged component endpoints must also be present (N3 fix).
+    @test PSY.get_number(PSY.get_from(outaged_arc)) in irreducible_buses
+    @test PSY.get_number(PSY.get_to(outaged_arc)) in irreducible_buses
+end
+
+@testset "Outage on a non-SC device pins nothing" begin
+    # Scoping regression: a system Outage attribute whose branch is modeled
+    # with a non-SC formulation must NOT pin buses. Otherwise a stray Outage
+    # would force a provided PTDF to be discarded and recomputed on every
+    # non-SC build.
+    sys = PSB.build_system(PSITestSystems, "c_sys5")
+    lines = collect(PSY.get_components(PSY.Line, sys))
+    @assert length(lines) >= 2
+    outaged_line = lines[1]
+    transition = PSY.GeometricDistributionForcedOutage(;
+        mean_time_to_recovery = 10,
+        outage_transition_probability = 0.9999,
+        monitored_components = [lines[2]],
+    )
+    PSY.add_supplemental_attribute!(sys, outaged_line, transition)
+
+    # `StaticBranch` is not security constrained, so `outages` is not
+    # registered on the DeviceModel and the attribute is ignored.
+    branch_models = PSI.BranchModelContainer()
+    branch_models[nameof(PSY.Line)] =
+        DeviceModel(PSY.Line, StaticBranch; outages = [transition])
+
+    irreducible_buses = Set{Int64}()
+    PSI._add_outage_monitored_irreducible_buses!(irreducible_buses, sys, branch_models)
+
+    @test isempty(irreducible_buses)
+end
