@@ -746,14 +746,6 @@ function build_impl!(
         )
     end
 
-    # # Sort branch models so that those with time series parameters (e.g. BranchRatingTimeSeriesParameter)
-    # # come first. This ensures that the parameter-aware constraint builders claim shared arcs before
-    # # static builders, preventing static constraints from overriding the time-varying constraints for
-    # # parallel branches of different types sharing the same arc.
-    # sorted_branch_models = sort(
-    #     collect(values(template.branches));
-    #     by = b -> isempty(get_time_series_names(b)) ? 1 : 0,
-    # )
     for branch_model in values(template.branches)
         @debug "Building Arguments for $(get_component_type(branch_model)) with $(get_formulation(branch_model)) formulation" _group =
             LOG_GROUP_OPTIMIZATION_CONTAINER

@@ -291,9 +291,9 @@ end
 For each outage in `device_model.outages`, resolve every monitored component
 (across every monitored type) to its arc in the active reduction graph —
 using `component_to_reduction_name_map` as a redirect when the monitored name
-is an individual component that was reduced into a representative (e.g. `"3"`,
-`"3_copy"` → `"3double_circuit"`). Duplicate arcs within an outage are
-collapsed per-type. Outages sorted by UUID for deterministic axes.
+is an individual component that was reduced into a representative. Duplicate
+arcs within an outage are collapsed per-type. Outages sorted by UUID for
+deterministic axes.
 
 Template validation is expected to guarantee that every monitored type has an
 entry in the reduction maps and every monitored name resolves; missing entries
@@ -309,20 +309,22 @@ function _resolve_monitored_arcs(
     net_reduction_data::PNM.NetworkReductionData,
 )
     name_to_arc_maps = PNM.get_name_to_arc_maps(net_reduction_data)
-    c2r_maps = PNM.get_component_to_reduction_name_map(net_reduction_data)
+    component_to_reduction_maps =
+        PNM.get_component_to_reduction_name_map(net_reduction_data)
     resolved =
         Pair{Base.UUID, Vector{Tuple{DataType, String, Tuple{Int, Int}, String}}}[]
     for (uuid, per_type) in get_outages(device_model)
         kept = Tuple{DataType, String, Tuple{Int, Int}, String}[]
         for (T, names) in per_type
-            n2a = name_to_arc_maps[T]
-            c2r = get(c2r_maps, T, Dict{String, String}())
+            name_to_arc = name_to_arc_maps[T]
+            component_to_reduction =
+                get(component_to_reduction_maps, T, Dict{String, String}())
             seen = Set{Tuple{Int, Int}}()
             for name in sort!(collect(names))
-                if haskey(n2a, name)
+                if haskey(name_to_arc, name)
                     container_name = name
-                elseif haskey(c2r, name)
-                    container_name = c2r[name]
+                elseif haskey(component_to_reduction, name)
+                    container_name = component_to_reduction[name]
                 else
                     error(
                         "Monitored component \"$name\" (type $T) for outage $uuid is " *
@@ -331,7 +333,7 @@ function _resolve_monitored_arcs(
                         "system and is modeled with a security-constrained branch formulation.",
                     )
                 end
-                arc, reduction_kind = n2a[container_name]
+                arc, reduction_kind = name_to_arc[container_name]
                 arc in seen && continue
                 push!(seen, arc)
                 push!(kept, (T, container_name, arc, reduction_kind))

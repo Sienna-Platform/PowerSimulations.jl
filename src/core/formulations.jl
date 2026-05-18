@@ -155,8 +155,9 @@ outage, this formulation adds:
 
 where `post_contingency_flow` is derived from the modification factors
 (MODF) provided by `PowerNetworkMatrices` and `rate_emergency` comes from
-the branch's `rating` (or `rating_b` when a `PostContingencyBranchRatingTimeSeriesParameter`
-is attached).
+the branch's `rating_b` (falling back to `rating` only when `rating_b` is
+unset), and becomes time-varying when a
+`PostContingencyBranchRatingTimeSeriesParameter` is attached.
 
 Outage modeling notes:
 - An outage UUID is "claimed" by `DeviceModel{D, SC}` iff `D` is among the

@@ -9,8 +9,8 @@ aggregation attribute and its defaults, and the branch-rating time series.
 
 For the per-formulation constraint algebra (variable names, slacks, objective
 terms) see the [`PowerSystems.Branch` Formulations](@ref) page in the
-Formulation Library. This page is the conceptual companion: *where the number
-on the right-hand side comes from*.
+Formulation Library. This page is the conceptual companion: *where the
+constraint branch flow limit on the right-hand side comes from*.
 
 ## The single source of truth
 
@@ -93,8 +93,12 @@ The active-power flow is bounded symmetrically by the aggregated rating:
 
 applied through `FlowRateConstraint` (PTDF and DC) or, for
 `StaticBranchBounds`, directly as variable bounds on the flow variable.
-`MonitoredLine` is the exception — it carries explicit, possibly asymmetric
-`flow_limits` (see [MonitoredLine](@ref monitored_line_rating)).
+A **standalone** `MonitoredLine` is the exception — it carries explicit,
+possibly asymmetric `flow_limits`. Note this exception only applies when the
+`MonitoredLine` is *not* collapsed by network reduction: a `MonitoredLine` that
+is a member of a reduction group resolves through the symmetric aggregated
+`branch_rating` like any other reduced element and its `flow_limits` are not
+carried into the equivalent (see [MonitoredLine](@ref monitored_line_rating)).
 `PhaseShiftingTransformer` under `PhaseAngleControl` additionally bounds the
 phase-shifter angle to ``[-\pi/2,\, \pi/2]``.
 
@@ -166,15 +170,40 @@ Support and validation:
 
 ## [MonitoredLine](@id monitored_line_rating)
 
-`PSY.MonitoredLine` does not use the symmetric `branch_rating` path because it
-carries explicit `flow_limits` that can be tighter than, and asymmetric to, its
-rating:
+A **standalone** `PSY.MonitoredLine` (one that is *not* collapsed into a
+reduction group — see below) does not use the symmetric `branch_rating` path
+because it carries explicit `flow_limits` that can be tighter than, and
+asymmetric to, its rating. The asymmetry is **not discarded** — it is enforced
+by the directional constraints; only the single symmetric general rate limit
+cannot represent it and falls back to the tighter of the two:
 
-  - General rate limit: ``\min(\text{rating},\ \text{flow\_limits.from\_to},\ \text{flow\_limits.to\_from})``,
-    applied symmetrically. A warning is emitted when the from-to and to-from
-    limits differ (the minimum is then used).
-  - Directional limits (`FlowLimitFromToConstraint` / `FlowLimitToFromConstraint`)
-    use `flow_limits.from_to` and `flow_limits.to_from` respectively.
+  - General rate limit (`FlowRateConstraint`): a single symmetric bound
+    ``\min(\text{rating},\ \text{flow\_limits.from\_to},\ \text{flow\_limits.to\_from})``.
+    Because one symmetric constraint structurally cannot encode an asymmetric
+    limit, the minimum of the two directions is used and a warning is emitted
+    when `from_to` and `to_from` differ — flagging that this particular
+    constraint is conservative, not that the asymmetry is lost.
+  - Directional limits (`FlowLimitFromToConstraint` / `FlowLimitToFromConstraint`):
+    these **preserve the asymmetry**, using `flow_limits.from_to` and
+    `flow_limits.to_from` respectively. This is where the asymmetric input is
+    actually honored.
+
+### `MonitoredLine` inside a reduction
+
+When a `MonitoredLine` is collapsed by network reduction into an equivalent
+element (`PNM.BranchesParallel`, `PNM.BranchesSeries`,
+`PNM.MixedBranchesParallel`, …), the reduction `entry` is a PNM reduction type,
+**not** a `PSY.MonitoredLine`, so dispatch goes through the type-aware
+`branch_rating` → `PowerNetworkMatrices.get_equivalent_rating` path. That
+aggregation consumes only the scalar `PSY.get_rating` (or `PSY.get_rating_b`
+for the post-contingency rating); the explicit, possibly asymmetric
+`flow_limits` are **not propagated into the reduced equivalent element**. A
+reduced arc that contains a `MonitoredLine` is therefore bounded by the
+symmetric aggregated rating like any other reduced element. The directional
+`FlowLimitFromToConstraint` / `FlowLimitToFromConstraint` are only added when
+the `MonitoredLine` is modeled as a standalone (un-reduced) element. If the
+asymmetric directional limits must be enforced, pin the `MonitoredLine`'s
+endpoints so reduction does not collapse it (e.g. via `irreducible_buses`).
 
 ## Defaults at a glance
 
