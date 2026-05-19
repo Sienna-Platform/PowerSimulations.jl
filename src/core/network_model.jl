@@ -186,6 +186,57 @@ function _build_network_reductions(
     return reductions
 end
 
+"""
+Buses retained by `nrd`: reduction-map representatives plus explicitly
+irreducible buses. This is the matrix's bus dimension.
+"""
+function _retained_buses(nrd::PNM.NetworkReductionData)
+    return union(
+        Set(keys(PNM.get_bus_reduction_map(nrd))),
+        PNM.get_irreducible_buses(nrd),
+    )
+end
+
+"""
+Force PTDF and MODF onto the same retained-bus set when they diverge, by
+rebuilding both with the union as `irreducible_buses` (an irreducible bus is
+never eliminated). Returns `true` if a rebuild happened. Throws if one pass
+fails to converge them, since mismatched reductions break the nodal-balance
+vs. MODF-column dimensions.
+"""
+function _reconcile_ptdf_modf_reduction!(
+    model::NetworkModel{<:AbstractPTDFModel},
+    sys::PSY.System,
+)
+    ptdf_nrd = model.PTDF_matrix.network_reduction_data
+    modf_nrd = get_MODF_matrix(model).network_reduction_data
+    retained_ptdf = _retained_buses(ptdf_nrd)
+    retained_modf = _retained_buses(modf_nrd)
+    retained_ptdf == retained_modf && return false
+
+    @warn "PTDF and MODF reduced to different bus sets \
+           (|PTDF retained|=$(length(retained_ptdf)), \
+           |MODF retained|=$(length(retained_modf))). Reconciling both onto \
+           the cohesive union of retained buses so the nodal-balance and \
+           post-contingency dimensions agree."
+    cohesive = collect(union(retained_ptdf, retained_modf))
+    reductions = _build_network_reductions(model, cohesive)
+    model.PTDF_matrix =
+        PNM.VirtualPTDF(sys; tol = PTDF_ZERO_TOL, network_reductions = reductions)
+    model.MODF_matrix =
+        PNM.VirtualMODF(sys; tol = PTDF_ZERO_TOL, network_reductions = reductions)
+
+    if _retained_buses(model.PTDF_matrix.network_reduction_data) !=
+       _retained_buses(get_MODF_matrix(model).network_reduction_data)
+        throw(
+            IS.ConflictingInputsError(
+                "PTDF and MODF reductions remain dimensionally inconsistent \
+                after one reconciliation pass; aborting build."),
+        )
+    end
+    return true
+end
+
 function _get_filters(branch_models::BranchModelContainer)
     filters = Dict{DataType, Function}()
     for v in values(branch_models)
@@ -611,6 +662,17 @@ function instantiate_network_model!(
                 get_MODF_matrix(model),
                 model.network_reduction,
             )
+        end
+        # Reconcile PTDF/MODF reductions before outage consolidation populates
+        # the branch maps.
+        if _reconcile_ptdf_modf_reduction!(model, sys)
+            model.network_reduction =
+                deepcopy(model.PTDF_matrix.network_reduction_data)
+            model.subnetworks =
+                _make_subnetworks_from_subnetwork_axes(model.PTDF_matrix)
+            if length(model.subnetworks) > 1
+                _assign_subnetworks_to_buses(model, sys)
+            end
         end
         _consolidate_device_model_outages_with_modf!(
             branch_models, get_MODF_matrix(model),

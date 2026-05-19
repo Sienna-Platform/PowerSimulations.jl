@@ -209,6 +209,43 @@ end
     return collect(keys(name_axis))
 end =#
 
+"""
+Sign relating a branch's native from→to flow to the PTDF column used for its
+`PTDFBranchFlow` (built from `ptdf[representative_arc, :]`).
+
+Returns `-1.0` only for a series-reduction member whose native orientation is
+`:ToFrom` relative to the merged path; `+1.0` otherwise (direct, parallel-rep,
+and 3W-winding members are keyed by their own arc). Errors on an unknown
+reduction kind rather than returning a silently wrong sign.
+"""
+function get_ptdf_orientation_sign(
+    net_reduction_data::PNM.NetworkReductionData,
+    ::Type{T},
+    name::AbstractString,
+) where {T <: PSY.ACTransmission}
+    arc, reduction = net_reduction_data.name_to_arc_map[T][name]
+    if reduction == "direct_branch_map" ||
+       reduction == "parallel_branch_map" ||
+       reduction == "transformer3W_map"
+        return 1.0
+    elseif reduction == "series_branch_map"
+        series = net_reduction_data.all_branch_maps_by_type[reduction][T][arc]
+        for (i, segment) in enumerate(series)
+            if PNM.get_name(segment) == name
+                return series.segment_orientations[i] == :FromTo ? 1.0 : -1.0
+            end
+        end
+        error(
+            "get_ptdf_orientation_sign: segment '$name' not found in series " *
+            "reduction for arc $arc ($T)",
+        )
+    end
+    return error(
+        "get_ptdf_orientation_sign: unhandled reduction map '$reduction' for " *
+        "branch '$name' ($T); cannot determine flow orientation",
+    )
+end
+
 function get_branch_argument_constraint_axis(
     net_reduction_data::PNM.NetworkReductionData,
     reduced_branch_tracker::BranchReductionOptimizationTracker,
