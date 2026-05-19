@@ -219,6 +219,9 @@ function add_constraints!(
 
     area_ex_var = get_variable(container, FlowActivePowerVariable(), PSY.AreaInterchange)
     jm = get_jump_model(container)
+    # The orientation sign depends only on (type, name); memoize it so it is
+    # not recomputed (Dict lookup + series scan) once per time step.
+    sign_cache = Dict{Tuple{DataType, String}, Float64}()
     for area_interchange in devices
         inter_change_name = PSY.get_name(area_interchange)
         (inter_change_name ∉ device_names_with_branches) && continue
@@ -232,16 +235,13 @@ function add_constraints!(
                     for name in names
                         # flow_expr is native-oriented; re-apply the member
                         # sign so the interchange total is orientation-invariant.
-                        eff_mult =
-                            mult * get_ptdf_orientation_sign(
-                                net_reduction_data,
-                                type,
-                                name,
-                            )
+                        sign = get!(sign_cache, (type, name)) do
+                            get_ptdf_orientation_sign(net_reduction_data, type, name)
+                        end
                         JuMP.add_to_expression!(
                             sum_of_flows,
                             flow_expr[name, t],
-                            eff_mult,
+                            mult * sign,
                         )
                     end
                 end
