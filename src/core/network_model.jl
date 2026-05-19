@@ -433,9 +433,6 @@ function instantiate_network_model!(
     number_of_steps::Int,
     sys::PSY.System,
 ) where {T <: PM.AbstractPowerModel}
-    if isempty(model.subnetworks)
-        model.subnetworks = PNM.find_subnetworks(sys)
-    end
     irreducible_buses = _get_irreducible_buses_due_to_monitored_components(
         sys,
         model,
@@ -472,6 +469,12 @@ function instantiate_network_model!(
         )
     else
         ybus = PNM.Ybus(sys)
+    end
+    # Derive subnetworks from the Ybus already built above instead of building a
+    # throwaway Ybus via PNM.find_subnetworks(sys). The Ybus stores the subnetwork
+    # grouping (topologically correct, reduction-aware) in `subnetwork_axes`.
+    if isempty(model.subnetworks)
+        model.subnetworks = _make_subnetworks_from_subnetwork_axes(ybus)
     end
     model.network_reduction = deepcopy(PNM.get_network_reduction_data(ybus))
     #if !isempty(model.network_reductionget_net_reduction_data)
@@ -696,6 +699,14 @@ function _make_subnetworks_from_subnetwork_axes(ptdf::PNM.VirtualPTDF)
     subnetworks = Dict{Int, Set{Int}}()
     for (ref_bus, ptdf_axes) in ptdf.subnetwork_axes
         subnetworks[ref_bus] = Set(ptdf_axes[2])
+    end
+    return subnetworks
+end
+
+function _make_subnetworks_from_subnetwork_axes(ybus::PNM.Ybus)
+    subnetworks = Dict{Int, Set{Int}}()
+    for (ref_bus, ybus_axes) in ybus.subnetwork_axes
+        subnetworks[ref_bus] = Set(ybus_axes[1])
     end
     return subnetworks
 end
