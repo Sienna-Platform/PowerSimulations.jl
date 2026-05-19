@@ -727,6 +727,120 @@ end
     @test n_checked >= 1
 end
 
+@testset "PTDFBranchFlow member orientation sign under network reduction" begin
+    # Regression: degree-two series-reduction members whose native arc opposes
+    # the merged path were reported with the representative's sign. Part A
+    # checks the sign helper on a real fixture with :ToFrom members; Part B
+    # asserts it is a no-op on the unreduced path.
+
+    # --- Part A: sign helper against real series-reduction data -----------
+    sys_red = PSB.build_system(PSB.PSITestSystems, "case10_radial_series_reductions")
+    ptdf_red = PTDF(sys_red; network_reductions = NetworkReduction[DegreeTwoReduction()])
+    nrd = ptdf_red.network_reduction_data
+    PNM.populate_branch_maps_by_type!(nrd)
+
+    # Series segments can be Line OR ThreeWindingTransformerWinding; the sign
+    # helper must be queried with the type the name is keyed under.
+    tofrom_members = Tuple{DataType, String}[]
+    fromto_members = Tuple{DataType, String}[]
+    for (T, m) in nrd.name_to_arc_map
+        for (name, (arc, red)) in m
+            red == "series_branch_map" || continue
+            bs = nrd.all_branch_maps_by_type[red][T][arc]
+            for (i, seg) in enumerate(bs)
+                PNM.get_name(seg) == name || continue
+                if bs.segment_orientations[i] == :ToFrom
+                    push!(tofrom_members, (T, name))
+                else
+                    push!(fromto_members, (T, name))
+                end
+            end
+        end
+    end
+    @test !isempty(tofrom_members)   # guard: fixture must exercise the bug
+    for (T, name) in tofrom_members
+        @test PSI.get_ptdf_orientation_sign(nrd, T, name) == -1.0
+    end
+    for (T, name) in fromto_members
+        @test PSI.get_ptdf_orientation_sign(nrd, T, name) == 1.0
+    end
+
+    # --- Part B: no-op on the unreduced path (c_sys5 has time series) -----
+    c_sys5 = PSB.build_system(PSB.PSITestSystems, "c_sys5")
+    template = get_thermal_dispatch_template_network(
+        NetworkModel(PTDFPowerModel; PTDF_matrix = VirtualPTDF(c_sys5)),
+    )
+    set_device_model!(template, Line, StaticBranch)
+    set_device_model!(template, Transformer2W, StaticBranch)
+    set_device_model!(template, TapTransformer, StaticBranch)
+    ps_model = DecisionModel(template, c_sys5; optimizer = HiGHS_optimizer)
+    @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+
+    container = PSI.get_optimization_container(ps_model)
+    network_model = PSI.get_network_model(PSI.get_template(ps_model))
+    net_reduction_data = network_model.network_reduction
+    ground_truth_ptdf = PNM.VirtualPTDF(c_sys5)
+    nodal_balance =
+        PSI.get_expression(container, PSI.ActivePowerBalance(), PSY.ACBus).data
+    time_steps = PSI.get_time_steps(container)
+
+    n_checked = 0
+    for V in network_model.modeled_ac_branch_types
+        PSI.has_container_key(container, PSI.PTDFBranchFlow, V) || continue
+        pbf = PSI.get_expression(container, PSI.PTDFBranchFlow(), V)
+        nta = collect(PNM.get_name_to_arc_map(net_reduction_data, V))
+        isempty(nta) && continue
+        n_checked += 1
+        for (name, (arc, _)) in nta
+            @test PSI.get_ptdf_orientation_sign(net_reduction_data, V, name) == 1.0
+            ptdf_col = ground_truth_ptdf[arc, :]
+            nz_idx = [
+                i for i in eachindex(ptdf_col) if abs(ptdf_col[i]) > PSI.PTDF_ZERO_TOL
+            ]
+            for t in time_steps
+                expected = PSI.get_hinted_aff_expr(length(nz_idx))
+                for i in nz_idx
+                    JuMP.add_to_expression!(expected, ptdf_col[i], nodal_balance[i, t])
+                end
+                @test JuMP.isequal_canonical(pbf[name, t], expected)
+            end
+        end
+    end
+    @test n_checked >= 1
+end
+
+@testset "Flow-expression dimension guard converts MODF/PTDF mismatch into a clear error" begin
+    # Regression: a MODF column built on a different bus set than the
+    # PTDF-reduced nodal-balance expressions used to index out of bounds under
+    # `@inbounds` and SIGSEGV. The guard must turn this into a trappable
+    # `ErrorException` before the loop.
+    nb = JuMP.AffExpr[JuMP.AffExpr(0.0) for _ in 1:3, _ in 1:2]
+
+    # Direct helper: matching dimension is accepted, mismatch errors clearly.
+    @test PSI._assert_flow_expression_dimensions("b", 3, nb) === nothing
+    err = try
+        PSI._assert_flow_expression_dimensions("badbranch", 5, nb)
+        nothing
+    catch e
+        e
+    end
+    @test err isa ErrorException
+    @test occursin("badbranch", err.msg)
+    @test occursin("dimension mismatch", err.msg)
+
+    # End-to-end through the dense `_make_flow_expressions!`: a too-long column
+    # raises (no `@inbounds` OOB / segfault); a matching column succeeds.
+    @test_throws ErrorException PSI._make_flow_expressions!(
+        "oob", 1:2, zeros(Float64, 5), nb,
+    )
+    ok_name, ok_expr = PSI._make_flow_expressions!(
+        "ok", 1:2, zeros(Float64, 3), nb,
+    )
+    @test ok_name == "ok"
+    @test length(ok_expr) == 2
+end
+
 @testset "SecurityConstrainedStaticBranch respects user-supplied outages on DeviceModel" begin
     # Build a system with three line outages, then build two templates against
     # the same system: one with default empty `outages` (auto-discover), one
@@ -1148,4 +1262,60 @@ end
     @test isnothing(
         PSI._check_security_constrained_three_winding_transformer!(ok_models),
     )
+end
+
+@testset "SC PTDF/MODF reductions are reconciled to a cohesive bus set" begin
+    # Regression: PTDF/MODF supplied with only [Radial, DegreeTwo] (no
+    # pre-baked irreducible buses) plus many monitored components can reduce to
+    # different bus sets. PSI must reconcile them onto one cohesive reduction
+    # so `build!` succeeds without the caller replicating the irreducible-bus
+    # computation.
+    sys = PSB.build_system(PSB.PSITestSystems, "test_RTS_GMLC_sys")
+    all_lines = collect(get_components(Line, sys))
+    @test length(all_lines) > 1
+    monitored = all_lines                       # force many irreducible buses
+    for l in first(all_lines, 5)                # several N-1 contingencies
+        add_supplemental_attribute!(
+            sys,
+            l,
+            GeometricDistributionForcedOutage(;
+                mean_time_to_recovery = 10,
+                outage_transition_probability = 0.5,
+                monitored_components = monitored,
+            ),
+        )
+    end
+
+    nr = NetworkReduction[RadialReduction(), DegreeTwoReduction()]
+    # Caller provides matrices WITHOUT pre-baking irreducible buses.
+    ptdf = PTDF(sys; network_reductions = nr)
+    modf = VirtualMODF(sys; network_reductions = nr)
+    template = get_thermal_dispatch_template_network(
+        NetworkModel(
+            PTDFPowerModel;
+            PTDF_matrix = ptdf,
+            MODF_matrix = modf,
+            reduce_radial_branches = true,
+            reduce_degree_two_branches = true,
+        ),
+    )
+    set_device_model!(template, Line, SecurityConstrainedStaticBranch)
+
+    model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+
+    nm = PSI.get_network_model(PSI.get_template(model))
+    ptdf_retained =
+        PSI._retained_buses(PSI.get_PTDF_matrix(nm).network_reduction_data)
+    modf_retained =
+        PSI._retained_buses(PSI.get_MODF_matrix(nm).network_reduction_data)
+    @test ptdf_retained == modf_retained
+    @test PSI._retained_buses(nm.network_reduction) == modf_retained
+
+    # The container nodal balance must be dimensioned on the same bus set the
+    # MODF columns are indexed on (the guard's invariant).
+    container = PSI.get_optimization_container(model)
+    nodal = PSI.get_expression(container, PSI.ActivePowerBalance(), PSY.ACBus)
+    @test size(nodal.data, 1) == length(modf_retained)
 end

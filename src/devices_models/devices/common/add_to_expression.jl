@@ -2029,6 +2029,10 @@ function add_to_expression!(
                         net_reduction_data,
                     )
                 end
+                # flow_expression is native-oriented; re-apply the member sign
+                # so the interface total is orientation-invariant.
+                direction *=
+                    get_ptdf_orientation_sign(net_reduction_data, br_type, name)
                 for t in axes(flow_expression, 2)
                     JuMP.add_to_expression!(
                         expression[service_name, t],
