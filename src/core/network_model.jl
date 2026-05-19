@@ -181,11 +181,16 @@ function _build_network_reductions(model::NetworkModel, irreducible_buses::Vecto
 end
 
 """
-Buses retained by `nrd` (reduction representatives plus irreducible buses);
-this is the matrix's bus dimension.
+Buses retained by `nrd` (reduction representatives — i.e. keys of the bus
+reduction map). This is the matrix's bus dimension. PNM's invariant is that
+irreducible buses are never eliminated, so they remain keys of the bus
+reduction map; the `@assert` here makes that invariant load-bearing instead of
+silently papered over with a `union`.
 """
 function _retained_buses(nrd::PNM.NetworkReductionData)
-    return union(Set(keys(PNM.get_bus_reduction_map(nrd))), PNM.get_irreducible_buses(nrd))
+    retained = Set(keys(PNM.get_bus_reduction_map(nrd)))
+    @assert issubset(PNM.get_irreducible_buses(nrd), retained) "irreducible buses are not a subset of bus_reduction_map keys; PNM reduction invariant violated"
+    return retained
 end
 
 """
@@ -197,8 +202,8 @@ function _reconcile_ptdf_modf_reduction!(
     model::NetworkModel{<:AbstractPTDFModel},
     sys::PSY.System,
 )
-    ptdf_nrd = model.PTDF_matrix.network_reduction_data
-    modf_nrd = get_MODF_matrix(model).network_reduction_data
+    ptdf_nrd = PNM.get_network_reduction_data(model.PTDF_matrix)
+    modf_nrd = PNM.get_network_reduction_data(get_MODF_matrix(model))
     retained_ptdf = _retained_buses(ptdf_nrd)
     retained_modf = _retained_buses(modf_nrd)
     retained_ptdf == retained_modf && return false
@@ -215,8 +220,8 @@ function _reconcile_ptdf_modf_reduction!(
     model.MODF_matrix =
         PNM.VirtualMODF(sys; tol = PTDF_ZERO_TOL, network_reductions = reductions)
 
-    if _retained_buses(model.PTDF_matrix.network_reduction_data) !=
-       _retained_buses(get_MODF_matrix(model).network_reduction_data)
+    if _retained_buses(PNM.get_network_reduction_data(model.PTDF_matrix)) !=
+       _retained_buses(PNM.get_network_reduction_data(get_MODF_matrix(model)))
         throw(
             IS.ConflictingInputsError(
                 "PTDF and MODF reductions remain dimensionally inconsistent \
@@ -512,7 +517,7 @@ function _validate_provided_modf_reduction!(
     modf::PNM.VirtualMODF,
     network_reduction::PNM.NetworkReductionData,
 )
-    if PNM.get_bus_reduction_map(modf.network_reduction_data) !=
+    if PNM.get_bus_reduction_map(PNM.get_network_reduction_data(modf)) !=
        PNM.get_bus_reduction_map(network_reduction)
         throw(
             IS.ConflictingInputsError(
@@ -576,13 +581,14 @@ function instantiate_network_model!(
             ptdf = PNM.VirtualPTDF(sys; tol = PTDF_ZERO_TOL)
         end
         model.PTDF_matrix = ptdf
-        model.network_reduction = deepcopy(ptdf.network_reduction_data)
+        model.network_reduction = deepcopy(PNM.get_network_reduction_data(ptdf))
     else
-        model.network_reduction = deepcopy(model.PTDF_matrix.network_reduction_data)
+        model.network_reduction =
+            deepcopy(PNM.get_network_reduction_data(model.PTDF_matrix))
     end
 
     if !model.reduce_radial_branches && PNM.has_radial_reduction(
-        PNM.get_reductions(model.PTDF_matrix.network_reduction_data),
+        PNM.get_reductions(PNM.get_network_reduction_data(model.PTDF_matrix)),
     )
         throw(
             IS.ConflictingInputsError(
@@ -593,7 +599,7 @@ function instantiate_network_model!(
         )
     end
     if !model.reduce_degree_two_branches && PNM.has_degree_two_reduction(
-        PNM.get_reductions(model.PTDF_matrix.network_reduction_data),
+        PNM.get_reductions(PNM.get_network_reduction_data(model.PTDF_matrix)),
     )
         throw(
             IS.ConflictingInputsError(
@@ -604,7 +610,9 @@ function instantiate_network_model!(
         )
     end
     if model.reduce_radial_branches &&
-       PNM.has_ward_reduction(PNM.get_reductions(model.PTDF_matrix.network_reduction_data))
+       PNM.has_ward_reduction(
+        PNM.get_reductions(PNM.get_network_reduction_data(model.PTDF_matrix)),
+    )
         throw(
             IS.ConflictingInputsError(
                 "The provided PTDF Matrix has  a ward reduction specified and the keyword argument \\
@@ -615,7 +623,7 @@ function instantiate_network_model!(
     end
 
     if model.reduce_radial_branches
-        @assert !isempty(model.PTDF_matrix.network_reduction_data)
+        @assert !isempty(PNM.get_network_reduction_data(model.PTDF_matrix))
     end
     model.subnetworks = _make_subnetworks_from_subnetwork_axes(model.PTDF_matrix)
     if length(model.subnetworks) > 1
@@ -652,7 +660,8 @@ function instantiate_network_model!(
         # Reconcile PTDF/MODF reductions before outage consolidation populates
         # the branch maps.
         if _reconcile_ptdf_modf_reduction!(model, sys)
-            model.network_reduction = deepcopy(model.PTDF_matrix.network_reduction_data)
+            model.network_reduction =
+                deepcopy(PNM.get_network_reduction_data(model.PTDF_matrix))
             model.subnetworks = _make_subnetworks_from_subnetwork_axes(model.PTDF_matrix)
             if length(model.subnetworks) > 1
                 _assign_subnetworks_to_buses(model, sys)
