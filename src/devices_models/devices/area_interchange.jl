@@ -170,6 +170,7 @@ function add_constraints!(
 ) where {T <: AbstractPTDFModel}
     @assert !isempty(inter_area_branch_map)
     time_steps = get_time_steps(container)
+    net_reduction_data = get_network_reduction(network_model)
     device_names_with_branches = Vector{String}()
     interchange_direction_branch_map =
         Dict{String, Dict{Float64, Dict{DataType, Vector{String}}}}()
@@ -229,7 +230,19 @@ function add_constraints!(
                 for (type, names) in inter_area_branches
                     flow_expr = get_expression(container, PTDFBranchFlow(), type)
                     for name in names
-                        JuMP.add_to_expression!(sum_of_flows, flow_expr[name, t], mult)
+                        # flow_expr is native-oriented; re-apply the member
+                        # sign so the interchange total is orientation-invariant.
+                        eff_mult =
+                            mult * get_ptdf_orientation_sign(
+                                net_reduction_data,
+                                type,
+                                name,
+                            )
+                        JuMP.add_to_expression!(
+                            sum_of_flows,
+                            flow_expr[name, t],
+                            eff_mult,
+                        )
                     end
                 end
             end

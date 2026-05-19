@@ -870,6 +870,28 @@ function add_constraints!(
     return
 end
 
+"""
+Error if a PTDF/MODF column length differs from the nodal-balance bus
+dimension. Prevents a downstream `@inbounds` out-of-bounds read; a mismatch
+means the matrix and container used different network reductions.
+"""
+function _assert_flow_expression_dimensions(
+    name::AbstractString,
+    n_col::Int,
+    nodal_balance_expressions::Matrix{JuMP.AffExpr},
+)
+    n_bus = size(nodal_balance_expressions, 1)
+    if n_col != n_bus
+        error(
+            "Flow-expression dimension mismatch for branch/arc '$name': " *
+            "PTDF/MODF column has $n_col entries but the nodal-balance " *
+            "expression has $n_bus buses. PTDF and MODF must be built with " *
+            "the same network reduction as the optimization container.",
+        )
+    end
+    return
+end
+
 function _make_flow_expressions!(
     name::String,
     time_steps::UnitRange{Int},
@@ -877,6 +899,7 @@ function _make_flow_expressions!(
     nodal_balance_expressions::Matrix{JuMP.AffExpr},
 )
     @debug "Making Flow Expression on thread $(Threads.threadid()) for branch $name"
+    _assert_flow_expression_dimensions(name, length(ptdf_col), nodal_balance_expressions)
     nz_idx = [i for i in eachindex(ptdf_col) if abs(ptdf_col[i]) > PTDF_ZERO_TOL]
     hint = length(nz_idx)
     expressions = Vector{JuMP.AffExpr}(undef, length(time_steps))
@@ -897,6 +920,7 @@ function _make_flow_expressions!(
     nodal_balance_expressions::Matrix{JuMP.AffExpr},
 )
     @debug "Making Flow Expression on thread $(Threads.threadid()) for branch $name"
+    _assert_flow_expression_dimensions(name, length(ptdf_col), nodal_balance_expressions)
     nz_idx = SparseArrays.nonzeroinds(ptdf_col)
     nz_val = SparseArrays.nonzeros(ptdf_col)
     hint = length(nz_idx)
@@ -1041,7 +1065,16 @@ function add_expressions!(
     end
     for task in tasks
         name, expressions = fetch(task)
-        branch_flow_expr[name, :] .= expressions
+        # ptdf[arc,:] uses the reduction representative's orientation; flip
+        # series members back to native from→to so PTDFBranchFlow matches
+        # PowerFlowBranchActivePowerFromTo. (sign == 1.0 fast path avoids a
+        # per-branch broadcast-multiply allocation on the unreduced path.)
+        orientation_sign = get_ptdf_orientation_sign(net_reduction_data, B, name)
+        if orientation_sign == 1.0
+            branch_flow_expr[name, :] .= expressions
+        else
+            branch_flow_expr[name, :] .= orientation_sign .* expressions
+        end
     end
     #= Leaving serial code commented out for debugging purposes in the future
     for (name, (arc, reduction)) in name_to_arc_map
