@@ -525,8 +525,7 @@ function add_to_expression!(
     U <: HVDCLosses,
     V <: PSY.TwoTerminalHVDC,
     W <: HVDCTwoTerminalDispatch,
-    X <:
-    Union{AreaPTDFPowerModel, AreaBalancePowerModel},
+    X <: Union{AreaPTDFPowerModel, AreaBalancePowerModel},
 }
     variable = get_variable(container, U(), V)
     expression = get_expression(container, T(), PSY.Area)
@@ -602,8 +601,7 @@ function add_to_expression!(
     sys_expr = get_expression(container, T(), _system_expression_type(X))
     network_reduction = get_network_reduction(network_model)
     for d in devices
-        bus_no_from =
-            PNM.get_mapped_bus_number(network_reduction, PSY.get_arc(d).from)
+        bus_no_from = PNM.get_mapped_bus_number(network_reduction, PSY.get_arc(d).from)
         ref_bus_to = get_reference_bus(network_model, PSY.get_arc(d).to)
         ref_bus_from = get_reference_bus(network_model, PSY.get_arc(d).from)
         for t in get_time_steps(container)
@@ -639,8 +637,7 @@ function add_to_expression!(
     sys_expr = get_expression(container, T(), _system_expression_type(X))
     network_reduction = get_network_reduction(network_model)
     for d in devices
-        bus_no_from =
-            PNM.get_mapped_bus_number(network_reduction, PSY.get_arc(d).from)
+        bus_no_from = PNM.get_mapped_bus_number(network_reduction, PSY.get_arc(d).from)
         ref_bus_to = get_reference_bus(network_model, PSY.get_arc(d).to)
         ref_bus_from = get_reference_bus(network_model, PSY.get_arc(d).from)
         for t in get_time_steps(container)
@@ -675,8 +672,7 @@ function add_to_expression!(
     nodal_expr = get_expression(container, T(), PSY.ACBus)
     network_reduction = get_network_reduction(network_model)
     for d in devices
-        bus_no_from =
-            PNM.get_mapped_bus_number(network_reduction, PSY.get_arc(d).from)
+        bus_no_from = PNM.get_mapped_bus_number(network_reduction, PSY.get_arc(d).from)
         for t in get_time_steps(container)
             flow_variable = var[PSY.get_name(d), t]
             _add_to_jump_expression!(nodal_expr[bus_no_from, t], flow_variable, -1.0)
@@ -706,8 +702,7 @@ function add_to_expression!(
     nodal_expr = get_expression(container, T(), PSY.ACBus)
     network_reduction = get_network_reduction(network_model)
     for d in devices
-        bus_no_to =
-            PNM.get_mapped_bus_number(network_reduction, PSY.get_arc(d).to)
+        bus_no_to = PNM.get_mapped_bus_number(network_reduction, PSY.get_arc(d).to)
         for t in get_time_steps(container)
             flow_variable = var[PSY.get_name(d), t]
             _add_to_jump_expression!(nodal_expr[bus_no_to, t], flow_variable, 1.0)
@@ -737,8 +732,7 @@ function add_to_expression!(
     nodal_expr = get_expression(container, T(), PSY.ACBus)
     network_reduction = get_network_reduction(network_model)
     for d in devices
-        bus_no_from =
-            PNM.get_mapped_bus_number(network_reduction, PSY.get_arc(d).from)
+        bus_no_from = PNM.get_mapped_bus_number(network_reduction, PSY.get_arc(d).from)
         for t in get_time_steps(container)
             flow_variable = var[PSY.get_name(d), t]
             _add_to_jump_expression!(nodal_expr[bus_no_from, t], flow_variable, -1.0)
@@ -768,8 +762,7 @@ function add_to_expression!(
     nodal_expr = get_expression(container, T(), PSY.ACBus)
     network_reduction = get_network_reduction(network_model)
     for d in devices
-        bus_no_to =
-            PNM.get_mapped_bus_number(network_reduction, PSY.get_arc(d).to)
+        bus_no_to = PNM.get_mapped_bus_number(network_reduction, PSY.get_arc(d).to)
         for t in get_time_steps(container)
             flow_variable = var[PSY.get_name(d), t]
             _add_to_jump_expression!(nodal_expr[bus_no_to, t], flow_variable, -1.0)
@@ -800,8 +793,7 @@ function add_to_expression!(
     sys_expr = get_expression(container, T(), _system_expression_type(X))
     network_reduction = get_network_reduction(network_model)
     for d in devices
-        bus_no_to =
-            PNM.get_mapped_bus_number(network_reduction, PSY.get_arc(d).to)
+        bus_no_to = PNM.get_mapped_bus_number(network_reduction, PSY.get_arc(d).to)
         ref_bus_to = get_reference_bus(network_model, PSY.get_arc(d).to)
         ref_bus_from = get_reference_bus(network_model, PSY.get_arc(d).from)
         for t in get_time_steps(container)
@@ -994,14 +986,7 @@ function add_to_expression!(
     V <: PSY.ThermalGen,
     W <: AbstractCompactUnitCommitment,
 }
-    _add_to_expression!(
-        container,
-        T,
-        U,
-        devices,
-        device_model,
-        network_model,
-    )
+    _add_to_expression!(container, T, U, devices, device_model, network_model)
     return
 end
 
@@ -1019,14 +1004,7 @@ function add_to_expression!(
     W <: AbstractCompactUnitCommitment,
     X <: PM.AbstractPowerModel,
 }
-    _add_to_expression!(
-        container,
-        T,
-        U,
-        devices,
-        device_model,
-        network_model,
-    )
+    _add_to_expression!(container, T, U, devices, device_model, network_model)
     return
 end
 
@@ -1176,11 +1154,7 @@ function add_to_expression!(
                 param_value = 1.0
                 mult = get_multiplier_value(U(), d, W())
             end
-            _add_to_jump_expression!(
-                expression[ref_bus, t],
-                param_value,
-                mult,
-            )
+            _add_to_jump_expression!(expression[ref_bus, t], param_value, mult)
         end
     end
     return
@@ -1207,11 +1181,7 @@ function add_to_expression!(
         device_bus = PSY.get_bus(d)
         ref_bus = get_reference_bus(network_model, device_bus)
         for t in get_time_steps(container)
-            _add_to_jump_expression!(
-                expression[ref_bus, t],
-                PSY.get_active_power(d),
-                -1.0,
-            )
+            _add_to_jump_expression!(expression[ref_bus, t], PSY.get_active_power(d), -1.0)
         end
     end
     return
@@ -1492,16 +1462,8 @@ function add_to_expression!(
         bus_no = PNM.get_mapped_bus_number(network_reduction, device_bus)
         ref_index = _ref_index(network_model, device_bus)
         for t in get_time_steps(container)
-            _add_to_jump_expression!(
-                sys_expr[ref_index, t],
-                PSY.get_active_power(d),
-                -1.0,
-            )
-            _add_to_jump_expression!(
-                nodal_expr[bus_no, t],
-                PSY.get_active_power(d),
-                -1.0,
-            )
+            _add_to_jump_expression!(sys_expr[ref_index, t], PSY.get_active_power(d), -1.0)
+            _add_to_jump_expression!(nodal_expr[bus_no, t], PSY.get_active_power(d), -1.0)
         end
     end
     return
@@ -1608,21 +1570,12 @@ function add_to_expression!(
     expression = get_expression(container, T(), PSY.ACBus)
     network_reduction = get_network_reduction(network_model)
     for d in devices
-        bus_no_from =
-            PNM.get_mapped_bus_number(network_reduction, PSY.get_arc(d).from)
+        bus_no_from = PNM.get_mapped_bus_number(network_reduction, PSY.get_arc(d).from)
         bus_no_to = PNM.get_mapped_bus_number(network_reduction, PSY.get_arc(d).to)
         for t in get_time_steps(container)
             flow_variable = var[PSY.get_name(d), t]
-            _add_to_jump_expression!(
-                expression[bus_no_from, t],
-                flow_variable,
-                -1.0,
-            )
-            _add_to_jump_expression!(
-                expression[bus_no_to, t],
-                flow_variable,
-                1.0,
-            )
+            _add_to_jump_expression!(expression[bus_no_from, t], flow_variable, -1.0)
+            _add_to_jump_expression!(expression[bus_no_to, t], flow_variable, 1.0)
         end
     end
     return
@@ -1667,10 +1620,7 @@ function add_to_expression!(
     devices::IS.FlattenIteratorWrapper{PSY.AreaInterchange},
     ::DeviceModel{PSY.AreaInterchange, W},
     network_model::NetworkModel{U},
-) where {
-    W <: AbstractBranchFormulation,
-    U <: PM.AbstractActivePowerModel,
-}
+) where {W <: AbstractBranchFormulation, U <: PM.AbstractActivePowerModel}
     @debug "AreaInterchanges do not contribute to ActivePowerBalance expressions in non-area models."
     return
 end
@@ -1697,8 +1647,7 @@ function add_to_expression!(
     sys_expr = get_expression(container, T(), PSY.System)
     network_reduction = get_network_reduction(network_model)
     for d in devices
-        bus_no_from =
-            PNM.get_mapped_bus_number(network_reduction, PSY.get_arc(d).from)
+        bus_no_from = PNM.get_mapped_bus_number(network_reduction, PSY.get_arc(d).from)
         bus_no_to = PNM.get_mapped_bus_number(network_reduction, PSY.get_arc(d).to)
         ref_bus_from = get_reference_bus(network_model, PSY.get_arc(d).from)
         ref_bus_to = get_reference_bus(network_model, PSY.get_arc(d).to)
@@ -1773,8 +1722,7 @@ function add_to_expression!(
     expression = get_expression(container, T(), PSY.ACBus)
     network_reduction = get_network_reduction(network_model)
     for d in devices
-        bus_no_from =
-            PNM.get_mapped_bus_number(network_reduction, PSY.get_arc(d).from)
+        bus_no_from = PNM.get_mapped_bus_number(network_reduction, PSY.get_arc(d).from)
         bus_no_to = PNM.get_mapped_bus_number(network_reduction, PSY.get_arc(d).to)
         for t in get_time_steps(container)
             flow_variable = var[PSY.get_name(d), t]
@@ -1877,19 +1825,14 @@ function _handle_nodal_or_zonal_interfaces(
     expression::DenseAxisArray, # There is no good type for a DenseAxisArray slice
 ) where {V <: PSY.ACTransmission}
     all_branch_maps_by_type = net_reduction_data.all_branch_maps_by_type
-    for (name, (arc, reduction)) in
-        PNM.get_name_to_arc_map(net_reduction_data, br_type)
+    for (name, (arc, reduction)) in PNM.get_name_to_arc_map(net_reduction_data, br_type)
         reduction_entry = all_branch_maps_by_type[reduction][br_type][arc]
         if _reduced_entry_in_interface(reduction_entry, contributing_devices)
             if isempty(direction_map)
                 direction = 1.0
             else
-                direction = _get_direction(
-                    arc,
-                    reduction_entry,
-                    direction_map,
-                    net_reduction_data,
-                )
+                direction =
+                    _get_direction(arc, reduction_entry, direction_map, net_reduction_data)
             end
             for t in axes(variable, 2)
                 _add_to_jump_expression!(
@@ -1919,11 +1862,7 @@ function _handle_nodal_or_zonal_interfaces(
             direction = direction_map[name]
         end
         for t in axes(variable, 2)
-            _add_to_jump_expression!(
-                expression[t],
-                variable[name, t],
-                Float64(direction),
-            )
+            _add_to_jump_expression!(expression[t], variable[name, t], Float64(direction))
         end
     end
     return
@@ -2031,8 +1970,7 @@ function add_to_expression!(
                 end
                 # flow_expression is native-oriented; re-apply the member sign
                 # so the interface total is orientation-invariant.
-                direction *=
-                    get_ptdf_orientation_sign(net_reduction_data, br_type, name)
+                direction *= get_ptdf_orientation_sign(net_reduction_data, br_type, name)
                 for t in axes(flow_expression, 2)
                     JuMP.add_to_expression!(
                         expression[service_name, t],
@@ -2130,10 +2068,8 @@ function _reduced_entry_in_interface(
     reduction_entry::PNM.BranchesParallel,
     contributing_devices::Vector{<:PSY.ACTransmission},
 )
-    in_interface = [
-        _reduced_entry_in_interface(x, contributing_devices) for
-        x in reduction_entry
-    ]
+    in_interface =
+        [_reduced_entry_in_interface(x, contributing_devices) for x in reduction_entry]
 
     if !allequal(in_interface)
         branch_names = PSY.get_name.(reduction_entry)
@@ -2152,10 +2088,8 @@ function _reduced_entry_in_interface(
     reduction_entry::PNM.BranchesSeries,
     contributing_devices::Vector{<:PSY.ACTransmission},
 )
-    in_interface = [
-        _reduced_entry_in_interface(x, contributing_devices) for
-        x in reduction_entry
-    ]
+    in_interface =
+        [_reduced_entry_in_interface(x, contributing_devices) for x in reduction_entry]
 
     if !allequal(in_interface)
         throw(
@@ -2306,10 +2240,8 @@ function add_to_expression!(
     U <: Union{SystemBalanceSlackUp, SystemBalanceSlackDown},
     V <: AreaPTDFPowerModel,
 }
-    variable =
-        get_variable(container, U(), _system_expression_type(AreaPTDFPowerModel))
-    expression =
-        get_expression(container, T(), _system_expression_type(AreaPTDFPowerModel))
+    variable = get_variable(container, U(), _system_expression_type(AreaPTDFPowerModel))
+    expression = get_expression(container, T(), _system_expression_type(AreaPTDFPowerModel))
     areas = get_available_components(network_model, PSY.Area, sys)
     for t in get_time_steps(container), n in PSY.get_name.(areas)
         _add_to_jump_expression!(
@@ -2327,10 +2259,7 @@ function add_to_expression!(
     ::Type{U},
     sys::PSY.System,
     ::NetworkModel{AreaBalancePowerModel},
-) where {
-    T <: ActivePowerBalance,
-    U <: Union{SystemBalanceSlackUp, SystemBalanceSlackDown},
-}
+) where {T <: ActivePowerBalance, U <: Union{SystemBalanceSlackUp, SystemBalanceSlackDown}}
     variable = get_variable(container, U(), PSY.Area)
     expression = get_expression(container, T(), PSY.Area)
     @assert_op length(axes(variable, 1)) == length(axes(expression, 1))
@@ -2567,20 +2496,44 @@ function _add_fuel_consumption_term!(
                 variable[name, t] .^ 2 * quad_term_per_unit +
                 variable[name, t] * prop_term_per_unit
             ) * dt
-        JuMP.add_to_expression!(
-            expression[name, t],
-            fuel_expr,
-        )
+        JuMP.add_to_expression!(expression[name, t], fuel_expr)
     end
     return
 end
 
-_add_fuel_consumption_term!(_, _, _::String, _::PSY.FuelCurve, ::PSY.PiecewisePointCurve,
-    _::Float64, _::Float64, _::Float64, _) = nothing
-_add_fuel_consumption_term!(_, _, _::String, _::PSY.FuelCurve, ::PSY.IncrementalCurve,
-    _::Float64, _::Float64, _::Float64, _) = nothing
-_add_fuel_consumption_term!(_, _, _::String, _::PSY.FuelCurve, ::PSY.AverageRateCurve,
-    _::Float64, _::Float64, _::Float64, _) = nothing
+_add_fuel_consumption_term!(
+    _,
+    _,
+    _::String,
+    _::PSY.FuelCurve,
+    ::PSY.PiecewisePointCurve,
+    _::Float64,
+    _::Float64,
+    _::Float64,
+    _,
+) = nothing
+_add_fuel_consumption_term!(
+    _,
+    _,
+    _::String,
+    _::PSY.FuelCurve,
+    ::PSY.IncrementalCurve,
+    _::Float64,
+    _::Float64,
+    _::Float64,
+    _,
+) = nothing
+_add_fuel_consumption_term!(
+    _,
+    _,
+    _::String,
+    _::PSY.FuelCurve,
+    ::PSY.AverageRateCurve,
+    _::Float64,
+    _::Float64,
+    _::Float64,
+    _,
+) = nothing
 
 function add_to_expression!(
     container::OptimizationContainer,
@@ -2648,10 +2601,7 @@ function _add_compact_fuel_consumption_term!(
     for t in time_steps
         sos_status = _get_sos_value(container, W, d)
         if sos_status == SOSStatusVariable.NO_VARIABLE
-            JuMP.add_to_expression!(
-                expression[name, t],
-                P_min * prop_term_per_unit * dt,
-            )
+            JuMP.add_to_expression!(expression[name, t], P_min * prop_term_per_unit * dt)
         elseif sos_status == SOSStatusVariable.PARAMETER
             param = get_default_on_parameter(d)
             bin = get_parameter(container, param, V).parameter_array[name, t]
@@ -2696,18 +2646,45 @@ function _add_compact_fuel_consumption_term!(
     error("Quadratic Curves are not accepted with Compact Formulation: $W")
 end
 
-_add_compact_fuel_consumption_term!(::OptimizationContainer,
+_add_compact_fuel_consumption_term!(
+    ::OptimizationContainer,
     ::Type{<:AbstractDeviceFormulation},
-    _, _, ::PSY.ThermalGen, ::PSY.FuelCurve, ::PSY.PiecewisePointCurve,
-    ::Float64, ::Float64, ::Float64, _) = nothing
-_add_compact_fuel_consumption_term!(::OptimizationContainer,
+    _,
+    _,
+    ::PSY.ThermalGen,
+    ::PSY.FuelCurve,
+    ::PSY.PiecewisePointCurve,
+    ::Float64,
+    ::Float64,
+    ::Float64,
+    _,
+) = nothing
+_add_compact_fuel_consumption_term!(
+    ::OptimizationContainer,
     ::Type{<:AbstractDeviceFormulation},
-    _, _, ::PSY.ThermalGen, ::PSY.FuelCurve, ::PSY.IncrementalCurve,
-    ::Float64, ::Float64, ::Float64, _) = nothing
-_add_compact_fuel_consumption_term!(::OptimizationContainer,
+    _,
+    _,
+    ::PSY.ThermalGen,
+    ::PSY.FuelCurve,
+    ::PSY.IncrementalCurve,
+    ::Float64,
+    ::Float64,
+    ::Float64,
+    _,
+) = nothing
+_add_compact_fuel_consumption_term!(
+    ::OptimizationContainer,
     ::Type{<:AbstractDeviceFormulation},
-    _, _, ::PSY.ThermalGen, ::PSY.FuelCurve, ::PSY.AverageRateCurve,
-    ::Float64, ::Float64, ::Float64, _) = nothing
+    _,
+    _,
+    ::PSY.ThermalGen,
+    ::PSY.FuelCurve,
+    ::PSY.AverageRateCurve,
+    ::Float64,
+    ::Float64,
+    ::Float64,
+    _,
+) = nothing
 
 function add_to_expression!(
     container::OptimizationContainer,
@@ -2769,10 +2746,7 @@ function add_to_expression!(
     for d in devices
         name = PSY.get_name(d)
         for t in get_time_steps(container)
-            JuMP.add_to_expression!(
-                expression[name, t],
-                variable[name, t] * mult,
-            )
+            JuMP.add_to_expression!(expression[name, t], variable[name, t] * mult)
         end
     end
     return
@@ -2829,7 +2803,11 @@ function add_cost_expressions!(
     if !isempty(fuel_names)
         fuel_expr_type = has_quad_fuel ? JuMP.QuadExpr : GAE
         add_expression_container!(
-            container, FuelConsumptionExpression(), D, fuel_names, time_steps;
+            container,
+            FuelConsumptionExpression(),
+            D,
+            fuel_names,
+            time_steps;
             expr_type = fuel_expr_type,
         )
     end

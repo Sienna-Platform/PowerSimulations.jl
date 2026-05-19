@@ -1,9 +1,8 @@
 # Run security-constrained (N-1) branch models
 
 This guide shows how to build and solve security-constrained operation models in
-`PowerSimulations.jl`, and — just as importantly — documents the non-obvious
-pitfalls around network reductions, PTDF/MODF consistency, and reported branch
-flows that are easy to get wrong.
+`PowerSimulations.jl`, and documents the non-obvious pitfalls around network
+reductions, PTDF/MODF consistency, and reported branch flows.
 
 ## What a security-constrained model does
 
@@ -116,9 +115,6 @@ owns the consistency (see Gotcha 1).
 
 ## Gotchas
 
-These are real failure modes that were diagnosed and fixed in this codebase.
-Each links to the corresponding diagnosis document at the repository root.
-
 ### Gotcha 1 — PTDF, MODF and the nodal balance must share one reduction
 
 The optimization container's `ActivePowerBalance` (nodal balance) is
@@ -128,20 +124,11 @@ reduce the same system to *slightly different* bus sets even when given the
 identical `network_reductions` argument. If they disagree, the model is
 dimensionally inconsistent.
 
-PSI now reconciles this automatically: after building both matrices it computes
-a **cohesive irreducible-bus set** (the union of buses either matrix retains),
-rebuilds both onto it, and re-derives the nodal-balance reduction so all three
-agree. A `@warn` ("PTDF and MODF reduced to different bus sets … Reconciling
-…") is informational — the build proceeds correctly. You do **not** need to
-hand-compute irreducible buses to make a caller-provided PTDF/MODF "match";
-that is PSI's responsibility.
-
-If a single reconciliation pass cannot make them agree, the build is
-**aborted** with a `ConflictingInputsError` rather than continuing with
-mismatched reductions. Do not work around this by disabling the check — a
-mismatch means the result would be wrong.
-
-See `SC_IRREDUCIBLE_BUS_CONSISTENCY.md`.
+PSI reconciles this automatically: after building both matrices it rebuilds
+both onto the union of buses either retains and re-derives the nodal-balance
+reduction so all three agree. The `@warn` ("PTDF and MODF reduced to different
+bus sets … Reconciling …") is informational. If a single reconciliation pass
+cannot make them agree, the build is aborted with a `ConflictingInputsError`.
 
 ### Gotcha 2 — "Flow-expression dimension mismatch" is a real error, not noise
 
@@ -153,16 +140,12 @@ has N entries but the nodal-balance expression has M buses. The PTDF and MODF
 matrices must be built with the same network reduction …
 ```
 
-it means a PTDF/MODF column is being indexed against a nodal-balance vector of a
-different bus dimension. Historically this indexed out of bounds **under
-`@inbounds` and segfaulted the Julia process** (an untrappable crash during
-`build!`). It is now a clean, catchable error raised *before* the unsafe
-access. The fix for Gotcha 1 should prevent it from occurring for
-PSI-constructed matrices; if you still hit it with hand-built matrices, rebuild
+a PTDF/MODF column is being indexed against a nodal-balance vector of a
+different bus dimension (formerly an out-of-bounds read under `@inbounds`, now
+a catchable error raised before the unsafe access). Gotcha 1's reconciliation
+prevents this for PSI-constructed matrices; with hand-built matrices, rebuild
 the MODF with the same reduction as the PTDF (and the monitored-component
 irreducible buses).
-
-See `SC_MODF_PTDF_REDUCTION_MISMATCH.md`.
 
 ### Gotcha 3 — Reported `PTDFBranchFlow` orientation under reductions
 
@@ -174,17 +157,15 @@ relative to its own orientation (and relative to
 `PowerFlowBranchActivePowerFromTo`).
 
 This is now corrected: each member's reported `PTDFBranchFlow` matches its
-native `from → to` convention. The corresponding per-member sign is also
-applied to the `InterfaceTotalFlow` and `AreaInterchange` direction
-multipliers, so **interface and interchange totals are unchanged** (provably
-invariant) — only the per-branch reported value is fixed.
+native `from → to` convention. The same per-member sign is applied to the
+`InterfaceTotalFlow` and `AreaInterchange` direction multipliers, so interface
+and interchange totals are unchanged — only the per-branch reported value is
+fixed.
 
 Practical check: with `power_flow_evaluation = DCPowerFlow()`, scatter
 `PTDFBranchFlow` (x) vs `PowerFlowBranchActivePowerFromTo` (y). They should
-collapse onto `y = x`. A distinct anti-diagonal (`y ≈ −x`) cluster is the
-symptom of this bug (i.e. an old/unpatched PSI).
-
-See `PTDF_REDUCED_BRANCH_ORIENTATION.md`.
+collapse onto `y = x`; an anti-diagonal (`y ≈ −x`) cluster is the symptom of
+this bug on an unpatched PSI.
 
 ### Gotcha 4 — Attach outages before building the MODF
 
@@ -221,11 +202,3 @@ expected and correct; it is not an error.
     `PowerFlowBranchActivePowerFromTo` agree (`y = x`, no anti-diagonal).
   - PTDF, MODF and the nodal-balance bus dimensions are equal after `build!`
     (the invariant Gotcha 1/2 enforce).
-
-## References
-
-  - `PTDF_REDUCED_BRANCH_ORIENTATION.md` — reduced-member flow orientation.
-  - `SC_MODF_PTDF_REDUCTION_MISMATCH.md` — segfault → fail-fast guard.
-  - `SC_IRREDUCIBLE_BUS_CONSISTENCY.md` — cohesive PTDF/MODF reduction.
-
-</content>

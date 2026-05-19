@@ -129,11 +129,7 @@ end
               PSI.ModelBuildStatus.BUILT
         psi_constraint_test(ps_model, constraint_keys)
 
-        moi_tests(
-            ps_model,
-            test_results[sys]...,
-            false,
-        )
+        moi_tests(ps_model, test_results[sys]..., false)
         psi_checkobjfun_test(ps_model, objfuncs[ix])
         if ix > 2
             continue # skipping test for c_sys14_dc as Highs takes so long to find optimal solution
@@ -196,11 +192,8 @@ end
         c_sys14_dc => [168, 0, 1512, 1416, 24],
     )
 
-    test_obj_values = IdDict{System, Float64}(
-        c_sys5 => 355231,
-        c_sys14 => 159087,
-        c_sys14_dc => 154585.1,
-    )
+    test_obj_values =
+        IdDict{System, Float64}(c_sys5 => 355231, c_sys14 => 159087, c_sys14_dc => 154585.1)
     for (ix, sys) in enumerate(systems)
         # outages should be added before to MODF matrix computation
         all_branches = collect(get_components(ACTransmission, sys))
@@ -232,11 +225,7 @@ end
               PSI.ModelBuildStatus.BUILT
         psi_constraint_test(ps_model, constraint_keys)
 
-        moi_tests(
-            ps_model,
-            test_results[sys]...,
-            false,
-        )
+        moi_tests(ps_model, test_results[sys]..., false)
         psi_checkobjfun_test(ps_model, objfuncs[ix])
         if ix > 2
             continue # skipping test for c_sys14_dc as Highs takes so long to find optimal solution
@@ -300,11 +289,8 @@ end
         c_sys14_dc => [168, 0, 672, 576, 24],
     )
 
-    test_obj_values = IdDict{System, Float64}(
-        c_sys5 => 241294,
-        c_sys14 => 143365,
-        c_sys14_dc => 154585.1,
-    )
+    test_obj_values =
+        IdDict{System, Float64}(c_sys5 => 241294, c_sys14 => 143365, c_sys14_dc => 154585.1)
     for (ix, sys) in enumerate(systems)
         # In the reduction path each outage monitors only its own outaged line.
         # Monitoring `all_branches` would pin every bus as irreducible and
@@ -357,9 +343,7 @@ end
             time_steps = PSI.get_time_steps(container)
             con_ub = PSI.get_constraint(
                 container,
-                PSI.ConstraintKey(
-                    PostContingencyFlowRateConstraint, PSY.Line, "ub",
-                ),
+                PSI.ConstraintKey(PostContingencyFlowRateConstraint, PSY.Line, "ub"),
             )
             ub_keys = collect(keys(con_ub.data))
             ub_outages = Set(k[1] for k in ub_keys)
@@ -370,8 +354,8 @@ end
             # non-empty Line entry should appear in the constraint container's
             # outage-id axis.
             line_monitoring_outages = Set(
-                string(uuid) for (uuid, per_type) in line_outages
-                if haskey(per_type, PSY.Line) && !isempty(per_type[PSY.Line])
+                string(uuid) for (uuid, per_type) in line_outages if
+                haskey(per_type, PSY.Line) && !isempty(per_type[PSY.Line])
             )
             @test ub_outages == line_monitoring_outages
             # Each (outage_id, t) combination present in the container must be
@@ -379,18 +363,12 @@ end
             # one (outage_id, *, t) key.
             for outage_id in ub_outages
                 for t in time_steps
-                    @test any(
-                        k -> k[1] == outage_id && k[3] == t, ub_keys,
-                    )
+                    @test any(k -> k[1] == outage_id && k[3] == t, ub_keys)
                 end
             end
         end
 
-        moi_tests(
-            ps_model,
-            test_results[sys]...,
-            false,
-        )
+        moi_tests(ps_model, test_results[sys]..., false)
         psi_checkobjfun_test(ps_model, objfuncs[ix])
         if ix > 2
             continue # skipping test for c_sys14_dc as Highs takes so long to find optimal solution
@@ -460,11 +438,8 @@ end
         c_sys14_dc => [168, 0, 672, 576, 24],
     )
 
-    test_obj_values = IdDict{System, Float64}(
-        c_sys5 => 355231,
-        c_sys14 => 143365,
-        c_sys14_dc => 154585.1,
-    )
+    test_obj_values =
+        IdDict{System, Float64}(c_sys5 => 355231, c_sys14 => 143365, c_sys14_dc => 154585.1)
     for (ix, sys) in enumerate(systems)
         # Add outages with separate monitored components
         # Each outaged line monitors a different line to create non-trivial constraints
@@ -512,9 +487,7 @@ end
             time_steps = PSI.get_time_steps(container)
             con_ub = PSI.get_constraint(
                 container,
-                PSI.ConstraintKey(
-                    PostContingencyFlowRateConstraint, PSY.Line, "ub",
-                ),
+                PSI.ConstraintKey(PostContingencyFlowRateConstraint, PSY.Line, "ub"),
             )
             ub_keys = collect(keys(con_ub.data))
             ub_outages = Set(k[1] for k in ub_keys)
@@ -522,24 +495,18 @@ end
             @test !isempty(ub_outages)
             @test !isempty(ub_names)
             line_monitoring_outages = Set(
-                string(uuid) for (uuid, per_type) in line_outages
-                if haskey(per_type, PSY.Line) && !isempty(per_type[PSY.Line])
+                string(uuid) for (uuid, per_type) in line_outages if
+                haskey(per_type, PSY.Line) && !isempty(per_type[PSY.Line])
             )
             @test ub_outages == line_monitoring_outages
             for outage_id in ub_outages
                 for t in time_steps
-                    @test any(
-                        k -> k[1] == outage_id && k[3] == t, ub_keys,
-                    )
+                    @test any(k -> k[1] == outage_id && k[3] == t, ub_keys)
                 end
             end
         end
 
-        moi_tests(
-            ps_model,
-            test_results[sys]...,
-            false,
-        )
+        moi_tests(ps_model, test_results[sys]..., false)
         psi_checkobjfun_test(ps_model, objfuncs[ix])
         if ix > 2
             continue # skipping test for c_sys14_dc as Highs takes so long to find optimal solution
@@ -601,8 +568,7 @@ end
     ground_truth_registered = PNM.get_registered_contingencies(ground_truth_modf)
     @test !isempty(ground_truth_registered)
 
-    nodal_balance =
-        PSI.get_expression(container, PSI.ActivePowerBalance(), PSY.ACBus).data
+    nodal_balance = PSI.get_expression(container, PSI.ActivePowerBalance(), PSY.ACBus).data
     time_steps = PSI.get_time_steps(container)
 
     # Walk every (V, (outage_id, name, t)) tuple stored in the sparse
@@ -640,11 +606,7 @@ end
             # diverge due to internal AffExpr capacity differences.
             expected = PSI.get_hinted_aff_expr(length(nz_idx))
             for i in nz_idx
-                JuMP.add_to_expression!(
-                    expected,
-                    modf_col[i],
-                    nodal_balance[i, t],
-                )
+                JuMP.add_to_expression!(expected, modf_col[i], nodal_balance[i, t])
             end
             actual = pcbf[outage_id_str, name, t]
             @test JuMP.isequal_canonical(actual, expected)
@@ -664,10 +626,7 @@ end
     c_sys14 = PSB.build_system(PSB.PSITestSystems, "c_sys14")
 
     template = get_thermal_dispatch_template_network(
-        NetworkModel(
-            PTDFPowerModel;
-            PTDF_matrix = VirtualPTDF(c_sys14),
-        ),
+        NetworkModel(PTDFPowerModel; PTDF_matrix = VirtualPTDF(c_sys14)),
     )
     set_device_model!(template, Line, StaticBranch)
     set_device_model!(template, Transformer2W, StaticBranch)
@@ -687,8 +646,7 @@ end
     # test by being read identically here.
     ground_truth_ptdf = PNM.VirtualPTDF(c_sys14)
 
-    nodal_balance =
-        PSI.get_expression(container, PSI.ActivePowerBalance(), PSY.ACBus).data
+    nodal_balance = PSI.get_expression(container, PSI.ActivePowerBalance(), PSY.ACBus).data
     time_steps = PSI.get_time_steps(container)
 
     net_reduction_data = network_model.network_reduction
@@ -713,11 +671,7 @@ end
             for t in time_steps
                 expected = PSI.get_hinted_aff_expr(length(nz_idx))
                 for i in nz_idx
-                    JuMP.add_to_expression!(
-                        expected,
-                        ptdf_col[i],
-                        nodal_balance[i, t],
-                    )
+                    JuMP.add_to_expression!(expected, ptdf_col[i], nodal_balance[i, t])
                 end
                 actual = pbf[name, t]
                 @test JuMP.isequal_canonical(actual, expected)
@@ -729,9 +683,7 @@ end
 
 @testset "PTDFBranchFlow member orientation sign under network reduction" begin
     # Regression: degree-two series-reduction members whose native arc opposes
-    # the merged path were reported with the representative's sign. Part A
-    # checks the sign helper on a real fixture with :ToFrom members; Part B
-    # asserts it is a no-op on the unreduced path.
+    # the merged path were reported with the representative's sign.
 
     # --- Part A: sign helper against real series-reduction data -----------
     sys_red = PSB.build_system(PSB.PSITestSystems, "case10_radial_series_reductions")
@@ -781,8 +733,7 @@ end
     network_model = PSI.get_network_model(PSI.get_template(ps_model))
     net_reduction_data = network_model.network_reduction
     ground_truth_ptdf = PNM.VirtualPTDF(c_sys5)
-    nodal_balance =
-        PSI.get_expression(container, PSI.ActivePowerBalance(), PSY.ACBus).data
+    nodal_balance = PSI.get_expression(container, PSI.ActivePowerBalance(), PSY.ACBus).data
     time_steps = PSI.get_time_steps(container)
 
     n_checked = 0
@@ -795,9 +746,8 @@ end
         for (name, (arc, _)) in nta
             @test PSI.get_ptdf_orientation_sign(net_reduction_data, V, name) == 1.0
             ptdf_col = ground_truth_ptdf[arc, :]
-            nz_idx = [
-                i for i in eachindex(ptdf_col) if abs(ptdf_col[i]) > PSI.PTDF_ZERO_TOL
-            ]
+            nz_idx =
+                [i for i in eachindex(ptdf_col) if abs(ptdf_col[i]) > PSI.PTDF_ZERO_TOL]
             for t in time_steps
                 expected = PSI.get_hinted_aff_expr(length(nz_idx))
                 for i in nz_idx
@@ -832,11 +782,12 @@ end
     # End-to-end through the dense `_make_flow_expressions!`: a too-long column
     # raises (no `@inbounds` OOB / segfault); a matching column succeeds.
     @test_throws ErrorException PSI._make_flow_expressions!(
-        "oob", 1:2, zeros(Float64, 5), nb,
+        "oob",
+        1:2,
+        zeros(Float64, 5),
+        nb,
     )
-    ok_name, ok_expr = PSI._make_flow_expressions!(
-        "ok", 1:2, zeros(Float64, 3), nb,
-    )
+    ok_name, ok_expr = PSI._make_flow_expressions!("ok", 1:2, zeros(Float64, 3), nb)
     @test ok_name == "ok"
     @test length(ok_expr) == 2
 end
@@ -895,19 +846,13 @@ end
         explicit_template,
         DeviceModel(Line, SecurityConstrainedStaticBranch; outages = selected),
     )
-    set_device_model!(
-        explicit_template, Transformer2W, SecurityConstrainedStaticBranch,
-    )
-    set_device_model!(
-        explicit_template, TapTransformer, SecurityConstrainedStaticBranch,
-    )
-    explicit_model =
-        DecisionModel(explicit_template, c_sys5; optimizer = HiGHS_optimizer)
+    set_device_model!(explicit_template, Transformer2W, SecurityConstrainedStaticBranch)
+    set_device_model!(explicit_template, TapTransformer, SecurityConstrainedStaticBranch)
+    explicit_model = DecisionModel(explicit_template, c_sys5; optimizer = HiGHS_optimizer)
     @test build!(explicit_model; output_dir = mktempdir(; cleanup = true)) ==
           PSI.ModelBuildStatus.BUILT
-    explicit_line_outages = PSI.get_outages(
-        PSI.get_model(PSI.get_template(explicit_model), PSY.Line),
-    )
+    explicit_line_outages =
+        PSI.get_outages(PSI.get_model(PSI.get_template(explicit_model), PSY.Line))
     @test Set(keys(explicit_line_outages)) == Set(outage_uuids[1:2])
     @test !(outage_uuids[3] in keys(explicit_line_outages))
 
@@ -915,9 +860,7 @@ end
     container = PSI.get_optimization_container(explicit_model)
     con_ub = PSI.get_constraint(
         container,
-        PSI.ConstraintKey(
-            PostContingencyFlowRateConstraint, PSY.Line, "ub",
-        ),
+        PSI.ConstraintKey(PostContingencyFlowRateConstraint, PSY.Line, "ub"),
     )
     ub_outages = Set(k[1] for k in keys(con_ub.data))
     @test ub_outages == Set(string(u) for u in outage_uuids[1:2])
@@ -1003,7 +946,9 @@ end
         get_components(b -> get_name(b) == parallel_line_name, PSY.ACTransmission, sys),
     )
     add_equivalent_ac_transmission_with_parallel_circuits!(
-        sys, parallel_line, typeof(parallel_line),
+        sys,
+        parallel_line,
+        typeof(parallel_line),
     )
 
     outage = GeometricDistributionForcedOutage(;
@@ -1031,12 +976,10 @@ end
     c2r = PNM.get_component_to_reduction_name_map(net_reduction_data)
     @test haskey(c2r, PSY.Line)
     @test get(c2r[PSY.Line], parallel_line_name, nothing) == representative_name
-    @test get(c2r[PSY.Line], parallel_line_name * "_copy", nothing) ==
-          representative_name
+    @test get(c2r[PSY.Line], parallel_line_name * "_copy", nothing) == representative_name
 
     # FlowRateConstraint tracker: representative-name key, no individual names.
-    flow_cmap =
-        PSI.get_constraint_map_by_type(tracker)[FlowRateConstraint][PSY.Line]
+    flow_cmap = PSI.get_constraint_map_by_type(tracker)[FlowRateConstraint][PSY.Line]
     @test haskey(flow_cmap, representative_name)
     @test !haskey(flow_cmap, parallel_line_name)
     @test !haskey(flow_cmap, parallel_line_name * "_copy")
@@ -1095,12 +1038,9 @@ end
     @test haskey(PSI.get_outages(transformer_dm), outage_uuid)
 
     container = PSI.get_optimization_container(ps_model)
-    line_pcbf = PSI.get_expression(
-        container, PSI.PostContingencyBranchFlow(), PSY.Line,
-    )
-    transformer_pcbf = PSI.get_expression(
-        container, PSI.PostContingencyBranchFlow(), PSY.Transformer2W,
-    )
+    line_pcbf = PSI.get_expression(container, PSI.PostContingencyBranchFlow(), PSY.Line)
+    transformer_pcbf =
+        PSI.get_expression(container, PSI.PostContingencyBranchFlow(), PSY.Transformer2W)
 
     line_name = PSY.get_name(line)
     transformer_name = PSY.get_name(transformer)
@@ -1119,15 +1059,11 @@ end
     for meta in ("lb", "ub")
         line_cons = PSI.get_constraint(
             container,
-            PSI.ConstraintKey(
-                PostContingencyFlowRateConstraint, PSY.Line, meta,
-            ),
+            PSI.ConstraintKey(PostContingencyFlowRateConstraint, PSY.Line, meta),
         )
         transformer_cons = PSI.get_constraint(
             container,
-            PSI.ConstraintKey(
-                PostContingencyFlowRateConstraint, PSY.Transformer2W, meta,
-            ),
+            PSI.ConstraintKey(PostContingencyFlowRateConstraint, PSY.Transformer2W, meta),
         )
         for t in time_steps
             @test line_cons[outage_uuid_str, line_name, t] ===
@@ -1255,13 +1191,9 @@ end
     # Allowed combinations must pass: non-SC formulation on a 3WT, and an SC
     # formulation on a supported branch type.
     ok_models = PSI.BranchModelContainer()
-    ok_models[nameof(PSY.Transformer3W)] =
-        DeviceModel(PSY.Transformer3W, StaticBranch)
-    ok_models[nameof(PSY.Line)] =
-        DeviceModel(PSY.Line, SecurityConstrainedStaticBranch)
-    @test isnothing(
-        PSI._check_security_constrained_three_winding_transformer!(ok_models),
-    )
+    ok_models[nameof(PSY.Transformer3W)] = DeviceModel(PSY.Transformer3W, StaticBranch)
+    ok_models[nameof(PSY.Line)] = DeviceModel(PSY.Line, SecurityConstrainedStaticBranch)
+    @test isnothing(PSI._check_security_constrained_three_winding_transformer!(ok_models))
 end
 
 @testset "SC PTDF/MODF reductions are reconciled to a cohesive bus set" begin
@@ -1306,10 +1238,8 @@ end
           PSI.ModelBuildStatus.BUILT
 
     nm = PSI.get_network_model(PSI.get_template(model))
-    ptdf_retained =
-        PSI._retained_buses(PSI.get_PTDF_matrix(nm).network_reduction_data)
-    modf_retained =
-        PSI._retained_buses(PSI.get_MODF_matrix(nm).network_reduction_data)
+    ptdf_retained = PSI._retained_buses(PSI.get_PTDF_matrix(nm).network_reduction_data)
+    modf_retained = PSI._retained_buses(PSI.get_MODF_matrix(nm).network_reduction_data)
     @test ptdf_retained == modf_retained
     @test PSI._retained_buses(nm.network_reduction) == modf_retained
 

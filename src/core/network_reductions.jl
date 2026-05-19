@@ -32,17 +32,13 @@ get_number_of_steps(reduction_tracker::BranchReductionOptimizationTracker) =
 set_number_of_steps!(reduction_tracker, number_of_steps) =
     reduction_tracker.number_of_steps = number_of_steps
 
-Base.isempty(
-    reduction_tracker::BranchReductionOptimizationTracker,
-) =
+Base.isempty(reduction_tracker::BranchReductionOptimizationTracker) =
     isempty(reduction_tracker.variable_dict) &&
     isempty(reduction_tracker.parameter_dict) &&
     isempty(reduction_tracker.constraint_dict) &&
     isempty(reduction_tracker.constraint_map_by_type)
 
-Base.empty!(
-    reduction_tracker::BranchReductionOptimizationTracker,
-) = begin
+Base.empty!(reduction_tracker::BranchReductionOptimizationTracker) = begin
     empty!(reduction_tracker.variable_dict)
     empty!(reduction_tracker.parameter_dict)
     empty!(reduction_tracker.constraint_dict)
@@ -53,19 +49,13 @@ function BranchReductionOptimizationTracker()
     return BranchReductionOptimizationTracker(Dict(), Dict(), Dict(), Dict(), 0)
 end
 
-function _make_empty_variable_tracker_dict(
-    arc_tuple::Tuple{Int, Int},
-    num_steps::Int,
-)
+function _make_empty_variable_tracker_dict(arc_tuple::Tuple{Int, Int}, num_steps::Int)
     return Dict{Tuple{Int, Int}, Vector{JuMP.VariableRef}}(
         arc_tuple => Vector{JuMP.VariableRef}(undef, num_steps),
     )
 end
 
-function _make_empty_parameter_tracker_dict(
-    arc_tuple::Tuple{Int, Int},
-    num_steps::Int,
-)
+function _make_empty_parameter_tracker_dict(arc_tuple::Tuple{Int, Int}, num_steps::Int)
     return Dict{Tuple{Int, Int}, Vector{Union{Float64, JuMP.VariableRef}}}(
         arc_tuple => Vector{Union{Float64, JuMP.VariableRef}}(undef, num_steps),
     )
@@ -211,12 +201,9 @@ end =#
 
 """
 Sign relating a branch's native from→to flow to the PTDF column used for its
-`PTDFBranchFlow` (built from `ptdf[representative_arc, :]`).
-
-Returns `-1.0` only for a series-reduction member whose native orientation is
-`:ToFrom` relative to the merged path; `+1.0` otherwise (direct, parallel-rep,
-and 3W-winding members are keyed by their own arc). Errors on an unknown
-reduction kind rather than returning a silently wrong sign.
+`PTDFBranchFlow`. Returns `-1.0` only for a series-reduction member whose native
+orientation is `:ToFrom` relative to the merged path; `+1.0` otherwise. Errors
+on an unknown reduction kind rather than returning a silently wrong sign.
 """
 function get_ptdf_orientation_sign(
     net_reduction_data::PNM.NetworkReductionData,
@@ -269,8 +256,7 @@ function get_branch_argument_constraint_axis(
     constraint_tracker = get_constraint_dict(reduced_branch_tracker)
     constraint_map_by_type = get_constraint_map_by_type(reduced_branch_tracker)
     name_axis = net_reduction_data.name_to_arc_map[T]
-    arc_tuples_with_constraints =
-        get!(constraint_tracker, U, Set{Tuple{Int, Int}}())
+    arc_tuples_with_constraints = get!(constraint_tracker, U, Set{Tuple{Int, Int}}())
     constraint_map = get!(
         constraint_map_by_type,
         U,
