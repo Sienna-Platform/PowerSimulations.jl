@@ -29,6 +29,7 @@ pages = OrderedDict(
         "...create a problem template" => "how_to/problem_templates.md",
         "...read the simulation results" => "how_to/read_results.md",
         "...debug an infeasible model" => "how_to/debugging_infeasible_models.md",
+        "...run security-constrained (N-1) models" => "how_to/security_constrained_models.md",
         "...configure logging" => "how_to/logging.md",
         "...inspect simulation events using the recorder" => "how_to/simulation_recorder.md",
         "...run a parallel simulation" => "how_to/parallel_simulations.md",
