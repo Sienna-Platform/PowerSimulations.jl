@@ -207,6 +207,14 @@ function _add_curtailment_cost!(
             component,
             t,
         )
+
+        _add_proportional_term!(
+            container,
+            T(),
+            component,
+            -proportional_term_per_unit * dt,
+            t,
+        )
     end
 
     return
@@ -253,6 +261,14 @@ function _add_curtailment_cost!(
             CurtailmentCostExpression,
             curtailment_cost,
             component,
+            t,
+        )
+
+        _add_proportional_term!(
+            container,
+            T(),
+            component,
+            -proportional_term_per_unit * dt,
             t,
         )
     end

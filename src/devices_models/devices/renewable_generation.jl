@@ -24,7 +24,7 @@ get_multiplier_value(::AbstractPiecewiseLinearBreakpointParameter, ::PSY.Renewab
 get_multiplier_value(::AbstractPiecewiseLinearBreakpointParameter, ::PSY.RenewableGen, ::AbstractRenewableFormulation) = 1.0
 
 ########################Objective Function##################################################
-objective_function_multiplier(::ActivePowerVariable, ::AbstractRenewableDispatchFormulation)=OBJECTIVE_FUNCTION_NEGATIVE
+objective_function_multiplier(::ActivePowerVariable, ::AbstractRenewableDispatchFormulation)=OBJECTIVE_FUNCTION_POSITIVE
 
 variable_cost(::Nothing, ::ActivePowerVariable, ::PSY.RenewableDispatch, ::AbstractRenewableDispatchFormulation)=0.0
 variable_cost(cost::PSY.OperationalCost, ::ActivePowerVariable, ::PSY.RenewableDispatch, ::AbstractRenewableDispatchFormulation)=PSY.get_variable(cost)
