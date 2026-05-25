@@ -25,6 +25,15 @@ model at simulation time
 
   - `feedforward::Array{<:AbstractAffectFeedforward}` : use to pass parameters between models
   - `use_service_name::Bool` : use the name as the name for the service
+  - `outages::AbstractVector{<:PSY.Outage}` : G-1 contingencies to model when the
+    formulation is security-constrained. The constructor stores `IS.get_uuid(outage)`
+    of each entry as a key in the model's `outages::Dict{UUID, Dict{DataType, Set{String}}}`
+    field with empty inner maps; template validation fills the inner maps with the
+    per-type set of monitored component names (e.g., branches) that each outage
+    carries. An empty default triggers auto-discovery of every outage in the system
+    attached to a contributing device of the service whose formulation supports
+    outages. If `B` is not security-constrained, a non-empty value is dropped with a
+    warning.
 
 # Example
 
@@ -39,6 +48,7 @@ mutable struct ServiceModel{D <: PSY.Service, B <: AbstractServiceFormulation}
     attributes::Dict{String, Any}
     contributing_devices_map::Dict{Type{<:PSY.Component}, Vector{<:PSY.Component}}
     subsystem::Union{Nothing, String}
+    outages::Dict{Base.UUID, Dict{DataType, Set{String}}}
     function ServiceModel(
         ::Type{D},
         ::Type{B},
@@ -49,6 +59,7 @@ mutable struct ServiceModel{D <: PSY.Service, B <: AbstractServiceFormulation}
         time_series_names = get_default_time_series_names(D, B),
         attributes = Dict{String, Any}(),
         contributing_devices_map = Dict{Type{<:PSY.Component}, Vector{<:PSY.Component}}(),
+        outages::AbstractVector{<:PSY.Outage} = PSY.Outage[],
     ) where {D <: PSY.Service, B <: AbstractServiceFormulation}
         attributes_for_model = get_default_attributes(D, B)
         for (k, v) in attributes
@@ -57,6 +68,7 @@ mutable struct ServiceModel{D <: PSY.Service, B <: AbstractServiceFormulation}
 
         _check_service_formulation(D)
         _check_service_formulation(B)
+        outages_field = _add_service_model_outages(D, B, outages)
         new{D, B}(
             feedforwards,
             service_name,
@@ -66,9 +78,32 @@ mutable struct ServiceModel{D <: PSY.Service, B <: AbstractServiceFormulation}
             attributes_for_model,
             contributing_devices_map,
             nothing,
+            outages_field,
         )
     end
 end
+
+function _add_service_model_outages(
+    ::Type{D},
+    ::Type{B},
+    outages::AbstractVector{<:PSY.Outage},
+) where {D <: PSY.Service, B <: AbstractServiceFormulation}
+    field = Dict{Base.UUID, Dict{DataType, Set{String}}}()
+    isempty(outages) && return field
+    if !_formulation_supports_outages(B)
+        @warn "ServiceModel{$D, $B}: 'outages' kwarg ignored \u2014 formulation \
+               does not support G-1 contingencies."
+        return field
+    end
+    for outage in outages
+        field[IS.get_uuid(outage)] = Dict{DataType, Set{String}}()
+    end
+    return field
+end
+
+_formulation_supports_outages(
+    ::Type{<:AbstractSecurityConstrainedReservesFormulation},
+) = true
 
 get_component_type(
     ::ServiceModel{D, B},
@@ -89,6 +124,7 @@ get_contributing_devices_map(m::ServiceModel, key) =
 get_contributing_devices(m::ServiceModel) =
     [z for x in values(m.contributing_devices_map) for z in x]
 get_subsystem(m::ServiceModel) = m.subsystem
+get_outages(m::ServiceModel) = m.outages
 
 set_subsystem!(m::ServiceModel, id::String) = m.subsystem = id
 
@@ -100,6 +136,7 @@ function ServiceModel(
     duals = Vector{DataType}(),
     time_series_names = get_default_time_series_names(D, B),
     attributes = get_default_attributes(D, B),
+    outages::AbstractVector{<:PSY.Outage} = PSY.Outage[],
 ) where {D <: PSY.Service, B <: AbstractServiceFormulation}
     # If more attributes are used later, move free form string to const and organize
     # attributes
@@ -119,6 +156,7 @@ function ServiceModel(
         duals,
         time_series_names,
         attributes = attributes_for_model,
+        outages,
     )
 end
 
