@@ -238,6 +238,7 @@ function validate_template_impl!(model::OperationModel)
     _check_security_constrained_network!(model.template.branches, network_model)
     validate_network_model(network_model, unmodeled_branch_types, model_has_branch_filters)
     _build_device_model_outages!(template, system)
+    _build_service_model_outages!(template, system)
     return
 end
 
@@ -475,3 +476,145 @@ function _warn_unmatched_user_outages(
     end
     return
 end
+
+"""
+Populate `service_model.outages` for every security-constrained (SC) reserve
+`ServiceModel` in the template. Mirrors `_build_device_model_outages!`, but
+keyed off outages whose *attached* component is an injector (typically a
+generator) instead of a branch. Monitored components are still branches, and
+the inner `Dict{DataType, Set{String}}` is grouped by their modeled branch
+type — the post-contingency build resolves the branch type's arc map.
+
+Selection semantics match the device version: a non-empty `m.outages` is
+treated as the user's explicit UUID allow-list; an empty `m.outages` triggers
+auto-discovery honoring the `"include_planned_outages"` attribute (default
+`false`).
+"""
+function _build_service_model_outages!(
+    template::ProblemTemplate,
+    sys::PSY.System,
+)
+    sc_service_models = _sc_reserve_service_models(template)
+    isempty(sc_service_models) && return
+
+    modeled_types = Set{DataType}(get_component_types(template))
+    selection = _take_service_outage_selection!(sc_service_models)
+    uncovered_types = Dict{DataType, Set{Base.UUID}}()
+
+    for outage in PSY.get_supplemental_attributes(PSY.Outage, sys)
+        outage_uuid = IS.get_uuid(outage)
+        if isempty(PSY.get_monitored_components(outage))
+            @warn "Outage $(outage_uuid) ($(typeof(outage))) has empty \
+                   monitored_components; no post-contingency variables or \
+                   constraints will be created for this outage." _group =
+                LOG_GROUP_MODELS_VALIDATION
+            continue
+        end
+
+        per_type, uncovered = _monitored_components_by_modeled_type(
+            outage, outage_uuid, sys, modeled_types,
+        )
+        for comp_type in uncovered
+            push!(get!(uncovered_types, comp_type, Set{Base.UUID}()), outage_uuid)
+        end
+        isempty(per_type) && continue
+
+        attached_types = _attached_component_types(outage, sys)
+        # SC reserve service models claim outages whose attached component is
+        # an injector. Skip outages attached only to branches — those belong
+        # to N-1 branch-outage SC device models.
+        any(t -> t <: PSY.StaticInjection, attached_types) || continue
+
+        covered = _assign_outage_to_sc_service_models!(
+            sc_service_models,
+            selection,
+            outage,
+            outage_uuid,
+            per_type,
+        )
+        if !covered
+            @warn "Outage $(outage_uuid) is attached to injector(s) of \
+                   type $(collect(attached_types)), but no ServiceModel with \
+                   an AbstractSecurityConstrainedReservesFormulation is \
+                   present in the template; it will not contribute any \
+                   post-contingency constraints." _group =
+                LOG_GROUP_MODELS_VALIDATION
+        end
+    end
+
+    _warn_uncovered_monitored_types(uncovered_types)
+    _warn_unmatched_user_service_outages(sc_service_models, selection)
+    return
+end
+
+function _sc_reserve_service_models(template::ProblemTemplate)
+    return ServiceModel[
+        m for m in values(get_service_models(template)) if
+        get_formulation(m) <: AbstractSecurityConstrainedReservesFormulation
+    ]
+end
+
+function _take_service_outage_selection!(sc_service_models::Vector{ServiceModel})
+    selection = Dict{Tuple{DataType, String}, Set{Base.UUID}}()
+    for m in sc_service_models
+        key = (get_component_type(m), get_service_name(m))
+        selection[key] = Set{Base.UUID}(keys(m.outages))
+        empty!(m.outages)
+    end
+    return selection
+end
+
+function _sc_service_claims_outage(
+    m::ServiceModel,
+    outage::PSY.Outage,
+    outage_uuid::Base.UUID,
+    sel::Set{Base.UUID},
+)
+    isempty(sel) || return outage_uuid in sel
+    if outage isa PSY.PlannedOutage
+        attr = get_attribute(m, "include_planned_outages")
+        return attr === true
+    end
+    return true
+end
+
+function _assign_outage_to_sc_service_models!(
+    sc_service_models::Vector{ServiceModel},
+    selection::Dict{Tuple{DataType, String}, Set{Base.UUID}},
+    outage::PSY.Outage,
+    outage_uuid::Base.UUID,
+    per_type::Dict{DataType, Set{String}},
+)
+    covered = false
+    for m in sc_service_models
+        covered = true
+        key = (get_component_type(m), get_service_name(m))
+        if _sc_service_claims_outage(m, outage, outage_uuid, selection[key])
+            m.outages[outage_uuid] = per_type
+        end
+    end
+    return covered
+end
+
+function _warn_unmatched_user_service_outages(
+    sc_service_models::Vector{ServiceModel},
+    selection::Dict{Tuple{DataType, String}, Set{Base.UUID}},
+)
+    for m in sc_service_models
+        key = (get_component_type(m), get_service_name(m))
+        sel = selection[key]
+        isempty(sel) && continue
+        for uuid in sel
+            haskey(m.outages, uuid) && continue
+            D = get_component_type(m)
+            @warn "Outage $(uuid) listed on ServiceModel{$D, \
+                   $(get_formulation(m))} (service_name=$(get_service_name(m))) \
+                   was not found among the system's outage supplemental \
+                   attributes — it will not contribute any post-contingency \
+                   constraints." _group = LOG_GROUP_MODELS_VALIDATION
+        end
+    end
+    return
+end
+
+
