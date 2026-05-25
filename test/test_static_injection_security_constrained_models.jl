@@ -136,12 +136,12 @@ end
             PSI.ConstraintKey(
                 PostContingencyFlowRateConstraint,
                 PSY.VariableReserve{ReserveUp},
-                "Reserve1 -lb",
+                "Reserve1_lb",
             ),
             PSI.ConstraintKey(
                 PostContingencyFlowRateConstraint,
                 PSY.VariableReserve{ReserveUp},
-                "Reserve1 -ub",
+                "Reserve1_ub",
             ),
             PSI.ConstraintKey(CopperPlateBalanceConstraint, PSY.System),
             #PSI.ConstraintKey(NetworkFlowConstraint, PSY.Line),
@@ -193,6 +193,7 @@ end
                 # --- Add Outage Supplemental attribute to device and services that should respond ---
                 component = get_component(ThermalStandard, sys, component_name)
                 add_supplemental_attribute!(sys, component, transition_data)
+                add_supplemental_attribute!(sys, reserve_up, transition_data)
             end
             template = get_thermal_dispatch_template_network(
                 NetworkModel(PTDFPowerModel; PTDF_matrix = PTDF_ref[sys]),
@@ -256,12 +257,12 @@ end
             PSI.ConstraintKey(
                 PostContingencyFlowRateConstraint,
                 PSY.VariableReserve{ReserveUp},
-                "Reserve1 -lb",
+                "Reserve1_lb",
             ),
             PSI.ConstraintKey(
                 PostContingencyFlowRateConstraint,
                 PSY.VariableReserve{ReserveUp},
-                "Reserve1 -ub",
+                "Reserve1_ub",
             ),
             PSI.ConstraintKey(CopperPlateBalanceConstraint, PSY.System),
             #PSI.ConstraintKey(NetworkFlowConstraint, PSY.Line),
@@ -314,6 +315,7 @@ end
                 # --- Add Outage Supplemental attribute to device and services that should respond ---
                 component = get_component(ThermalStandard, sys, component_name)
                 add_supplemental_attribute!(sys, component, transition_data)
+                add_supplemental_attribute!(sys, reserve_up, transition_data)
             end
             template = get_thermal_dispatch_template_network(
                 NetworkModel(PTDFPowerModel; PTDF_matrix = PTDF_ref[sys]),
@@ -377,12 +379,12 @@ end
             PSI.ConstraintKey(
                 PostContingencyFlowRateConstraint,
                 PSY.VariableReserve{ReserveUp},
-                "Reserve1 -lb",
+                "Reserve1_lb",
             ),
             PSI.ConstraintKey(
                 PostContingencyFlowRateConstraint,
                 PSY.VariableReserve{ReserveUp},
-                "Reserve1 -ub",
+                "Reserve1_ub",
             ),
             PSI.ConstraintKey(CopperPlateBalanceConstraint, PSY.System),
             #PSI.ConstraintKey(NetworkFlowConstraint, PSY.Line),
@@ -394,12 +396,12 @@ end
             PSI.ConstraintKey(
                 PostContingencyActivePowerGenerationLimitsConstraint,
                 PSY.VariableReserve{ReserveUp},
-                "Reserve1 -lb",
+                "Reserve1_lb",
             ),
             PSI.ConstraintKey(
                 PostContingencyActivePowerGenerationLimitsConstraint,
                 PSY.VariableReserve{ReserveUp},
-                "Reserve1 -ub",
+                "Reserve1_ub",
             ),
         ]
         PTDF_ref = IdDict{System, PTDF}(
@@ -435,6 +437,7 @@ end
                 # --- Add Outage Supplemental attribute to device and services that should respond ---
                 component = get_component(ThermalStandard, sys, component_name)
                 add_supplemental_attribute!(sys, component, transition_data)
+                add_supplemental_attribute!(sys, reserve_up, transition_data)
             end
             template = get_thermal_dispatch_template_network(
                 NetworkModel(PTDFPowerModel; PTDF_matrix = PTDF_ref[sys]),
@@ -505,8 +508,9 @@ end
             )
             # --- Add Outage Supplemental attribute to device and services that should respond ---
             component = get_component(ThermalStandard, sys, component_name)
-            add_supplemental_attribute!(sys, component, transition_data)
             reserve_up = get_component(VariableReserve{ReserveUp}, sys, "Reserve1")
+            add_supplemental_attribute!(sys, component, transition_data)
+            add_supplemental_attribute!(sys, reserve_up, transition_data)
         end
 
         template =
@@ -564,8 +568,9 @@ end
                 )
                 # --- Add Outage Supplemental attribute to device and services that should respond ---
                 component = get_component(ThermalStandard, sys, component_name)
-                add_supplemental_attribute!(sys, component, transition_data)
                 reserve_up = get_component(VariableReserve{ReserveUp}, sys, "Reserve1")
+                add_supplemental_attribute!(sys, component, transition_data)
+                add_supplemental_attribute!(sys, reserve_up, transition_data)
             end
 
             template =
@@ -594,9 +599,9 @@ end
                 PostContingencyFlowRateConstraint,
                 VariableReserve{ReserveUp},
             }(
-                "Reserve1 -lb",
+                "Reserve1_lb",
             )]
-            @test size(flow_rate_cons) == (1, 5, 24)
+            @test length(flow_rate_cons) == 1 * 5 * 24
         end
     end
 end
@@ -633,8 +638,9 @@ end
             )
             # --- Add Outage Supplemental attribute to device and services that should respond ---
             component = get_component(ThermalStandard, sys, component_name)
-            add_supplemental_attribute!(sys, component, transition_data)
             reserve_up = get_component(VariableReserve{ReserveUp}, sys, "Reserve1")
+            add_supplemental_attribute!(sys, component, transition_data)
+            add_supplemental_attribute!(sys, reserve_up, transition_data)
         end
 
         template =
@@ -673,22 +679,22 @@ end
         PSI.ConstraintKey(
             PostContingencyFlowRateConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve1 -lb",
+            "Reserve1_lb",
         ),
         PSI.ConstraintKey(
             PostContingencyFlowRateConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve1 -ub",
+            "Reserve1_ub",
         ),
         PSI.ConstraintKey(
             PostContingencyFlowRateConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve11 -lb",
+            "Reserve11_lb",
         ),
         PSI.ConstraintKey(
             PostContingencyFlowRateConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve11 -ub",
+            "Reserve11_ub",
         ),
         PSI.ConstraintKey(CopperPlateBalanceConstraint, PSY.System),
         #PSI.ConstraintKey(NetworkFlowConstraint, PSY.Line),
@@ -756,9 +762,11 @@ end
             )
             # --- Add Outage Supplemental attribute to device and services that should respond ---
             component = get_component(ThermalStandard, sys, component_name)
-            add_supplemental_attribute!(sys, component, transition_data)
             reserve_up = get_component(VariableReserve{ReserveUp}, sys, "Reserve1")
+            add_supplemental_attribute!(sys, component, transition_data)
+            add_supplemental_attribute!(sys, reserve_up, transition_data)
             reserve_up2 = get_component(VariableReserve{ReserveUp}, sys, "Reserve11")
+            add_supplemental_attribute!(sys, reserve_up2, transition_data)
         end
 
         template = get_thermal_dispatch_template_network(
@@ -816,22 +824,22 @@ end
         PSI.ConstraintKey(
             PostContingencyFlowRateConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve1_1 -lb",
+            "Reserve1_1_lb",
         ),
         PSI.ConstraintKey(
             PostContingencyFlowRateConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve1_2 -lb",
+            "Reserve1_2_lb",
         ),
         PSI.ConstraintKey(
             PostContingencyFlowRateConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve1_1 -ub",
+            "Reserve1_1_ub",
         ),
         PSI.ConstraintKey(
             PostContingencyFlowRateConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve1_2 -ub",
+            "Reserve1_2_ub",
         ),
         PSI.ConstraintKey(CopperPlateBalanceConstraint, PSY.Area),
         PSI.ConstraintKey(
@@ -876,8 +884,8 @@ end
         ),
     ]
     test_results = IdDict{Bool, Vector{Int}}(
-        reserve_slacks[1] => [744, 0, 1536, 1200, 168],
-        reserve_slacks[2] => [1416, 0, 1536, 1200, 168],
+        reserve_slacks[1] => [984, 0, 2400, 1824, 216],
+        reserve_slacks[2] => [3528, 0, 2400, 1824, 216],
     )
     test_obj_values = IdDict{Bool, Float64}(
         reserve_slacks[1] => 497000.0,
@@ -900,8 +908,9 @@ end
             )
             # --- Add Outage Supplemental attribute to device and services that should respond ---
             component = get_component(ThermalStandard, sys, component_name)
-            add_supplemental_attribute!(sys, component, transition_data)
             reserve_up = get_component(VariableReserve{ReserveUp}, sys, reserve_name)
+            add_supplemental_attribute!(sys, component, transition_data)
+            add_supplemental_attribute!(sys, reserve_up, transition_data)
         end
 
         template = get_thermal_dispatch_template_network(
@@ -960,22 +969,22 @@ end
         PSI.ConstraintKey(
             PostContingencyFlowRateConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve1_1 -lb",
+            "Reserve1_1_lb",
         ),
         PSI.ConstraintKey(
             PostContingencyFlowRateConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve1_2 -lb",
+            "Reserve1_2_lb",
         ),
         PSI.ConstraintKey(
             PostContingencyFlowRateConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve1_1 -ub",
+            "Reserve1_1_ub",
         ),
         PSI.ConstraintKey(
             PostContingencyFlowRateConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve1_2 -ub",
+            "Reserve1_2_ub",
         ),
         PSI.ConstraintKey(CopperPlateBalanceConstraint, PSY.Area),
         PSI.ConstraintKey(
@@ -1020,8 +1029,8 @@ end
         ),
     ]
     test_results = IdDict{Bool, Vector{Int}}(
-        reserve_slacks[1] => [744, 0, 1536, 1200, 168],
-        reserve_slacks[2] => [1416, 0, 1536, 1200, 168],
+        reserve_slacks[1] => [984, 0, 2400, 1824, 216],
+        reserve_slacks[2] => [3528, 0, 2400, 1824, 216],
     )
     test_obj_values = IdDict{Bool, Float64}(
         reserve_slacks[1] => 497000.0,
@@ -1042,8 +1051,9 @@ end
             )
             # --- Add Outage Supplemental attribute to device and services that should respond ---
             component = get_component(ThermalStandard, sys, component_name)
-            add_supplemental_attribute!(sys, component, transition_data)
             reserve_up = get_component(VariableReserve{ReserveUp}, sys, reserve_name)
+            add_supplemental_attribute!(sys, component, transition_data)
+            add_supplemental_attribute!(sys, reserve_up, transition_data)
         end
 
         template = get_thermal_dispatch_template_network(
@@ -1104,22 +1114,22 @@ end
         PSI.ConstraintKey(
             PostContingencyFlowRateConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve1_1 -lb",
+            "Reserve1_1_lb",
         ),
         PSI.ConstraintKey(
             PostContingencyFlowRateConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve1_2 -lb",
+            "Reserve1_2_lb",
         ),
         PSI.ConstraintKey(
             PostContingencyFlowRateConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve1_1 -ub",
+            "Reserve1_1_ub",
         ),
         PSI.ConstraintKey(
             PostContingencyFlowRateConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve1_2 -ub",
+            "Reserve1_2_ub",
         ),
         PSI.ConstraintKey(CopperPlateBalanceConstraint, PSY.Area),
         #PSI.ConstraintKey(NetworkFlowConstraint, PSY.Line),
@@ -1136,29 +1146,29 @@ end
         PSI.ConstraintKey(
             PostContingencyActivePowerGenerationLimitsConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve1_1 -lb",
+            "Reserve1_1_lb",
         ),
         PSI.ConstraintKey(
             PostContingencyActivePowerGenerationLimitsConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve1_1 -ub",
+            "Reserve1_1_ub",
         ),
         PSI.ConstraintKey(
             PostContingencyActivePowerGenerationLimitsConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve1_2 -lb",
+            "Reserve1_2_lb",
         ),
         PSI.ConstraintKey(
             PostContingencyActivePowerGenerationLimitsConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve1_2 -ub",
+            "Reserve1_2_ub",
         ),
     ]
     PTDF_ref = IdDict{System, PTDF}(
         c_sys5_2area => PTDF(c_sys5_2area),
     )
     test_results = IdDict{System, Vector{Int}}(
-        c_sys5_2area => [504, 0, 1344, 1344, 216],
+        c_sys5_2area => [744, 0, 2208, 2208, 264],
     )
     test_obj_values = IdDict{System, Float64}(
         c_sys5_2area => 497000.0,
@@ -1200,8 +1210,9 @@ end
             )
             # --- Add Outage Supplemental attribute to device and services that should respond ---
             component = get_component(ThermalStandard, sys, component_name)
-            add_supplemental_attribute!(sys, component, transition_data)
             reserve_up = get_component(VariableReserve{ReserveUp}, sys, reserve_name)
+            add_supplemental_attribute!(sys, component, transition_data)
+            add_supplemental_attribute!(sys, reserve_up, transition_data)
         end
 
         template = get_thermal_dispatch_template_network(
@@ -1300,7 +1311,7 @@ end
         c_sys5_2area => PTDF(c_sys5_2area),
     )
     test_results = IdDict{System, Vector{Int}}(
-        c_sys5_2area => [720, 0, 624, 288, 120],
+        c_sys5_2area => [960, 0, 864, 288, 168],
     )
     test_obj_values = IdDict{System, Float64}(
         c_sys5_2area => 497494.48,
@@ -1319,8 +1330,9 @@ end
             )
             # --- Add Outage Supplemental attribute to device and services that should respond ---
             component = get_component(ThermalStandard, sys, component_name)
-            add_supplemental_attribute!(sys, component, transition_data)
             reserve_up = get_component(VariableReserve{ReserveUp}, sys, reserve_name)
+            add_supplemental_attribute!(sys, component, transition_data)
+            add_supplemental_attribute!(sys, reserve_up, transition_data)
         end
 
         template = get_thermal_dispatch_template_network(
@@ -1419,7 +1431,7 @@ end
         c_sys5_2area => PTDF(c_sys5_2area),
     )
     test_results = IdDict{System, Vector{Int}}(
-        c_sys5_2area => [720, 0, 624, 288, 120],
+        c_sys5_2area => [960, 0, 864, 288, 168],
     )
     test_obj_values = IdDict{System, Float64}(
         c_sys5_2area => 497494.48,
@@ -1438,8 +1450,9 @@ end
             )
             # --- Add Outage Supplemental attribute to device and services that should respond ---
             component = get_component(ThermalStandard, sys, component_name)
-            add_supplemental_attribute!(sys, component, transition_data)
             reserve_up = get_component(VariableReserve{ReserveUp}, sys, reserve_name)
+            add_supplemental_attribute!(sys, component, transition_data)
+            add_supplemental_attribute!(sys, reserve_up, transition_data)
         end
 
         template = get_thermal_dispatch_template_network(
@@ -1501,12 +1514,12 @@ end
         PSI.ConstraintKey(
             PostContingencyActivePowerGenerationLimitsConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve1 -lb",
+            "Reserve1_lb",
         ),
         PSI.ConstraintKey(
             PostContingencyActivePowerGenerationLimitsConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve1 -ub",
+            "Reserve1_ub",
         )]
     PTDF_ref = IdDict{System, PTDF}(
         c_sys5 => PTDF(c_sys5),
@@ -1540,6 +1553,7 @@ end
             # --- Add Outage Supplemental attribute to device and services that should respond ---
             component = get_component(ThermalStandard, sys, component_name)
             add_supplemental_attribute!(sys, component, transition_data)
+            add_supplemental_attribute!(sys, reserve_up, transition_data)
         end
 
         template = get_thermal_dispatch_template_network(
@@ -1647,8 +1661,9 @@ end
         )
         # --- Add Outage Supplemental attribute to device and services that should respond ---
         component = get_component(ThermalStandard, c_sys, component_name)
-        add_supplemental_attribute!(c_sys, component, transition_data)
         reserve_up = get_component(VariableReserve{ReserveUp}, c_sys, reserve_name)
+        add_supplemental_attribute!(c_sys, component, transition_data)
+        add_supplemental_attribute!(c_sys, reserve_up, transition_data)
     end
 
     template = get_thermal_dispatch_template_network(NetworkModel(AreaBalancePowerModel))
@@ -1677,14 +1692,14 @@ end
 
     @test solve!(ps_model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
 
-    moi_tests(ps_model, 744, 0, 648, 312, 240, false)
+    moi_tests(ps_model, 984, 0, 888, 312, 384, false)
 
     opt_container = PSI.get_optimization_container(ps_model)
     copper_plate_constraints =
         PSI.get_constraint(opt_container, CopperPlateBalanceConstraint(), PSY.Area)
     @test size(copper_plate_constraints) == (2, 24)
 
-    psi_checksolve_test(ps_model, [MOI.OPTIMAL], 497494, 1)
+    psi_checksolve_test(ps_model, [MOI.OPTIMAL], 500505.113, 1)
 
     results = OptimizationProblemResults(ps_model)
     interarea_flow = read_variable(
@@ -1821,8 +1836,9 @@ end
         )
         # --- Add Outage Supplemental attribute to device and services that should respond ---
         component = get_component(ThermalStandard, c_sys, component_name)
-        add_supplemental_attribute!(c_sys, component, transition_data)
         reserve_up = get_component(VariableReserve{ReserveUp}, c_sys, reserve_name)
+        add_supplemental_attribute!(c_sys, component, transition_data)
+        add_supplemental_attribute!(c_sys, reserve_up, transition_data)
     end
 
     template = get_thermal_dispatch_template_network(NetworkModel(AreaBalancePowerModel))
@@ -1851,7 +1867,7 @@ end
 
     @test solve!(ps_model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
 
-    moi_tests(ps_model, 744, 0, 648, 312, 240, false)
+    moi_tests(ps_model, 984, 0, 888, 312, 384, false)
 
     opt_container = PSI.get_optimization_container(ps_model)
     copper_plate_constraints =
@@ -1942,22 +1958,22 @@ end
         PSI.ConstraintKey(
             PostContingencyActivePowerGenerationLimitsConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve1_1 -lb",
+            "Reserve1_1_lb",
         ),
         PSI.ConstraintKey(
             PostContingencyActivePowerGenerationLimitsConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve1_1 -ub",
+            "Reserve1_1_ub",
         ),
         PSI.ConstraintKey(
             PostContingencyActivePowerGenerationLimitsConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve1_2 -lb",
+            "Reserve1_2_lb",
         ),
         PSI.ConstraintKey(
             PostContingencyActivePowerGenerationLimitsConstraint,
             PSY.VariableReserve{ReserveUp},
-            "Reserve1_2 -ub",
+            "Reserve1_2_ub",
         ),
         PSI.ConstraintKey(
             PostContingencyCopperPlateBalanceConstraint,
@@ -2001,8 +2017,9 @@ end
         )
         # --- Add Outage Supplemental attribute to device and services that should respond ---
         component = get_component(ThermalStandard, c_sys, component_name)
-        add_supplemental_attribute!(c_sys, component, transition_data)
         reserve_up = get_component(VariableReserve{ReserveUp}, c_sys, reserve_name)
+        add_supplemental_attribute!(c_sys, component, transition_data)
+        add_supplemental_attribute!(c_sys, reserve_up, transition_data)
     end
 
     template = get_thermal_dispatch_template_network(NetworkModel(AreaBalancePowerModel))
@@ -2031,7 +2048,7 @@ end
 
     @test solve!(ps_model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
 
-    moi_tests(ps_model, 504, 0, 456, 456, 288, false)
+    moi_tests(ps_model, 744, 0, 696, 696, 432, false)
 
     opt_container = PSI.get_optimization_container(ps_model)
     copper_plate_constraints =

@@ -100,6 +100,25 @@ function _resolve_service_monitored_arcs(
 end
 
 """
+Resolve the outages claimed by `service_model.outages` to the
+`PSY.UnplannedOutage` supplemental attribute objects attached to generators
+in `sys`. Returned vector is sorted by UUID for deterministic axes.
+
+This is the service-side counterpart to iterating `get_outages(device_model)`
+on the AC-branch side: outages are attached to the *outaged generator*, not
+to the reserve service, so resolution requires a UUID lookup against the
+system. Callers use the resolved objects to query
+`PSY.get_associated_components(sys, outage; component_type = PSY.Generator)`
+and pin the outaged generator's deployment variable to zero.
+"""
+function _service_outages(sys::PSY.System, service_model::ServiceModel)
+    outage_uuids = sort!(collect(keys(get_outages(service_model))))
+    return PSY.UnplannedOutage[
+        PSY.get_supplemental_attribute(sys, uuid) for uuid in outage_uuids
+    ]
+end
+
+"""
 Pre-allocate a `SparseAxisArray` keyed by
 `(outage_id::String, monitored_name::String, t::Int)` holding zero `AffExpr`s
 for the resolved monitored arcs. Registered on `container.expressions` under
@@ -209,6 +228,7 @@ function add_variables!(
     sys::PSY.System,
     variable_type::Type{T},
     service::R,
+    service_model::ServiceModel{R, <:AbstractSecurityConstrainedReservesFormulation},
     contributing_devices::Vector{V},
     formulation::AbstractSecurityConstrainedReservesFormulation,
 ) where {
@@ -217,18 +237,15 @@ function add_variables!(
     V <: PSY.StaticInjection,
 }
     @assert !isempty(contributing_devices)
-    service_model_outages = nothing  # populated below if found via lookup
     time_steps = get_time_steps(container)
     binary = get_variable_binary(variable_type(), R, formulation)
     service_name = PSY.get_name(service)
 
-    # Outages claimed by this service are passed through `service_model.outages`
-    # which is opaque here; we read the per-outage attached generators directly
-    # off the supplemental attribute so the deployment variable is pinned to
-    # zero for the outaged generator under its own contingency.
-    associated_outages =
-        sort!(collect(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service));
-            by = IS.get_uuid)
+    # Outages claimed by this service live on `service_model.outages` (UUID
+    # keys). Resolve them to the supplemental attribute objects so we can
+    # query the associated outaged generators and pin their deployment
+    # variables to zero under their own contingency.
+    associated_outages = _service_outages(sys, service_model)
     outage_ids = string.(IS.get_uuid.(associated_outages))
 
     variable = lazy_container_addition!(
@@ -288,7 +305,7 @@ function add_to_expression!(
     ::Type{U},
     contributing_devices::Union{IS.FlattenIteratorWrapper{V}, Vector{V}},
     service::R,
-    ::ServiceModel{R, F},
+    service_model::ServiceModel{R, F},
     ::NetworkModel{<:PM.AbstractPowerModel},
 ) where {
     T <: PostContingencyActivePowerBalance,
@@ -299,9 +316,7 @@ function add_to_expression!(
 }
     time_steps = get_time_steps(container)
     service_name = PSY.get_name(service)
-    associated_outages =
-        sort!(collect(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service));
-            by = IS.get_uuid)
+    associated_outages = _service_outages(sys, service_model)
     expression = lazy_container_addition!(
         container,
         T(),
@@ -333,13 +348,14 @@ end
 
 function add_to_expression!(
     container::OptimizationContainer,
+    sys::PSY.System,
     ::Type{T},
     ::Type{U},
     attribute_device_map::Vector{
         NamedTuple{(:component, :supplemental_attribute), Tuple{V, PSY.UnplannedOutage}},
     },
     service::R,
-    ::ServiceModel{R, F},
+    service_model::ServiceModel{R, F},
     ::NetworkModel{<:PM.AbstractPowerModel},
 ) where {
     T <: PostContingencyActivePowerBalance,
@@ -350,8 +366,7 @@ function add_to_expression!(
 }
     time_steps = get_time_steps(container)
     service_name = PSY.get_name(service)
-    associated_outages =
-        Set(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service))
+    associated_outages = Set(_service_outages(sys, service_model))
     expression = get_expression(container, T(), R, service_name)
     for (d, outage) in attribute_device_map
         outage in associated_outages || continue
@@ -377,7 +392,7 @@ function add_to_expression!(
     ::Type{U},
     contributing_devices::Union{IS.FlattenIteratorWrapper{V}, Vector{V}},
     service::R,
-    ::ServiceModel{R, F},
+    service_model::ServiceModel{R, F},
     network_model::NetworkModel{N},
 ) where {
     T <: PostContingencyNodalActivePowerDeployment,
@@ -389,9 +404,7 @@ function add_to_expression!(
 }
     time_steps = get_time_steps(container)
     service_name = PSY.get_name(service)
-    associated_outages =
-        sort!(collect(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service));
-            by = IS.get_uuid)
+    associated_outages = _service_outages(sys, service_model)
     ptdf = get_PTDF_matrix(network_model)
     bus_numbers = PNM.get_bus_axis(ptdf)
     expression = lazy_container_addition!(
@@ -429,13 +442,14 @@ end
 
 function add_to_expression!(
     container::OptimizationContainer,
+    sys::PSY.System,
     ::Type{T},
     ::Type{U},
     attribute_device_map::Vector{
         NamedTuple{(:component, :supplemental_attribute), Tuple{V, PSY.UnplannedOutage}},
     },
     service::R,
-    ::ServiceModel{R, F},
+    service_model::ServiceModel{R, F},
     network_model::NetworkModel{N},
 ) where {
     T <: PostContingencyNodalActivePowerDeployment,
@@ -447,8 +461,7 @@ function add_to_expression!(
 }
     time_steps = get_time_steps(container)
     service_name = PSY.get_name(service)
-    associated_outages =
-        Set(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service))
+    associated_outages = Set(_service_outages(sys, service_model))
     expression = get_expression(container, T(), R, service_name)
     network_reduction = get_network_reduction(network_model)
     for (device, outage) in attribute_device_map
@@ -476,7 +489,7 @@ function add_to_expression!(
     ::Type{U},
     contributing_devices::Union{IS.FlattenIteratorWrapper{V}, Vector{V}},
     service::R,
-    ::ServiceModel{R, F},
+    service_model::ServiceModel{R, F},
     ::NetworkModel{<:AreaBalancePowerModel},
 ) where {
     T <: PostContingencyAreaActivePowerDeployment,
@@ -487,9 +500,7 @@ function add_to_expression!(
 }
     time_steps = get_time_steps(container)
     service_name = PSY.get_name(service)
-    associated_outages =
-        sort!(collect(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service));
-            by = IS.get_uuid)
+    associated_outages = _service_outages(sys, service_model)
     area_names = PSY.get_name.(PSY.get_components(PSY.Area, sys))
     expression = lazy_container_addition!(
         container,
@@ -528,7 +539,7 @@ function add_to_expression!(
     ::Type{T},
     ::Type{U},
     service::R,
-    ::ServiceModel{R, F},
+    service_model::ServiceModel{R, F},
     ::NetworkModel{<:AreaBalancePowerModel},
 ) where {
     T <: PostContingencyAreaActivePowerDeployment,
@@ -543,8 +554,7 @@ function add_to_expression!(
     )
     time_steps = get_time_steps(container)
     service_name = PSY.get_name(service)
-    associated_outages =
-        Set(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service))
+    associated_outages = Set(_service_outages(sys, service_model))
     expression = get_expression(container, T(), R, service_name)
     for (device, outage) in attribute_device_map
         outage in associated_outages || continue
@@ -577,7 +587,7 @@ function add_to_expression!(
     ::Type{T},
     contributing_devices::Union{IS.FlattenIteratorWrapper{V}, Vector{V}},
     service::R,
-    ::ServiceModel{R, F},
+    service_model::ServiceModel{R, F},
     ::NetworkModel{<:PM.AbstractActivePowerModel},
 ) where {
     T <: PostContingencyActivePowerGeneration,
@@ -587,9 +597,7 @@ function add_to_expression!(
 }
     time_steps = get_time_steps(container)
     service_name = PSY.get_name(service)
-    associated_outages =
-        sort!(collect(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service));
-            by = IS.get_uuid)
+    associated_outages = _service_outages(sys, service_model)
     expression = add_expression_container!(
         container,
         T(),
@@ -674,6 +682,11 @@ function add_post_contingency_flow_expressions!(
     pre_flow_cache = Dict{DataType, Any}()
     for (uuid, entries) in resolved
         outage_id = string(uuid)
+        # Positional slice over the bus/time axes; matches `ptdf_col`'s
+        # positional indexing and avoids keyed lookup mismatches when the
+        # nodal expression's bus axis is a subset of the PTDF column space
+        # (e.g. AreaPTDFPowerModel).
+        post_cont_expr = nodal_deployment[outage_id, :, :].data
         for (entry_type, name, arc, _) in entries
             pre_flow = get!(pre_flow_cache, entry_type) do
                 get_expression(container, PTDFBranchFlow(), entry_type)
@@ -685,9 +698,7 @@ function add_post_contingency_flow_expressions!(
                 @inbounds for b in eachindex(ptdf_col)
                     coef = ptdf_col[b]
                     abs(coef) < PTDF_ZERO_TOL && continue
-                    JuMP.add_to_expression!(
-                        acc, coef, nodal_deployment[outage_id, b, t],
-                    )
+                    JuMP.add_to_expression!(acc, coef, post_cont_expr[b, t])
                 end
                 expression_container[outage_id, name, t] = acc
             end
@@ -707,11 +718,12 @@ minus the outaged generation) must close to zero for every outage and time.
 """
 function add_constraints!(
     container::OptimizationContainer,
+    sys::PSY.System,
     ::Type{T},
     ::Type{U},
     ::Union{IS.FlattenIteratorWrapper{V}, Vector{V}},
     service::R,
-    ::ServiceModel{R, F},
+    service_model::ServiceModel{R, F},
     ::NetworkModel{<:PM.AbstractPowerModel},
 ) where {
     T <: PostContingencyGenerationBalanceConstraint,
@@ -722,9 +734,7 @@ function add_constraints!(
 }
     time_steps = get_time_steps(container)
     service_name = PSY.get_name(service)
-    associated_outages =
-        sort!(collect(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service));
-            by = IS.get_uuid)
+    associated_outages = _service_outages(sys, service_model)
     expressions = get_expression(container, U(), R, service_name)
     constraint = add_constraints_container!(
         container,
@@ -848,7 +858,7 @@ function add_constraints!(
     ::Type{U},
     contributing_devices::Union{IS.FlattenIteratorWrapper{V}, Vector{V}},
     service::R,
-    ::ServiceModel{R, F},
+    service_model::ServiceModel{R, F},
     ::NetworkModel{<:PM.AbstractPowerModel},
 ) where {
     T <: PostContingencyActivePowerReserveDeploymentVariableLimitsConstraint,
@@ -860,9 +870,7 @@ function add_constraints!(
 }
     time_steps = get_time_steps(container)
     service_name = PSY.get_name(service)
-    associated_outages =
-        sort!(collect(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service));
-            by = IS.get_uuid)
+    associated_outages = _service_outages(sys, service_model)
     constraint = add_constraints_container!(
         container,
         T(),
@@ -912,7 +920,7 @@ function add_constraints!(
     ::Type{T},
     contributing_devices::Union{IS.FlattenIteratorWrapper{V}, Vector{V}},
     service::R,
-    ::ServiceModel{R, F},
+    service_model::ServiceModel{R, F},
     ::NetworkModel{<:PM.AbstractActivePowerModel},
 ) where {
     T <: PostContingencyActivePowerGenerationLimitsConstraint,
@@ -922,9 +930,7 @@ function add_constraints!(
 }
     time_steps = get_time_steps(container)
     service_name = PSY.get_name(service)
-    associated_outages =
-        sort!(collect(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service));
-            by = IS.get_uuid)
+    associated_outages = _service_outages(sys, service_model)
     con_lb = add_constraints_container!(
         container,
         T(),
@@ -989,7 +995,7 @@ function add_constraints!(
     ::Type{U},
     ::Type{Y},
     service::R,
-    ::ServiceModel{R, F},
+    service_model::ServiceModel{R, F},
     ::NetworkModel{<:AreaBalancePowerModel},
 ) where {
     T <: PostContingencyCopperPlateBalanceConstraint,
@@ -1002,9 +1008,7 @@ function add_constraints!(
     devices = PSY.get_components(PSY.Area, sys)
     area_names = PSY.get_name.(devices)
     service_name = PSY.get_name(service)
-    associated_outages =
-        sort!(collect(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service));
-            by = IS.get_uuid)
+    associated_outages = _service_outages(sys, service_model)
     con = add_constraints_container!(
         container,
         T(),
@@ -1072,11 +1076,11 @@ function _construct_service_arguments_sc!(
     end
     add_feedforward_arguments!(container, model, service)
 
-    associated_outages = PSY.get_supplemental_attributes(PSY.UnplannedOutage, service)
+    associated_outages = _service_outages(sys, model)
     if isempty(associated_outages)
-        @warn "Service $(SR)('$name'): no UnplannedOutage supplemental attributes \
-               are attached; the security-constrained formulation $(F) will not \
-               add any post-contingency variables or constraints."
+        @warn "Service $(SR)('$name'): `service_model.outages` is empty; the \
+               security-constrained formulation $(F) will not add any \
+               post-contingency variables or constraints."
         return false
     end
 
@@ -1085,6 +1089,7 @@ function _construct_service_arguments_sc!(
         sys,
         PostContingencyActivePowerReserveDeploymentVariable,
         service,
+        model,
         contributing_devices,
         F(),
     )
@@ -1173,11 +1178,11 @@ function _construct_service_post_contingency_balance!(
         PSY.Generator, PSY.UnplannedOutage, sys,
     )
     add_to_expression!(
-        container, PostContingencyActivePowerBalance, ActivePowerVariable,
+        container, sys, PostContingencyActivePowerBalance, ActivePowerVariable,
         attribute_device_map, service, model, network_model,
     )
     add_constraints!(
-        container, PostContingencyGenerationBalanceConstraint,
+        container, sys, PostContingencyGenerationBalanceConstraint,
         PostContingencyActivePowerBalance,
         contributing_devices, service, model, network_model,
     )
@@ -1212,7 +1217,7 @@ function _construct_service_model_ptdf!(
         has_requirement_ts, include_ramp,
     )
 
-    associated_outages = PSY.get_supplemental_attributes(PSY.UnplannedOutage, service)
+    associated_outages = _service_outages(sys, model)
     isempty(associated_outages) && return
 
     attribute_device_map = _construct_service_post_contingency_balance!(
@@ -1224,7 +1229,7 @@ function _construct_service_model_ptdf!(
         contributing_devices, service, model, network_model,
     )
     add_to_expression!(
-        container, PostContingencyNodalActivePowerDeployment, ActivePowerVariable,
+        container, sys, PostContingencyNodalActivePowerDeployment, ActivePowerVariable,
         attribute_device_map, service, model, network_model,
     )
     add_post_contingency_flow_expressions!(
@@ -1265,7 +1270,7 @@ function construct_service!(
     ::Set{<:DataType},
     network_model::NetworkModel{<:PM.AbstractDCPModel},
 ) where {SR <: PSY.AbstractReserve}
-    _construct_service_model_ptdf!(container, sys, model, network_model, false, false)
+    _construct_service_model_ptdf!(container, sys, model, network_model, false, true)
     return
 end
 
@@ -1310,7 +1315,7 @@ function _construct_service_model_copperplate!(
         has_requirement_ts, include_ramp,
     )
 
-    associated_outages = PSY.get_supplemental_attributes(PSY.UnplannedOutage, service)
+    associated_outages = _service_outages(sys, model)
     isempty(associated_outages) && return
 
     _construct_service_post_contingency_balance!(
@@ -1348,7 +1353,7 @@ function construct_service!(
     network_model::NetworkModel{<:CopperPlatePowerModel},
 ) where {SR <: PSY.AbstractReserve}
     _construct_service_model_copperplate!(
-        container, sys, model, network_model, false, false,
+        container, sys, model, network_model, false, true,
     )
     return
 end
@@ -1396,7 +1401,7 @@ function _construct_service_model_areabalance!(
         has_requirement_ts, include_ramp,
     )
 
-    associated_outages = PSY.get_supplemental_attributes(PSY.UnplannedOutage, service)
+    associated_outages = _service_outages(sys, model)
     isempty(associated_outages) && return
 
     _construct_service_post_contingency_balance!(
@@ -1448,7 +1453,7 @@ function construct_service!(
     network_model::NetworkModel{<:AreaBalancePowerModel},
 ) where {SR <: PSY.AbstractReserve}
     _construct_service_model_areabalance!(
-        container, sys, model, network_model, false, false,
+        container, sys, model, network_model, false, true,
     )
     return
 end

@@ -71,6 +71,15 @@ function get_default_time_series_names(
 end
 
 function get_default_time_series_names(
+    ::Type{<:PSY.Reserve},
+    ::Type{<:AbstractSecurityConstrainedReservesFormulation},
+)
+    return Dict{Type{<:TimeSeriesParameter}, String}(
+        RequirementTimeSeriesParameter => "requirement",
+    )
+end
+
+function get_default_time_series_names(
     ::Type{<:PSY.ReserveNonSpinning},
     ::Type{NonSpinningReserve},
 )
