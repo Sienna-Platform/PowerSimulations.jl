@@ -30,6 +30,7 @@ struct PTDFBranchFlow <: ExpressionType end
 struct PostContingencyBranchFlow <: PostContingencyExpressions end
 struct PostContingencyActivePowerGeneration <: PostContingencyExpressions end
 struct PostContingencyNodalActivePowerDeployment <: PostContingencyExpressions end
+struct PostContingencyAreaActivePowerDeployment <: PostContingencyExpressions end
 struct NetActivePower <: ExpressionType end
 struct RealizedShiftedLoad <: ExpressionType end
 """

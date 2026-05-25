@@ -26,6 +26,31 @@ struct PostContingencyActivePowerReserveDeploymentVariable <:
        AbstractContingencyVariableType end
 
 """
+Abstract supertype for non-negative slack variables that absorb infeasibility
+in post-contingency branch-flow inequalities of the security-constrained
+reserve formulations.
+"""
+abstract type AbstractContingencySlackVariableType <: VariableType end
+
+"""
+Struct to dispatch the creation of the non-negative slack variable applied to
+the post-contingency upper branch-flow inequality.
+
+Docs abbreviation: ``s^{f,\\text{ub}}_{c,\\ell,t}``
+"""
+struct PostContingencyFlowActivePowerSlackUpperBound <:
+       AbstractContingencySlackVariableType end
+
+"""
+Struct to dispatch the creation of the non-negative slack variable applied to
+the post-contingency lower branch-flow inequality.
+
+Docs abbreviation: ``s^{f,\\text{lb}}_{c,\\ell,t}``
+"""
+struct PostContingencyFlowActivePowerSlackLowerBound <:
+       AbstractContingencySlackVariableType end
+
+"""
 Struct to dispatch the creation of Active Power Variables above minimum power for Thermal Compact formulations
 
 Docs abbreviation: ``\\Delta p``

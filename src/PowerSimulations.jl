@@ -263,6 +263,8 @@ export RateofChangeConstraintSlackUp
 export RateofChangeConstraintSlackDown
 export PostContingencyActivePowerChangeVariable
 export PostContingencyActivePowerReserveDeploymentVariable
+export PostContingencyFlowActivePowerSlackUpperBound
+export PostContingencyFlowActivePowerSlackLowerBound
 export DCVoltage
 export DCLineCurrent
 export ConverterPowerDirection
@@ -369,6 +371,8 @@ export PostContingencyActivePowerVariableLimitsConstraint
 export PostContingencyActivePowerReserveDeploymentVariableLimitsConstraint
 export PostContingencyGenerationBalanceConstraint
 export PostContingencyRampConstraint
+export PostContingencyActivePowerGenerationLimitsConstraint
+export PostContingencyCopperPlateBalanceConstraint
 export ImportExportBudgetConstraint
 export PiecewiseLinearBlockIncrementalOfferConstraint
 export PiecewiseLinearBlockDecrementalOfferConstraint
@@ -439,6 +443,8 @@ export ActivePowerRangeExpressionUB
 export PostContingencyBranchFlow
 export PostContingencyActivePowerGeneration
 export PostContingencyActivePowerBalance
+export PostContingencyNodalActivePowerDeployment
+export PostContingencyAreaActivePowerDeployment
 export NetActivePower
 export DCCurrentBalance
 
@@ -713,6 +719,7 @@ include("devices_models/devices/reactivepower_device.jl")
 
 # Services Models
 include("services_models/reserves.jl")
+include("services_models/static_injection_security_constrained_models.jl")
 include("services_models/reserve_group.jl")
 include("services_models/transmission_interface.jl")
 include("services_models/service_slacks.jl")

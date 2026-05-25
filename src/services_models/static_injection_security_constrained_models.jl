@@ -1,0 +1,1469 @@
+# ----------------------------------------------------------------------------
+# Security-constrained reserve service formulations (G-1 with reserve
+# deployment + monitored-branch post-contingency flow constraints).
+#
+# Sparse + monitored counterpart to the legacy dense-per-branch implementation
+# in `older_static_injection_security_constrained_models.jl`. Mirrors the
+# device-side ac_transmission_security_constrained_models.jl: post-contingency
+# flow expressions/constraints (and optional slacks) live in
+# `SparseAxisArray`s keyed by `(outage_id::String, monitored_name::String,
+# t::Int)`, scoped to the monitored components carried by each outage in
+# `service_model.outages[uuid]::Dict{DataType, Set{String}}` (populated by
+# `_build_service_model_outages!`).
+#
+# Per-outage reserve-deployment variables and the per-outage power-balance /
+# nodal-deployment / area-deployment expressions remain dense over the
+# contributing devices and the modeled bus/area axes — those are independent
+# of which branches are monitored.
+# ----------------------------------------------------------------------------
+
+#! format: off
+get_variable_upper_bound(
+    ::PostContingencyFlowActivePowerSlackUpperBound,
+    ::PSY.ACTransmission,
+    ::AbstractSecurityConstrainedReservesFormulation,
+) = nothing
+get_variable_lower_bound(
+    ::PostContingencyFlowActivePowerSlackUpperBound,
+    ::PSY.ACTransmission,
+    ::AbstractSecurityConstrainedReservesFormulation,
+) = 0.0
+get_variable_upper_bound(
+    ::PostContingencyFlowActivePowerSlackLowerBound,
+    ::PSY.ACTransmission,
+    ::AbstractSecurityConstrainedReservesFormulation,
+) = nothing
+get_variable_lower_bound(
+    ::PostContingencyFlowActivePowerSlackLowerBound,
+    ::PSY.ACTransmission,
+    ::AbstractSecurityConstrainedReservesFormulation,
+) = 0.0
+#! format: on
+
+# ----------------------------------------------------------------------------
+# Helpers: monitored-arc resolution + sparse container scaffolding
+# ----------------------------------------------------------------------------
+
+"""
+Resolve every monitored component in `service_model.outages` to a container
+name and arc tuple in the active network reduction. Mirrors the device-side
+`_resolve_monitored_arcs` but operates on a `ServiceModel`. Outages whose
+monitored component types are not modeled in the network are skipped.
+
+Returns
+`Vector{Pair{UUID, Vector{Tuple{DataType, String, Tuple{Int,Int}, String}}}}`
+where each inner tuple is `(monitored_type, container_name, arc,
+reduction_kind)`. Outages are sorted by UUID for deterministic axes.
+"""
+function _resolve_service_monitored_arcs(
+    service_model::ServiceModel,
+    net_reduction_data::PNM.NetworkReductionData,
+)
+    name_to_arc_maps = PNM.get_name_to_arc_maps(net_reduction_data)
+    component_to_reduction_maps =
+        PNM.get_component_to_reduction_name_map(net_reduction_data)
+    resolved =
+        Pair{Base.UUID, Vector{Tuple{DataType, String, Tuple{Int, Int}, String}}}[]
+    for (uuid, per_type) in get_outages(service_model)
+        kept = Tuple{DataType, String, Tuple{Int, Int}, String}[]
+        for (T, names) in per_type
+            haskey(name_to_arc_maps, T) || continue
+            name_to_arc = name_to_arc_maps[T]
+            component_to_reduction =
+                get(component_to_reduction_maps, T, Dict{String, String}())
+            seen = Set{Tuple{Int, Int}}()
+            for name in sort!(collect(names))
+                if haskey(name_to_arc, name)
+                    container_name = name
+                elseif haskey(component_to_reduction, name)
+                    container_name = component_to_reduction[name]
+                else
+                    error(
+                        "Monitored component \"$name\" (type $T) for outage $uuid is " *
+                        "absent from both the network-reduction name-to-arc map and " *
+                        "the component-to-reduction map. Verify the component exists " *
+                        "in the system and is modeled with a branch formulation that " *
+                        "produces a PTDFBranchFlow expression.",
+                    )
+                end
+                arc, reduction_kind = name_to_arc[container_name]
+                arc in seen && continue
+                push!(seen, arc)
+                push!(kept, (T, container_name, arc, reduction_kind))
+            end
+        end
+        isempty(kept) && continue
+        push!(resolved, uuid => kept)
+    end
+    sort!(resolved; by = first)
+    return resolved
+end
+
+"""
+Pre-allocate a `SparseAxisArray` keyed by
+`(outage_id::String, monitored_name::String, t::Int)` holding zero `AffExpr`s
+for the resolved monitored arcs. Registered on `container.expressions` under
+`ExpressionKey(T, R; meta = service_name)`.
+"""
+function _add_service_post_contingency_sparse_expression!(
+    container::OptimizationContainer,
+    ::Type{T},
+    ::Type{R},
+    service_name::String,
+    resolved::Vector{
+        Pair{Base.UUID, Vector{Tuple{DataType, String, Tuple{Int, Int}, String}}},
+    },
+    time_steps::UnitRange{Int},
+) where {T <: PostContingencyExpressions, R <: PSY.AbstractReserve}
+    contents = Dict{Tuple{String, String, Int}, JuMP.AffExpr}()
+    for (uuid, entries) in resolved
+        outage_id = string(uuid)
+        for (_, name, _, _) in entries, t in time_steps
+            contents[(outage_id, name, t)] = zero(JuMP.AffExpr)
+        end
+    end
+    expr_container = SparseAxisArray(contents)
+    _assign_container!(
+        container.expressions,
+        ExpressionKey(T, R, service_name),
+        expr_container,
+    )
+    return expr_container
+end
+
+"""
+Register an empty `SparseAxisArray` keyed by
+`(outage_id::String, monitored_name::String, t::Int)` for the given
+post-contingency constraint type / meta tag.
+"""
+function _add_service_post_contingency_sparse_constraints!(
+    container::OptimizationContainer,
+    ::Type{T},
+    ::Type{R},
+    service_name::String;
+    meta_suffix::String,
+) where {T <: ConstraintType, R <: PSY.AbstractReserve}
+    cons_container =
+        SparseAxisArray(Dict{Tuple{String, String, Int}, JuMP.ConstraintRef}())
+    _assign_container!(
+        container.constraints,
+        ConstraintKey(T, R, "$(service_name)_$(meta_suffix)"),
+        cons_container,
+    )
+    return cons_container
+end
+
+"""
+Sparse slack variable container keyed by
+`(outage_id::String, monitored_name::String, t::Int)`. Each entry is a
+non-negative `JuMP.VariableRef` whose objective contribution is
+`POST_CONTINGENCY_CONSTRAINT_VIOLATION_SLACK_COST`. Built directly via
+`@variable`/`_assign_container!` so the axes can be sparse.
+"""
+function add_post_contingency_slack_variables!(
+    container::OptimizationContainer,
+    ::Type{T},
+    service::R,
+    service_name::String,
+    resolved::Vector{
+        Pair{Base.UUID, Vector{Tuple{DataType, String, Tuple{Int, Int}, String}}},
+    },
+    ::AbstractSecurityConstrainedReservesFormulation,
+) where {T <: AbstractContingencySlackVariableType, R <: PSY.AbstractReserve}
+    time_steps = get_time_steps(container)
+    jump_model = get_jump_model(container)
+    contents = Dict{Tuple{String, String, Int}, JuMP.VariableRef}()
+    for (uuid, entries) in resolved
+        outage_id = string(uuid)
+        for (_, name, _, _) in entries
+            for t in time_steps
+                v = JuMP.@variable(
+                    jump_model,
+                    base_name = "$(T)_$(R)_$(service_name)_{$(outage_id), $(name), $(t)}",
+                    lower_bound = 0.0,
+                    start = 0.0,
+                )
+                contents[(outage_id, name, t)] = v
+                add_to_objective_invariant_expression!(
+                    container,
+                    v * POST_CONTINGENCY_CONSTRAINT_VIOLATION_SLACK_COST,
+                )
+            end
+        end
+    end
+    slack_container = SparseAxisArray(contents)
+    _assign_container!(
+        container.variables,
+        VariableKey(T, R, service_name),
+        slack_container,
+    )
+    return slack_container
+end
+
+# ----------------------------------------------------------------------------
+# Reserve deployment variable per (outage, contributing device, t)
+# ----------------------------------------------------------------------------
+
+function add_variables!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    variable_type::Type{T},
+    service::R,
+    contributing_devices::Vector{V},
+    formulation::AbstractSecurityConstrainedReservesFormulation,
+) where {
+    T <: AbstractContingencyVariableType,
+    R <: PSY.AbstractReserve,
+    V <: PSY.StaticInjection,
+}
+    @assert !isempty(contributing_devices)
+    service_model_outages = nothing  # populated below if found via lookup
+    time_steps = get_time_steps(container)
+    binary = get_variable_binary(variable_type(), R, formulation)
+    service_name = PSY.get_name(service)
+
+    # Outages claimed by this service are passed through `service_model.outages`
+    # which is opaque here; we read the per-outage attached generators directly
+    # off the supplemental attribute so the deployment variable is pinned to
+    # zero for the outaged generator under its own contingency.
+    associated_outages =
+        sort!(collect(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service));
+            by = IS.get_uuid)
+    outage_ids = string.(IS.get_uuid.(associated_outages))
+
+    variable = lazy_container_addition!(
+        container,
+        variable_type(),
+        R,
+        outage_ids,
+        [PSY.get_name(d) for d in contributing_devices],
+        time_steps;
+        meta = service_name,
+    )
+
+    for outage in associated_outages
+        outage_id = string(IS.get_uuid(outage))
+        associated_devices =
+            PSY.get_associated_components(sys, outage; component_type = PSY.Generator)
+        for device in contributing_devices
+            name = PSY.get_name(device)
+            device_outaged = device in associated_devices
+            for t in time_steps
+                v = JuMP.@variable(
+                    get_jump_model(container),
+                    base_name = "$(T)_$(R)_$(service_name)_{$(outage_id), $(name), $(t)}",
+                    binary = binary,
+                )
+                variable[outage_id, name, t] = v
+                if device_outaged
+                    # The outaged generator cannot deploy reserves for its own
+                    # contingency; force the variable to zero.
+                    JuMP.set_upper_bound(v, 0.0)
+                    JuMP.set_lower_bound(v, 0.0)
+                    JuMP.set_start_value(v, 0.0)
+                    continue
+                end
+                ub = get_variable_upper_bound(variable_type(), service, device, formulation)
+                ub === nothing || JuMP.set_upper_bound(v, ub)
+                lb = get_variable_lower_bound(variable_type(), service, device, formulation)
+                (lb === nothing || binary) || JuMP.set_lower_bound(v, lb)
+                init = get_variable_warm_start_value(variable_type(), device, formulation)
+                init === nothing || JuMP.set_start_value(v, init)
+            end
+        end
+    end
+    return
+end
+
+# ----------------------------------------------------------------------------
+# Post-contingency power-balance, nodal-deployment, area-deployment
+# expressions. Reserve-deployment contributions and generator-outage
+# contributions are added in separate dispatches to avoid `isa` checks.
+# ----------------------------------------------------------------------------
+
+function add_to_expression!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    ::Type{T},
+    ::Type{U},
+    contributing_devices::Union{IS.FlattenIteratorWrapper{V}, Vector{V}},
+    service::R,
+    ::ServiceModel{R, F},
+    ::NetworkModel{<:PM.AbstractPowerModel},
+) where {
+    T <: PostContingencyActivePowerBalance,
+    U <: AbstractContingencyVariableType,
+    V <: PSY.Generator,
+    R <: PSY.AbstractReserve,
+    F <: AbstractSecurityConstrainedReservesFormulation,
+}
+    time_steps = get_time_steps(container)
+    service_name = PSY.get_name(service)
+    associated_outages =
+        sort!(collect(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service));
+            by = IS.get_uuid)
+    expression = lazy_container_addition!(
+        container,
+        T(),
+        R,
+        string.(IS.get_uuid.(associated_outages)),
+        time_steps;
+        meta = service_name,
+    )
+    reserve_deployment_variable = get_variable(container, U(), R, service_name)
+    mult_default = get_variable_multiplier(U(), R, F())
+    for outage in associated_outages
+        associated_devices =
+            PSY.get_associated_components(sys, outage; component_type = PSY.Generator)
+        outage_id = string(IS.get_uuid(outage))
+        for device in contributing_devices
+            name = PSY.get_name(device)
+            mult = device in associated_devices ? 0.0 : mult_default
+            for t in time_steps
+                _add_to_jump_expression!(
+                    expression[outage_id, t],
+                    reserve_deployment_variable[outage_id, name, t],
+                    mult,
+                )
+            end
+        end
+    end
+    return
+end
+
+function add_to_expression!(
+    container::OptimizationContainer,
+    ::Type{T},
+    ::Type{U},
+    attribute_device_map::Vector{
+        NamedTuple{(:component, :supplemental_attribute), Tuple{V, PSY.UnplannedOutage}},
+    },
+    service::R,
+    ::ServiceModel{R, F},
+    ::NetworkModel{<:PM.AbstractPowerModel},
+) where {
+    T <: PostContingencyActivePowerBalance,
+    U <: VariableType,
+    V <: PSY.Generator,
+    R <: PSY.AbstractReserve,
+    F <: AbstractSecurityConstrainedReservesFormulation,
+}
+    time_steps = get_time_steps(container)
+    service_name = PSY.get_name(service)
+    associated_outages =
+        Set(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service))
+    expression = get_expression(container, T(), R, service_name)
+    for (d, outage) in attribute_device_map
+        outage in associated_outages || continue
+        outage_id = string(IS.get_uuid(outage))
+        name = PSY.get_name(d)
+        variable = get_variable(container, U(), typeof(d))
+        mult = get_variable_multiplier(U(), typeof(d), F())
+        for t in time_steps
+            _add_to_jump_expression!(
+                expression[outage_id, t],
+                variable[name, t],
+                mult,
+            )
+        end
+    end
+    return
+end
+
+function add_to_expression!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    ::Type{T},
+    ::Type{U},
+    contributing_devices::Union{IS.FlattenIteratorWrapper{V}, Vector{V}},
+    service::R,
+    ::ServiceModel{R, F},
+    network_model::NetworkModel{N},
+) where {
+    T <: PostContingencyNodalActivePowerDeployment,
+    U <: AbstractContingencyVariableType,
+    V <: PSY.Generator,
+    R <: PSY.AbstractReserve,
+    F <: AbstractSecurityConstrainedReservesFormulation,
+    N <: AbstractPTDFModel,
+}
+    time_steps = get_time_steps(container)
+    service_name = PSY.get_name(service)
+    associated_outages =
+        sort!(collect(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service));
+            by = IS.get_uuid)
+    ptdf = get_PTDF_matrix(network_model)
+    bus_numbers = PNM.get_bus_axis(ptdf)
+    expression = lazy_container_addition!(
+        container,
+        T(),
+        R,
+        string.(IS.get_uuid.(associated_outages)),
+        bus_numbers,
+        time_steps;
+        meta = service_name,
+    )
+    reserve_deployment_variable = get_variable(container, U(), R, service_name)
+    mult_default = get_variable_multiplier(U(), R, F())
+    network_reduction = get_network_reduction(network_model)
+    for outage in associated_outages
+        associated_devices =
+            PSY.get_associated_components(sys, outage; component_type = PSY.Generator)
+        outage_id = string(IS.get_uuid(outage))
+        for device in contributing_devices
+            mult = device in associated_devices ? 0.0 : mult_default
+            name = PSY.get_name(device)
+            bus_number =
+                PNM.get_mapped_bus_number(network_reduction, PSY.get_bus(device))
+            for t in time_steps
+                _add_to_jump_expression!(
+                    expression[outage_id, bus_number, t],
+                    reserve_deployment_variable[outage_id, name, t],
+                    mult,
+                )
+            end
+        end
+    end
+    return
+end
+
+function add_to_expression!(
+    container::OptimizationContainer,
+    ::Type{T},
+    ::Type{U},
+    attribute_device_map::Vector{
+        NamedTuple{(:component, :supplemental_attribute), Tuple{V, PSY.UnplannedOutage}},
+    },
+    service::R,
+    ::ServiceModel{R, F},
+    network_model::NetworkModel{N},
+) where {
+    T <: PostContingencyNodalActivePowerDeployment,
+    U <: VariableType,
+    V <: PSY.Generator,
+    R <: PSY.AbstractReserve,
+    F <: AbstractSecurityConstrainedReservesFormulation,
+    N <: AbstractPTDFModel,
+}
+    time_steps = get_time_steps(container)
+    service_name = PSY.get_name(service)
+    associated_outages =
+        Set(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service))
+    expression = get_expression(container, T(), R, service_name)
+    network_reduction = get_network_reduction(network_model)
+    for (device, outage) in attribute_device_map
+        outage in associated_outages || continue
+        outage_id = string(IS.get_uuid(outage))
+        name = PSY.get_name(device)
+        variable = get_variable(container, U(), typeof(device))
+        mult = get_variable_multiplier(U(), typeof(device), F())
+        bus_number = PNM.get_mapped_bus_number(network_reduction, PSY.get_bus(device))
+        for t in time_steps
+            _add_to_jump_expression!(
+                expression[outage_id, bus_number, t],
+                variable[name, t],
+                mult,
+            )
+        end
+    end
+    return
+end
+
+function add_to_expression!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    ::Type{T},
+    ::Type{U},
+    contributing_devices::Union{IS.FlattenIteratorWrapper{V}, Vector{V}},
+    service::R,
+    ::ServiceModel{R, F},
+    ::NetworkModel{<:AreaBalancePowerModel},
+) where {
+    T <: PostContingencyAreaActivePowerDeployment,
+    U <: AbstractContingencyVariableType,
+    V <: PSY.Generator,
+    R <: PSY.AbstractReserve,
+    F <: AbstractSecurityConstrainedReservesFormulation,
+}
+    time_steps = get_time_steps(container)
+    service_name = PSY.get_name(service)
+    associated_outages =
+        sort!(collect(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service));
+            by = IS.get_uuid)
+    area_names = PSY.get_name.(PSY.get_components(PSY.Area, sys))
+    expression = lazy_container_addition!(
+        container,
+        T(),
+        R,
+        string.(IS.get_uuid.(associated_outages)),
+        area_names,
+        time_steps;
+        meta = service_name,
+    )
+    reserve_deployment_variable = get_variable(container, U(), R, service_name)
+    mult_default = get_variable_multiplier(U(), R, F())
+    for outage in associated_outages
+        associated_devices =
+            PSY.get_associated_components(sys, outage; component_type = PSY.Generator)
+        outage_id = string(IS.get_uuid(outage))
+        for device in contributing_devices
+            mult = device in associated_devices ? 0.0 : mult_default
+            name = PSY.get_name(device)
+            area_name = PSY.get_name(PSY.get_area(PSY.get_bus(device)))
+            for t in time_steps
+                _add_to_jump_expression!(
+                    expression[outage_id, area_name, t],
+                    reserve_deployment_variable[outage_id, name, t],
+                    mult,
+                )
+            end
+        end
+    end
+    return
+end
+
+function add_to_expression!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    ::Type{T},
+    ::Type{U},
+    service::R,
+    ::ServiceModel{R, F},
+    ::NetworkModel{<:AreaBalancePowerModel},
+) where {
+    T <: PostContingencyAreaActivePowerDeployment,
+    U <: VariableType,
+    R <: PSY.AbstractReserve,
+    F <: AbstractSecurityConstrainedReservesFormulation,
+}
+    attribute_device_map = PSY.get_component_supplemental_attribute_pairs(
+        PSY.Generator,
+        PSY.UnplannedOutage,
+        sys,
+    )
+    time_steps = get_time_steps(container)
+    service_name = PSY.get_name(service)
+    associated_outages =
+        Set(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service))
+    expression = get_expression(container, T(), R, service_name)
+    for (device, outage) in attribute_device_map
+        outage in associated_outages || continue
+        outage_id = string(IS.get_uuid(outage))
+        name = PSY.get_name(device)
+        variable = get_variable(container, U(), typeof(device))
+        mult = get_variable_multiplier(U(), typeof(device), F())
+        area_name = PSY.get_name(PSY.get_area(PSY.get_bus(device)))
+        for t in time_steps
+            _add_to_jump_expression!(
+                expression[outage_id, area_name, t],
+                variable[name, t],
+                mult,
+            )
+        end
+    end
+    return
+end
+
+# Per-(outage, generator, t) post-contingency active power expression.
+# Used when no reserve requirement time series is configured (the older
+# `has_requirement_ts` branch). The expression is the pre-contingency
+# generator dispatch plus the reserve-deployment variable, with the
+# outaged generator contributing zero. `PostContingencyActivePowerGeneration`
+# is dense over the contributing devices so per-generator min/max bounds
+# can be applied directly.
+function add_to_expression!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    ::Type{T},
+    contributing_devices::Union{IS.FlattenIteratorWrapper{V}, Vector{V}},
+    service::R,
+    ::ServiceModel{R, F},
+    ::NetworkModel{<:PM.AbstractActivePowerModel},
+) where {
+    T <: PostContingencyActivePowerGeneration,
+    V <: PSY.Generator,
+    R <: PSY.AbstractReserve,
+    F <: AbstractSecurityConstrainedReservesFormulation,
+}
+    time_steps = get_time_steps(container)
+    service_name = PSY.get_name(service)
+    associated_outages =
+        sort!(collect(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service));
+            by = IS.get_uuid)
+    expression = add_expression_container!(
+        container,
+        T(),
+        R,
+        string.(IS.get_uuid.(associated_outages)),
+        PSY.get_name.(contributing_devices),
+        time_steps;
+        meta = service_name,
+    )
+    reserve_deployment_variable = get_variable(
+        container,
+        PostContingencyActivePowerReserveDeploymentVariable(),
+        R,
+        service_name,
+    )
+    for device in contributing_devices
+        gen_var = get_variable(container, ActivePowerVariable(), typeof(device))
+        gen_name = PSY.get_name(device)
+        for outage in associated_outages
+            associated_devices = PSY.get_associated_components(
+                sys, outage; component_type = PSY.Generator,
+            )
+            outage_id = string(IS.get_uuid(outage))
+            gen_outaged = device in associated_devices
+            for t in time_steps
+                _add_to_jump_expression!(
+                    expression[outage_id, gen_name, t],
+                    reserve_deployment_variable[outage_id, gen_name, t],
+                    1.0,
+                )
+                gen_outaged && continue
+                _add_to_jump_expression!(
+                    expression[outage_id, gen_name, t],
+                    gen_var[gen_name, t],
+                    1.0,
+                )
+            end
+        end
+    end
+    return
+end
+
+# ----------------------------------------------------------------------------
+# Sparse-monitored post-contingency flow expression (PTDF only):
+#     flow[c, ℓ, t] = pre_flow[ℓ, t] + Σ_b PTDF[ℓ, b] * deployment[c, b, t]
+# Only built for monitored components carried by the service-claimed outages
+# in `service_model.outages`. The branch type is taken from the monitored
+# tuple so the correct `PTDFBranchFlow` container is consulted per component.
+# ----------------------------------------------------------------------------
+
+function add_post_contingency_flow_expressions!(
+    container::OptimizationContainer,
+    ::Type{T},
+    service::R,
+    service_model::ServiceModel{R, F},
+    network_model::NetworkModel{N},
+) where {
+    T <: PostContingencyBranchFlow,
+    R <: PSY.AbstractReserve,
+    F <: AbstractSecurityConstrainedReservesFormulation,
+    N <: AbstractPTDFModel,
+}
+    time_steps = get_time_steps(container)
+    service_name = PSY.get_name(service)
+    net_reduction_data = network_model.network_reduction
+    resolved = _resolve_service_monitored_arcs(service_model, net_reduction_data)
+    expression_container = _add_service_post_contingency_sparse_expression!(
+        container, T, R, service_name, resolved, time_steps,
+    )
+    isempty(resolved) && return expression_container
+
+    nodal_deployment = get_expression(
+        container,
+        PostContingencyNodalActivePowerDeployment(),
+        R,
+        service_name,
+    )
+    ptdf = get_PTDF_matrix(network_model)
+
+    # Cache PTDF columns per (monitored_type, arc) — multiple outages may
+    # monitor the same arc.
+    pre_flow_cache = Dict{DataType, Any}()
+    for (uuid, entries) in resolved
+        outage_id = string(uuid)
+        for (entry_type, name, arc, _) in entries
+            pre_flow = get!(pre_flow_cache, entry_type) do
+                get_expression(container, PTDFBranchFlow(), entry_type)
+            end
+            ptdf_col = ptdf[arc, :]
+            for t in time_steps
+                acc = JuMP.AffExpr(0.0)
+                JuMP.add_to_expression!(acc, pre_flow[name, t])
+                @inbounds for b in eachindex(ptdf_col)
+                    coef = ptdf_col[b]
+                    abs(coef) < PTDF_ZERO_TOL && continue
+                    JuMP.add_to_expression!(
+                        acc, coef, nodal_deployment[outage_id, b, t],
+                    )
+                end
+                expression_container[outage_id, name, t] = acc
+            end
+        end
+    end
+    return expression_container
+end
+
+# ----------------------------------------------------------------------------
+# Post-contingency constraints
+# ----------------------------------------------------------------------------
+
+"""
+Per-outage system-wide generation-balance constraint: the
+`PostContingencyActivePowerBalance` expression (sum of reserve deployments
+minus the outaged generation) must close to zero for every outage and time.
+"""
+function add_constraints!(
+    container::OptimizationContainer,
+    ::Type{T},
+    ::Type{U},
+    ::Union{IS.FlattenIteratorWrapper{V}, Vector{V}},
+    service::R,
+    ::ServiceModel{R, F},
+    ::NetworkModel{<:PM.AbstractPowerModel},
+) where {
+    T <: PostContingencyGenerationBalanceConstraint,
+    U <: PostContingencyActivePowerBalance,
+    V <: PSY.Generator,
+    R <: PSY.AbstractReserve,
+    F <: AbstractSecurityConstrainedReservesFormulation,
+}
+    time_steps = get_time_steps(container)
+    service_name = PSY.get_name(service)
+    associated_outages =
+        sort!(collect(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service));
+            by = IS.get_uuid)
+    expressions = get_expression(container, U(), R, service_name)
+    constraint = add_constraints_container!(
+        container,
+        T(),
+        R,
+        [string(IS.get_uuid(o)) for o in associated_outages],
+        time_steps;
+        meta = service_name,
+    )
+    jump_model = get_jump_model(container)
+    for outage in associated_outages, t in time_steps
+        outage_id = string(IS.get_uuid(outage))
+        constraint[outage_id, t] =
+            JuMP.@constraint(jump_model, expressions[outage_id, t] == 0)
+    end
+    return
+end
+
+"""
+Sparse-monitored post-contingency branch flow inequalities. The container is
+keyed by `(outage_id::String, monitored_name::String, t::Int)` and only
+entries resolved from `service_model.outages` are populated. Limits use the
+monitored branch's emergency rating. Optional non-negative slacks relax the
+inequalities at `POST_CONTINGENCY_CONSTRAINT_VIOLATION_SLACK_COST`.
+"""
+function add_constraints!(
+    container::OptimizationContainer,
+    ::Type{T},
+    ::Type{U},
+    service::R,
+    service_model::ServiceModel{R, F},
+    network_model::NetworkModel{<:AbstractPTDFModel},
+) where {
+    T <: PostContingencyFlowRateConstraint,
+    U <: PostContingencyBranchFlow,
+    R <: PSY.AbstractReserve,
+    F <: AbstractSecurityConstrainedReservesFormulation,
+}
+    time_steps = get_time_steps(container)
+    service_name = PSY.get_name(service)
+    net_reduction_data = network_model.network_reduction
+    all_branch_maps_by_type = PNM.get_all_branch_maps_by_type(net_reduction_data)
+    resolved = _resolve_service_monitored_arcs(service_model, net_reduction_data)
+
+    con_lb = _add_service_post_contingency_sparse_constraints!(
+        container, T, R, service_name; meta_suffix = "lb",
+    )
+    con_ub = _add_service_post_contingency_sparse_constraints!(
+        container, T, R, service_name; meta_suffix = "ub",
+    )
+    isempty(resolved) && return
+
+    post_cont_flow = get_expression(container, U(), R, service_name)
+    jump_model = get_jump_model(container)
+
+    use_slacks = get_use_slacks(service_model)
+    slack_ub = use_slacks ?
+        add_post_contingency_slack_variables!(
+            container,
+            PostContingencyFlowActivePowerSlackUpperBound,
+            service,
+            service_name,
+            resolved,
+            F(),
+        ) : nothing
+    slack_lb = use_slacks ?
+        add_post_contingency_slack_variables!(
+            container,
+            PostContingencyFlowActivePowerSlackLowerBound,
+            service,
+            service_name,
+            resolved,
+            F(),
+        ) : nothing
+
+    for (uuid, entries) in resolved
+        outage_id = string(uuid)
+        for (entry_type, name, arc, reduction_kind) in entries
+            reduction_entry =
+                all_branch_maps_by_type[reduction_kind][entry_type][arc]
+            limits = get_emergency_min_max_limits(
+                reduction_entry, T, StaticBranch,
+            )
+            for t in time_steps
+                if use_slacks
+                    con_ub[outage_id, name, t] = JuMP.@constraint(
+                        jump_model,
+                        post_cont_flow[outage_id, name, t] -
+                        slack_ub[outage_id, name, t] <= limits.max,
+                    )
+                    con_lb[outage_id, name, t] = JuMP.@constraint(
+                        jump_model,
+                        post_cont_flow[outage_id, name, t] +
+                        slack_lb[outage_id, name, t] >= limits.min,
+                    )
+                else
+                    con_ub[outage_id, name, t] = JuMP.@constraint(
+                        jump_model,
+                        post_cont_flow[outage_id, name, t] <= limits.max,
+                    )
+                    con_lb[outage_id, name, t] = JuMP.@constraint(
+                        jump_model,
+                        post_cont_flow[outage_id, name, t] >= limits.min,
+                    )
+                end
+            end
+        end
+    end
+    return
+end
+
+"""
+Per-outage upper bound on the reserve-deployment variable by the
+pre-contingency reserve variable. Outaged generators are pinned to zero.
+"""
+function add_constraints!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    ::Type{T},
+    ::Type{X},
+    ::Type{U},
+    contributing_devices::Union{IS.FlattenIteratorWrapper{V}, Vector{V}},
+    service::R,
+    ::ServiceModel{R, F},
+    ::NetworkModel{<:PM.AbstractPowerModel},
+) where {
+    T <: PostContingencyActivePowerReserveDeploymentVariableLimitsConstraint,
+    X <: VariableType,
+    U <: AbstractContingencyVariableType,
+    V <: PSY.Generator,
+    R <: PSY.AbstractReserve,
+    F <: AbstractSecurityConstrainedReservesFormulation,
+}
+    time_steps = get_time_steps(container)
+    service_name = PSY.get_name(service)
+    associated_outages =
+        sort!(collect(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service));
+            by = IS.get_uuid)
+    constraint = add_constraints_container!(
+        container,
+        T(),
+        R,
+        [string(IS.get_uuid(o)) for o in associated_outages],
+        [PSY.get_name(d) for d in contributing_devices],
+        time_steps;
+        meta = service_name,
+    )
+    variable = get_variable(container, X(), R, service_name)
+    variable_outage = get_variable(container, U(), R, service_name)
+    jump_model = get_jump_model(container)
+    for outage in associated_outages
+        associated_devices = PSY.get_associated_components(
+            sys, outage; component_type = PSY.Generator,
+        )
+        outage_id = string(IS.get_uuid(outage))
+        for device in contributing_devices
+            name = PSY.get_name(device)
+            gen_outaged = device in associated_devices
+            for t in time_steps
+                if gen_outaged
+                    constraint[outage_id, name, t] = JuMP.@constraint(
+                        jump_model,
+                        variable_outage[outage_id, name, t] == 0.0,
+                    )
+                    continue
+                end
+                constraint[outage_id, name, t] = JuMP.@constraint(
+                    jump_model,
+                    variable_outage[outage_id, name, t] <= variable[name, t],
+                )
+            end
+        end
+    end
+    return
+end
+
+"""
+Per-(outage, generator, t) min/max bounds on the
+`PostContingencyActivePowerGeneration` expression. Used when the service
+has no reserve requirement time series.
+"""
+function add_constraints!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    ::Type{T},
+    contributing_devices::Union{IS.FlattenIteratorWrapper{V}, Vector{V}},
+    service::R,
+    ::ServiceModel{R, F},
+    ::NetworkModel{<:PM.AbstractActivePowerModel},
+) where {
+    T <: PostContingencyActivePowerGenerationLimitsConstraint,
+    V <: PSY.Generator,
+    R <: PSY.AbstractReserve,
+    F <: AbstractSecurityConstrainedReservesFormulation,
+}
+    time_steps = get_time_steps(container)
+    service_name = PSY.get_name(service)
+    associated_outages =
+        sort!(collect(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service));
+            by = IS.get_uuid)
+    con_lb = add_constraints_container!(
+        container,
+        T(),
+        R,
+        string.(IS.get_uuid.(associated_outages)),
+        PSY.get_name.(contributing_devices),
+        time_steps;
+        meta = "$(service_name)_lb",
+    )
+    con_ub = add_constraints_container!(
+        container,
+        T(),
+        R,
+        string.(IS.get_uuid.(associated_outages)),
+        PSY.get_name.(contributing_devices),
+        time_steps;
+        meta = "$(service_name)_ub",
+    )
+    expressions =
+        get_expression(container, PostContingencyActivePowerGeneration(), R, service_name)
+    jump_model = get_jump_model(container)
+    for device in contributing_devices
+        name = PSY.get_name(device)
+        limits = PSY.get_active_power_limits(device)
+        for outage in associated_outages
+            associated_devices = PSY.get_associated_components(
+                sys, outage; component_type = PSY.Generator,
+            )
+            outage_id = string(IS.get_uuid(outage))
+            gen_outaged = device in associated_devices
+            for t in time_steps
+                if gen_outaged
+                    con_ub[outage_id, name, t] = JuMP.@constraint(
+                        jump_model, expressions[outage_id, name, t] == 0.0,
+                    )
+                    con_lb[outage_id, name, t] = JuMP.@constraint(
+                        jump_model, expressions[outage_id, name, t] == 0.0,
+                    )
+                    continue
+                end
+                con_ub[outage_id, name, t] = JuMP.@constraint(
+                    jump_model, expressions[outage_id, name, t] <= limits.max,
+                )
+                con_lb[outage_id, name, t] = JuMP.@constraint(
+                    jump_model, expressions[outage_id, name, t] >= limits.min,
+                )
+            end
+        end
+    end
+    return
+end
+
+"""
+Per-(outage, area, t) area balance for the `AreaBalancePowerModel`: the
+post-contingency area-deployment expression plus the pre-contingency area
+`ActivePowerBalance` must close to zero.
+"""
+function add_constraints!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    ::Type{T},
+    ::Type{U},
+    ::Type{Y},
+    service::R,
+    ::ServiceModel{R, F},
+    ::NetworkModel{<:AreaBalancePowerModel},
+) where {
+    T <: PostContingencyCopperPlateBalanceConstraint,
+    U <: PostContingencyAreaActivePowerDeployment,
+    Y <: ActivePowerBalance,
+    R <: PSY.AbstractReserve,
+    F <: AbstractSecurityConstrainedReservesFormulation,
+}
+    time_steps = get_time_steps(container)
+    devices = PSY.get_components(PSY.Area, sys)
+    area_names = PSY.get_name.(devices)
+    service_name = PSY.get_name(service)
+    associated_outages =
+        sort!(collect(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service));
+            by = IS.get_uuid)
+    con = add_constraints_container!(
+        container,
+        T(),
+        R,
+        string.(IS.get_uuid.(associated_outages)),
+        area_names,
+        time_steps;
+        meta = service_name,
+    )
+    contingency_expression = get_expression(container, U(), R, service_name)
+    area_expression = get_expression(container, Y(), PSY.Area)
+    jump_model = get_jump_model(container)
+    for outage in associated_outages
+        outage_id = string(IS.get_uuid(outage))
+        for area in devices
+            area_name = PSY.get_name(area)
+            for t in time_steps
+                con[outage_id, area_name, t] = JuMP.@constraint(
+                    jump_model,
+                    contingency_expression[outage_id, area_name, t] +
+                    area_expression[area_name, t] == 0.0,
+                )
+            end
+        end
+    end
+    return
+end
+
+# ----------------------------------------------------------------------------
+# construct_service! dispatches: argument + model construct stages for
+# (SecurityConstrainedContingencyReserve, SecurityConstrainedRampReserve) ×
+# (PTDF, CopperPlate, AreaBalance).
+# ----------------------------------------------------------------------------
+
+# Shared ArgumentConstructStage helper used by both formulations: builds
+# pre-contingency reserve variable + post-contingency deployment variable.
+function _construct_service_arguments_sc!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    model::ServiceModel{SR, F},
+    devices_template::Dict{Symbol, DeviceModel},
+    require_ts::Bool,
+) where {
+    SR <: PSY.AbstractReserve,
+    F <: AbstractSecurityConstrainedReservesFormulation,
+}
+    name = get_service_name(model)
+    service = PSY.get_component(SR, sys, name)
+    !PSY.get_available(service) && return false
+    contributing_devices = get_contributing_devices(model)
+
+    has_requirement_ts =
+        haskey(get_time_series_names(model), RequirementTimeSeriesParameter) &&
+        length(PSY.get_time_series_keys(service)) > 0
+    if has_requirement_ts || require_ts
+        add_parameters!(container, RequirementTimeSeriesParameter, service, model)
+        add_variables!(
+            container,
+            ActivePowerReserveVariable,
+            service,
+            contributing_devices,
+            F(),
+        )
+        add_to_expression!(container, ActivePowerReserveVariable, model, devices_template)
+    end
+    add_feedforward_arguments!(container, model, service)
+
+    associated_outages = PSY.get_supplemental_attributes(PSY.UnplannedOutage, service)
+    if isempty(associated_outages)
+        @warn "Service $(SR)('$name'): no UnplannedOutage supplemental attributes \
+               are attached; the security-constrained formulation $(F) will not \
+               add any post-contingency variables or constraints."
+        return false
+    end
+
+    add_variables!(
+        container,
+        sys,
+        PostContingencyActivePowerReserveDeploymentVariable,
+        service,
+        contributing_devices,
+        F(),
+    )
+    return true
+end
+
+function construct_service!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    ::ArgumentConstructStage,
+    model::ServiceModel{SR, SecurityConstrainedContingencyReserve},
+    devices_template::Dict{Symbol, DeviceModel},
+    ::Set{<:DataType},
+    ::NetworkModel{<:PM.AbstractActivePowerModel},
+) where {SR <: PSY.AbstractReserve}
+    _construct_service_arguments_sc!(container, sys, model, devices_template, false)
+    return
+end
+
+function construct_service!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    ::ArgumentConstructStage,
+    model::ServiceModel{SR, SecurityConstrainedRampReserve},
+    devices_template::Dict{Symbol, DeviceModel},
+    ::Set{<:DataType},
+    ::NetworkModel{<:PM.AbstractActivePowerModel},
+) where {SR <: PSY.AbstractReserve}
+    # Ramp reserve formulation always requires the requirement time series.
+    _construct_service_arguments_sc!(container, sys, model, devices_template, true)
+    return
+end
+
+# Shared ModelConstructStage helper for the pre-contingency requirement,
+# ramp, participation, objective, feedforward and dual hookups.
+function _construct_service_pre_contingency!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    service::PSY.AbstractReserve,
+    contributing_devices,
+    model::ServiceModel{SR, F},
+    has_requirement_ts::Bool,
+    include_ramp::Bool,
+) where {
+    SR <: PSY.AbstractReserve,
+    F <: AbstractSecurityConstrainedReservesFormulation,
+}
+    if has_requirement_ts
+        add_constraints!(container, RequirementConstraint, service, contributing_devices, model)
+        include_ramp && add_constraints!(
+            container, RampConstraint, service, contributing_devices, model,
+        )
+        add_constraints!(
+            container,
+            ParticipationFractionConstraint,
+            service,
+            contributing_devices,
+            model,
+        )
+        objective_function!(container, service, model)
+    end
+    add_feedforward_constraints!(container, model, service)
+    add_constraint_dual!(container, sys, model)
+    return
+end
+
+# Shared helper for the post-contingency power-balance + generation-balance
+# expression/constraint stack that's common to every network model.
+function _construct_service_post_contingency_balance!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    service::PSY.AbstractReserve,
+    contributing_devices,
+    model::ServiceModel{SR, F},
+    network_model::NetworkModel,
+) where {
+    SR <: PSY.AbstractReserve,
+    F <: AbstractSecurityConstrainedReservesFormulation,
+}
+    add_to_expression!(
+        container, sys, PostContingencyActivePowerBalance,
+        PostContingencyActivePowerReserveDeploymentVariable,
+        contributing_devices, service, model, network_model,
+    )
+    attribute_device_map = PSY.get_component_supplemental_attribute_pairs(
+        PSY.Generator, PSY.UnplannedOutage, sys,
+    )
+    add_to_expression!(
+        container, PostContingencyActivePowerBalance, ActivePowerVariable,
+        attribute_device_map, service, model, network_model,
+    )
+    add_constraints!(
+        container, PostContingencyGenerationBalanceConstraint,
+        PostContingencyActivePowerBalance,
+        contributing_devices, service, model, network_model,
+    )
+    return attribute_device_map
+end
+
+# ----- PTDF (DC) network model -----
+
+function _construct_service_model_ptdf!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    model::ServiceModel{SR, F},
+    network_model::NetworkModel{<:PM.AbstractDCPModel},
+    has_requirement_ts_default::Bool,
+    include_ramp::Bool,
+) where {
+    SR <: PSY.AbstractReserve,
+    F <: AbstractSecurityConstrainedReservesFormulation,
+}
+    name = get_service_name(model)
+    service = PSY.get_component(SR, sys, name)
+    !PSY.get_available(service) && return
+    contributing_devices = get_contributing_devices(model)
+
+    has_requirement_ts =
+        has_requirement_ts_default || (
+            haskey(get_time_series_names(model), RequirementTimeSeriesParameter) &&
+            length(PSY.get_time_series_keys(service)) > 0
+        )
+    _construct_service_pre_contingency!(
+        container, sys, service, contributing_devices, model,
+        has_requirement_ts, include_ramp,
+    )
+
+    associated_outages = PSY.get_supplemental_attributes(PSY.UnplannedOutage, service)
+    isempty(associated_outages) && return
+
+    attribute_device_map = _construct_service_post_contingency_balance!(
+        container, sys, service, contributing_devices, model, network_model,
+    )
+    add_to_expression!(
+        container, sys, PostContingencyNodalActivePowerDeployment,
+        PostContingencyActivePowerReserveDeploymentVariable,
+        contributing_devices, service, model, network_model,
+    )
+    add_to_expression!(
+        container, PostContingencyNodalActivePowerDeployment, ActivePowerVariable,
+        attribute_device_map, service, model, network_model,
+    )
+    add_post_contingency_flow_expressions!(
+        container, PostContingencyBranchFlow, service, model, network_model,
+    )
+    add_constraints!(
+        container, PostContingencyFlowRateConstraint, PostContingencyBranchFlow,
+        service, model, network_model,
+    )
+
+    if has_requirement_ts
+        add_constraints!(
+            container, sys,
+            PostContingencyActivePowerReserveDeploymentVariableLimitsConstraint,
+            ActivePowerReserveVariable,
+            PostContingencyActivePowerReserveDeploymentVariable,
+            contributing_devices, service, model, network_model,
+        )
+    else
+        add_to_expression!(
+            container, sys, PostContingencyActivePowerGeneration,
+            contributing_devices, service, model, network_model,
+        )
+        add_constraints!(
+            container, sys, PostContingencyActivePowerGenerationLimitsConstraint,
+            contributing_devices, service, model, network_model,
+        )
+    end
+    return
+end
+
+function construct_service!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    ::ModelConstructStage,
+    model::ServiceModel{SR, SecurityConstrainedContingencyReserve},
+    ::Dict{Symbol, DeviceModel},
+    ::Set{<:DataType},
+    network_model::NetworkModel{<:PM.AbstractDCPModel},
+) where {SR <: PSY.AbstractReserve}
+    _construct_service_model_ptdf!(container, sys, model, network_model, false, false)
+    return
+end
+
+function construct_service!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    ::ModelConstructStage,
+    model::ServiceModel{SR, SecurityConstrainedRampReserve},
+    ::Dict{Symbol, DeviceModel},
+    ::Set{<:DataType},
+    network_model::NetworkModel{<:PM.AbstractDCPModel},
+) where {SR <: PSY.AbstractReserve}
+    _construct_service_model_ptdf!(container, sys, model, network_model, true, true)
+    return
+end
+
+# ----- CopperPlate network model -----
+
+function _construct_service_model_copperplate!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    model::ServiceModel{SR, F},
+    network_model::NetworkModel{<:CopperPlatePowerModel},
+    has_requirement_ts_default::Bool,
+    include_ramp::Bool,
+) where {
+    SR <: PSY.AbstractReserve,
+    F <: AbstractSecurityConstrainedReservesFormulation,
+}
+    name = get_service_name(model)
+    service = PSY.get_component(SR, sys, name)
+    !PSY.get_available(service) && return
+    contributing_devices = get_contributing_devices(model)
+
+    has_requirement_ts =
+        has_requirement_ts_default || (
+            haskey(get_time_series_names(model), RequirementTimeSeriesParameter) &&
+            length(PSY.get_time_series_keys(service)) > 0
+        )
+    _construct_service_pre_contingency!(
+        container, sys, service, contributing_devices, model,
+        has_requirement_ts, include_ramp,
+    )
+
+    associated_outages = PSY.get_supplemental_attributes(PSY.UnplannedOutage, service)
+    isempty(associated_outages) && return
+
+    _construct_service_post_contingency_balance!(
+        container, sys, service, contributing_devices, model, network_model,
+    )
+
+    if has_requirement_ts
+        add_constraints!(
+            container, sys,
+            PostContingencyActivePowerReserveDeploymentVariableLimitsConstraint,
+            ActivePowerReserveVariable,
+            PostContingencyActivePowerReserveDeploymentVariable,
+            contributing_devices, service, model, network_model,
+        )
+    else
+        add_to_expression!(
+            container, sys, PostContingencyActivePowerGeneration,
+            contributing_devices, service, model, network_model,
+        )
+        add_constraints!(
+            container, sys, PostContingencyActivePowerGenerationLimitsConstraint,
+            contributing_devices, service, model, network_model,
+        )
+    end
+    return
+end
+
+function construct_service!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    ::ModelConstructStage,
+    model::ServiceModel{SR, SecurityConstrainedContingencyReserve},
+    ::Dict{Symbol, DeviceModel},
+    ::Set{<:DataType},
+    network_model::NetworkModel{<:CopperPlatePowerModel},
+) where {SR <: PSY.AbstractReserve}
+    _construct_service_model_copperplate!(
+        container, sys, model, network_model, false, false,
+    )
+    return
+end
+
+function construct_service!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    ::ModelConstructStage,
+    model::ServiceModel{SR, SecurityConstrainedRampReserve},
+    ::Dict{Symbol, DeviceModel},
+    ::Set{<:DataType},
+    network_model::NetworkModel{<:CopperPlatePowerModel},
+) where {SR <: PSY.AbstractReserve}
+    _construct_service_model_copperplate!(
+        container, sys, model, network_model, true, true,
+    )
+    return
+end
+
+# ----- AreaBalance network model -----
+
+function _construct_service_model_areabalance!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    model::ServiceModel{SR, F},
+    network_model::NetworkModel{<:AreaBalancePowerModel},
+    has_requirement_ts_default::Bool,
+    include_ramp::Bool,
+) where {
+    SR <: PSY.AbstractReserve,
+    F <: AbstractSecurityConstrainedReservesFormulation,
+}
+    name = get_service_name(model)
+    service = PSY.get_component(SR, sys, name)
+    !PSY.get_available(service) && return
+    contributing_devices = get_contributing_devices(model)
+
+    has_requirement_ts =
+        has_requirement_ts_default || (
+            haskey(get_time_series_names(model), RequirementTimeSeriesParameter) &&
+            length(PSY.get_time_series_keys(service)) > 0
+        )
+    _construct_service_pre_contingency!(
+        container, sys, service, contributing_devices, model,
+        has_requirement_ts, include_ramp,
+    )
+
+    associated_outages = PSY.get_supplemental_attributes(PSY.UnplannedOutage, service)
+    isempty(associated_outages) && return
+
+    _construct_service_post_contingency_balance!(
+        container, sys, service, contributing_devices, model, network_model,
+    )
+    add_to_expression!(
+        container, sys, PostContingencyAreaActivePowerDeployment,
+        PostContingencyActivePowerReserveDeploymentVariable,
+        contributing_devices, service, model, network_model,
+    )
+    add_to_expression!(
+        container, sys, PostContingencyAreaActivePowerDeployment, ActivePowerVariable,
+        service, model, network_model,
+    )
+    add_constraints!(
+        container, sys, PostContingencyCopperPlateBalanceConstraint,
+        PostContingencyAreaActivePowerDeployment, ActivePowerBalance,
+        service, model, network_model,
+    )
+
+    if has_requirement_ts
+        add_constraints!(
+            container, sys,
+            PostContingencyActivePowerReserveDeploymentVariableLimitsConstraint,
+            ActivePowerReserveVariable,
+            PostContingencyActivePowerReserveDeploymentVariable,
+            contributing_devices, service, model, network_model,
+        )
+    else
+        add_to_expression!(
+            container, sys, PostContingencyActivePowerGeneration,
+            contributing_devices, service, model, network_model,
+        )
+        add_constraints!(
+            container, sys, PostContingencyActivePowerGenerationLimitsConstraint,
+            contributing_devices, service, model, network_model,
+        )
+    end
+    return
+end
+
+function construct_service!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    ::ModelConstructStage,
+    model::ServiceModel{SR, SecurityConstrainedContingencyReserve},
+    ::Dict{Symbol, DeviceModel},
+    ::Set{<:DataType},
+    network_model::NetworkModel{<:AreaBalancePowerModel},
+) where {SR <: PSY.AbstractReserve}
+    _construct_service_model_areabalance!(
+        container, sys, model, network_model, false, false,
+    )
+    return
+end
+
+function construct_service!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    ::ModelConstructStage,
+    model::ServiceModel{SR, SecurityConstrainedRampReserve},
+    ::Dict{Symbol, DeviceModel},
+    ::Set{<:DataType},
+    network_model::NetworkModel{<:AreaBalancePowerModel},
+) where {SR <: PSY.AbstractReserve}
+    _construct_service_model_areabalance!(
+        container, sys, model, network_model, true, true,
+    )
+    return
+end
