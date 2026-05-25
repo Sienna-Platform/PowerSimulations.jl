@@ -616,5 +616,3 @@ function _warn_unmatched_user_service_outages(
     end
     return
 end
-
-

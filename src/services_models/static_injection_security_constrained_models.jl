@@ -791,24 +791,30 @@ function add_constraints!(
     jump_model = get_jump_model(container)
 
     use_slacks = get_use_slacks(service_model)
-    slack_ub = use_slacks ?
+    slack_ub = if use_slacks
         add_post_contingency_slack_variables!(
-            container,
-            PostContingencyFlowActivePowerSlackUpperBound,
-            service,
-            service_name,
-            resolved,
-            F(),
-        ) : nothing
-    slack_lb = use_slacks ?
+        container,
+        PostContingencyFlowActivePowerSlackUpperBound,
+        service,
+        service_name,
+        resolved,
+        F(),
+    )
+    else
+        nothing
+    end
+    slack_lb = if use_slacks
         add_post_contingency_slack_variables!(
-            container,
-            PostContingencyFlowActivePowerSlackLowerBound,
-            service,
-            service_name,
-            resolved,
-            F(),
-        ) : nothing
+        container,
+        PostContingencyFlowActivePowerSlackLowerBound,
+        service,
+        service_name,
+        resolved,
+        F(),
+    )
+    else
+        nothing
+    end
 
     for (uuid, entries) in resolved
         outage_id = string(uuid)
@@ -1138,7 +1144,13 @@ function _construct_service_pre_contingency!(
     F <: AbstractSecurityConstrainedReservesFormulation,
 }
     if has_requirement_ts
-        add_constraints!(container, RequirementConstraint, service, contributing_devices, model)
+        add_constraints!(
+            container,
+            RequirementConstraint,
+            service,
+            contributing_devices,
+            model,
+        )
         include_ramp && add_constraints!(
             container, RampConstraint, service, contributing_devices, model,
         )
