@@ -41,6 +41,8 @@ export RangeReserve
 export RampReserve
 export StepwiseCostReserve
 export NonSpinningReserve
+export SecurityConstrainedContingencyReserve
+export SecurityConstrainedRampReserve
 export PIDSmoothACE
 export GroupReserve
 export ConstantMaxInterfaceFlow
