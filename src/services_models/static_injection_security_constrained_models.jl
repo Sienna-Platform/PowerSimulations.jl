@@ -793,25 +793,25 @@ function add_constraints!(
     use_slacks = get_use_slacks(service_model)
     slack_ub = if use_slacks
         add_post_contingency_slack_variables!(
-        container,
-        PostContingencyFlowActivePowerSlackUpperBound,
-        service,
-        service_name,
-        resolved,
-        F(),
-    )
+            container,
+            PostContingencyFlowActivePowerSlackUpperBound,
+            service,
+            service_name,
+            resolved,
+            F(),
+        )
     else
         nothing
     end
     slack_lb = if use_slacks
         add_post_contingency_slack_variables!(
-        container,
-        PostContingencyFlowActivePowerSlackLowerBound,
-        service,
-        service_name,
-        resolved,
-        F(),
-    )
+            container,
+            PostContingencyFlowActivePowerSlackLowerBound,
+            service,
+            service_name,
+            resolved,
+            F(),
+        )
     else
         nothing
     end
