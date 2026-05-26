@@ -350,6 +350,11 @@ function _resolve_monitored_arcs(
     for (uuid, per_type) in get_outages(device_model)
         kept = Tuple{DataType, String, Tuple{Int, Int}, String}[]
         for (T, names) in per_type
+            # Per-type entries may include component types absent from the
+            # network-reduction's branch-arc maps (e.g. `PSY.AreaInterchange`
+            # under AreaBalance service-side outages). Skip those here so
+            # device-side AC SC builders only see branch-arc types.
+            haskey(name_to_arc_maps, T) || continue
             name_to_arc = name_to_arc_maps[T]
             component_to_reduction =
                 get(component_to_reduction_maps, T, Dict{String, String}())

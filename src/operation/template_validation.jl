@@ -383,9 +383,12 @@ function _monitored_components_by_modeled_type(
         # Post-contingency flow limits only make sense on branch arcs: the
         # post-contingency builder resolves every `per_type` key through
         # `name_to_arc_maps`, which is keyed by ACTransmission branch types
-        # only. A monitored component that is either not modeled or not a
-        # branch type would `KeyError` there, so route it to the skip path.
-        if comp_type <: PSY.ACTransmission && comp_type in modeled_types
+        # only. `PSY.AreaInterchange` is admitted separately so the
+        # AreaBalance service-side builder can pick it up. A monitored
+        # component that is neither would `KeyError` there, so route it to
+        # the skip path.
+        admissible = (comp_type <: PSY.ACTransmission || comp_type <: PSY.AreaInterchange)
+        if admissible && comp_type in modeled_types
             push!(get!(per_type, comp_type, Set{String}()), PSY.get_name(component))
         else
             push!(uncovered, comp_type)
