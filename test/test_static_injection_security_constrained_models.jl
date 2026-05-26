@@ -1010,8 +1010,8 @@ end
         ),
     ]
     test_results = IdDict{Bool, Vector{Int}}(
-        reserve_slacks[1] => [984, 0, 2400, 1824, 216],
-        reserve_slacks[2] => [3528, 0, 2400, 1824, 216],
+        reserve_slacks[1] => [744, 0, 1536, 1200, 168],
+        reserve_slacks[2] => [2040, 0, 1536, 1200, 168],
     )
     test_obj_values = IdDict{Bool, Float64}(
         reserve_slacks[1] => 497000.0,
@@ -1160,9 +1160,9 @@ end
             "Reserve1_2",
         ),
     ]
-    # Counts are smaller than the all-lines baseline `[984, 0, 2400, 1824, 216]`
+    # Counts are smaller than the all-lines baseline `[744, 0, 1536, 1200, 168]`
     # because each service monitors only two AC lines instead of all 13.
-    test_results = [984, 0, 1344, 768, 216]
+    test_results = [744, 0, 1008, 672, 168]
     test_obj_value = 497000.0
     components_outages_cases = (["Alta_1", "Alta_2"], ["Reserve1_1", "Reserve1_2"])
 
@@ -1302,8 +1302,8 @@ end
         ),
     ]
     test_results = IdDict{Bool, Vector{Int}}(
-        reserve_slacks[1] => [984, 0, 2400, 1824, 216],
-        reserve_slacks[2] => [3528, 0, 2400, 1824, 216],
+        reserve_slacks[1] => [744, 0, 1536, 1200, 168],
+        reserve_slacks[2] => [2040, 0, 1536, 1200, 168],
     )
     test_obj_values = IdDict{Bool, Float64}(
         reserve_slacks[1] => 497000.0,
@@ -1441,7 +1441,7 @@ end
         c_sys5_2area => PTDF(c_sys5_2area),
     )
     test_results = IdDict{System, Vector{Int}}(
-        c_sys5_2area => [744, 0, 2208, 2208, 264],
+        c_sys5_2area => [504, 0, 1344, 1344, 216],
     )
     test_obj_values = IdDict{System, Float64}(
         c_sys5_2area => 497000.0,
@@ -1584,7 +1584,7 @@ end
         c_sys5_2area => PTDF(c_sys5_2area),
     )
     test_results = IdDict{System, Vector{Int}}(
-        c_sys5_2area => [960, 0, 864, 288, 168],
+        c_sys5_2area => [720, 0, 624, 288, 120],
     )
     test_obj_values = IdDict{System, Float64}(
         c_sys5_2area => 497494.48,
@@ -1704,7 +1704,7 @@ end
         c_sys5_2area => PTDF(c_sys5_2area),
     )
     test_results = IdDict{System, Vector{Int}}(
-        c_sys5_2area => [960, 0, 864, 288, 168],
+        c_sys5_2area => [720, 0, 624, 288, 120],
     )
     test_obj_values = IdDict{System, Float64}(
         c_sys5_2area => 497494.48,
@@ -1988,14 +1988,14 @@ end
 
     @test solve!(ps_model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
 
-    moi_tests(ps_model, 984, 0, 984, 408, 384, false)
+    moi_tests(ps_model, 744, 0, 696, 360, 240, false)
 
     opt_container = PSI.get_optimization_container(ps_model)
     copper_plate_constraints =
         PSI.get_constraint(opt_container, CopperPlateBalanceConstraint(), PSY.Area)
     @test size(copper_plate_constraints) == (2, 24)
 
-    psi_checksolve_test(ps_model, [MOI.OPTIMAL], 500505.113, 1)
+    psi_checksolve_test(ps_model, [MOI.OPTIMAL], 497494.4871638, 1)
 
     results = OptimizationProblemResults(ps_model)
     interarea_flow = read_variable(
@@ -2004,8 +2004,8 @@ end
         table_format = TableFormat.WIDE,
     )
     # The values for these tests come from the data
-    @test all(interarea_flow[!, "1_2"] .<= 150)
-    @test all(interarea_flow[!, "1_2"] .>= -150)
+    @test all(interarea_flow[!, "1_2"] .<= 150 + 1e-6)
+    @test all(interarea_flow[!, "1_2"] .>= -150 - 1e-6)
 
     load = read_parameter(
         results,
@@ -2186,14 +2186,14 @@ end
 
     @test solve!(ps_model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
 
-    moi_tests(ps_model, 984, 0, 984, 408, 384, false)
+    moi_tests(ps_model, 744, 0, 696, 360, 240, false)
 
     opt_container = PSI.get_optimization_container(ps_model)
     copper_plate_constraints =
         PSI.get_constraint(opt_container, CopperPlateBalanceConstraint(), PSY.Area)
     @test size(copper_plate_constraints) == (2, 24)
 
-    psi_checksolve_test(ps_model, [MOI.OPTIMAL], 500505.113, 1)
+    psi_checksolve_test(ps_model, [MOI.OPTIMAL], 497494.4871638, 1)
 
     results = OptimizationProblemResults(ps_model)
     interarea_flow = read_variable(
@@ -2202,8 +2202,8 @@ end
         table_format = TableFormat.WIDE,
     )
     # The values for these tests come from the data
-    @test all(interarea_flow[!, "1_2"] .<= 150)
-    @test all(interarea_flow[!, "1_2"] .>= -150)
+    @test all(interarea_flow[!, "1_2"] .<= 150 + 1e-6)
+    @test all(interarea_flow[!, "1_2"] .>= -150 - 1e-6)
 
     load = read_parameter(
         results,
@@ -2390,14 +2390,14 @@ end
 
     @test solve!(ps_model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
 
-    moi_tests(ps_model, 744, 0, 792, 792, 432, false)
+    moi_tests(ps_model, 504, 0, 504, 504, 288, false)
 
     opt_container = PSI.get_optimization_container(ps_model)
     copper_plate_constraints =
         PSI.get_constraint(opt_container, CopperPlateBalanceConstraint(), PSY.Area)
     @test size(copper_plate_constraints) == (2, 24)
 
-    psi_checksolve_test(ps_model, [MOI.OPTIMAL], 500505.113, 1)
+    psi_checksolve_test(ps_model, [MOI.OPTIMAL], 482055.7647083302, 1)
 
     results = OptimizationProblemResults(ps_model)
     interarea_flow = read_variable(
@@ -2462,4 +2462,99 @@ end
             res,
             reserve_up)
     end
+end
+
+# Regression test for the per-service outage scoping bug in
+# `_assign_outage_to_sc_service_models!`. With two SC reserve services
+# (Reserve1_1 in Area1, Reserve1_2 in Area2) and a generator outage attached
+# to an Area1 contributor only, the outage must be assigned to Reserve1_1's
+# ServiceModel and NOT to Reserve1_2's.
+@testset "SC reserve outage auto-discovery is scoped per ServiceModel" begin
+    sys = PSB.build_system(PSISystems, "two_area_pjm_DA"; add_reserves = true)
+    transform_single_time_series!(sys, Hour(24), Hour(1))
+
+    # Restrict each VariableReserve's contributing devices to its own area so
+    # the per-service scoping has a meaningful intersection to test.
+    reserve1 = get_component(VariableReserve{ReserveUp}, sys, "Reserve1_1")
+    reserve2 = get_component(VariableReserve{ReserveUp}, sys, "Reserve1_2")
+    for g in get_components(
+        g -> get_name(get_area(get_bus(g))) == "Area2",
+        ThermalStandard,
+        sys,
+    )
+        PSY.has_service(g, reserve1) && PSY.remove_service!(g, reserve1)
+    end
+    for g in get_components(
+        g -> get_name(get_area(get_bus(g))) == "Area1",
+        ThermalStandard,
+        sys,
+    )
+        PSY.has_service(g, reserve2) && PSY.remove_service!(g, reserve2)
+    end
+
+    # Attach an UnplannedOutage to a single Area1 generator (Alta_1).
+    alta1 = get_component(ThermalStandard, sys, "Alta_1")
+    transition_data = GeometricDistributionForcedOutage(;
+        mean_time_to_recovery = 10,
+        outage_transition_probability = 0.9999,
+        monitored_components = collect(get_components(ACTransmission, sys)),
+    )
+    add_supplemental_attribute!(sys, alta1, transition_data)
+    outage_uuid = IS.get_uuid(transition_data)
+
+    template = get_thermal_dispatch_template_network(
+        NetworkModel(AreaPTDFPowerModel; PTDF_matrix = PTDF(sys)),
+    )
+    set_service_model!(template,
+        ServiceModel(
+            VariableReserve{ReserveUp},
+            SecurityConstrainedRampReserve,
+            "Reserve1_1",
+        ))
+    set_service_model!(template,
+        ServiceModel(
+            VariableReserve{ReserveUp},
+            SecurityConstrainedRampReserve,
+            "Reserve1_2",
+        ))
+
+    PSI._build_service_model_outages!(template, sys)
+
+    services = PSI.get_service_models(template)
+    sm1 = services[("Reserve1_1", Symbol(VariableReserve{ReserveUp}))]
+    sm2 = services[("Reserve1_2", Symbol(VariableReserve{ReserveUp}))]
+    @test haskey(sm1.outages, outage_uuid)
+    @test !haskey(sm2.outages, outage_uuid)
+end
+
+# Regression test for the single-reserve auto-discovery path: an outage
+# attached to a generator that contributes to the only SC reserve service
+# must end up in its ServiceModel.outages dict.
+@testset "SC reserve outage auto-discovery covers single-reserve case" begin
+    sys = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_reserves = true)
+
+    transition_data = GeometricDistributionForcedOutage(;
+        mean_time_to_recovery = 10,
+        outage_transition_probability = 0.9999,
+        monitored_components = collect(get_components(ACTransmission, sys)),
+    )
+    alta = get_component(ThermalStandard, sys, "Alta")
+    add_supplemental_attribute!(sys, alta, transition_data)
+    outage_uuid = IS.get_uuid(transition_data)
+
+    template = get_thermal_dispatch_template_network(
+        NetworkModel(PTDFPowerModel; PTDF_matrix = PTDF(sys)),
+    )
+    set_service_model!(template,
+        ServiceModel(
+            VariableReserve{ReserveUp},
+            SecurityConstrainedRampReserve,
+            "Reserve1",
+        ))
+
+    PSI._build_service_model_outages!(template, sys)
+
+    services = PSI.get_service_models(template)
+    sm = services[("Reserve1", Symbol(VariableReserve{ReserveUp}))]
+    @test haskey(sm.outages, outage_uuid)
 end

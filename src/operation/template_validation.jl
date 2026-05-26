@@ -403,6 +403,14 @@ function _attached_component_types(outage::PSY.Outage, sys::PSY.System)
     )
 end
 
+# Sibling of `_attached_component_types` returning the actual attached
+# `PSY.Component` instances. Used by the SC reserve service per-service
+# scoping path to intersect attached injectors with each service's
+# contributing devices.
+function _attached_components(outage::PSY.Outage, sys::PSY.System)
+    return collect(PSY.get_associated_components(sys, outage))
+end
+
 # Whether SC model `m` claims `outage`. `sel` is `m`'s component-type slice of
 # the user's explicit outage allow-list: non-empty restricts to those UUIDs;
 # empty means auto-discover (claim all, skipping `PlannedOutage`s unless the
@@ -534,6 +542,7 @@ function _build_service_model_outages!(
             outage,
             outage_uuid,
             per_type,
+            sys,
         )
         if !covered
             @warn "Outage $(outage_uuid) is attached to injector(s) of \
@@ -587,13 +596,34 @@ function _assign_outage_to_sc_service_models!(
     outage::PSY.Outage,
     outage_uuid::Base.UUID,
     per_type::Dict{DataType, Set{String}},
+    sys::PSY.System,
 )
     covered = false
+    attached = _attached_components(outage, sys)
+    attached_uuids = Set{Base.UUID}(IS.get_uuid(c) for c in attached)
     for m in sc_service_models
-        covered = true
         key = (get_component_type(m), get_service_name(m))
-        if _sc_service_claims_outage(m, outage, outage_uuid, selection[key])
+        sel = selection[key]
+        if isempty(sel)
+            # Auto-discovery path: only assign the outage to this service if
+            # one of the outage's attached injectors is among the service's
+            # contributing devices. The explicit allow-list path below
+            # bypasses this filter so users keep full control over which
+            # outages a service responds to.
+            service = PSY.get_component(
+                get_component_type(m),
+                sys,
+                get_service_name(m),
+            )
+            service === nothing && continue
+            contributing_uuids = Set{Base.UUID}(
+                IS.get_uuid(c) for c in PSY.get_contributing_devices(sys, service)
+            )
+            isempty(intersect(attached_uuids, contributing_uuids)) && continue
+        end
+        if _sc_service_claims_outage(m, outage, outage_uuid, sel)
             m.outages[outage_uuid] = per_type
+            covered = true
         end
     end
     return covered
