@@ -852,6 +852,274 @@ function add_constraints!(
     return
 end
 
+# ----------------------------------------------------------------------------
+# AreaBalance network model: post-contingency AreaInterchange flow expression
+# and rate-limit constraints. The expression is keyed by
+# `(outage_id::String, area_interchange_name::String, t::Int)` and represents
+# the from→to flow after the contingency:
+#     post_flow = pre_flow + Σ_{g ∈ from} deploy_g - Σ_{g ∈ to} deploy_g
+#                 - sign(outaged_side) * P_outaged
+# where `sign(outaged_side)` is `+1` if the outaged generator sits in the
+# from-area and `-1` if it sits in the to-area. Deployment variables for the
+# outaged generator are pinned to zero, so iterating contributing devices is
+# safe. Only the AreaInterchanges named in `service_model.outages[uuid]` are
+# instantiated.
+# ----------------------------------------------------------------------------
+
+"""
+Resolve every monitored `PSY.AreaInterchange` carried by
+`service_model.outages` to its system component. Mirrors
+`_resolve_service_monitored_arcs` but for the AreaBalance path where the
+monitored object is an AreaInterchange (not a branch arc) and the only
+information needed downstream is the component itself. Outages with no
+monitored AreaInterchanges are skipped; the returned vector is sorted by
+UUID for deterministic axes.
+"""
+function _resolve_service_monitored_area_interchanges(
+    sys::PSY.System,
+    service_model::ServiceModel,
+)
+    resolved = Pair{Base.UUID, Vector{Tuple{String, PSY.AreaInterchange}}}[]
+    for (uuid, per_type) in get_outages(service_model)
+        kept = Tuple{String, PSY.AreaInterchange}[]
+        names = get(per_type, PSY.AreaInterchange, nothing)
+        if names !== nothing
+            for name in sort!(collect(names))
+                comp = PSY.get_component(PSY.AreaInterchange, sys, name)
+                comp === nothing && continue
+                push!(kept, (name, comp))
+            end
+        end
+        isempty(kept) && continue
+        push!(resolved, uuid => kept)
+    end
+    sort!(resolved; by = first)
+    return resolved
+end
+
+"""
+Build the post-contingency AreaInterchange flow expression for the
+AreaBalance network model. See module-level comment above for the formula.
+The container is a `SparseAxisArray` keyed by
+`(outage_id, area_interchange_name, t)` registered under
+`ExpressionKey(PostContingencyAreaInterchangeFlow, R; meta = service_name)`.
+"""
+function add_post_contingency_flow_expressions!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    ::Type{T},
+    service::R,
+    service_model::ServiceModel{R, F},
+    ::NetworkModel{<:AreaBalancePowerModel},
+) where {
+    T <: PostContingencyAreaInterchangeFlow,
+    R <: PSY.AbstractReserve,
+    F <: AbstractSecurityConstrainedReservesFormulation,
+}
+    time_steps = get_time_steps(container)
+    service_name = PSY.get_name(service)
+    resolved = _resolve_service_monitored_area_interchanges(sys, service_model)
+
+    contents = Dict{Tuple{String, String, Int}, JuMP.AffExpr}()
+    for (uuid, entries) in resolved
+        outage_id = string(uuid)
+        for (name, _) in entries, t in time_steps
+            contents[(outage_id, name, t)] = zero(JuMP.AffExpr)
+        end
+    end
+    expression_container = SparseAxisArray(contents)
+    _assign_container!(
+        container.expressions,
+        ExpressionKey(T, R, service_name),
+        expression_container,
+    )
+    isempty(resolved) && return expression_container
+
+    # Baseline flow variable for the AreaInterchange (from→to convention).
+    flow_var = get_variable(container, FlowActivePowerVariable(), PSY.AreaInterchange)
+
+    # Reserve-deployment variable keyed by (outage_id, gen_name, t).
+    reserve_deployment_variable = get_variable(
+        container,
+        PostContingencyActivePowerReserveDeploymentVariable(),
+        R,
+        service_name,
+    )
+    contributing_devices = get_contributing_devices(service_model)
+
+    # Pre-compute area assignment for each contributing device so we can
+    # apply +1 for from-area and -1 for to-area without `isa` checks.
+    device_areas = Dict{String, String}()
+    for device in contributing_devices
+        device_areas[PSY.get_name(device)] =
+            PSY.get_name(PSY.get_area(PSY.get_bus(device)))
+    end
+
+    associated_outages = _service_outages(sys, service_model)
+    outage_by_uuid = Dict(IS.get_uuid(o) => o for o in associated_outages)
+    for (uuid, entries) in resolved
+        outage = outage_by_uuid[uuid]
+        outage_id = string(uuid)
+        outaged_gens = PSY.get_associated_components(
+            sys, outage; component_type = PSY.Generator,
+        )
+        for (name, area_interchange) in entries
+            from_area = PSY.get_name(PSY.get_from_area(area_interchange))
+            to_area = PSY.get_name(PSY.get_to_area(area_interchange))
+            for t in time_steps
+                expr = expression_container[outage_id, name, t]
+                JuMP.add_to_expression!(expr, flow_var[name, t])
+                for device in contributing_devices
+                    gen_name = PSY.get_name(device)
+                    gen_area = device_areas[gen_name]
+                    coef = if gen_area == from_area
+                        1.0
+                    elseif gen_area == to_area
+                        -1.0
+                    else
+                        0.0
+                    end
+                    coef == 0.0 && continue
+                    JuMP.add_to_expression!(
+                        expr,
+                        coef,
+                        reserve_deployment_variable[outage_id, gen_name, t],
+                    )
+                end
+                # Subtract the outaged generation contribution on the
+                # outaged side: +pre-contingency power if in from-area,
+                # -pre-contingency power if in to-area.
+                for outaged_gen in outaged_gens
+                    outaged_area =
+                        PSY.get_name(PSY.get_area(PSY.get_bus(outaged_gen)))
+                    coef = if outaged_area == from_area
+                        -1.0
+                    elseif outaged_area == to_area
+                        1.0
+                    else
+                        0.0
+                    end
+                    coef == 0.0 && continue
+                    gen_var = get_variable(
+                        container, ActivePowerVariable(), typeof(outaged_gen),
+                    )
+                    JuMP.add_to_expression!(
+                        expr, coef, gen_var[PSY.get_name(outaged_gen), t],
+                    )
+                end
+                expression_container[outage_id, name, t] = expr
+            end
+        end
+    end
+    return expression_container
+end
+
+"""
+Per-(outage, area_interchange, t) flow-rate inequalities under the
+AreaBalance network model. Limits come from
+`PSY.get_flow_limits(area_interchange)` as `[-from_to, +to_from]`. Optional
+non-negative slacks relax the inequalities at
+`POST_CONTINGENCY_CONSTRAINT_VIOLATION_SLACK_COST`.
+"""
+function add_constraints!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    ::Type{T},
+    ::Type{U},
+    service::R,
+    service_model::ServiceModel{R, F},
+    ::NetworkModel{<:AreaBalancePowerModel},
+) where {
+    T <: PostContingencyFlowRateConstraint,
+    U <: PostContingencyAreaInterchangeFlow,
+    R <: PSY.AbstractReserve,
+    F <: AbstractSecurityConstrainedReservesFormulation,
+}
+    time_steps = get_time_steps(container)
+    service_name = PSY.get_name(service)
+    resolved = _resolve_service_monitored_area_interchanges(sys, service_model)
+
+    con_lb = _add_service_post_contingency_sparse_constraints!(
+        container, T, R, service_name; meta_suffix = "lb",
+    )
+    con_ub = _add_service_post_contingency_sparse_constraints!(
+        container, T, R, service_name; meta_suffix = "ub",
+    )
+    isempty(resolved) && return
+
+    post_cont_flow = get_expression(container, U(), R, service_name)
+    jump_model = get_jump_model(container)
+
+    use_slacks = get_use_slacks(service_model)
+    # Adapt the existing sparse-slack helper: it expects the PTDF-style
+    # resolved tuple shape `(type, name, arc, reduction_kind)`. Build an
+    # equivalent shape on the fly with placeholder arc/reduction values so
+    # the slack containers are keyed by the same `(outage_id, name, t)`.
+    slack_resolved =
+        Pair{Base.UUID, Vector{Tuple{DataType, String, Tuple{Int, Int}, String}}}[
+            uuid => Tuple{DataType, String, Tuple{Int, Int}, String}[
+                (PSY.AreaInterchange, name, (0, 0), "") for (name, _) in entries
+            ] for (uuid, entries) in resolved
+        ]
+    slack_ub = if use_slacks
+        add_post_contingency_slack_variables!(
+            container,
+            PostContingencyFlowActivePowerSlackUpperBound,
+            service,
+            service_name,
+            slack_resolved,
+            F(),
+        )
+    else
+        nothing
+    end
+    slack_lb = if use_slacks
+        add_post_contingency_slack_variables!(
+            container,
+            PostContingencyFlowActivePowerSlackLowerBound,
+            service,
+            service_name,
+            slack_resolved,
+            F(),
+        )
+    else
+        nothing
+    end
+
+    for (uuid, entries) in resolved
+        outage_id = string(uuid)
+        for (name, area_interchange) in entries
+            flow_limits = PSY.get_flow_limits(area_interchange)
+            ub = flow_limits.to_from
+            lb = -1.0 * flow_limits.from_to
+            for t in time_steps
+                if use_slacks
+                    con_ub[outage_id, name, t] = JuMP.@constraint(
+                        jump_model,
+                        post_cont_flow[outage_id, name, t] -
+                        slack_ub[outage_id, name, t] <= ub,
+                    )
+                    con_lb[outage_id, name, t] = JuMP.@constraint(
+                        jump_model,
+                        post_cont_flow[outage_id, name, t] +
+                        slack_lb[outage_id, name, t] >= lb,
+                    )
+                else
+                    con_ub[outage_id, name, t] = JuMP.@constraint(
+                        jump_model,
+                        post_cont_flow[outage_id, name, t] <= ub,
+                    )
+                    con_lb[outage_id, name, t] = JuMP.@constraint(
+                        jump_model,
+                        post_cont_flow[outage_id, name, t] >= lb,
+                    )
+                end
+            end
+        end
+    end
+    return
+end
+
 """
 Per-outage upper bound on the reserve-deployment variable by the
 pre-contingency reserve variable. Outaged generators are pinned to zero.
@@ -1431,6 +1699,15 @@ function _construct_service_model_areabalance!(
     add_constraints!(
         container, sys, PostContingencyCopperPlateBalanceConstraint,
         PostContingencyAreaActivePowerDeployment, ActivePowerBalance,
+        service, model, network_model,
+    )
+    add_post_contingency_flow_expressions!(
+        container, sys, PostContingencyAreaInterchangeFlow,
+        service, model, network_model,
+    )
+    add_constraints!(
+        container, sys, PostContingencyFlowRateConstraint,
+        PostContingencyAreaInterchangeFlow,
         service, model, network_model,
     )
 
