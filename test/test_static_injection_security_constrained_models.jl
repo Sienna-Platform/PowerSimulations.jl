@@ -231,6 +231,132 @@ end
     end
 end
 
+# Exercises the per-service line-scoping path in
+# `_monitored_components_by_modeled_type` and the downstream
+# `PostContingencyFlowRateConstraint` build for `PTDFPowerModel` when the
+# reserve service monitors a strict subset of the system's AC lines instead of
+# every line. The constraint key meta does not change (it remains keyed by
+# service name) but the per-outage flow constraint container ends up with
+# fewer entries, which lowers the MOI counts compared to the all-lines variant.
+@testset "G-n with Ramp reserve deliverability constraints PTDFPowerModel with monitored line subset" begin
+    c_sys5 = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_reserves = true)
+    monitored_line_names = ["1", "2"]
+    systems = [c_sys5]
+    objfuncs = [GAEVF, GQEVF, GQEVF]
+    constraint_keys = [
+        PSI.ConstraintKey(
+            ActivePowerVariableLimitsConstraint,
+            PSY.ThermalStandard,
+            "lb",
+        ),
+        PSI.ConstraintKey(
+            ActivePowerVariableLimitsConstraint,
+            PSY.ThermalStandard,
+            "ub",
+        ),
+        PSI.ConstraintKey(FlowRateConstraint, PSY.Line, "lb"),
+        PSI.ConstraintKey(FlowRateConstraint, PSY.Line, "ub"),
+        PSI.ConstraintKey(
+            PostContingencyFlowRateConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_lb",
+        ),
+        PSI.ConstraintKey(
+            PostContingencyFlowRateConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_ub",
+        ),
+        PSI.ConstraintKey(CopperPlateBalanceConstraint, PSY.System),
+        PSI.ConstraintKey(
+            RequirementConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1",
+        ),
+        PSI.ConstraintKey(
+            RampConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1",
+        ),
+        PSI.ConstraintKey(
+            PostContingencyGenerationBalanceConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1",
+        ),
+        PSI.ConstraintKey(
+            PostContingencyActivePowerReserveDeploymentVariableLimitsConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1",
+        ),
+    ]
+    PTDF_ref = IdDict{System, PTDF}(
+        c_sys5 => PTDF(c_sys5),
+    )
+    # Counts are smaller than the all-lines baseline `[360, 0, 600, 432, 72]`
+    # because only the monitored subset contributes
+    # `PostContingencyFlowRateConstraint` rows per outage step.
+    test_results = IdDict{System, Vector{Int}}(
+        c_sys5 => [360, 0, 504, 336, 72],
+    )
+    test_obj_values = IdDict{System, Float64}(
+        c_sys5 => 329000.0,
+    )
+    components_outages_cases = IdDict{System, Vector{String}}(
+        c_sys5 => ["Alta"],
+    )
+    for (ix, sys) in enumerate(systems)
+        gen = get_component(ThermalStandard, sys, "Solitude")
+        set_ramp_limits!(gen, (up = 0.4, down = 0.4)) #Increase ramp limits to make the problem feasible
+        components_outages_names = components_outages_cases[sys]
+        reserve_up = get_component(VariableReserve{ReserveUp}, sys, "Reserve1")
+        monitored_subset =
+            [get_component(Line, sys, n) for n in monitored_line_names]
+        for component_name in components_outages_names
+            # --- Create Outage Data with a hand-picked monitored subset ---
+            transition_data = GeometricDistributionForcedOutage(;
+                mean_time_to_recovery = 10,
+                outage_transition_probability = 0.9999,
+                monitored_components = monitored_subset,
+            )
+            # --- Add Outage Supplemental attribute to device and services that should respond ---
+            component = get_component(ThermalStandard, sys, component_name)
+            add_supplemental_attribute!(sys, component, transition_data)
+            add_supplemental_attribute!(sys, reserve_up, transition_data)
+        end
+        template = get_thermal_dispatch_template_network(
+            NetworkModel(PTDFPowerModel; PTDF_matrix = PTDF_ref[sys]),
+        )
+        set_service_model!(template,
+            ServiceModel(
+                VariableReserve{ReserveUp},
+                SecurityConstrainedRampReserve,
+                "Reserve1",
+            ))
+
+        ps_model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
+
+        @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
+              PSI.ModelBuildStatus.BUILT
+        psi_constraint_test(ps_model, constraint_keys)
+        moi_tests(
+            ps_model,
+            test_results[sys]...,
+            false,
+        )
+        psi_checkobjfun_test(ps_model, objfuncs[ix])
+        psi_checksolve_test(
+            ps_model,
+            [MOI.OPTIMAL, MOI.ALMOST_OPTIMAL],
+            test_obj_values[sys],
+            10000,
+        )
+        res = OptimizationProblemResults(ps_model)
+        compare_outage_power_and_deployed_reserves(
+            sys,
+            res,
+            reserve_up)
+    end
+end
+
 @testset "G-n with contingency reserves deliverability constraints including responding reserves only up, reserve requirement, and reduction of parallel circuits" begin
     for add_parallel_line in [true, false]
         c_sys5 = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_reserves = true)
@@ -955,6 +1081,153 @@ end
                 res,
                 reserve_up)
         end
+    end
+end
+
+# Exercises the per-service line-scoping path in
+# `_monitored_components_by_modeled_type` for the `AreaPTDFPowerModel`
+# network model. Each reserve service monitors a different hand-picked
+# subset of AC lines, which keeps the constraint key meta keyed by service
+# name but reduces the number of `PostContingencyFlowRateConstraint` rows
+# compared to the all-lines baseline.
+@testset "G-n with Ramp reserve deliverability constraints with AreaPTDFPowerModel and monitored line subset" begin
+    objfuncs = [GAEVF]
+    monitored_line_names_per_service = (["1_1", "2_1"], ["1_2", "2_2"])
+    constraint_keys = [
+        PSI.ConstraintKey(ActivePowerVariableLimitsConstraint, PSY.ThermalStandard, "lb"),
+        PSI.ConstraintKey(ActivePowerVariableLimitsConstraint, PSY.ThermalStandard, "ub"),
+        PSI.ConstraintKey(FlowRateConstraint, PSY.Line, "lb"),
+        PSI.ConstraintKey(FlowRateConstraint, PSY.Line, "ub"),
+        PSI.ConstraintKey(
+            PostContingencyFlowRateConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_1_lb",
+        ),
+        PSI.ConstraintKey(
+            PostContingencyFlowRateConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_2_lb",
+        ),
+        PSI.ConstraintKey(
+            PostContingencyFlowRateConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_1_ub",
+        ),
+        PSI.ConstraintKey(
+            PostContingencyFlowRateConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_2_ub",
+        ),
+        PSI.ConstraintKey(CopperPlateBalanceConstraint, PSY.Area),
+        PSI.ConstraintKey(
+            RequirementConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_1",
+        ),
+        PSI.ConstraintKey(
+            RequirementConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_2",
+        ),
+        PSI.ConstraintKey(
+            RampConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_1",
+        ),
+        PSI.ConstraintKey(
+            RampConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_2",
+        ),
+        PSI.ConstraintKey(
+            PostContingencyGenerationBalanceConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_1",
+        ),
+        PSI.ConstraintKey(
+            PostContingencyGenerationBalanceConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_2",
+        ),
+        PSI.ConstraintKey(
+            PostContingencyActivePowerReserveDeploymentVariableLimitsConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_1",
+        ),
+        PSI.ConstraintKey(
+            PostContingencyActivePowerReserveDeploymentVariableLimitsConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_2",
+        ),
+    ]
+    # Counts are smaller than the all-lines baseline `[984, 0, 2400, 1824, 216]`
+    # because each service monitors only two AC lines instead of all 13.
+    test_results = [984, 0, 1344, 768, 216]
+    test_obj_value = 497000.0
+    components_outages_cases = (["Alta_1", "Alta_2"], ["Reserve1_1", "Reserve1_2"])
+
+    sys = PSB.build_system(PSISystems, "two_area_pjm_DA"; add_reserves = true)
+    transform_single_time_series!(sys, Hour(24), Hour(1))
+
+    components_outages_names, reserve_names = components_outages_cases
+    for (component_name, reserve_name, monitored_names) in zip(
+        components_outages_names,
+        reserve_names,
+        monitored_line_names_per_service,
+    )
+        monitored_subset = [get_component(Line, sys, n) for n in monitored_names]
+        # --- Create Outage Data with a hand-picked monitored subset ---
+        transition_data = GeometricDistributionForcedOutage(;
+            mean_time_to_recovery = 10,
+            outage_transition_probability = 0.9999,
+            monitored_components = monitored_subset,
+        )
+        # --- Add Outage Supplemental attribute to device and services that should respond ---
+        component = get_component(ThermalStandard, sys, component_name)
+        reserve_up = get_component(VariableReserve{ReserveUp}, sys, reserve_name)
+        add_supplemental_attribute!(sys, component, transition_data)
+        add_supplemental_attribute!(sys, reserve_up, transition_data)
+    end
+
+    template = get_thermal_dispatch_template_network(
+        NetworkModel(AreaPTDFPowerModel; PTDF_matrix = PTDF(sys)),
+    )
+    set_service_model!(template,
+        ServiceModel(
+            VariableReserve{ReserveUp},
+            SecurityConstrainedRampReserve,
+            "Reserve1_1",
+        ))
+    set_service_model!(template,
+        ServiceModel(
+            VariableReserve{ReserveUp},
+            SecurityConstrainedRampReserve,
+            "Reserve1_2",
+        ))
+    ps_model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
+
+    @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+    psi_constraint_test(ps_model, constraint_keys)
+    moi_tests(
+        ps_model,
+        test_results...,
+        false,
+    )
+    psi_checkobjfun_test(ps_model, objfuncs[1])
+    psi_checksolve_test(
+        ps_model,
+        [MOI.OPTIMAL, MOI.ALMOST_OPTIMAL],
+        test_obj_value,
+        10000,
+    )
+    res = OptimizationProblemResults(ps_model)
+    for reserve_name in reserve_names
+        reserve_up = get_component(VariableReserve{ReserveUp}, sys, reserve_name)
+        compare_outage_power_and_deployed_reserves(
+            sys,
+            res,
+            reserve_up)
     end
 end
 
