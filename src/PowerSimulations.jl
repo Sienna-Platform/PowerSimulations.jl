@@ -441,6 +441,7 @@ export FuelConsumptionExpression
 export ActivePowerRangeExpressionLB
 export ActivePowerRangeExpressionUB
 export PostContingencyBranchFlow
+export PostContingencyAreaInterchangeFlow
 export PostContingencyActivePowerGeneration
 export PostContingencyActivePowerBalance
 export PostContingencyNodalActivePowerDeployment
