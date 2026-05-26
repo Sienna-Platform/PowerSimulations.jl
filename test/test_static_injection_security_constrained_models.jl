@@ -1645,6 +1645,26 @@ end
             PSY.VariableReserve{ReserveUp},
             "Reserve1_2",
         ),
+        PSI.ConstraintKey(
+            PostContingencyFlowRateConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_1_lb",
+        ),
+        PSI.ConstraintKey(
+            PostContingencyFlowRateConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_1_ub",
+        ),
+        PSI.ConstraintKey(
+            PostContingencyFlowRateConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_2_lb",
+        ),
+        PSI.ConstraintKey(
+            PostContingencyFlowRateConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_2_ub",
+        ),
     ]
 
     c_sys = PSB.build_system(PSISystems, "two_area_pjm_DA"; add_reserves = true)
@@ -1657,7 +1677,10 @@ end
         transition_data = GeometricDistributionForcedOutage(;
             mean_time_to_recovery = 10,
             outage_transition_probability = 0.9999,
-            monitored_components = collect(get_components(ACTransmission, c_sys)),
+            monitored_components = vcat(
+                collect(get_components(ACTransmission, c_sys)),
+                collect(get_components(AreaInterchange, c_sys)),
+            ),
         )
         # --- Add Outage Supplemental attribute to device and services that should respond ---
         component = get_component(ThermalStandard, c_sys, component_name)
@@ -1692,7 +1715,7 @@ end
 
     @test solve!(ps_model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
 
-    moi_tests(ps_model, 984, 0, 888, 312, 384, false)
+    moi_tests(ps_model, 984, 0, 984, 408, 384, false)
 
     opt_container = PSI.get_optimization_container(ps_model)
     copper_plate_constraints =
@@ -1820,6 +1843,26 @@ end
             PSY.VariableReserve{ReserveUp},
             "Reserve1_2",
         ),
+        PSI.ConstraintKey(
+            PostContingencyFlowRateConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_1_lb",
+        ),
+        PSI.ConstraintKey(
+            PostContingencyFlowRateConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_1_ub",
+        ),
+        PSI.ConstraintKey(
+            PostContingencyFlowRateConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_2_lb",
+        ),
+        PSI.ConstraintKey(
+            PostContingencyFlowRateConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_2_ub",
+        ),
     ]
 
     c_sys = PSB.build_system(PSISystems, "two_area_pjm_DA"; add_reserves = true)
@@ -1832,7 +1875,10 @@ end
         transition_data = GeometricDistributionForcedOutage(;
             mean_time_to_recovery = 10,
             outage_transition_probability = 0.9999,
-            monitored_components = collect(get_components(ACTransmission, c_sys)),
+            monitored_components = vcat(
+                collect(get_components(ACTransmission, c_sys)),
+                collect(get_components(AreaInterchange, c_sys)),
+            ),
         )
         # --- Add Outage Supplemental attribute to device and services that should respond ---
         component = get_component(ThermalStandard, c_sys, component_name)
@@ -1867,7 +1913,7 @@ end
 
     @test solve!(ps_model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
 
-    moi_tests(ps_model, 984, 0, 888, 312, 384, false)
+    moi_tests(ps_model, 984, 0, 984, 408, 384, false)
 
     opt_container = PSI.get_optimization_container(ps_model)
     copper_plate_constraints =
@@ -1985,6 +2031,26 @@ end
             PSY.VariableReserve{ReserveUp},
             "Reserve1_2",
         ),
+        PSI.ConstraintKey(
+            PostContingencyFlowRateConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_1_lb",
+        ),
+        PSI.ConstraintKey(
+            PostContingencyFlowRateConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_1_ub",
+        ),
+        PSI.ConstraintKey(
+            PostContingencyFlowRateConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_2_lb",
+        ),
+        PSI.ConstraintKey(
+            PostContingencyFlowRateConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_2_ub",
+        ),
     ]
 
     c_sys = PSB.build_system(PSISystems, "two_area_pjm_DA"; add_reserves = true)
@@ -2007,13 +2073,16 @@ end
     transform_single_time_series!(c_sys, Hour(24), Hour(1))
     components_outages_names, reserve_names =
         (["Alta_1", "Alta_2"], ["Reserve1_1", "Reserve1_2"])
-    #TODO REMOVE RESERVE REQUIREMENT TIME SERIES AND ADAPT CODE
+
     for (component_name, reserve_name) in zip(components_outages_names, reserve_names)
         # --- Create Outage Data ---
         transition_data = GeometricDistributionForcedOutage(;
             mean_time_to_recovery = 10,
             outage_transition_probability = 0.9999,
-            monitored_components = collect(get_components(ACTransmission, c_sys)),
+            monitored_components = vcat(
+                collect(get_components(ACTransmission, c_sys)),
+                collect(get_components(AreaInterchange, c_sys)),
+            ),
         )
         # --- Add Outage Supplemental attribute to device and services that should respond ---
         component = get_component(ThermalStandard, c_sys, component_name)
@@ -2048,7 +2117,7 @@ end
 
     @test solve!(ps_model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
 
-    moi_tests(ps_model, 744, 0, 696, 696, 432, false)
+    moi_tests(ps_model, 744, 0, 792, 792, 432, false)
 
     opt_container = PSI.get_optimization_container(ps_model)
     copper_plate_constraints =
