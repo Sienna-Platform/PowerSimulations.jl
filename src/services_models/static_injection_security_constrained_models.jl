@@ -100,9 +100,14 @@ function _resolve_service_monitored_arcs(
 end
 
 """
-Resolve the outages claimed by `service_model.outages` to the
-`PSY.UnplannedOutage` supplemental attribute objects attached to generators
-in `sys`. Returned vector is sorted by UUID for deterministic axes.
+Resolve the outages claimed by `service_model.outages` to the `PSY.Outage`
+supplemental attribute objects attached to generators in `sys`. Returned
+vector is sorted by UUID for deterministic axes.
+
+The element type is `PSY.Outage` (rather than `PSY.UnplannedOutage`) so that
+the `"include_planned_outages"` opt-in supported by `_assign_outage_to_sc_service_models!`
+in `template_validation.jl` can flow through without a `MethodError` when a
+`PSY.PlannedOutage` is claimed.
 
 This is the service-side counterpart to iterating `get_outages(device_model)`
 on the AC-branch side: outages are attached to the *outaged generator*, not
@@ -113,7 +118,7 @@ and pin the outaged generator's deployment variable to zero.
 """
 function _service_outages(sys::PSY.System, service_model::ServiceModel)
     outage_uuids = sort!(collect(keys(get_outages(service_model))))
-    return PSY.UnplannedOutage[
+    return PSY.Outage[
         PSY.get_supplemental_attribute(sys, uuid) for uuid in outage_uuids
     ]
 end
