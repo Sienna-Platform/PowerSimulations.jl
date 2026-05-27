@@ -30,10 +30,10 @@ model at simulation time
     of each entry as a key in the model's `outages::Dict{UUID, Dict{DataType, Set{String}}}`
     field with empty inner maps; template validation fills the inner maps with the
     per-type set of monitored component names (e.g., branches) that each outage
-    carries. An empty default triggers auto-discovery of every outage in the system
-    attached to a contributing device of the service whose formulation supports
-    outages. If `B` is not security-constrained, a non-empty value is dropped with a
-    warning.
+    carries. An empty default triggers auto-discovery of eligible injector-attached
+    outages in the system for formulations that support outages; this discovery is
+    not restricted to the service's contributing devices. If `B` is not
+    security-constrained, a non-empty value is dropped with a warning.
 
 # Example
 
