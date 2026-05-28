@@ -193,7 +193,11 @@ function _add_curtailment_cost!(
     name = PSY.get_name(component)
     dispatch_vars = get_variable(container, T(), PSY.RenewableDispatch)
     param_array =
-        get_parameter_array(container, ActivePowerTimeSeriesParameter(), PSY.RenewableDispatch)
+        get_parameter_array(
+            container,
+            ActivePowerTimeSeriesParameter(),
+            PSY.RenewableDispatch,
+        )
     param_multiplier = get_parameter_multiplier_array(
         container,
         ActivePowerTimeSeriesParameter(),
