@@ -66,7 +66,7 @@ Adds two terms to the objective function based on the [`FunctionData` Options](@
   - ``+ C^\text{re,var} \cdot p_t^\text{re}`` from the `variable` field of `RenewableGenerationCost` (the VOM cost of dispatching the unit).
   - ``- C^\text{re,curt} \cdot p_t^\text{re}`` from the `curtailment_cost` field of `RenewableGenerationCost` (an incentive to dispatch up to ``\text{ActivePowerTimeSeriesParameter}_t``; defaults to ``0``).
 
-The net contribution is ``(C^\text{re,var} - C^\text{re,curt}) \cdot p_t^\text{re}``: when ``C^\text{re,curt} > C^\text{re,var}`` the optimizer dispatches the unit, otherwise it curtails. `CurtailmentCostExpression` reports the per-device dollar value of curtailed energy ``C^\text{re,curt} \cdot (p^\text{re,max}_t - p_t^\text{re})`` and is not propagated to `ProductionCostExpression`.
+The net contribution is ``(C^\text{re,var} - C^\text{re,curt}) \cdot p_t^\text{re}``: when ``C^\text{re,curt} > C^\text{re,var}`` the cost coefficient is negative, creating a marginal incentive to dispatch up to the time-series limit; when ``C^\text{re,curt} < C^\text{re,var}`` the incentive favors curtailment, though system constraints (load balance, reserves) may still require some dispatch. `CurtailmentCostExpression` reports the per-device dollar value of curtailed energy ``C^\text{re,curt} \cdot (p^\text{re,max}_t - p_t^\text{re})`` and is not propagated to `ProductionCostExpression`.
 
 **Expressions:**
 
@@ -135,7 +135,7 @@ Adds two terms to the objective function based on the [`FunctionData` Options](@
   - ``+ C^\text{re,var} \cdot p_t^\text{re}`` from the `variable` field of `RenewableGenerationCost` (the VOM cost of dispatching the unit).
   - ``- C^\text{re,curt} \cdot p_t^\text{re}`` from the `curtailment_cost` field of `RenewableGenerationCost` (an incentive to dispatch up to ``\text{ActivePowerTimeSeriesParameter}_t``; defaults to ``0``).
 
-The net contribution is ``(C^\text{re,var} - C^\text{re,curt}) \cdot p_t^\text{re}``: when ``C^\text{re,curt} > C^\text{re,var}`` the optimizer dispatches the unit, otherwise it curtails. `CurtailmentCostExpression` reports the per-device dollar value of curtailed energy ``C^\text{re,curt} \cdot (p^\text{re,max}_t - p_t^\text{re})`` and is not propagated to `ProductionCostExpression`.
+The net contribution is ``(C^\text{re,var} - C^\text{re,curt}) \cdot p_t^\text{re}``: when ``C^\text{re,curt} > C^\text{re,var}`` the cost coefficient is negative, creating a marginal incentive to dispatch up to the time-series limit; when ``C^\text{re,curt} < C^\text{re,var}`` the incentive favors curtailment, though system constraints (load balance, reserves) may still require some dispatch. `CurtailmentCostExpression` reports the per-device dollar value of curtailed energy ``C^\text{re,curt} \cdot (p^\text{re,max}_t - p_t^\text{re})`` and is not propagated to `ProductionCostExpression`.
 
 **Expressions:**
 

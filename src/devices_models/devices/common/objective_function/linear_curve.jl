@@ -192,10 +192,21 @@ function _add_curtailment_cost!(
 
     name = PSY.get_name(component)
     dispatch_vars = get_variable(container, T(), PSY.RenewableDispatch)
+    param_array =
+        get_parameter_array(container, ActivePowerTimeSeriesParameter(), PSY.RenewableDispatch)
+    param_multiplier = get_parameter_multiplier_array(
+        container,
+        ActivePowerTimeSeriesParameter(),
+        PSY.RenewableDispatch,
+    )
+    has_ts_param = name in axes(param_array)[1]
 
     for t in get_time_steps(container)
-        breakpoints, _ = _get_pwl_data(false, container, component, t)
-        offer_max = breakpoints[end]
+        offer_max = if has_ts_param
+            param_multiplier[name, t] * param_array[name, t]
+        else
+            PSY.get_max_active_power(component)
+        end
 
         dispatch = dispatch_vars[name, t]
         curtailment_cost = proportional_term_per_unit * dt * (offer_max - dispatch)
@@ -212,7 +223,7 @@ function _add_curtailment_cost!(
             container,
             T(),
             component,
-            -proportional_term_per_unit * dt,
+            OBJECTIVE_FUNCTION_NEGATIVE * proportional_term_per_unit * dt,
             t,
         )
     end
@@ -248,10 +259,21 @@ function _add_curtailment_cost!(
 
     name = PSY.get_name(component)
     dispatch_vars = get_variable(container, T(), PSY.RenewableGen)
+    param_array =
+        get_parameter_array(container, ActivePowerTimeSeriesParameter(), PSY.RenewableGen)
+    param_multiplier = get_parameter_multiplier_array(
+        container,
+        ActivePowerTimeSeriesParameter(),
+        PSY.RenewableGen,
+    )
+    has_ts_param = name in axes(param_array)[1]
 
     for t in get_time_steps(container)
-        breakpoints, _ = _get_pwl_data(false, container, component, t)
-        offer_max = breakpoints[end]
+        offer_max = if has_ts_param
+            param_multiplier[name, t] * param_array[name, t]
+        else
+            PSY.get_max_active_power(component)
+        end
 
         dispatch = dispatch_vars[name, t]
         curtailment_cost = proportional_term_per_unit * dt * (offer_max - dispatch)
@@ -268,7 +290,7 @@ function _add_curtailment_cost!(
             container,
             T(),
             component,
-            -proportional_term_per_unit * dt,
+            OBJECTIVE_FUNCTION_NEGATIVE * proportional_term_per_unit * dt,
             t,
         )
     end
