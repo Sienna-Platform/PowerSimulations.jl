@@ -3,7 +3,7 @@
 #
 # In this tutorial, you'll configure a unit commitment (UC) simulation that
 # automatically calls an AC power flow solver from
-# [`PowerFlows.jl`](https://nrel-sienna.github.io/PowerFlows.jl/stable/) at every dispatch interval.
+# [`PowerFlows.jl`](https://sienna-platform.github.io/PowerFlows.jl/stable/) at every dispatch interval.
 #
 # You'll validate the committed dispatch against the full AC network model at each hour, check for branch overloads, and export the results to PSS/e format if needed for further analysis.
 #
