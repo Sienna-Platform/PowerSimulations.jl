@@ -190,7 +190,9 @@ function _branch_flow_limit_mw(branch, sys)
         else
             return get_rating(branch) * base_power
         end
-    catch
+    catch e
+        e isa MethodError || rethrow(e)
+        @warn "Could not get rating for $(typeof(branch)): $e — treating as unlimited"
         return Inf
     end
 end
