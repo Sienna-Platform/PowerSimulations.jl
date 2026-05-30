@@ -23,8 +23,6 @@ using HiGHS
 using Dates
 using Logging
 
-disable_logging(Logging.Warn)
-
 const SCENARIO_NAME = "uc_with_pf"
 const INLOOP_SYSTEM = "modified_RTS_GMLC_DA_sys"
 const INLOOP_SIM_STEPS = 1
@@ -38,7 +36,12 @@ mkpath(export_dir)
 # [`PowerSystemCaseBuilder.build_system`](@extref).
 # We use `modified_RTS_GMLC_DA_sys` (24+ DA forecast steps):
 
-sys = build_system(PSISystems, INLOOP_SYSTEM; skip_serialization = true)
+sys = build_system(
+    PSISystems,
+    INLOOP_SYSTEM;
+    skip_serialization = true,
+    runchecks = false,
+)
 
 # ## Configuring the Power Flow Solver
 #
@@ -120,7 +123,7 @@ sim = Simulation(;
     simulation_folder = run_dir,
 )
 
-build!(sim; console_level = Logging.Error)
+build!(sim; console_level = Logging.Error, file_level = Logging.Error)
 execute!(sim; enable_progress_bar = true)
 
 # ## Loading Simulation Results
