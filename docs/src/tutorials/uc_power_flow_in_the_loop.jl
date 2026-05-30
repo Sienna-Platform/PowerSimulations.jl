@@ -205,7 +205,7 @@ function _branch_flow_limit_mw(branch, sys)
 end
 
 # Next, build a lookup for each [`PowerSystems.ACBranch`](@extref) keyed by branch name using [`PowerSystems.get_components`](@extref PowerSystems.get_components) and
-# [`PowerSystems.get_name`](@extref PowerSystems.get_name-Tuple{Line}):
+# [`get_name`](@extref InfrastructureSystems.get_name-Tuple{Line}):
 
 ratings = Dict{String, Float64}()
 for b in get_components(ACBranch, sys)
