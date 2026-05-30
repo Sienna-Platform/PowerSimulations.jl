@@ -59,8 +59,9 @@ power_flow_model = ACPowerFlow(; exporter = psse_export)
 
 # ## Building the UC Problem Template
 #
-# Create a [`ProblemTemplate`](@ref) with `power_flow_evaluation` set to the solver we just
-# configured. This is the key step that enables power flow in the loop:
+# Create a [`ProblemTemplate`](@ref) with a [`NetworkModel`](@ref) that uses
+# [`PTDFPowerModel`](@ref) and `power_flow_evaluation` set to the solver we just configured.
+# Assign device formulations with [`set_device_model!`](@ref). This is the key step that enables power flow in the loop:
 
 template_uc = ProblemTemplate(
     NetworkModel(
@@ -88,7 +89,9 @@ set_device_model!(template_uc, MonitoredLine, StaticBranch)
 
 # ## Building and Executing the Simulation
 #
-# Set up the simulation with a HiGHS optimizer and run for one simulation step.
+# Follow the same pattern as in the tutorial for [Running a Multi-Stage Production Cost Simulation](@ref): package the UC [`DecisionModel`](@ref) in [`SimulationModels`](@ref), define a
+# [`SimulationSequence`](@ref) with [`InterProblemChronology`](@ref), construct a
+# [`Simulation`](@ref), then [`build!`](@ref) and [`execute!`](@ref) it for one simulation step.
 # The in-step horizon on `modified_RTS_GMLC_DA_sys` provides 24 hourly realized rows.
 
 solver = optimizer_with_attributes(
@@ -144,7 +147,7 @@ uc_results = get_decision_problem_results(sim_results, "UC")
 #
 # The UC stage optimizes flows using the PTDF network model, and the line flows are not variables; they are recorded in the `PTDFBranchFlow__*` expressions.
 #
-# First, load in the PTDF branch flows for one line:
+# First, load in the PTDF branch flows for one line with [`read_realized_expression`](@ref):
 
 ptdf_flows = read_realized_expression(uc_results, "PTDFBranchFlow__Line")
 example_line = first(unique(ptdf_flows.name))
@@ -152,7 +155,7 @@ ptdf_line = filter(row -> row.name == example_line, ptdf_flows)
 
 # After each in-step hour, the AC power flow writes branch flows into auxiliary variables
 # such as `PowerFlowBranchActivePowerFromTo__Line`.
-# Compare PTDF expression flows to AC flows for our selected line:
+# Load those flows with [`read_realized_aux_variable`](@ref) and compare PTDF expression flows to AC flows for our selected line:
 
 pf_flows_ft = read_realized_aux_variable(
     uc_results,
@@ -176,7 +179,8 @@ innerjoin(
 
 # First, build a helper to extract branch flow limits from the [`PowerSystems.System`](@extref) — `name` in the
 # auxiliary results matches the branch name on each [`PowerSystems.ACBranch`](@extref).
-# AC lines and transformers use [`get_rating`](@extref PowerSystems.get_rating-Tuple{Line}); HVDC branches use active-power limits instead.
+# Limits are scaled with [`PowerSystems.get_base_power`](@extref PowerSystems.get_base_power-Tuple{System}). AC lines and transformers use
+# [`PowerSystems.get_rating`](@extref PowerSystems.get_rating-Tuple{Line}); HVDC branches use active-power limits instead.
 
 function _branch_flow_limit_mw(branch, sys)
     base_power = get_base_power(sys)
@@ -199,6 +203,9 @@ function _branch_flow_limit_mw(branch, sys)
         return Inf
     end
 end
+
+# Next, build a lookup for each [`PowerSystems.ACBranch`](@extref) keyed by branch name using [`PowerSystems.get_components`](@extref PowerSystems.get_components) and
+# [`PowerSystems.get_name`](@extref PowerSystems.get_name-Tuple{Line}):
 
 ratings = Dict{String, Float64}()
 for b in get_components(ACBranch, sys)
