@@ -4,10 +4,6 @@
 # `comment out unfeasible test` (commit 5fe9232bc) was a real modeling issue,
 # not KLU instability — re-commented and left as a follow-up.
 
-# TEMPORARY CI diagnostic (PR #1619) — trace every KLU solve in this file so the
-# last line before a SIGSEGV pinpoints the crashing call. Remove before merge.
-PowerNetworkMatrices.KLUWrapper.PNM_KLU_CI_TRACE[] = true
-
 @testset "Security Constrained branch formulation Network DC-PF with VirtualPTDF + auto-MODF" begin
     # Guards against regressions on the threaded Woodbury code path: combining
     # VirtualPTDF with MODF contingency solves has shown KLU-solver instability,
@@ -1253,6 +1249,3 @@ end
     nodal = PSI.get_expression(container, PSI.ActivePowerBalance(), PSY.ACBus)
     @test size(nodal.data, 1) == length(modf_retained)
 end
-
-# TEMPORARY CI diagnostic (PR #1619) — disable KLU solve tracing. Remove before merge.
-PowerNetworkMatrices.KLUWrapper.PNM_KLU_CI_TRACE[] = false
