@@ -349,6 +349,39 @@ function _populate_aggregated_service_model!(template::ProblemTemplate, sys::PSY
     return
 end
 
+"""
+    _copy_template_for_build(template::ProblemTemplate)
+
+Return an independently-mutable copy of `template` for an operation model to own,
+finalize, and instantiate during `build!` without ever mutating the caller's
+template.
+
+This is a `deepcopy` with one deliberate exception: the network model's
+`PTDF_matrix` and `MODF_matrix` are *shared by reference* instead of copied. Those
+`VirtualPTDF` / `VirtualMODF` objects wrap a libklu (and, on Apple, an Accelerate)
+factorization through a raw `Ptr` released by a finalizer. `deepcopy` bit-copies
+the `Ptr`, creating a second owner of the same handle while the finalizer stays
+attached only to the original; when the original is garbage-collected during
+`build!`, it frees the handle out from under the copy and the next `klu_solve`
+reads freed memory (`Numeric.n == 0`) → SIGSEGV.
+
+Sharing is safe because the matrices are immutable, lazily-populated caches:
+`instantiate_network_model!` only ever *reassigns* `model.PTDF_matrix` /
+`model.MODF_matrix` (it never mutates the objects in place), and a reassignment
+swaps the field on the copy without disturbing the shared original.
+"""
+function _copy_template_for_build(template::ProblemTemplate)
+    network_model = get_network_model(template)
+    stackdict = IdDict()
+    for matrix in (get_PTDF_matrix(network_model), get_MODF_matrix(network_model))
+        # Seed the deepcopy memo so each live matrix maps to itself: deepcopy then
+        # reuses the original in place instead of bit-copying (and recursing into)
+        # its raw factorization handle.
+        isnothing(matrix) || (stackdict[matrix] = matrix)
+    end
+    return Base.deepcopy_internal(template, stackdict)::ProblemTemplate
+end
+
 function finalize_template!(template::ProblemTemplate, sys::PSY.System)
     _populate_aggregated_service_model!(template, sys)
     _populate_contributing_devices!(template, sys)

@@ -59,13 +59,14 @@ mutable struct EmulationModel{M <: EmulationProblem} <: OperationModel
         elseif name isa String
             name = Symbol(name)
         end
-        finalize_template!(template, sys)
+        template_ = _copy_template_for_build(template)
+        finalize_template!(template_, sys)
         internal = ISOPT.ModelInternal(
             OptimizationContainer(sys, settings, jump_model, PSY.SingleTimeSeries),
         )
         new{M}(
             name,
-            template,
+            template_,
             sys,
             internal,
             SimulationInfo(),
