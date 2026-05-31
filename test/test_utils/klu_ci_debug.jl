@@ -81,3 +81,48 @@
 end
 
 @info "[KLU-CI-DEBUG] KLUWrapper.solve! instrumented for CI diagnostics."
+
+# --- Parallel AA (Apple Accelerate) solve-path instrumentation ---------------
+# The AA backend crashes in the same Woodbury/PTDF solve path on macOS. AA is
+# macOS-only, so this block only redefines on Apple. It dumps the opaque factor's
+# internal state (status, dimensions, the numeric/symbolic factor pointers, and
+# the required-vs-allocated solve-workspace bytes) right before the libSparse
+# ccall — so a run under `MallocPreScribble` pinpoints which field is corrupt.
+# Shares the same trace toggle as the KLU path.
+if Sys.isapple()
+    @eval PowerNetworkMatrices.AccelerateWrapper begin
+        function solve!(cache::AAFactorCache, b::StridedVector{Cdouble})
+            is_factored(cache) || error("AAFactorCache: not factored yet.")
+            n = cache.n
+            length(b) == n || throw(DimensionMismatch(
+                "length(b) = $(length(b)), cache n = $(n)",
+            ))
+            stride(b, 1) == 1 || throw(ArgumentError("b must have unit stride."))
+            ws = _ensure_solve_workspace!(cache, 1)
+            if Main.PowerNetworkMatrices.KLUWrapper.PNM_KLU_CI_TRACE[]
+                f = cache.numeric
+                sf = f.symbolicFactorization
+                req = _solve_workspace_bytes(f, 1)
+                Base.println(
+                    Base.stderr,
+                    "[AA-CI-TRACE] pre-solve n=$(n) len_b=$(length(b)) ",
+                    "fac_status=$(Int(f.status)) sym_status=$(Int(sf.status)) ",
+                    "sym_rows=$(sf.rowCount) sym_cols=$(sf.columnCount) ",
+                    "numFac=$(UInt(f.numericFactorization)) ",
+                    "symFac=$(UInt(sf.factorization)) ",
+                    "userFactorStorage=$(f.userFactorStorage) ",
+                    "wsStatic=$(f.solveWorkspaceRequiredStatic) ",
+                    "wsPerRHS=$(f.solveWorkspaceRequiredPerRHS) ",
+                    "ws_bytes_req=$(req) ws_have_bytes=$(length(cache.solve_workspace) * 8) ",
+                    "ws_ptr=$(UInt(ws)) nnz=$(cache.nnz) ",
+                    "colStarts_end=$(cache.columnStarts[end]) ",
+                    "n_rowIdx=$(length(cache.rowIndices))",
+                )
+                Base.flush(Base.stderr)
+            end
+            GC.@preserve cache _sparse_solve_vector_ws!(cache.numeric, _dense_vector(b), ws)
+            return b
+        end
+    end
+    @info "[AA-CI-DEBUG] AccelerateWrapper.solve! instrumented for AA diagnostics."
+end
