@@ -37,12 +37,23 @@
         if PNM_KLU_CI_TRACE[]
             # Read the handles' internal dimension directly to detect a corrupted
             # or mismatched factorization before the (possibly fatal) ccall.
-            #   klu_l_symbolic: n is at byte offset 40 (4 doubles + 1 ptr).
-            #   klu_l_numeric:  n is at byte offset 0.
-            sym_n = cache.symbolic == C_NULL ? -1 :
-                    Base.unsafe_load(Base.reinterpret(Base.Ptr{Int64}, cache.symbolic), 6)
-            num_n = cache.numeric == C_NULL ? -1 :
-                    Base.unsafe_load(Base.reinterpret(Base.Ptr{Int64}, cache.numeric), 1)
+            # `n` lives at byte offset 0 in {klu_numeric, klu_l_numeric} and byte
+            # offset 40 (4 doubles + 1 ptr) in {klu_symbolic, klu_l_symbolic}; its
+            # width follows Ti (Int32 for the `klu_*` family, Int64/SuiteSparse_long
+            # for `klu_l_*`). Read with the matching width so Int32 caches don't
+            # report `n`+`nblocks` packed as one Int64.
+            if Ti === Int64
+                sym_n = cache.symbolic == C_NULL ? -1 :
+                        Int(Base.unsafe_load(Base.reinterpret(Base.Ptr{Int64}, cache.symbolic), 6))
+                num_n = cache.numeric == C_NULL ? -1 :
+                        Int(Base.unsafe_load(Base.reinterpret(Base.Ptr{Int64}, cache.numeric), 1))
+            else
+                # Int32 family: symbolic n at byte 40 → Int32 index 11; numeric n at byte 0 → index 1.
+                sym_n = cache.symbolic == C_NULL ? -1 :
+                        Int(Base.unsafe_load(Base.reinterpret(Base.Ptr{Int32}, cache.symbolic), 11))
+                num_n = cache.numeric == C_NULL ? -1 :
+                        Int(Base.unsafe_load(Base.reinterpret(Base.Ptr{Int32}, cache.numeric), 1))
+            end
             Base.println(
                 Base.stderr,
                 "[KLU-CI-TRACE] pre-solve Ti=$(Ti) n(ldim)=$(Int(n)) nrhs=$(Int(nrhs)) ",
@@ -80,7 +91,53 @@
     end
 end
 
-@info "[KLU-CI-DEBUG] KLUWrapper.solve! instrumented for CI diagnostics."
+# Instrument the handle-free path to identify the `Numeric_n=0` mechanism:
+#   - If a `[KLU-FREE] cache_id=X` (especially `from_finalizer=true`) appears and a
+#     `[KLU-CI-TRACE] ... cache_id=X` solve runs on the same X → the numeric was
+#     FREED out from under an in-use cache (use-after-free; GC/lifetime bug).
+#   - If `Numeric_n` flips 4→0 for some cache_id with NO `[KLU-FREE]` for it in
+#     between → the struct was OVERWRITTEN/zeroed without a free (heap overrun).
+# The backtrace shows whether the free came from the GC finalizer or an explicit
+# call (`symbolic_factor!` / `_recover_factorization!`). Body mirrors the original
+# `_free_klu_handles!` exactly; logging is gated by the same trace flag.
+@eval PowerNetworkMatrices.KLUWrapper begin
+    function _free_klu_handles!(cache::KLULinSolveCache{Tv, Ti}) where {Tv, Ti}
+        if PNM_KLU_CI_TRACE[] && (cache.numeric != C_NULL || cache.symbolic != C_NULL)
+            bt = Base.stacktrace(Base.backtrace())
+            from_finalizer = Base.any(
+                fr -> Base.occursin(
+                    r"finaliz|run_finalizer|jl_gc|_gc_|gc.c",
+                    Base.string(fr.func) * "|" * Base.string(fr.file),
+                ),
+                bt,
+            )
+            Base.println(
+                Base.stderr,
+                "[KLU-FREE] cache_id=$(objectid(cache)) ",
+                "numeric=$(UInt(cache.numeric)) symbolic=$(UInt(cache.symbolic)) ",
+                "from_finalizer=$(from_finalizer) tid=$(Threads.threadid()) ",
+                "nframes=$(length(bt))",
+            )
+            for fr in bt[1:min(14, length(bt))]
+                Base.println(Base.stderr, "    @ $(fr.func)  $(fr.file):$(fr.line)")
+            end
+            Base.flush(Base.stderr)
+        end
+        if cache.numeric != C_NULL
+            num_ref = Base.Ref(cache.numeric)
+            _free_numeric!(Tv, Ti, num_ref, cache.common)
+            cache.numeric = num_ref[]
+        end
+        if cache.symbolic != C_NULL
+            sym_ref = Base.Ref(cache.symbolic)
+            _free_symbolic!(Ti, sym_ref, cache.common)
+            cache.symbolic = sym_ref[]
+        end
+        return nothing
+    end
+end
+
+@info "[KLU-CI-DEBUG] KLUWrapper.solve! + _free_klu_handles! instrumented for CI diagnostics."
 
 # --- Parallel AA (Apple Accelerate) solve-path instrumentation ---------------
 # The AA backend crashes in the same Woodbury/PTDF solve path on macOS. AA is
