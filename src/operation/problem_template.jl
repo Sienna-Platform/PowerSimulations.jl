@@ -67,9 +67,9 @@ end
 
 function get_model(template::ProblemTemplate, ::Type{T}) where {T <: PSY.Device}
     if T <: PSY.Branch
-        return get(template.branches, Symbol(T), nothing)
+        return get(template.branches, Symbol(IS.strip_module_name(T)), nothing)
     elseif T <: PSY.Device
-        return get(template.devices, Symbol(T), nothing)
+        return get(template.devices, Symbol(IS.strip_module_name(T)), nothing)
     else
         error("Component $T not present in the template")
     end
