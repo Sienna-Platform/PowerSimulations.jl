@@ -2075,7 +2075,7 @@ function _reduced_entry_in_interface(
         branch_names = PSY.get_name.(reduction_entry)
         throw(
             ArgumentError(
-                "An interface is specified with only part of a double-circuit that has been reduced. 
+                "An interface is specified with only part of a double-circuit that has been reduced.
                 Branches: $(branch_names[in_interface]) are in the interface and branches: $(branch_names[.!in_interface]) are not.
                 Modify the data to include all of or none of the parallel segements.",
             ),
@@ -2197,7 +2197,7 @@ function add_to_expression!(
 ) where {U <: VariableType, V <: PSY.Reserve, W <: AbstractReservesFormulation}
     contributing_devices_map = get_contributing_devices_map(model)
     for (device_type, devices) in contributing_devices_map
-        device_model = get(devices_template, Symbol(device_type), nothing)
+        device_model = get(devices_template, nameof(device_type), nothing)
         isnothing(device_model) && continue
         expression_type = get_expression_type_for_reserve(U(), device_type, V)
         add_to_expression!(container, expression_type, U, devices, model)
