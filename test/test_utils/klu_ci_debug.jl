@@ -35,9 +35,20 @@
         nrhs = size(B, 2)
         nrhs == 0 && return B
         if PNM_KLU_CI_TRACE[]
+            # Read the handles' internal dimension directly to detect a corrupted
+            # or mismatched factorization before the (possibly fatal) ccall.
+            #   klu_l_symbolic: n is at byte offset 40 (4 doubles + 1 ptr).
+            #   klu_l_numeric:  n is at byte offset 0.
+            sym_n = cache.symbolic == C_NULL ? -1 :
+                    Base.unsafe_load(Base.reinterpret(Base.Ptr{Int64}, cache.symbolic), 6)
+            num_n = cache.numeric == C_NULL ? -1 :
+                    Base.unsafe_load(Base.reinterpret(Base.Ptr{Int64}, cache.numeric), 1)
             Base.println(
                 Base.stderr,
-                "[KLU-CI-TRACE] pre-solve n(ldim)=$(Int(n)) nrhs=$(Int(nrhs)) ",
+                "[KLU-CI-TRACE] pre-solve Ti=$(Ti) n(ldim)=$(Int(n)) nrhs=$(Int(nrhs)) ",
+                "Symbolic_n=$(sym_n) Numeric_n=$(num_n) ",
+                "sizeof_common=$(Base.sizeof(eltype(typeof(cache.common)))) ",
+                "status=$(Int(cache.common[].status)) ",
                 "sym_null=$(cache.symbolic == C_NULL) ",
                 "num_null=$(cache.numeric == C_NULL) ",
                 "cache_id=$(objectid(cache)) ",
