@@ -451,7 +451,10 @@ function instantiate_network_model!(
     if isempty(model.subnetworks)
         model.subnetworks = _make_subnetworks_from_subnetwork_axes(ybus)
     end
-    PNM.populate_branch_maps_by_type!(PNM.get_network_reduction_data(ybus), _get_filters(branch_models))
+    PNM.populate_branch_maps_by_type!(
+        PNM.get_network_reduction_data(ybus),
+        _get_filters(branch_models),
+    )
     model.network_reduction = deepcopy(PNM.get_network_reduction_data(ybus))
     empty!(model.reduced_branch_tracker)
     set_number_of_steps!(model.reduced_branch_tracker, number_of_steps)
