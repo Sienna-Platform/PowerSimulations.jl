@@ -15,7 +15,7 @@ end
     set_device_model!(template, ThermalStandard, ThermalStandardUnitCommitment)
     @test_logs (:warn, "Overwriting ThermalStandard existing model") set_device_model!(
         template,
-        DeviceModel(ThermalStandard, ThermalBasicUnitCommitment)
+        DeviceModel(ThermalStandard, ThermalBasicUnitCommitment),
     )
     @test PSI.get_formulation(template.devices[:ThermalStandard]) ==
           ThermalBasicUnitCommitment
@@ -76,7 +76,7 @@ end
     outage = PSY.GeometricDistributionForcedOutage(;
         mean_time_to_recovery = 10,
         outage_transition_probability = 0.9999,
-        monitored_components = [lines[2]]
+        monitored_components = [lines[2]],
     )
     PSY.add_supplemental_attribute!(sys, lines[1], outage)
 
@@ -145,7 +145,7 @@ end
         sys;
         name = "issue_1621",
         horizon = Hour(1),
-        initial_time = DateTime(2024, 1, 1, 0)
+        initial_time = DateTime(2024, 1, 1, 0),
     )
 
     # First build models the HVDC line, so its type is recorded.
