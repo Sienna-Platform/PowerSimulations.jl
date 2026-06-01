@@ -451,13 +451,8 @@ function instantiate_network_model!(
     if isempty(model.subnetworks)
         model.subnetworks = _make_subnetworks_from_subnetwork_axes(ybus)
     end
+    PNM.populate_branch_maps_by_type!(PNM.get_network_reduction_data(ybus), _get_filters(branch_models))
     model.network_reduction = deepcopy(PNM.get_network_reduction_data(ybus))
-    #if !isempty(model.network_reductionget_net_reduction_data)
-    # TODO: Network reimplement this when it becomes necessary. We don't have any
-    # reductions that are incompatible right now.
-    # check_network_reduction_compatibility(T)
-    #end
-    PNM.populate_branch_maps_by_type!(model.network_reduction, _get_filters(branch_models))
     empty!(model.reduced_branch_tracker)
     set_number_of_steps!(model.reduced_branch_tracker, number_of_steps)
     return
@@ -663,6 +658,9 @@ function instantiate_network_model!(
         () -> _build_virtual_ptdf(model, sys, irreducible_buses),
     )
     _validate_ptdf_reduction_flags(model)
+    PNM.populate_branch_maps_by_type!(
+        PNM.get_network_reduction_data(model.PTDF_matrix), _get_filters(branch_models),
+    )
     model.network_reduction = deepcopy(PNM.get_network_reduction_data(model.PTDF_matrix))
     _set_subnetworks_from_ptdf!(model, sys)
     if _template_uses_security_constrained_branch(branch_models)
@@ -678,7 +676,6 @@ function instantiate_network_model!(
         _ensure_ptdf_modf_consistent!(model, sys)
         _consolidate_device_model_outages_with_modf!(branch_models, get_MODF_matrix(model))
     end
-    PNM.populate_branch_maps_by_type!(model.network_reduction, _get_filters(branch_models))
     empty!(model.reduced_branch_tracker)
     set_number_of_steps!(model.reduced_branch_tracker, number_of_steps)
     return
