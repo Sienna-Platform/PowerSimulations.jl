@@ -355,7 +355,7 @@ _with_time_steps(pf::PFS.PSSEExportPowerFlow, ::Int) = pf # exporter doesn't use
 # the container so `_make_pf_input_map!` can route the data to the
 # `PowerFlowData`. These parameters are not added to any optimization
 # expression, so they don't change the optimization model.
-const PF_ONLY_TS_PARAMS_BY_CATEGORY = Dict{Symbol, DataType}(
+const PF_ONLY_TS_PARAMS_BY_CATEGORY = Dict{Symbol, Type{<:TimeSeriesParameter}}(
     :reactive_power => ReactivePowerTimeSeriesParameter,
 )
 
@@ -376,9 +376,10 @@ function _add_pf_only_time_series_parameters!(
             has_container_key(container, ParamT, D) && continue
             devices = get_available_components(device_model, sys)
             isempty(devices) && continue
-            @debug "Adding $(ParamT) for $(D) to support power flow evaluator input :$(category)" _group =
-                LOG_GROUP_OPTIMIZATION_CONTAINER
             add_parameters!(container, ParamT, devices, device_model)
+            has_container_key(container, ParamT, D) || continue
+            @debug "Added $(ParamT) for $(D) to support power flow evaluator input :$(category)" _group =
+                LOG_GROUP_OPTIMIZATION_CONTAINER
         end
     end
     return
