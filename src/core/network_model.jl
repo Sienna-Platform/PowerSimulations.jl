@@ -213,7 +213,7 @@ bus/arc numbering and indexes `modf[arc, outage_spec]`, so the PTDF (which
 dimensions the nodal balance) and the MODF must agree on the entire map, not just
 the retained-bus key set.
 """
-function _reductions_match(a, b)
+function _reductions_match(a::PNM.PowerNetworkMatrix, b::PNM.VirtualMODF)
     return PNM.get_bus_reduction_map(PNM.get_network_reduction_data(a)) ==
            PNM.get_bus_reduction_map(PNM.get_network_reduction_data(b))
 end
