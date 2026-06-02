@@ -626,8 +626,6 @@ function _ensure_ptdf_modf_consistent!(
     modf_retained =
         collect(_retained_buses(PNM.get_network_reduction_data(get_MODF_matrix(model))))
     model.PTDF_matrix = _build_virtual_ptdf(model, sys, modf_retained)
-    model.network_reduction = deepcopy(PNM.get_network_reduction_data(model.PTDF_matrix))
-    _set_subnetworks_from_ptdf!(model, sys)
     _reductions_match(get_PTDF_matrix(model), get_MODF_matrix(model)) && return
     np = length(_retained_buses(PNM.get_network_reduction_data(get_PTDF_matrix(model))))
     nm = length(_retained_buses(PNM.get_network_reduction_data(get_MODF_matrix(model))))
@@ -661,11 +659,6 @@ function instantiate_network_model!(
         () -> _build_virtual_ptdf(model, sys, irreducible_buses),
     )
     _validate_ptdf_reduction_flags(model)
-    PNM.populate_branch_maps_by_type!(
-        PNM.get_network_reduction_data(model.PTDF_matrix), _get_filters(branch_models),
-    )
-    model.network_reduction = deepcopy(PNM.get_network_reduction_data(model.PTDF_matrix))
-    _set_subnetworks_from_ptdf!(model, sys)
     if _template_uses_security_constrained_branch(branch_models)
         model.MODF_matrix = _resolve_reduced_matrix(
             get_MODF_matrix(model),
@@ -679,6 +672,11 @@ function instantiate_network_model!(
         _ensure_ptdf_modf_consistent!(model, sys)
         _consolidate_device_model_outages_with_modf!(branch_models, get_MODF_matrix(model))
     end
+    PNM.populate_branch_maps_by_type!(
+        PNM.get_network_reduction_data(model.PTDF_matrix), _get_filters(branch_models),
+    )
+    model.network_reduction = deepcopy(PNM.get_network_reduction_data(model.PTDF_matrix))
+    _set_subnetworks_from_ptdf!(model, sys)
     empty!(model.reduced_branch_tracker)
     set_number_of_steps!(model.reduced_branch_tracker, number_of_steps)
     return
