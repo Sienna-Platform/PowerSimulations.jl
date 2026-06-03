@@ -16,13 +16,13 @@
 
 using PowerSystemCaseBuilder
 using PowerSimulations
+using HydroPowerSimulations
 using PowerFlows
 using PowerSystems
 using DataFrames
 using HiGHS
 using Dates
 using Logging
-
 const SCENARIO_NAME = "uc_with_pf"
 const INLOOP_SYSTEM = "modified_RTS_GMLC_DA_sys"
 const INLOOP_SIM_STEPS = 1
@@ -79,9 +79,9 @@ set_device_model!(
 set_device_model!(template_uc, RenewableDispatch, RenewableFullDispatch)
 set_device_model!(template_uc, RenewableNonDispatch, FixedOutput)
 set_device_model!(template_uc, PowerLoad, StaticPowerLoad)
+set_device_model!(template_uc, HydroDispatch, HydroDispatchRunOfRiver)
 set_device_model!(template_uc, Line, StaticBranchUnbounded)
 set_device_model!(template_uc, Transformer2W, StaticBranchUnbounded)
-set_device_model!(template_uc, TapTransformer, StaticBranchUnbounded)
 set_device_model!(template_uc, MonitoredLine, StaticBranch)
 
 # `use_slacks = true` allows the simulation to remain feasible when there is a small
