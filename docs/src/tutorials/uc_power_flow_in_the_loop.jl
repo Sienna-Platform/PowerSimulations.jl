@@ -27,7 +27,7 @@ const SCENARIO_NAME = "uc_with_pf"
 const INLOOP_SYSTEM = "modified_RTS_GMLC_DA_sys"
 const INLOOP_SIM_STEPS = 1
 
-run_dir = joinpath(".", "results")
+run_dir = joinpath(".", "uc_power_flow_in_the_loop_results")
 mkpath(run_dir)
 export_dir = joinpath(run_dir, "psse_exports")
 mkpath(export_dir)
