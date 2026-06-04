@@ -432,7 +432,7 @@ _update_pf_data_component!(
     index,
     t,
     value,
-) = (pf_data.bus_active_power_injections[index, t] -= value)
+) = (pf_data.bus_active_power_injections[index, t] -= abs(value))
 _update_pf_data_component!(
     pf_data::PFS.PowerFlowData,
     ::Val{:reactive_power},
