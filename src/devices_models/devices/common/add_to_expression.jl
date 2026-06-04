@@ -2077,7 +2077,7 @@ function _reduced_entry_in_interface(
             ArgumentError(
                 "An interface is specified with only part of a double-circuit that has been reduced.
                 Branches: $(branch_names[in_interface]) are in the interface and branches: $(branch_names[.!in_interface]) are not.
-                Modify the data to include all of or none of the parallel segements.",
+                Modify the data to include all of or none of the parallel segments.",
             ),
         )
     end
