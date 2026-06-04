@@ -10,8 +10,10 @@ links = InterLinks(
     "InfrastructureSystems" => "https://sienna-platform.github.io/InfrastructureSystems.jl/stable/",
     "PowerSystems" => "https://sienna-platform.github.io/PowerSystems.jl/stable/",
     "PowerSimulations" => "https://sienna-platform.github.io/PowerSimulations.jl/stable/",
+    "PowerSystemCaseBuilder" => "https://sienna-platform.github.io/PowerSystemCaseBuilder.jl/stable/",
     "StorageSystemsSimulations" => "https://sienna-platform.github.io/StorageSystemsSimulations.jl/stable/",
     "HydroPowerSimulations" => "https://sienna-platform.github.io/HydroPowerSimulations.jl/dev/",
+    "PowerFlows" => "https://sienna-platform.github.io/PowerFlows.jl/stable/",
 )
 
 include(joinpath(@__DIR__, "make_tutorials.jl"))
@@ -23,6 +25,7 @@ pages = OrderedDict(
         "Single-step Problem" => "tutorials/generated_decision_problem.md",
         "Multi-stage Production Cost Simulation" => "tutorials/generated_pcm_simulation.md",
         "Dynamic Line Ratings" => "tutorials/generated_dynamic_line_ratings.md",
+        "Running Power Flow In The Loop with Unit Commitment" => "tutorials/generated_uc_power_flow_in_the_loop.md",
     ],
     "How to..." => Any[
         "...register a variable in a custom operation model" => "how_to/register_variable.md",
