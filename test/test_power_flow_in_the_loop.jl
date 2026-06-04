@@ -893,21 +893,21 @@ end
     tstamp = TimeSeries.timestamp(
         get_time_series_array(SingleTimeSeries, load, "max_active_power"),
     )
-    day_data = [
-        0.9, 0.85, 0.95, 0.2, 0.0, 0.0,
-        0.9, 0.85, 0.95, 0.2, 0.0, 0.0,
-        0.9, 0.85, 0.95, 0.2, 0.0, 0.0,
-        0.9, 0.85, 0.95, 0.2, 0.0, 0.0,
-    ]
-    ts_data = repeat(day_data, 2)
+    # Distinct in/out profiles so the source's net contribution is sign-sensitive: it
+    # exports (out > 0, in = 0) for the first half of the day and imports (out = 0,
+    # in > 0) for the second half. The import half is what exercises the
+    # `ActivePowerInTimeSeriesParameter`'s negative `.min` multiplier — the sign that
+    # issue #1623 double-applied when writing into `bus_active_power_injections`.
+    out_day = vcat(fill(0.9, 12), fill(0.0, 12))
+    in_day = vcat(fill(0.0, 12), fill(0.7, 12))
     ts_out = SingleTimeSeries(
         "max_active_power_out",
-        TimeArray(tstamp, ts_data);
+        TimeArray(tstamp, repeat(out_day, 2));
         scaling_factor_multiplier = get_max_active_power,
     )
     ts_in = SingleTimeSeries(
         "max_active_power_in",
-        TimeArray(tstamp, ts_data);
+        TimeArray(tstamp, repeat(in_day, 2));
         scaling_factor_multiplier = get_max_active_power,
     )
     add_time_series!(sys, source, ts_out)
@@ -949,9 +949,13 @@ end
         out_keys,
     )
 
-    # PF data injections at the source bus should equal the sum of every other
-    # device's contribution at that bus plus (out_param − in_param) from the
-    # FixedOutput source — same allocation rule as the in/out variable path.
+    # PF data injections at the source bus must equal the sum of every other device's
+    # contribution at that bus plus the FixedOutput source's own contribution to the
+    # OPF `ActivePowerBalance`. `lookup_value` returns each parameter already multiplied
+    # by its formulation multiplier, so `out_param` is a signed injection (multiplier
+    # `.max` > 0) and `in_param` is a signed withdrawal (multiplier `.min` < 0); the
+    # source's net contribution is their *sum*. (Contrast the in/out *variable* path,
+    # which reads raw non-negative magnitudes and therefore takes out − in.)
     data = PSI.get_power_flow_data(pf_e_data)
     bus_lookup = PFS.get_bus_lookup(data)
     source_bus_ix = bus_lookup[get_number(get_bus(source))]
@@ -976,7 +980,7 @@ end
     end
 
     source_net = [
-        PSI.jump_value(out_param["source", t]) - PSI.jump_value(in_param["source", t])
+        PSI.jump_value(out_param["source", t]) + PSI.jump_value(in_param["source", t])
         for t in 1:n_time_steps
     ]
     # Net bus injection = injections − withdrawals; loads route to withdrawals under
@@ -988,7 +992,10 @@ end
         atol = 1e-9,
     )
 
-    # Guard against a regression that drives both parameters to zero — the test
-    # above would then pass trivially without exercising the parameter path.
-    @test !all(isapprox.(source_net, 0.0; atol = 1e-10))
+    # The export half must give a positive net injection and the import half a negative
+    # one. Under the issue #1623 bug the import half came out positive (the negative
+    # `.min` multiplier was applied a second time by the `:active_power_in` `-=`
+    # convention), so this directly guards the regression.
+    @test any(source_net .> 1e-6)
+    @test any(source_net .< -1e-6)
 end

@@ -501,6 +501,11 @@ _update_pf_data_component!(
     value,
 ) = (pf_data.bus_active_power_injections[index, t] += value)
 
+_extra_multiplier(::Val, ::OptimizationContainerKey) = 1.0
+# signs handled differently for parameter vs variable: lookup_value on the ActivePowerIn
+# parameter is negative, while lookup_value on the variable is positive.
+_extra_multiplier(::Val{:active_power_in}, ::ParameterKey) = -1.0
+
 function _write_value_to_pf_data!(
     pf_data::PFS.PowerFlowData,
     category::Symbol,
@@ -511,7 +516,7 @@ function _write_value_to_pf_data!(
     for (device_name, index) in component_map
         injection_values = result[device_name, :]
         for t in get_time_steps(container)
-            value = jump_value(injection_values[t])
+            value = jump_value(injection_values[t]) * _extra_multiplier(Val(category), key)
             _update_pf_data_component!(
                 pf_data,
                 Val(category),
