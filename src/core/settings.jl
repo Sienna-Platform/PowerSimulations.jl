@@ -17,10 +17,37 @@ struct Settings
     export_pwl_vars::Bool
     allow_fails::Bool
     rebuild_model::Bool
-    export_optimization_model::Bool
+    export_optimization_model::String
     store_variable_names::Bool
     check_numerical_bounds::Bool
     ext::Dict{String, Any}
+end
+
+# Allowed `export_optimization_model` formats: "" (off), "LP", "MOF". Input is
+# case-insensitive and trimmed; the fallback method rejects the legacy `Bool`.
+const _OPTIMIZATION_EXPORT_FORMATS = ("", "LP", "MOF")
+
+function _validate_export_optimization_model(value::AbstractString)
+    fmt = uppercase(strip(value))
+    if !(fmt in _OPTIMIZATION_EXPORT_FORMATS)
+        throw(
+            IS.ConflictingInputsError(
+                "export_optimization_model must be one of $(_OPTIMIZATION_EXPORT_FORMATS) \
+                (case-insensitive); got \"$(value)\".",
+            ),
+        )
+    end
+    return String(fmt)
+end
+
+function _validate_export_optimization_model(value)
+    throw(
+        IS.ConflictingInputsError(
+            "export_optimization_model must be a String, one of \
+            $(_OPTIMIZATION_EXPORT_FORMATS); got a $(typeof(value)) ($(repr(value))). \
+            The boolean form is no longer accepted.",
+        ),
+    )
 end
 
 function Settings(
@@ -44,7 +71,7 @@ function Settings(
     allow_fails::Bool = false,
     check_numerical_bounds = true,
     rebuild_model = false,
-    export_optimization_model = false,
+    export_optimization_model = "",
     store_variable_names = false,
     ext = Dict{String, Any}(),
 )
@@ -62,6 +89,9 @@ function Settings(
             "The provided input for optimizer is invalid. Provide a JuMP.OptimizerWithAttributes object or a valid Optimizer constructor (e.g. HiGHS.Optimizer).",
         )
     end
+
+    export_optimization_model =
+        _validate_export_optimization_model(export_optimization_model)
 
     return Settings(
         Ref(IS.time_period_conversion(horizon)),
