@@ -212,8 +212,13 @@ function validate_template_impl!(model::OperationModel)
     # earlier build (e.g. a branch type later pruned for an empty device cache)
     # leak into the PTDF branch_models lookups and raise a KeyError.
     empty!(network_model.modeled_ac_branch_types)
+    # Skip PSY.check_component for branches the network never models; the device
+    # cache is still built below to prune empty types and populate modeled_ac_branch_types.
+    validate_branches =
+        get_check_components(settings) &&
+        branches_modeled(get_network_formulation(network_model))
     for (k, device_model) in model.template.branches
-        make_device_cache!(device_model, system, get_check_components(settings))
+        make_device_cache!(device_model, system, validate_branches)
         if isempty(get_device_cache(device_model))
             @info "The system data doesn't include Branches of type $(k), consider changing the models in the template" _group =
                 LOG_GROUP_MODELS_VALIDATION
