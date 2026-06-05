@@ -513,10 +513,11 @@ function _write_value_to_pf_data!(
     key::OptimizationContainerKey,
     component_map)
     result = lookup_value(container, key)
+    extra_multiplier = _extra_multiplier(Val(category), key)
     for (device_name, index) in component_map
         injection_values = result[device_name, :]
         for t in get_time_steps(container)
-            value = jump_value(injection_values[t]) * _extra_multiplier(Val(category), key)
+            value = jump_value(injection_values[t]) * extra_multiplier
             _update_pf_data_component!(
                 pf_data,
                 Val(category),
@@ -601,10 +602,11 @@ function update_pf_system!(
         @debug "Writing $category to (possibly internal) System"
         for (key, component_map) in inputs
             result = lookup_value(container, key)
+            extra_multiplier = _extra_multiplier(Val(category), key)
             for (device_id, device_name) in component_map
                 injection_values = result[device_id, :]
                 comp = PSY.get_component(get_component_type(key), sys, device_name)
-                val = jump_value(injection_values[time_step])
+                val = jump_value(injection_values[time_step]) * extra_multiplier
                 _update_component!(comp, Val(category), val, get_base_power(container))
             end
         end
@@ -780,6 +782,21 @@ function _find_paired_out(
         "`ActivePowerInVariable` without a paired `ActivePowerOutVariable`.",
     )
 end
+
+# ParameterKey → FixedOutput formulation; dispatch is externally determined,
+# should not participate in slack (mirrors the `:active_power` ParameterKey skip above).
+_accumulate_in_out_headroom_one_type!(
+    ::PFS.PowerFlowData,
+    ::OptimizationContainer,
+    ::PSY.System,
+    ::OptimizationContainerKey{<:ISOPT.ParameterType, U},
+    ::Dict{String, Int},
+    ::OptimizationContainerKey{<:ISOPT.OptimizationKeyType, U},
+    ::Dict{String, Int},
+    ::Int,
+    ::Matrix{PSY.ACBusTypes},
+    ::Vector{Dict{Tuple{DataType, String}, Float64}},
+) where {U <: PSY.Component} = nothing
 
 # Function barrier: the parametric key types specialize `lookup_value` and `result[...]`
 # indexing on the concrete component type `U`.
