@@ -112,16 +112,15 @@ function solve_impl!(model::OperationModel)
     ts = get_current_timestamp(model)
     output_dir = get_output_dir(model)
 
-    if get_export_optimization_model(get_settings(model))
+    fmt = get_export_optimization_model(get_settings(model))
+    if !isempty(fmt)
         model_output_dir = joinpath(output_dir, "optimization_model_exports")
         mkpath(model_output_dir)
         tss = replace("$(ts)", ":" => "_")
-        model_export_path = joinpath(model_output_dir, "exported_$(model_name)_$(tss).json")
-        serialize_optimization_model(container, model_export_path)
-        write_lp_file(
-            get_jump_model(container),
-            replace(model_export_path, ".json" => ".lp"),
-        )
+        ext = fmt == "LP" ? "lp" : "json"
+        model_export_path =
+            joinpath(model_output_dir, "exported_$(model_name)_$(tss).$(ext)")
+        serialize_optimization_model(model, model_export_path, fmt)
     end
 
     status = solve_impl!(container, get_system(model))
@@ -400,5 +399,45 @@ function serialize_optimization_model(model::OperationModel, save_path::String)
         get_jump_model(get_optimization_container(model)),
         save_path,
     )
+    return
+end
+
+get_ext(model::OperationModel) = model.ext
+
+# Holds the at-most-one in-flight background serialization `Task` on the model `ext`.
+const _SERIALIZATION_TASK_KEY = "__serialization_task__"
+
+get_serialization_task(model::OperationModel) =
+    get(get_ext(model), _SERIALIZATION_TASK_KEY, nothing)
+
+set_serialization_task!(model::OperationModel, task::Task) =
+    get_ext(model)[_SERIALIZATION_TASK_KEY] = task
+
+# Join the pending background write (rethrowing any error) and clear the handle.
+function wait_for_serialization!(model::OperationModel)
+    task = get_serialization_task(model)
+    task === nothing && return
+    wait(task)
+    delete!(get_ext(model), _SERIALIZATION_TASK_KEY)
+    return
+end
+
+# Export the live model in `fmt` ("LP" or "MOF"). The copy runs here on the main
+# thread; the write is backgrounded (when threaded) since it uses the independent
+# copy and cannot race the solve.
+function serialize_optimization_model(
+    model::OperationModel,
+    save_path::String,
+    fmt::String,
+)
+    jump_model = get_jump_model(get_optimization_container(model))
+    dest = _copy_jump_model_for_export(jump_model, fmt)
+    if Threads.nthreads() > 1
+        wait_for_serialization!(model)
+        task = Threads.@spawn _write_export_model(dest, save_path)
+        set_serialization_task!(model, task)
+    else
+        _write_export_model(dest, save_path)
+    end
     return
 end
