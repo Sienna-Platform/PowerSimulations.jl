@@ -821,7 +821,12 @@ function build_impl!(
         LOG_GROUP_OPTIMIZATION_CONTAINER
 
     TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "Power Flow Initialization" begin
-        add_power_flow_data!(container, get_power_flow_evaluation(transmission_model), sys)
+        add_power_flow_data!(
+            container,
+            get_power_flow_evaluation(transmission_model),
+            sys,
+            template,
+        )
     end
     check_optimization_container(container)
     return

@@ -347,10 +347,49 @@ end
 
 _with_time_steps(pf::PFS.PSSEExportPowerFlow, ::Int) = pf # exporter doesn't use time_steps
 
+# Time-series parameter types that some power flow evaluators need as input but
+# that an optimization formulation may legitimately omit (e.g.,
+# `ReactivePowerTimeSeriesParameter` is not added by `AbstractActivePowerModel`
+# device constructors). When such a parameter is required by a configured power
+# flow evaluator and the user has wired up a time series for it, we add it to
+# the container so `_make_pf_input_map!` can route the data to the
+# `PowerFlowData`. These parameters are not added to any optimization
+# expression, so they don't change the optimization model.
+const PF_ONLY_TS_PARAMS_BY_CATEGORY = Dict{Symbol, Type{<:TimeSeriesParameter}}(
+    :reactive_power => ReactivePowerTimeSeriesParameter,
+)
+
+function _add_pf_only_time_series_parameters!(
+    container::OptimizationContainer,
+    template::Union{ProblemTemplate, Nothing},
+    sys::PSY.System,
+    needed_categories::Set{Symbol},
+)
+    template === nothing && return
+    isempty(needed_categories) && return
+    for (category, ParamT) in PF_ONLY_TS_PARAMS_BY_CATEGORY
+        category in needed_categories || continue
+        for device_model in values(template.devices)
+            ts_names = get_time_series_names(device_model)
+            haskey(ts_names, ParamT) || continue
+            D = get_component_type(device_model)
+            has_container_key(container, ParamT, D) && continue
+            devices = get_available_components(device_model, sys)
+            isempty(devices) && continue
+            add_parameters!(container, ParamT, devices, device_model)
+            has_container_key(container, ParamT, D) || continue
+            @debug "Added $(ParamT) for $(D) to support power flow evaluator input :$(category)" _group =
+                LOG_GROUP_OPTIMIZATION_CONTAINER
+        end
+    end
+    return
+end
+
 function add_power_flow_data!(
     container::OptimizationContainer,
     evaluators::Vector{PFS.PowerFlowEvaluationModel},
     sys::PSY.System,
+    template::Union{ProblemTemplate, Nothing} = nothing,
 )
     container.power_flow_evaluation_data = Vector{PowerFlowEvaluationData}()
     sizehint!(container.power_flow_evaluation_data, length(evaluators))
@@ -358,6 +397,8 @@ function add_power_flow_data!(
     branch_aux_var_components =
         Dict{Type{<:AuxVariableType}, Set{Tuple{<:DataType, String}}}()
     bus_aux_var_components = Dict{Type{<:AuxVariableType}, Set{Tuple{<:DataType, <:Int}}}()
+    # Categories of input data needed across all configured PF evaluators.
+    needed_categories = Set{Symbol}()
     # we ought to be providing the time_steps when constructing the PF evaluation model,
     # but that value isn't known until runtime (and PF evaluation model is immutable).
     n_time_steps = length(get_time_steps(container))
@@ -385,11 +426,19 @@ function add_power_flow_data!(
                 get!(bus_aux_var_components, bus_aux_var, Set{Tuple{<:DataType, <:Int}}())
             push!.(Ref(to_add_to), my_bus_components)
         end
+        for category in pf_input_keys(pf_data)
+            push!(needed_categories, category)
+        end
         push!(container.power_flow_evaluation_data, pf_e_data)
     end
 
     _add_aux_variables!(container, branch_aux_var_components)
     _add_aux_variables!(container, bus_aux_var_components)
+
+    # Add time-series parameters that the PF evaluators need but that the
+    # optimization formulation may not have added (e.g., reactive power for
+    # AbstractActivePowerModel networks running an AC power flow evaluator).
+    _add_pf_only_time_series_parameters!(container, template, sys, needed_categories)
 
     # Make the input maps after adding aux vars so output of one power flow can be input of another
     for pf_e_data in get_power_flow_evaluation_data(container)

@@ -1050,3 +1050,52 @@ end
         rtol = 0,
     )
 end
+
+# Regression test for issue: AC power flow evaluator on an active-power-only
+# network model (e.g. `PTDFPowerModel`) used to ignore reactive power because
+# `AbstractActivePowerModel` device constructors don't add
+# `ReactivePowerTimeSeriesParameter` to the optimization container, leaving
+# `_make_pf_input_map!` with zero input keys for `:reactive_power`.
+@testset "AC Power Flow in the loop populates reactive power on PTDFPowerModel" begin
+    system = build_system(PSITestSystems, "c_sys5_uc")
+    template = get_template_dispatch_with_network(
+        NetworkModel(
+            PTDFPowerModel;
+            PTDF_matrix = PTDF(system),
+            power_flow_evaluation = ACPolarPowerFlow(),
+        ),
+    )
+    model = DecisionModel(template, system; optimizer = HiGHS_optimizer)
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+    @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    container = PSI.get_optimization_container(model)
+    pf_e_data = only(PSI.get_power_flow_evaluation_data(container))
+    input_key_map = PSI.get_input_key_map(pf_e_data)
+
+    # The :reactive_power category must have a route from the
+    # ReactivePowerTimeSeriesParameter for PowerLoad components even though the
+    # PTDFPowerModel optimization formulation itself doesn't model reactive power.
+    @test haskey(input_key_map, :reactive_power)
+    reactive_keys = collect(keys(input_key_map[:reactive_power]))
+    @test any(
+        k ->
+            PSI.get_entry_type(k) == PSI.ReactivePowerTimeSeriesParameter &&
+                PSI.get_component_type(k) == PowerLoad,
+        reactive_keys,
+    )
+
+    # The PowerFlowData should have non-zero reactive power withdrawals at the
+    # buses that host the loads (loads in c_sys5_uc carry a reactive component).
+    data = PSI.get_power_flow_data(pf_e_data)
+    @test any(!iszero, data.bus_reactive_power_withdrawals)
+
+    # And the parameter should now exist in the container so the optimization
+    # path can route it to the PF (used to be missing under PTDFPowerModel).
+    @test PSI.has_container_key(
+        container,
+        PSI.ReactivePowerTimeSeriesParameter,
+        PowerLoad,
+    )
+end
