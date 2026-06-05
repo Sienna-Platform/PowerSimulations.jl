@@ -35,9 +35,6 @@ Establishes the NetworkModel for a given PowerModels formulation type.
     Enable radial branch reduction when building network matrices.
 - `reduce_degree_two_branches::Bool` = false
     Enable degree-two branch reduction when building network matrices.
-- `subnetworks::Dict{Int, Set{Int}}` = Dict()
-    Optional mapping of reference bus → set of mapped buses. If not provided,
-    subnetworks are inferred from PTDF/VirtualPTDF or discovered from the system.
 - `duals::Vector{DataType}` = Vector{DataType}()
     Constraint types for which duals should be recorded.
 - `power_flow_evaluation::Union{PFS.PowerFlowEvaluationModel, Vector{PFS.PowerFlowEvaluationModel}}`
@@ -54,8 +51,6 @@ Establishes the NetworkModel for a given PowerModels formulation type.
 ptdf = PNM.VirtualPTDF(system)
 nw = NetworkModel(PTDFPowerModel; PTDF_matrix = ptdf, reduce_radial_branches = true,
                   power_flow_evaluation = PFS.PowerFlowEvaluationModel())
-
-nw2 = NetworkModel(CopperPlatePowerModel; subnetworks = Dict(1 => Set([1,2,3])))
 """
 mutable struct NetworkModel{T <: PM.AbstractPowerModel}
     use_slacks::Bool
@@ -80,7 +75,6 @@ mutable struct NetworkModel{T <: PM.AbstractPowerModel}
         MODF_matrix = nothing,
         reduce_radial_branches = false,
         reduce_degree_two_branches = false,
-        subnetworks = Dict{Int, Set{Int}}(),
         duals = Vector{DataType}(),
         power_flow_evaluation::Union{
             PFS.PowerFlowEvaluationModel,
@@ -93,7 +87,7 @@ mutable struct NetworkModel{T <: PM.AbstractPowerModel}
             use_slacks,
             PTDF_matrix,
             MODF_matrix,
-            subnetworks,
+            Dict{Int, Set{Int}}(),
             Dict{PSY.ACBus, Int}(),
             duals,
             PNM.NetworkReductionData(),
@@ -597,7 +591,9 @@ function _set_subnetworks_from_ptdf!(
     model::NetworkModel{<:AbstractPTDFModel},
     sys::PSY.System,
 )
-    model.subnetworks = _make_subnetworks_from_subnetwork_axes(model.PTDF_matrix)
+    if isempty(model.subnetworks)
+        model.subnetworks = _make_subnetworks_from_subnetwork_axes(model.PTDF_matrix)
+    end
     if length(model.subnetworks) > 1
         @debug "System Contains Multiple Subnetworks. Assigning buses to subnetworks."
         _assign_subnetworks_to_buses(model, sys)
