@@ -1,9 +1,15 @@
 function _update_parameter_values!(
     ::AbstractArray{T},
-    ::ParameterType,
+    pt::ParameterType,
     ::NoAttributes,
     args...,
-) where {T <: Union{Float64, JuMP.VariableRef}} end
+) where {T <: Union{Float64, JuMP.VariableRef}}
+    # NoAttributes signals a parameter whose values are set at build and never refreshed.
+    # If you reach this method with a parameter type that *should* be updated, dispatch
+    # is wrong: add a specialized method for the parameter's concrete attribute type.
+    @debug "No-op parameter update for $(typeof(pt)) with NoAttributes"
+    return
+end
 
 ######################## Methods to update Parameters from Time Series #####################
 function _set_param_value!(
@@ -778,7 +784,10 @@ function update_container_parameter_values!(
     parameter_array = get_parameter_array(optimization_container, key)
     parameter_attributes = get_parameter_attributes(optimization_container, key)
     service = PSY.get_component(U, get_system(model), key.meta)
-    @assert service !== nothing
+    isnothing(service) && error(
+        "Service $(U) named '$(key.meta)' is no longer in the system; " *
+        "cannot update parameter $(key)",
+    )
     _update_parameter_values!(
         parameter_array,
         FixValueParameter(),
@@ -802,7 +811,10 @@ function update_container_parameter_values!(
     parameter_array = get_parameter_array(optimization_container, key)
     parameter_attributes = get_parameter_attributes(optimization_container, key)
     service = PSY.get_component(U, get_system(model), key.meta)
-    @assert service !== nothing
+    isnothing(service) && error(
+        "Service $(U) named '$(key.meta)' is no longer in the system; " *
+        "cannot update parameter $(key)",
+    )
     _update_parameter_values!(
         parameter_array,
         T(),

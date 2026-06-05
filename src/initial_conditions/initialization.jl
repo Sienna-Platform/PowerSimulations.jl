@@ -6,6 +6,7 @@ function get_initial_conditions_template(model::OperationModel, number_of_steps:
         get_network_formulation(model.template);
         use_slacks = get_use_slacks(get_network_model(model.template)),
         PTDF_matrix = get_PTDF_matrix(get_network_model(model.template)),
+        MODF_matrix = get_MODF_matrix(get_network_model(model.template)),
         reduce_radial_branches = get_reduce_radial_branches(
             get_network_model(model.template),
         ),

@@ -30,7 +30,7 @@ const DISABLED_TEST_FILES = [  # Can generate with ls -1 test | grep "test_.*.jl
 # "test_model_decision.jl",
 # "test_model_emulation.jl",
 # "test_network_constructors.jl",
-# "test_network_constructors_with_dlr.jl",
+# "test_network_constructors_with_branch_rating_time_series.jl",
 # "test_power_flow_in_the_loop.jl",
 # "test_print.jl",
 # "test_problem_template.jl",
@@ -57,7 +57,7 @@ LOG_LEVELS = Dict(
 function get_logging_level(env_name::String, default)
     level = get(ENV, env_name, default)
     log_level = get(LOG_LEVELS, level, nothing)
-    if log_level === nothing
+    if isnothing(log_level)
         error("Invalid log level $level: Supported levels: $(values(LOG_LEVELS))")
     end
 
@@ -111,7 +111,7 @@ end
 
 function run_tests()
     logging_config_filename = get(ENV, "SIIP_LOGGING_CONFIG", nothing)
-    if logging_config_filename !== nothing
+    if !isnothing(logging_config_filename)
         config = IS.LoggingConfiguration(logging_config_filename)
     else
         config = IS.LoggingConfiguration(;

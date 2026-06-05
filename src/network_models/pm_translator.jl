@@ -21,6 +21,7 @@ function get_branch_to_pm(
     branch::PSY.PhaseShiftingTransformer,
     ::Type{PhaseAngleControl},
     ::Type{<:PM.AbstractDCPModel},
+    ::DeviceModel,
 )
     # we allocate the transformer shunt values to primary side only
     yt = PSY.get_primary_shunt(branch)
@@ -53,6 +54,7 @@ function get_branch_to_pm(
     branch::PSY.PhaseShiftingTransformer,
     ::Type{D},
     ::Type{<:PM.AbstractPowerModel},
+    ::DeviceModel,
 ) where {D <: AbstractBranchFormulation}
     # we allocate the transformer shunt values to primary side only
     yt = PSY.get_primary_shunt(branch)
@@ -85,6 +87,7 @@ function get_branch_to_pm(
     branch::PSY.PhaseShiftingTransformer,
     ::Type{StaticBranchUnbounded},
     ::Type{<:PM.AbstractPowerModel},
+    ::DeviceModel,
 )
     # we allocate the transformer shunt values to primary side only
     yt = PSY.get_primary_shunt(branch)
@@ -114,6 +117,7 @@ function get_branch_to_pm(
     branch::PSY.Transformer2W,
     ::Type{<:AbstractBranchFormulation},
     ::Type{<:PM.AbstractPowerModel},
+    ::DeviceModel,
 )
     # we allocate the transformer shunt values to primary side only
     yt = PSY.get_primary_shunt(branch)
@@ -146,6 +150,7 @@ function get_branch_to_pm(
     branch::PSY.Transformer2W,
     ::Type{StaticBranchUnbounded},
     ::Type{<:PM.AbstractPowerModel},
+    ::DeviceModel,
 )
     # we allocate the transformer shunt values to primary side only
     yt = PSY.get_primary_shunt(branch)
@@ -175,6 +180,7 @@ function get_branch_to_pm(
     branch::PSY.TapTransformer,
     ::Type{<:AbstractBranchFormulation},
     ::Type{<:PM.AbstractPowerModel},
+    ::DeviceModel,
 )
     # we allocate the transformer shunt values to primary side only
     yt = PSY.get_primary_shunt(branch)
@@ -207,6 +213,7 @@ function get_branch_to_pm(
     branch::PSY.TapTransformer,
     ::Type{StaticBranchUnbounded},
     ::Type{<:PM.AbstractPowerModel},
+    ::DeviceModel,
 )
     # we allocate the transformer shunt values to primary side only
     yt = PSY.get_primary_shunt(branch)
@@ -236,6 +243,7 @@ function get_branch_to_pm(
     branch::PSY.ACTransmission,
     ::Type{<:AbstractBranchFormulation},
     ::Type{<:PM.AbstractPowerModel},
+    ::DeviceModel,
 )
     PM_branch = Dict{String, Any}(
         "br_r" => PSY.get_r(branch),
@@ -266,6 +274,7 @@ function get_branch_to_pm(
     branch::PSY.ACTransmission,
     ::Type{StaticBranchUnbounded},
     ::Type{<:PM.AbstractPowerModel},
+    ::DeviceModel,
 )
     PM_branch = Dict{String, Any}(
         "br_r" => PSY.get_r(branch),
@@ -293,6 +302,7 @@ function get_branch_to_pm(
     branch::PNM.ThreeWindingTransformerWinding{PSY.Transformer3W},
     ::Type{StaticBranchUnbounded},
     ::Type{<:PM.AbstractPowerModel},
+    ::DeviceModel,
 )
     arc_tuple
     PM_branch = Dict{String, Any}(
@@ -321,6 +331,7 @@ function get_branch_to_pm(
     branch::PNM.ThreeWindingTransformerWinding{PSY.Transformer3W},
     ::Type{<:AbstractBranchFormulation},
     ::Type{<:PM.AbstractPowerModel},
+    ::DeviceModel,
 )
     PM_branch = Dict{String, Any}(
         "br_r" => PNM.get_equivalent_r(branch),
@@ -351,6 +362,7 @@ function get_branch_to_pm(
     branch::PNM.ThreeWindingTransformerWinding{PSY.PhaseShiftingTransformer3W},
     ::Type{<:AbstractBranchFormulation},
     ::Type{<:PM.AbstractPowerModel},
+    ::DeviceModel,
 )
     PM_branch = Dict{String, Any}(
         "br_r" => PNM.get_equivalent_r(branch),
@@ -381,6 +393,7 @@ function get_branch_to_pm(
     branch::PNM.ThreeWindingTransformerWinding{PSY.PhaseShiftingTransformer3W},
     ::Type{StaticBranchUnbounded},
     ::Type{<:PM.AbstractPowerModel},
+    ::DeviceModel,
 )
     PM_branch = Dict{String, Any}(
         "br_r" => PNM.get_equivalent_r(branch),
@@ -405,17 +418,19 @@ end
 function get_branch_to_pm(
     ix::Int,
     arc_tuple::Tuple{Int, Int},
-    double_circuit::PNM.BranchesParallel,
+    double_circuit::PNM.AbstractBranchesParallel,
     T::Type{<:AbstractBranchFormulation},
     U::Type{<:PM.AbstractPowerModel},
+    device_model::DeviceModel,
 )
     equivalent_branch = PNM.get_equivalent_physical_branch_parameters(double_circuit)
+    rating = _get_parallel_branch_max_rating(device_model, double_circuit)
     PM_branch = Dict{String, Any}(
         "br_r" => PNM.get_equivalent_r(equivalent_branch),
         "shift" => 0.0,
-        "rate_a" => PNM.get_equivalent_rating(double_circuit),
-        "rate_b" => PNM.get_equivalent_rating(double_circuit),
-        "rate_c" => PNM.get_equivalent_rating(double_circuit),
+        "rate_a" => rating,
+        "rate_b" => rating,
+        "rate_c" => rating,
         "br_x" => PNM.get_equivalent_x(equivalent_branch),
         "g_to" => 0.0,
         "g_fr" => 0.0,
@@ -437,20 +452,22 @@ end
 function get_branch_to_pm(
     ix::Int,
     arc_tuple::Tuple{Int, Int},
-    double_circuit::PNM.BranchesParallel,
+    double_circuit::PNM.AbstractBranchesParallel,
     T::Type{StaticBranchUnbounded},
     U::Type{<:PM.AbstractPowerModel},
+    device_model::DeviceModel,
 )
     equivalent_branch = PNM.get_equivalent_physical_branch_parameters(double_circuit)
+    rating = _get_parallel_branch_max_rating(device_model, double_circuit)
     PM_branch = Dict{String, Any}(
         "br_r" => PNM.get_equivalent_r(equivalent_branch),
         "shift" => 0.0,
         "br_x" => PNM.get_equivalent_x(equivalent_branch),
         "g_to" => 0.0,
         "g_fr" => 0.0,
-        "rate_a" => PNM.get_equivalent_rating(double_circuit),
-        "rate_b" => PNM.get_equivalent_rating(double_circuit),
-        "rate_c" => PNM.get_equivalent_rating(double_circuit),
+        "rate_a" => rating,
+        "rate_b" => rating,
+        "rate_c" => rating,
         "b_fr" => PNM.get_equivalent_b_from(equivalent_branch),
         "f_bus" => arc_tuple[1],
         "br_status" => Float64(PNM.get_equivalent_available(double_circuit)),
@@ -472,6 +489,7 @@ function get_branch_to_pm(
     series_chain::PNM.BranchesSeries,
     T::Type{<:AbstractBranchFormulation},
     U::Type{<:PM.AbstractPowerModel},
+    ::DeviceModel,
 )
     equivalent_branch = PNM.get_equivalent_physical_branch_parameters(series_chain)
     PM_branch = Dict{String, Any}(
@@ -500,6 +518,7 @@ function get_branch_to_pm(
     series_chain::PNM.BranchesSeries,
     T::Type{StaticBranchUnbounded},
     U::Type{<:PM.AbstractPowerModel},
+    ::DeviceModel,
 )
     equivalent_branch = PNM.get_equivalent_physical_branch_parameters(series_chain)
     PM_branch = Dict{String, Any}(
@@ -527,6 +546,7 @@ function get_branch_to_pm(
     branch::PSY.TwoTerminalGenericHVDCLine,
     ::Type{HVDCTwoTerminalDispatch},
     ::Type{<:PM.AbstractPowerModel},
+    ::DeviceModel,
 )
     check_hvdc_line_limits_unidirectional(branch)
     PM_branch = Dict{String, Any}(
@@ -566,6 +586,7 @@ function get_branch_to_pm(
     branch::PSY.TwoTerminalGenericHVDCLine,
     ::Type{<:AbstractTwoTerminalDCLineFormulation},
     ::Type{<:PM.AbstractPowerModel},
+    ::DeviceModel,
 )
     PM_branch = Dict{String, Any}(
         "loss1" => PSY.get_proportional_term(PSY.get_loss(branch)),
@@ -604,6 +625,7 @@ function get_branch_to_pm(
     branch::PSY.TwoTerminalGenericHVDCLine,
     ::Type{HVDCTwoTerminalDispatch},
     ::Type{<:PM.AbstractDCPModel},
+    ::DeviceModel,
 )
     PM_branch = Dict{String, Any}(
         "loss1" => PSY.get_proportional_term(PSY.get_loss(branch)),
@@ -642,6 +664,7 @@ function get_branch_to_pm(
     branch::PSY.TwoTerminalLCCLine,
     ::Type{HVDCTwoTerminalLCC},
     ::Type{<:PM.AbstractPowerModel},
+    ::DeviceModel,
 )
     return Dict{String, Any}()
 end
@@ -677,6 +700,7 @@ function get_branches_to_pm(
                 reduction_entry,
                 get_formulation(device_model),
                 S,
+                device_model,
             )
             if PM_branches["$(ix)"]["br_status"] == true
                 f = PM_branches["$(ix)"]["f_bus"]
@@ -710,8 +734,13 @@ function get_branches_to_pm(
         start_idx += length(PM_branches)
         for (i, branch) in enumerate(get_available_components(device_model, sys))
             ix = i + start_idx
-            PM_branches["$(ix)"] =
-                get_branch_to_pm(ix, branch, get_formulation(device_model), S)
+            PM_branches["$(ix)"] = get_branch_to_pm(
+                ix,
+                branch,
+                get_formulation(device_model),
+                S,
+                device_model,
+            )
             if PM_branches["$(ix)"]["br_status"] == true
                 f = PM_branches["$(ix)"]["f_bus"]
                 t = PM_branches["$(ix)"]["t_bus"]

@@ -27,8 +27,8 @@ get_parameter_multiplier(::UpperBoundValueParameter, ::PSY.ACTransmission, ::Abs
 
 get_variable_multiplier(::PhaseShifterAngle, d::PSY.PhaseShiftingTransformer, ::PhaseAngleControl) = 1.0/PSY.get_x(d)
 
-get_multiplier_value(::AbstractDynamicBranchRatingTimeSeriesParameter, d::PSY.ACTransmission, ::StaticBranch) = PSY.get_rating(d)
-get_multiplier_value(::AbstractDynamicBranchRatingTimeSeriesParameter, d::PNM.BranchesParallel, ::StaticBranch) = PNM.get_equivalent_rating(d)
+get_multiplier_value(::AbstractBranchRatingTimeSeriesParameter, d::PSY.ACTransmission, ::StaticBranch) = PSY.get_rating(d)
+get_multiplier_value(::AbstractBranchRatingTimeSeriesParameter, d::PSY.ACTransmission, ::AbstractSecurityConstrainedStaticBranch) = PSY.get_rating(d)
 
 
 get_initial_conditions_device_model(::OperationModel, ::DeviceModel{T, U}) where {T <: PSY.ACTransmission, U <: AbstractBranchFormulation} = DeviceModel(T, U)
@@ -53,101 +53,132 @@ function get_default_time_series_names(
     ::Type{U},
     ::Type{V},
 ) where {U <: PSY.ACTransmission, V <: AbstractBranchFormulation}
-    return Dict{Type{<:TimeSeriesParameter}, String}(
-        DynamicBranchRatingTimeSeriesParameter => "dynamic_line_ratings",
-    )
+    return Dict{Type{<:TimeSeriesParameter}, String}()
 end
+
+"""
+DeviceModel attribute key selecting which `PowerNetworkMatrices` function aggregates
+the individual circuit ratings of a `PNM.BranchesParallel` into a single maximum flow
+limit. Valid values: `"single_element_contingency"` (default; N-1, post-trip surviving
+capacity), `"sum_of_max"` (plain Σ Sᵢ), `"impedance_averaged"` (susceptance-weighted
+average). `PNM.MixedBranchesParallel` groups always use `sum_of_max`.
+"""
+const PARALLEL_BRANCH_MAX_RATING_KEY = "parallel_branch_max_rating_method"
 
 function get_default_attributes(
     ::Type{U},
     ::Type{V},
 ) where {U <: PSY.ACTransmission, V <: AbstractBranchFormulation}
-    return Dict{String, Any}()
+    return Dict{String, Any}(PARALLEL_BRANCH_MAX_RATING_KEY => "single_element_contingency")
+end
+
+function get_default_attributes(
+    ::Type{U},
+    ::Type{V},
+) where {U <: PSY.ACTransmission, V <: AbstractSecurityConstrainedStaticBranch}
+    return Dict{String, Any}(
+        PARALLEL_BRANCH_MAX_RATING_KEY => "single_element_contingency",
+        "include_planned_outages" => false,
+    )
+end
+
+# Resolve the per-DeviceModel attribute to one of the explicit PNM rating functions.
+# `MixedBranchesParallel` ignores the attribute and always uses the plain sum, since
+# the constituent branches may carry different DeviceModel preferences and there is
+# no defensible way to pick one.
+function _get_parallel_branch_max_rating(model::DeviceModel, bp::PNM.BranchesParallel)
+    name = get_attribute(model, PARALLEL_BRANCH_MAX_RATING_KEY)
+    name == "single_element_contingency" &&
+        return PNM.get_single_element_contingency_rating(bp)
+    name == "sum_of_max" && return PNM.get_sum_of_max_rating(bp)
+    name == "impedance_averaged" && return PNM.get_impedance_averaged_rating(bp)
+    error(
+        "Unknown $PARALLEL_BRANCH_MAX_RATING_KEY value: $(repr(name)). " *
+        "Valid: \"single_element_contingency\", \"sum_of_max\", \"impedance_averaged\".",
+    )
+end
+
+function _get_parallel_branch_max_rating(::DeviceModel, mbp::PNM.MixedBranchesParallel)
+    return PNM.get_sum_of_max_rating(mbp)
+end
+
+# Parameter multiplier at build (`add_parameters.jl`). Non-branch-rating params
+# use `get_multiplier_value`; branch-rating series use the same type-aware
+# aggregation as the static `branch_rating` path. The parallel arms are the
+# exception: a series on one member can't be split across the group. See the
+# "Branch Rating Limits" explanation page.
+_resolve_branch_multiplier(p, d, f, ::DeviceModel) = get_multiplier_value(p, d, f)
+
+function _resolve_branch_multiplier(
+    ::BranchRatingTimeSeriesParameter,
+    d::PNM.AbstractBranchesParallel,
+    ::Union{StaticBranch, AbstractSecurityConstrainedStaticBranch},
+    ::DeviceModel,
+)
+    @warn "Parallel reduction $(PNM.get_name(d)) has a member with a branch rating \
+           time series; using sum_of_max as the multiplier, regardless of the \
+           `parallel_branch_max_rating_method` attribute."
+    return PNM.get_sum_of_max_rating(d)
+end
+
+function _resolve_branch_multiplier(
+    ::PostContingencyBranchRatingTimeSeriesParameter,
+    d::PNM.AbstractBranchesParallel,
+    ::Union{StaticBranch, AbstractSecurityConstrainedStaticBranch},
+    ::DeviceModel,
+)
+    @warn "Parallel reduction $(PNM.get_name(d)) has a member with a \
+           post-contingency branch rating time series; using the summed emergency \
+           rating as the multiplier, regardless of the \
+           `parallel_branch_max_rating_method` attribute."
+    return PNM.get_equivalent_emergency_rating(d)
+end
+
+# Non-parallel entries: same aggregation as the static `branch_rating` path.
+# Every PNM reduction wrapper is `<: PSY.ACTransmission`; the parallel methods
+# above are more specific (`<: AbstractBranchesParallel`), so they win for groups.
+function _resolve_branch_multiplier(
+    ::BranchRatingTimeSeriesParameter,
+    entry::PSY.ACTransmission,
+    ::Union{StaticBranch, AbstractSecurityConstrainedStaticBranch},
+    ::DeviceModel,
+)
+    return PNM.get_equivalent_rating(entry)
+end
+
+function _resolve_branch_multiplier(
+    ::PostContingencyBranchRatingTimeSeriesParameter,
+    entry::PSY.ACTransmission,
+    ::Union{StaticBranch, AbstractSecurityConstrainedStaticBranch},
+    ::DeviceModel,
+)
+    return PNM.get_equivalent_emergency_rating(entry)
 end
 #################################### Flow Variable Bounds ##################################################
 
-function add_variables!(
-    container::OptimizationContainer,
-    ::Type{T},
-    network_model::NetworkModel{<:AbstractPTDFModel},
-    devices::IS.FlattenIteratorWrapper{U},
-    formulation::AbstractBranchFormulation,
-) where {
-    T <: AbstractACActivePowerFlow,
-    U <: PSY.ACTransmission}
-    time_steps = get_time_steps(container)
-    net_reduction_data = network_model.network_reduction
-    branch_names = get_branch_argument_variable_axis(net_reduction_data, devices)
-    reduced_branch_tracker = get_reduced_branch_tracker(network_model)
-    all_branch_maps_by_type = PNM.get_all_branch_maps_by_type(net_reduction_data)
-
-    variable_container = add_variable_container!(
-        container,
-        T(),
-        U,
-        branch_names,
-        time_steps,
-    )
-
-    for (name, (arc, reduction)) in PNM.get_name_to_arc_map(net_reduction_data, U)
-        # TODO: entry is not type stable here, it can return any type ACTransmission.
-        # It might have performance implications. Possibly separate this into other functions
-        reduction_entry = all_branch_maps_by_type[reduction][U][arc]
-        has_entry, tracker_container = search_for_reduced_branch_argument!(
-            reduced_branch_tracker,
-            arc,
-            T,
-        )
-        if has_entry
-            @assert !isempty(tracker_container) name arc reduction
-        end
-        ub = get_variable_upper_bound(T(), reduction_entry, formulation)
-        lb = get_variable_lower_bound(T(), reduction_entry, formulation)
-        for t in time_steps
-            if !has_entry
-                tracker_container[t] = JuMP.@variable(
-                    get_jump_model(container),
-                    base_name = "$(T)_$(U)_$(reduction)_{$(name), $(t)}",
-                )
-                ub !== nothing && JuMP.set_upper_bound(tracker_container[t], ub)
-                lb !== nothing && JuMP.set_lower_bound(tracker_container[t], lb)
-            end
-            variable_container[name, t] = tracker_container[t]
-        end
-    end
-    return
-end
-
+# `AbstractPTDFModel <: PM.AbstractPowerModel`, so this single method also
+# covers the PTDF network models; the PTDF `StaticBranchUnbounded` no-op
+# override below is more specific on the formulation argument and still wins.
 function add_variables!(
     container::OptimizationContainer,
     ::Type{T},
     network_model::NetworkModel{<:PM.AbstractPowerModel},
     devices::IS.FlattenIteratorWrapper{U},
     formulation::AbstractBranchFormulation,
-) where {
-    T <: AbstractACActivePowerFlow,
-    U <: PSY.ACTransmission}
+) where {T <: AbstractACActivePowerFlow, U <: PSY.ACTransmission}
     net_reduction_data = network_model.network_reduction
     time_steps = get_time_steps(container)
     branch_names = get_branch_argument_variable_axis(net_reduction_data, devices)
     reduced_branch_tracker = get_reduced_branch_tracker(network_model)
     all_branch_maps_by_type = PNM.get_all_branch_maps_by_type(net_reduction_data)
 
-    variable_container = add_variable_container!(
-        container,
-        T(),
-        U,
-        branch_names,
-        time_steps,
-    )
+    variable_container =
+        add_variable_container!(container, T(), U, branch_names, time_steps)
 
     for (name, (arc, reduction)) in PNM.get_name_to_arc_map(net_reduction_data, U)
         reduction_entry = all_branch_maps_by_type[reduction][U][arc]
-        has_entry, tracker_container = search_for_reduced_branch_argument!(
-            reduced_branch_tracker,
-            arc,
-            T,
-        )
+        has_entry, tracker_container =
+            search_for_reduced_branch_argument!(reduced_branch_tracker, arc, T)
         if has_entry
             @assert !isempty(tracker_container) name arc reduction
         end
@@ -159,8 +190,8 @@ function add_variables!(
                     get_jump_model(container),
                     base_name = "$(T)_$(U)_$(reduction)_{$(name), $(t)}",
                 )
-                ub !== nothing && JuMP.set_upper_bound(tracker_container[t], ub)
-                lb !== nothing && JuMP.set_lower_bound(tracker_container[t], lb)
+                !isnothing(ub) && JuMP.set_upper_bound(tracker_container[t], ub)
+                !isnothing(lb) && JuMP.set_lower_bound(tracker_container[t], lb)
             end
             variable_container[name, t] = tracker_container[t]
         end
@@ -174,9 +205,7 @@ function add_variables!(
     network_model::NetworkModel{<:AbstractPTDFModel},
     devices::IS.FlattenIteratorWrapper{U},
     formulation::StaticBranchUnbounded,
-) where {
-    T <: AbstractACActivePowerFlow,
-    U <: PSY.ACTransmission}
+) where {T <: AbstractACActivePowerFlow, U <: PSY.ACTransmission}
     @debug "PTDF Branch Flows with StaticBranchUnbounded do not require flow variables $T. Flow values are given by PTDFBranchFlow expression."
     return
 end
@@ -217,7 +246,7 @@ end
 
 function branch_rate_bounds!(
     container::OptimizationContainer,
-    ::DeviceModel{B, T},
+    device_model::DeviceModel{B, T},
     network_model::NetworkModel{<:PM.AbstractPowerModel},
 ) where {B <: PSY.ACTransmission, T <: AbstractBranchFormulation}
     time_steps = get_time_steps(container)
@@ -229,7 +258,7 @@ function branch_rate_bounds!(
             # It might have performance implications. Possibly separate this into other functions
             reduction_entry = all_branch_maps_by_type[reduction][B][arc]
             # Use the same limit values as FlowRateConstraint for consistency.
-            limits = get_min_max_limits(reduction_entry, FlowRateConstraint, T)
+            limits = min_max_flow_limits(reduction_entry, device_model)
             for t in time_steps
                 @assert limits.min <= limits.max "Infeasible rate limits for branch $(name)"
                 JuMP.set_upper_bound(var[name, t], limits.max)
@@ -267,98 +296,46 @@ end
 
 ################################## Rate Limits constraint_infos ############################
 
-function get_rating(double_circuit::PNM.BranchesParallel)
-    return sum([PSY.get_rating(circuit) for circuit in double_circuit])
+"""
+Scalar branch rating for a reduction entry — the single source of truth for
+branch flow ratings. Parallel groups use the `PARALLEL_BRANCH_MAX_RATING_KEY`
+attribute; every other entry uses `PNM.get_equivalent_rating`. Extend that (not
+this) for new types. See the "Branch Rating Limits" explanation page.
+"""
+function branch_rating(double_circuit::PNM.AbstractBranchesParallel, model::DeviceModel)
+    return _get_parallel_branch_max_rating(model, double_circuit)
 end
-function get_rating(series_chain::PNM.BranchesSeries)
-    return minimum([get_rating(segment) for segment in series_chain])
-end
-function get_rating(device::T) where {T <: PSY.ACTransmission}
-    return PSY.get_rating(device)
-end
-function get_rating(
-    device::PNM.ThreeWindingTransformerWinding{T},
-) where {T <: PSY.ThreeWindingTransformer}
-    return PNM.get_equivalent_rating(device)
+
+function branch_rating(entry, ::DeviceModel)
+    return PNM.get_equivalent_rating(entry)
 end
 
 """
-Min and max limits for Abstract Branch Formulation
+Symmetric `(min, max)` flow limits from [`branch_rating`](@ref). Prefer this
+over the formulation-only `get_min_max_limits` when the `DeviceModel` is in
+scope.
 """
-function get_min_max_limits(
-    double_circuit::PNM.BranchesParallel{<:PSY.ACTransmission},
-    constraint_type::Type{<:ConstraintType},
-    branch_formulation::Type{<:AbstractBranchFormulation},
-) #  -> Union{Nothing, NamedTuple{(:min, :max), Tuple{Float64, Float64}}}
-    min_max_by_circuit = [
-        get_min_max_limits(device, constraint_type, branch_formulation) for
-        device in double_circuit
-    ]
-    min_by_circuit = [x.min for x in min_max_by_circuit]
-    max_by_circuit = [x.max for x in min_max_by_circuit]
-    # Limit by most restictive circuit:
-    return (min = maximum(min_by_circuit), max = minimum(max_by_circuit))
+function min_max_flow_limits(entry, model::DeviceModel)
+    rating = branch_rating(entry, model)
+    return (min = -rating, max = rating)
 end
 
-"""
-Min and max limits for Abstract Branch Formulation
-"""
-function get_min_max_limits(
-    transformer_entry::PNM.ThreeWindingTransformerWinding,
-    constraint_type::Type{<:ConstraintType},
-    branch_formulation::Type{<:AbstractBranchFormulation},
-) #  -> Union{Nothing, NamedTuple{(:min, :max), Tuple{Float64, Float64}}}
-    transformer = PNM.get_transformer(transformer_entry)
-    winding_number = PNM.get_winding_number(transformer_entry)
-    if winding_number == 1
-        limits = (
-            min = -1 * PSY.get_rating_primary(transformer),
-            max = PSY.get_rating_primary(transformer),
-        )
-    elseif winding_number == 2
-        limits = (
-            min = -1 * PSY.get_rating_secondary(transformer),
-            max = PSY.get_rating_secondary(transformer),
-        )
-    elseif winding_number == 3
-        limits = (
-            min = -1 * PSY.get_rating_tertiary(transformer),
-            max = PSY.get_rating_tertiary(transformer),
-        )
-    end
-    return limits
+# `MonitoredLine` has explicit, possibly asymmetric `flow_limits`; defer to its
+# own `get_min_max_limits` instead of the symmetric `branch_rating` path.
+function min_max_flow_limits(device::PSY.MonitoredLine, ::DeviceModel)
+    return get_min_max_limits(device, FlowRateConstraint, AbstractBranchFormulation)
 end
 
-"""
-Min and max limits for Abstract Branch Formulation
-"""
-function get_min_max_limits(
-    series_chain::PNM.BranchesSeries,
-    constraint_type::Type{<:ConstraintType},
-    branch_formulation::Type{<:AbstractBranchFormulation},
-) #  -> Union{Nothing, NamedTuple{(:min, :max), Tuple{Float64, Float64}}}
-    min_max_by_segment = [
-        get_min_max_limits(segment, constraint_type, branch_formulation) for
-        segment in series_chain
-    ]
-    min_by_segment = [x.min for x in min_max_by_segment]
-    max_by_segment = [x.max for x in min_max_by_segment]
-    # Limit by most restictive segment:
-    return (min = maximum(min_by_segment), max = minimum(max_by_segment))
-end
-
-"""
-Min and max limits for Abstract Branch Formulation
-"""
+# Formulation-typed adapter used by the range-constraint framework (e.g.
+# `PhaseShiftingTransformer` under `FlowLimitConstraint`). `MonitoredLine`
+# overrides this below.
 function get_min_max_limits(
     device::PSY.ACTransmission,
     ::Type{<:ConstraintType},
     ::Type{<:AbstractBranchFormulation},
-) #  -> Union{Nothing, NamedTuple{(:min, :max), Tuple{Float64, Float64}}}
-    return (
-        min = -1 * PNM.get_equivalent_rating(device),
-        max = PNM.get_equivalent_rating(device),
-    )
+)
+    rating = PNM.get_equivalent_rating(device)
+    return (min = -rating, max = rating)
 end
 
 """
@@ -374,7 +351,6 @@ end
 
 function _add_flow_rate_constraint!(
     container::OptimizationContainer,
-    ::Type{T},
     arc::Tuple{Int, Int},
     use_slacks::Bool,
     con_lb::DenseAxisArray,
@@ -382,6 +358,7 @@ function _add_flow_rate_constraint!(
     var::DenseAxisArray,
     branch_maps_by_type::Dict,
     name::String,
+    device_model::DeviceModel{T},
 ) where {T <: PSY.ACTransmission}
     reduction_entry = branch_maps_by_type[arc]
     time_steps = get_time_steps(container)
@@ -389,18 +366,16 @@ function _add_flow_rate_constraint!(
         slack_ub = get_variable(container, FlowActivePowerSlackUpperBound(), T)[name, :]
         slack_lb = get_variable(container, FlowActivePowerSlackLowerBound(), T)[name, :]
     end
-    limits = get_min_max_limits(reduction_entry, FlowRateConstraint, StaticBranch)
+    limits = min_max_flow_limits(reduction_entry, device_model)
     for t in time_steps
-        con_ub[name, t] =
-            JuMP.@constraint(
-                get_jump_model(container),
-                var[name, t] - (use_slacks ? slack_ub[t] : 0.0) <= limits.max
-            )
-        con_lb[name, t] =
-            JuMP.@constraint(
-                get_jump_model(container),
-                var[name, t] + (use_slacks ? slack_lb[t] : 0.0) >= limits.min
-            )
+        con_ub[name, t] = JuMP.@constraint(
+            get_jump_model(container),
+            var[name, t] - (use_slacks ? slack_ub[t] : 0.0) <= limits.max
+        )
+        con_lb[name, t] = JuMP.@constraint(
+            get_jump_model(container),
+            var[name, t] + (use_slacks ? slack_lb[t] : 0.0) >= limits.min
+        )
     end
     return
 end
@@ -430,45 +405,68 @@ function add_constraints!(
     )
     all_branch_maps_by_type = PNM.get_all_branch_maps_by_type(net_reduction_data)
 
-    con_lb =
-        add_constraints_container!(
-            container,
-            cons_type(),
-            T,
-            branch_names,
-            time_steps;
-            meta = "lb",
-        )
-    con_ub =
-        add_constraints_container!(
-            container,
-            cons_type(),
-            T,
-            branch_names,
-            time_steps;
-            meta = "ub",
-        )
+    con_lb = add_constraints_container!(
+        container,
+        cons_type(),
+        T,
+        branch_names,
+        time_steps;
+        meta = "lb",
+    )
+    con_ub = add_constraints_container!(
+        container,
+        cons_type(),
+        T,
+        branch_names,
+        time_steps;
+        meta = "ub",
+    )
 
     array = get_variable(container, FlowActivePowerVariable(), T)
 
     use_slacks = get_use_slacks(device_model)
-    if use_slacks
-        slack_ub = get_variable(container, FlowActivePowerSlackUpperBound(), T)
-        slack_lb = get_variable(container, FlowActivePowerSlackLowerBound(), T)
+    # Gate on the parameter container actually existing, not merely on the
+    # time-series name being configured: when the name is set but no branch of
+    # this type carries the series, `add_parameters!` skips creating the
+    # container and `get_parameter_array` would throw. An empty
+    # `ts_branch_names` then routes every arc through the static-rating path,
+    # which is the intended fallback. `name in ts_branch_names` is
+    # self-sufficient at the call site.
+    ts_branch_names = String[]
+    if has_container_key(container, BranchRatingTimeSeriesParameter, T)
+        ts_name = get_time_series_names(device_model)[BranchRatingTimeSeriesParameter]
+        param = get_parameter_array(container, BranchRatingTimeSeriesParameter(), T)
+        ts_branch_names = axes(param, 1)
     end
+
     for (name, (arc, reduction)) in
         get_constraint_map_by_type(reduced_branch_tracker)[FlowRateConstraint][T]
-        _add_flow_rate_constraint!(
-            container,
-            T,
-            arc,
-            use_slacks,
-            con_lb,
-            con_ub,
-            array,
-            all_branch_maps_by_type[reduction][T],
-            name,
-        )
+        if name in ts_branch_names
+            _add_flow_rate_constraint_with_parameters!(
+                container,
+                T,
+                arc,
+                use_slacks,
+                con_lb,
+                con_ub,
+                array,
+                all_branch_maps_by_type[reduction][T],
+                name,
+                ts_name,
+            )
+        else
+            _add_flow_rate_constraint!(
+                container,
+                arc,
+                use_slacks,
+                con_lb,
+                con_ub,
+                array,
+                all_branch_maps_by_type[reduction][T],
+                name,
+                device_model,
+            )
+        end
     end
     return
 end
@@ -490,24 +488,20 @@ function _add_flow_rate_constraint_with_parameters!(
         slack_ub = get_variable(container, FlowActivePowerSlackUpperBound(), T)[name, :]
         slack_lb = get_variable(container, FlowActivePowerSlackLowerBound(), T)[name, :]
     end
-    param_container =
-        get_parameter(container, DynamicBranchRatingTimeSeriesParameter(), T)
+    param_container = get_parameter(container, BranchRatingTimeSeriesParameter(), T)
     param = get_parameter_column_refs(param_container, name)
     mult = get_multiplier_array(param_container)[name, :]
 
     for t in time_steps
-        @debug "Dynamic Branch Rating applied for branch $(name) at time step $(t)"
-        con_ub[name, t] =
-            JuMP.@constraint(
-                get_jump_model(container),
-                var[name, t] - (use_slacks ? slack_ub[t] : 0.0) <= param[t] * mult[t]
-            )
-        con_lb[name, t] =
-            JuMP.@constraint(
-                get_jump_model(container),
-                var[name, t] + (use_slacks ? slack_lb[t] : 0.0) >=
-                -1.0 * param[t] * mult[t]
-            )
+        @debug "Branch rating time series applied for branch $(name) at time step $(t)"
+        con_ub[name, t] = JuMP.@constraint(
+            get_jump_model(container),
+            var[name, t] - (use_slacks ? slack_ub[t] : 0.0) <= param[t] * mult[t]
+        )
+        con_lb[name, t] = JuMP.@constraint(
+            get_jump_model(container),
+            var[name, t] + (use_slacks ? slack_lb[t] : 0.0) >= -1.0 * param[t] * mult[t]
+        )
     end
     return
 end
@@ -518,11 +512,7 @@ function add_constraints!(
     devices::IS.FlattenIteratorWrapper{T},
     device_model::DeviceModel{T, U},
     network_model::NetworkModel{V},
-) where {
-    T <: PSY.ACTransmission,
-    U <: AbstractBranchFormulation,
-    V <: AbstractPTDFModel,
-}
+) where {T <: PSY.ACTransmission, U <: AbstractBranchFormulation, V <: AbstractPTDFModel}
     time_steps = get_time_steps(container)
     net_reduction_data = network_model.network_reduction
     reduced_branch_tracker = get_reduced_branch_tracker(network_model)
@@ -534,24 +524,22 @@ function add_constraints!(
     )
     all_branch_maps_by_type = PNM.get_all_branch_maps_by_type(net_reduction_data)
 
-    con_lb =
-        add_constraints_container!(
-            container,
-            cons_type(),
-            T,
-            branch_names,
-            time_steps;
-            meta = "lb",
-        )
-    con_ub =
-        add_constraints_container!(
-            container,
-            cons_type(),
-            T,
-            branch_names,
-            time_steps;
-            meta = "ub",
-        )
+    con_lb = add_constraints_container!(
+        container,
+        cons_type(),
+        T,
+        branch_names,
+        time_steps;
+        meta = "lb",
+    )
+    con_ub = add_constraints_container!(
+        container,
+        cons_type(),
+        T,
+        branch_names,
+        time_steps;
+        meta = "ub",
+    )
 
     array = get_expression(container, PTDFBranchFlow(), T)
 
@@ -565,18 +553,16 @@ function add_constraints!(
         # TODO: entry is not type stable here, it can return any type ACTransmission.
         # It might have performance implications. Possibly separate this into other functions
         reduction_entry = all_branch_maps_by_type[reduction][T][arc]
-        limits = get_min_max_limits(reduction_entry, FlowRateConstraint, U)
+        limits = min_max_flow_limits(reduction_entry, device_model)
         for t in time_steps
-            con_ub[name, t] =
-                JuMP.@constraint(get_jump_model(container),
-                    array[name, t] -
-                    (use_slacks ? slack_ub[name, t] : 0.0) <=
-                    limits.max)
-            con_lb[name, t] =
-                JuMP.@constraint(get_jump_model(container),
-                    array[name, t] +
-                    (use_slacks ? slack_lb[name, t] : 0.0) >=
-                    limits.min)
+            con_ub[name, t] = JuMP.@constraint(
+                get_jump_model(container),
+                array[name, t] - (use_slacks ? slack_ub[name, t] : 0.0) <= limits.max
+            )
+            con_lb[name, t] = JuMP.@constraint(
+                get_jump_model(container),
+                array[name, t] + (use_slacks ? slack_lb[name, t] : 0.0) >= limits.min
+            )
         end
     end
     return
@@ -588,55 +574,50 @@ function add_flow_rate_constraint_with_parameters!(
     devices::IS.FlattenIteratorWrapper{T},
     device_model::DeviceModel{T, U},
     network_model::NetworkModel{V},
-) where {
-    T <: PSY.ACTransmission,
-    U <: StaticBranch,
-    V <: AbstractPTDFModel,
-}
+) where {T <: PSY.ACTransmission, U <: StaticBranch, V <: AbstractPTDFModel}
     time_steps = get_time_steps(container)
     net_reduction_data = network_model.network_reduction
-    reduced_branch_tracker = get_reduced_branch_tracker(network_model)
-
-    branch_names = get_branch_argument_constraint_axis(
-        net_reduction_data,
-        reduced_branch_tracker,
-        devices,
-        cons_type,
-    )
-
     all_branch_maps_by_type = PNM.get_all_branch_maps_by_type(net_reduction_data)
 
-    con_lb =
-        add_constraints_container!(
-            container,
-            cons_type(),
-            T,
-            branch_names,
-            time_steps;
-            meta = "lb",
-        )
-    con_ub =
-        add_constraints_container!(
-            container,
-            cons_type(),
-            T,
-            branch_names,
-            time_steps;
-            meta = "ub",
-        )
+    # `get_constraint_map_by_type[FlowRateConstraint][T]` drops arcs already
+    # claimed by another branch type's static FlowRateConstraint pass, which
+    # would silently skip the TS bound on shared parallel arcs. Walk
+    # `name_to_arc_map[T]` directly, matching `_add_time_series_parameters!`.
+    name_to_arc_map = PNM.get_name_to_arc_map(net_reduction_data, T)
+    branch_names = collect(keys(name_to_arc_map))
+
+    con_lb = add_constraints_container!(
+        container,
+        cons_type(),
+        T,
+        branch_names,
+        time_steps;
+        meta = "lb",
+    )
+    con_ub = add_constraints_container!(
+        container,
+        cons_type(),
+        T,
+        branch_names,
+        time_steps;
+        meta = "ub",
+    )
 
     var_array = get_expression(container, PTDFBranchFlow(), T)
 
-    ts_name = get_time_series_names(device_model)[DynamicBranchRatingTimeSeriesParameter]
+    ts_name = get_time_series_names(device_model)[BranchRatingTimeSeriesParameter]
     ts_type = get_default_time_series_type(container)
     use_slacks = get_use_slacks(device_model)
-    for (name, (arc, reduction)) in
-        get_constraint_map_by_type(reduced_branch_tracker)[FlowRateConstraint][T]
-        if PNM.has_time_series(
-            all_branch_maps_by_type[reduction][T][arc],
-            ts_type,
-            ts_name,
-        )
+    # Mark each arc as claimed so a later static `add_constraints!(FlowRateConstraint, ...)`
+    # for a different branch type sharing the same reduced arc skips it. Without this,
+    # a duplicate static cap could be added on top of the time-varying limit and the
+    # static value would silently win whenever the TS multiplier exceeds it.
+    reduced_branch_tracker = get_reduced_branch_tracker(network_model)
+    arc_tuples_with_constraints =
+        get!(get_constraint_dict(reduced_branch_tracker), cons_type, Set{Tuple{Int, Int}}())
+    for (name, (arc, reduction)) in name_to_arc_map
+        branch_map_T = all_branch_maps_by_type[reduction][T]
+        if PNM.has_time_series(branch_map_T[arc], ts_type, ts_name)
             _add_flow_rate_constraint_with_parameters!(
                 container,
                 T,
@@ -645,29 +626,35 @@ function add_flow_rate_constraint_with_parameters!(
                 con_lb,
                 con_ub,
                 var_array,
-                all_branch_maps_by_type[reduction][T],
+                branch_map_T,
                 name,
                 ts_name,
             )
         else
             _add_flow_rate_constraint!(
                 container,
-                T,
                 arc,
                 use_slacks,
                 con_lb,
                 con_ub,
                 var_array,
-                all_branch_maps_by_type[reduction][T],
+                branch_map_T,
                 name,
+                device_model,
             )
         end
+        push!(arc_tuples_with_constraints, arc)
     end
     return
 end
 
 """
-Add rate limit from to constraints for ACBranch with AbstractPowerModel
+Add rate limit from to constraints for ACBranch with AbstractPowerModel.
+
+When `BranchRatingTimeSeriesParameter` is configured on the `device_model`,
+the per-timestep rate is `parameter_value * multiplier` (where the multiplier
+is the static rating); otherwise the static rating from the reduction entry
+is used.
 """
 function add_constraints!(
     container::OptimizationContainer,
@@ -688,38 +675,67 @@ function add_constraints!(
     time_steps = get_time_steps(container)
     var1 = get_variable(container, FlowActivePowerFromToVariable(), B)
     var2 = get_variable(container, FlowReactivePowerFromToVariable(), B)
-    add_constraints_container!(
-        container,
-        cons_type(),
-        B,
-        device_names,
-        time_steps,
-    )
+    add_constraints_container!(container, cons_type(), B, device_names, time_steps)
     constraint = get_constraint(container, cons_type(), B)
 
     use_slacks = get_use_slacks(device_model)
     if use_slacks
         slack_ub = get_variable(container, FlowActivePowerSlackUpperBound(), B)
     end
+
+    # Gate on the parameter container actually existing, not merely on the
+    # time-series name being configured: when the name is set but no branch of
+    # this type carries the series, `add_parameters!` skips creating the
+    # container and `get_parameter_array` would throw. An empty
+    # `ts_branch_names` then routes every arc through the static-rating path,
+    # which is the intended fallback. `name in ts_branch_names` is
+    # self-sufficient at the call site.
+    ts_branch_names = String[]
+    if has_container_key(container, BranchRatingTimeSeriesParameter, B)
+        param = get_parameter_array(container, BranchRatingTimeSeriesParameter(), B)
+        mult =
+            get_parameter_multiplier_array(container, BranchRatingTimeSeriesParameter(), B)
+        ts_branch_names = axes(param, 1)
+    end
+
     for (name, (arc, reduction)) in
         get_constraint_map_by_type(reduced_branch_tracker)[FlowRateConstraintFromTo][B]
         # TODO: entry is not type stable here, it can return any type ACTransmission.
         # It might have performance implications. Possibly separate this into other functions
         reduction_entry = all_branch_maps_by_type[reduction][B][arc]
-        branch_rate = get_rating(reduction_entry)
-        for t in time_steps
-            constraint[name, t] = JuMP.@constraint(
-                get_jump_model(container),
-                var1[name, t]^2 + var2[name, t]^2 -
-                (use_slacks ? slack_ub[name, t] : 0.0) <= branch_rate^2
-            )
+        # Per-name (not per-timestep): the TS membership does not depend on `t`.
+        # The time-series `param * mult` is built to equal `rating^2` directly, so
+        # it is NOT squared here; the static path squares the scalar rating.
+        if name in ts_branch_names
+            for t in time_steps
+                constraint[name, t] = JuMP.@constraint(
+                    get_jump_model(container),
+                    var1[name, t]^2 + var2[name, t]^2 -
+                    (use_slacks ? slack_ub[name, t] : 0.0) <=
+                    param[name, t] * mult[name, t]
+                )
+            end
+        else
+            branch_rate = branch_rating(reduction_entry, device_model)
+            for t in time_steps
+                constraint[name, t] = JuMP.@constraint(
+                    get_jump_model(container),
+                    var1[name, t]^2 + var2[name, t]^2 -
+                    (use_slacks ? slack_ub[name, t] : 0.0) <= branch_rate^2
+                )
+            end
         end
     end
     return
 end
 
 """
-Add rate limit to from constraints for ACBranch with AbstractPowerModel
+Add rate limit to from constraints for ACBranch with AbstractPowerModel.
+
+When `BranchRatingTimeSeriesParameter` is configured on the `device_model`,
+the per-timestep rate is `parameter_value * multiplier` (where the multiplier
+is the static rating); otherwise the static rating from the reduction entry
+is used.
 """
 function add_constraints!(
     container::OptimizationContainer,
@@ -740,31 +756,78 @@ function add_constraints!(
     )
     var1 = get_variable(container, FlowActivePowerToFromVariable(), B)
     var2 = get_variable(container, FlowReactivePowerToFromVariable(), B)
-    add_constraints_container!(
-        container,
-        cons_type(),
-        B,
-        device_names,
-        time_steps,
-    )
+    add_constraints_container!(container, cons_type(), B, device_names, time_steps)
     constraint = get_constraint(container, cons_type(), B)
     use_slacks = get_use_slacks(device_model)
     if use_slacks
         slack_ub = get_variable(container, FlowActivePowerSlackUpperBound(), B)
     end
+
+    # Gate on the parameter container actually existing, not merely on the
+    # time-series name being configured: when the name is set but no branch of
+    # this type carries the series, `add_parameters!` skips creating the
+    # container and `get_parameter_array` would throw. An empty
+    # `ts_branch_names` then routes every arc through the static-rating path,
+    # which is the intended fallback. `name in ts_branch_names` is
+    # self-sufficient at the call site.
+    ts_branch_names = String[]
+    if has_container_key(container, BranchRatingTimeSeriesParameter, B)
+        # In this case the value of the multiplier and the param need to equal to rating^2.
+        # The updating needs to happen in a clever way to avoid performance issues. The param and multiplier are
+        # stored separately to allow the time series to be updated without needing to rebuild the multiplier, which is more expensive to update since it requires updating all entries instead of just the ones in the time series.
+        param = get_parameter_array(container, BranchRatingTimeSeriesParameter(), B)
+        mult =
+            get_parameter_multiplier_array(container, BranchRatingTimeSeriesParameter(), B)
+        ts_branch_names = axes(param, 1)
+    end
+
     for (name, (arc, reduction)) in
         get_constraint_map_by_type(reduced_branch_tracker)[FlowRateConstraintToFrom][B]
         # TODO: entry is not type stable here, it can return any type ACTransmission.
         # It might have performance implications. Possibly separate this into other functions
         reduction_entry = all_branch_maps_by_type[reduction][B][arc]
-        branch_rate = get_rating(reduction_entry)
-        for t in time_steps
-            constraint[name, t] = JuMP.@constraint(
-                get_jump_model(container),
-                var1[name, t]^2 + var2[name, t]^2 -
-                (use_slacks ? slack_ub[name, t] : 0.0) <= branch_rate^2
-            )
+        # Per-name (not per-timestep): the TS membership does not depend on `t`.
+        if name in ts_branch_names
+            for t in time_steps
+                constraint[name, t] = JuMP.@constraint(
+                    get_jump_model(container),
+                    var1[name, t]^2 + var2[name, t]^2 -
+                    (use_slacks ? slack_ub[name, t] : 0.0) <=
+                    param[name, t] * mult[name, t]
+                )
+            end
+        else
+            branch_rate = branch_rating(reduction_entry, device_model)
+            for t in time_steps
+                constraint[name, t] = JuMP.@constraint(
+                    get_jump_model(container),
+                    var1[name, t]^2 + var2[name, t]^2 -
+                    (use_slacks ? slack_ub[name, t] : 0.0) <= branch_rate^2
+                )
+            end
         end
+    end
+    return
+end
+
+"""
+Error if a PTDF/MODF column length differs from the nodal-balance bus
+dimension. Prevents a downstream `@inbounds` out-of-bounds read; a mismatch
+means the matrix and container used different network reductions.
+"""
+function _assert_flow_expression_dimensions(
+    name::AbstractString,
+    n_col::Int,
+    nodal_balance_expressions::Matrix{JuMP.AffExpr},
+)
+    n_bus = size(nodal_balance_expressions, 1)
+    if n_col != n_bus
+        error(
+            "Flow-expression dimension mismatch for branch/arc '$name': " *
+            "PTDF/MODF column has $n_col entries but the nodal-balance " *
+            "expression has $n_bus buses. PTDF and MODF must be built with " *
+            "the same network reduction as the optimization container.",
+        )
     end
     return
 end
@@ -776,6 +839,7 @@ function _make_flow_expressions!(
     nodal_balance_expressions::Matrix{JuMP.AffExpr},
 )
     @debug "Making Flow Expression on thread $(Threads.threadid()) for branch $name"
+    _assert_flow_expression_dimensions(name, length(ptdf_col), nodal_balance_expressions)
     nz_idx = [i for i in eachindex(ptdf_col) if abs(ptdf_col[i]) > PTDF_ZERO_TOL]
     hint = length(nz_idx)
     expressions = Vector{JuMP.AffExpr}(undef, length(time_steps))
@@ -796,6 +860,7 @@ function _make_flow_expressions!(
     nodal_balance_expressions::Matrix{JuMP.AffExpr},
 )
     @debug "Making Flow Expression on thread $(Threads.threadid()) for branch $name"
+    _assert_flow_expression_dimensions(name, length(ptdf_col), nodal_balance_expressions)
     nz_idx = SparseArrays.nonzeroinds(ptdf_col)
     nz_val = SparseArrays.nonzeros(ptdf_col)
     hint = length(nz_idx)
@@ -803,11 +868,7 @@ function _make_flow_expressions!(
     for t in time_steps
         acc = get_hinted_aff_expr(hint)
         @inbounds for k in eachindex(nz_idx)
-            JuMP.add_to_expression!(
-                acc,
-                nz_val[k],
-                nodal_balance_expressions[nz_idx[k], t],
-            )
+            JuMP.add_to_expression!(acc, nz_val[k], nodal_balance_expressions[nz_idx[k], t])
         end
         expressions[t] = acc
     end
@@ -897,34 +958,41 @@ function add_expressions!(
     branch_names = get_branch_argument_variable_axis(net_reduction_data, devices)
     # Needs to be a vector to use multi-threading
     name_to_arc_map = collect(PNM.get_name_to_arc_map(net_reduction_data, B))
-    nodal_balance_expressions = get_expression(
-        container,
-        ActivePowerBalance(),
-        PSY.ACBus,
-    )
+    nodal_balance_expressions = get_expression(container, ActivePowerBalance(), PSY.ACBus)
 
-    branch_flow_expr = add_expression_container!(container,
-        PTDFBranchFlow(),
-        B,
-        branch_names,
-        time_steps,
-    )
+    branch_flow_expr =
+        add_expression_container!(container, PTDFBranchFlow(), B, branch_names, time_steps)
 
     jump_model = get_jump_model(container)
 
+    # `ptdf[arc, :]` is a KLU forward+backward solve. libklu cannot run safely
+    # under concurrent calls (even with distinct Numeric/Symbolic/Common per
+    # thread; see `_LIBKLU_LOCK` in PowerNetworkMatrices), so the solves run
+    # serially on the dispatcher and only the JuMP `AffExpr` build is
+    # parallelized via `Threads.@spawn`. The try/catch surfaces the inner
+    # exception — `build!`'s default error handler shows only the wrapping
+    # `TaskFailedException`, which makes spawn-task failures undebuggable.
     tasks = map(name_to_arc_map) do pair
         (name, (arc, _)) = pair
         ptdf_col = ptdf[arc, :]
-        Threads.@spawn _make_flow_expressions!(
-            name,
-            time_steps,
-            ptdf_col,
-            nodal_balance_expressions.data,
-        )
+        Threads.@spawn try
+            _make_flow_expressions!(name, time_steps, ptdf_col, nodal_balance_expressions.data)
+        catch e
+            @error "PTDF flow-expression task failed" name = name arc = arc exception =
+                (e, catch_backtrace())
+            rethrow()
+        end
     end
     for task in tasks
         name, expressions = fetch(task)
-        branch_flow_expr[name, :] .= expressions
+        # ptdf[arc,:] uses the representative's orientation; flip series members
+        # back to native from→to. sign == 1.0 fast path skips a broadcast-multiply.
+        orientation_sign = get_ptdf_orientation_sign(net_reduction_data, B, name)
+        if orientation_sign == 1.0
+            branch_flow_expr[name, :] .= expressions
+        else
+            branch_flow_expr[name, :] .= orientation_sign .* expressions
+        end
     end
     #= Leaving serial code commented out for debugging purposes in the future
     for (name, (arc, reduction)) in name_to_arc_map
@@ -988,9 +1056,7 @@ function add_constraints!(
         for t in time_steps
             branch_flow[name, t] = JuMP.@constraint(
                 jump_model,
-                branch_flow_expr[name, t] -
-                flow_variables[name, t]
-                ==
+                branch_flow_expr[name, t] - flow_variables[name, t] ==
                 (use_slacks ? slack_ub[name, t] - slack_lb[name, t] : 0.0)
             )
         end
@@ -1051,19 +1117,26 @@ function add_constraints!(
     return
 end
 
+# `MonitoredLine.flow_limits` may be asymmetric; the symmetric/min-based
+# `get_min_max_limits` methods below collapse it to one value and warn once.
+function _warn_unequal_monitored_flow_limits(device::PSY.MonitoredLine)
+    flow_limits = PSY.get_flow_limits(device)
+    if flow_limits.to_from != flow_limits.from_to
+        @warn "Flow limits in Line $(PSY.get_name(device)) aren't equal; the \
+               minimum will be used."
+    end
+    return
+end
+
 """
 Min and max limits for monitored line
 """
 function get_min_max_limits(
     device::PSY.MonitoredLine,
     ::Type{<:ConstraintType},
-    ::Type{T},
-) where {T <: AbstractBranchFormulation}
-    if PSY.get_flow_limits(device).to_from != PSY.get_flow_limits(device).from_to
-        @warn(
-            "Flow limits in Line $(PSY.get_name(device)) aren't equal. The minimum will be used in formulation $(T)"
-        )
-    end
+    ::Type{<:AbstractBranchFormulation},
+)
+    _warn_unequal_monitored_flow_limits(device)
     limit = min(
         PSY.get_rating(device),
         PSY.get_flow_limits(device).to_from,
@@ -1124,11 +1197,7 @@ function get_min_max_limits(
     ::Type{FlowLimitFromToConstraint},
     ::Type{<:AbstractBranchFormulation},
 )
-    if PSY.get_flow_limits(device).to_from != PSY.get_flow_limits(device).from_to
-        @warn(
-            "Flow limits in Line $(PSY.get_name(device)) aren't equal. The minimum will be used in formulation $(T)"
-        )
-    end
+    _warn_unequal_monitored_flow_limits(device)
     return (
         min = -1 * PSY.get_flow_limits(device).from_to,
         max = PSY.get_flow_limits(device).from_to,
@@ -1143,11 +1212,7 @@ function get_min_max_limits(
     ::Type{FlowLimitToFromConstraint},
     ::Type{<:AbstractBranchFormulation},
 )
-    if PSY.get_flow_limits(device).to_from != PSY.get_flow_limits(device).from_to
-        @warn(
-            "Flow limits in Line $(PSY.get_name(device)) aren't equal. The minimum will be used in formulation $(T)"
-        )
-    end
+    _warn_unequal_monitored_flow_limits(device)
     return (
         min = -1 * PSY.get_flow_limits(device).to_from,
         max = PSY.get_flow_limits(device).to_from,

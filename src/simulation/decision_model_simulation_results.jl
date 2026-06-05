@@ -231,14 +231,14 @@ function _process_timestamps(
     initial_time::Union{Nothing, Dates.DateTime},
     count::Union{Nothing, Int},
 )
-    if initial_time === nothing
+    if isnothing(initial_time)
         initial_time = first(get_timestamps(res))
     end
 
     if initial_time ∉ res.timestamps
         invalid_timestamps = [initial_time]
     else
-        if count === nothing
+        if isnothing(count)
             requested_range = [v for v in res.timestamps if v >= initial_time]
         else
             requested_range =
@@ -638,7 +638,7 @@ function load_results!(
     expressions = Vector{Tuple}(),
     store::Union{Nothing, <:SimulationStore} = nothing,
 )
-    initial_time = initial_time === nothing ? first(get_timestamps(res)) : initial_time
+    initial_time = isnothing(initial_time) ? first(get_timestamps(res)) : initial_time
     count = max(count, length(get_results_timestamps(res)))
     new_timestamps = _process_timestamps(res, initial_time, count)
 
@@ -657,7 +657,7 @@ function load_results!(
     end
     set_results_timestamps!(res, new_timestamps)
 
-    return nothing
+    return
 end
 
 function _read_optimizer_stats(

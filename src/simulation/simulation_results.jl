@@ -103,6 +103,11 @@ function SimulationResults(
         container_key_lookup = get_container_key_lookup(store)
         for (name, problem_params) in sim_params.decision_models_params
             name = string(name)
+            system = if has_system(store, get_system_uuid(problem_params))
+                deserialize_system(store, get_system_uuid(problem_params))
+            else
+                nothing
+            end
             problem_result = SimulationProblemResults(
                 DecisionModel,
                 store,
@@ -110,19 +115,27 @@ function SimulationResults(
                 problem_params,
                 sim_params,
                 execution_path,
-                container_key_lookup,
+                container_key_lookup;
+                system = system,
             )
             decision_problem_results[name] = problem_result
         end
 
+        em_params = get_emulation_model_params(sim_params)
+        em_system = if has_system(store, get_system_uuid(em_params))
+            deserialize_system(store, get_system_uuid(em_params))
+        else
+            nothing
+        end
         emulation_result = SimulationProblemResults(
             EmulationModel,
             store,
             string(first(keys(sim_params.emulation_model_params))),
-            first(values(sim_params.emulation_model_params)),
+            em_params,
             sim_params,
             execution_path,
-            container_key_lookup,
+            container_key_lookup;
+            system = em_system,
         )
 
         return SimulationResults(
@@ -260,14 +273,14 @@ function _populate_system_in_results!(
             error("Can't find the system file or retrieve the system error=$e")
         end
 
-        if populate_units !== nothing
+        if !isnothing(populate_units)
             PSY.set_units_base_system!(PSI.get_system(results), populate_units)
         else
             PSY.set_units_base_system!(PSI.get_system(results), IS.UnitSystem.NATURAL_UNITS)
         end
 
     else
-        (populate_units === nothing) ||
+        (isnothing(populate_units)) ||
             throw(
                 ArgumentError(
                     "populate_units=$populate_units is unaccepted when populate_system=$populate_system",
@@ -350,7 +363,7 @@ function export_results(results::SimulationResults, exports, store::SimulationSt
     for problem_results in values(results.decision_problem_results)
         problem_exports = get_problem_exports(exports, problem_results.problem)
         path =
-            exports.path === nothing ? problem_results.results_output_folder : exports.path
+            isnothing(exports.path) ? problem_results.results_output_folder : exports.path
         for timestamp in get_timestamps(problem_results)
             !should_export(exports, timestamp) && continue
 

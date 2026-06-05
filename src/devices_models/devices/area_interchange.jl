@@ -108,16 +108,14 @@ function add_constraints!(
             to_from_limit = PSY.get_flow_limits(device).to_from
             from_to_limit = PSY.get_flow_limits(device).from_to
             for t in time_steps
-                con_lb[ci_name, t] =
-                    JuMP.@constraint(
-                        get_jump_model(container),
-                        var_array[ci_name, t] >= -1.0 * from_to_limit
-                    )
-                con_ub[ci_name, t] =
-                    JuMP.@constraint(
-                        get_jump_model(container),
-                        var_array[ci_name, t] <= to_from_limit
-                    )
+                con_lb[ci_name, t] = JuMP.@constraint(
+                    get_jump_model(container),
+                    var_array[ci_name, t] >= -1.0 * from_to_limit
+                )
+                con_ub[ci_name, t] = JuMP.@constraint(
+                    get_jump_model(container),
+                    var_array[ci_name, t] <= to_from_limit
+                )
             end
         end
     else
@@ -163,13 +161,11 @@ function add_constraints!(
     devices::IS.FlattenIteratorWrapper{PSY.AreaInterchange},
     model::DeviceModel{PSY.AreaInterchange, <:AbstractBranchFormulation},
     network_model::NetworkModel{T},
-    inter_area_branch_map::Dict{
-        Tuple{String, String},
-        Dict{DataType, Vector{String}},
-    },
+    inter_area_branch_map::Dict{Tuple{String, String}, Dict{DataType, Vector{String}}},
 ) where {T <: AbstractPTDFModel}
     @assert !isempty(inter_area_branch_map)
     time_steps = get_time_steps(container)
+    net_reduction_data = get_network_reduction(network_model)
     device_names_with_branches = Vector{String}()
     interchange_direction_branch_map =
         Dict{String, Dict{Float64, Dict{DataType, Vector{String}}}}()
@@ -218,6 +214,8 @@ function add_constraints!(
 
     area_ex_var = get_variable(container, FlowActivePowerVariable(), PSY.AreaInterchange)
     jm = get_jump_model(container)
+    # Sign depends only on (type, name); memoize across time steps.
+    sign_cache = Dict{Tuple{DataType, String}, Float64}()
     for area_interchange in devices
         inter_change_name = PSY.get_name(area_interchange)
         (inter_change_name ∉ device_names_with_branches) && continue
@@ -229,7 +227,16 @@ function add_constraints!(
                 for (type, names) in inter_area_branches
                     flow_expr = get_expression(container, PTDFBranchFlow(), type)
                     for name in names
-                        JuMP.add_to_expression!(sum_of_flows, flow_expr[name, t], mult)
+                        # Re-apply the member sign: interchange total is
+                        # orientation-invariant.
+                        sign = get!(sign_cache, (type, name)) do
+                            get_ptdf_orientation_sign(net_reduction_data, type, name)
+                        end
+                        JuMP.add_to_expression!(
+                            sum_of_flows,
+                            flow_expr[name, t],
+                            mult * sign,
+                        )
                     end
                 end
             end

@@ -25,7 +25,7 @@ is_synchronized(model::OperationModel) = is_synchronized(get_optimization_contai
 
 function get_rebuild_model(model::OperationModel)
     sim_info = model.simulation_info
-    if sim_info === nothing
+    if isnothing(sim_info)
         error("Model not part of a simulation")
     end
     return get_rebuild_model(get_optimization_container(model).settings)
@@ -285,7 +285,7 @@ end
 
 function _pre_solve_model_checks(model::OperationModel, optimizer = nothing)
     jump_model = get_jump_model(model)
-    if optimizer !== nothing
+    if !isnothing(optimizer)
         JuMP.set_optimizer(jump_model, optimizer)
     end
 

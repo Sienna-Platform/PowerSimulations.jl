@@ -11,7 +11,10 @@ function _update_parameter_values!(
     time_steps = get_time_steps(get_optimization_container(model))
     horizon = time_steps[end]
     container = get_optimization_container(model)
-    @assert !is_synchronized(container)
+    is_synchronized(container) && error(
+        "Cannot update $(T) on a synchronized container; objective expressions would " *
+        "be re-augmented and double-counted",
+    )
     template = get_template(model)
     device_model = get_model(template, V)
     components = get_available_components(device_model, get_system(model))
@@ -36,14 +39,16 @@ function _update_parameter_values!(
     return
 end
 
-# We only support certain time series costs for PSY.OfferCurveCost, nothing to do for all the others
-# We group them this way because we implement them that way: avoids method ambiguity issues
+# Only PSY.OfferCurveCost has time-series cost parameters to update; every other
+# OperationalCost is a no-op. OfferCurveCost is dispatched to the specialized
+# methods below (it is more specific than PSY.OperationalCost), so these
+# fallbacks are only reached for the no-op cases — no `isa` guard needed.
 handle_variable_cost_parameter(
     ::Union{StartupCostParameter, ShutdownCostParameter, AbstractCostAtMinParameter},
-    op_cost::PSY.OperationalCost, args...) = @assert !(op_cost isa PSY.OfferCurveCost)
+    ::PSY.OperationalCost, args...) = nothing
 handle_variable_cost_parameter(
     ::AbstractPiecewiseLinearSlopeParameter,
-    op_cost::PSY.OperationalCost, args...) = @assert !(op_cost isa PSY.OfferCurveCost)
+    ::PSY.OperationalCost, args...) = nothing
 
 # typically used just with 1 arg, _get_parameter_field(T(), operation_cost).
 _get_parameter_field(::StartupCostParameter, args...; kwargs...) =

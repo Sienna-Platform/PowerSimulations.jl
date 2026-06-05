@@ -50,6 +50,7 @@ export VariableMaxInterfaceFlow
 export StaticBranch
 export StaticBranchBounds
 export StaticBranchUnbounded
+export SecurityConstrainedStaticBranch
 export HVDCTwoTerminalLossless
 export HVDCTwoTerminalDispatch
 export HVDCTwoTerminalUnbounded
@@ -141,6 +142,7 @@ export set_network_model!
 export get_network_formulation
 export get_hvdc_network_model
 export set_hvdc_network_model!
+export get_outages
 ## Results interfaces
 export SimulationResultsExport
 export export_results
@@ -330,7 +332,7 @@ export RangeLimitConstraint
 export FlowRateConstraint
 export FlowRateConstraintFromTo
 export FlowRateConstraintToFrom
-export PostContingencyEmergencyRateLimitConstraint
+export PostContingencyFlowRateConstraint
 export ReactivePowerVariableLimitsConstraint
 export RegulationLimitsConstraint
 export RequirementConstraint
@@ -368,9 +370,9 @@ export ActivePowerTimeSeriesParameter
 export ActivePowerOutTimeSeriesParameter
 export ActivePowerInTimeSeriesParameter
 export ReactivePowerTimeSeriesParameter
-export DynamicBranchRatingTimeSeriesParameter
+export BranchRatingTimeSeriesParameter
 export FuelCostParameter
-export PostContingencyDynamicBranchRatingTimeSeriesParameter
+export PostContingencyBranchRatingTimeSeriesParameter
 export RequirementTimeSeriesParameter
 export FromToFlowLimitParameter
 export ToFromFlowLimitParameter
@@ -436,11 +438,10 @@ import PowerSystems as PSY
 import InfrastructureSystems as IS
 import PowerFlows
 import PowerNetworkMatrices as PNM
-import PowerNetworkMatrices: PTDF, VirtualPTDF, LODF, VirtualLODF
+import PowerNetworkMatrices: PTDF, VirtualPTDF, VirtualMODF
 export PTDF
 export VirtualPTDF
-export LODF
-export VirtualLODF
+export VirtualMODF
 import InfrastructureSystems: @assert_op, TableFormat, list_recorder_events, get_name
 
 # IS.Optimization imports: functions that have PSY methods that IS needs to access (therefore necessary)
@@ -680,6 +681,7 @@ include("devices_models/devices/renewable_generation.jl")
 include("devices_models/devices/thermal_generation.jl")
 include("devices_models/devices/electric_loads.jl")
 include("devices_models/devices/AC_branches.jl")
+include("devices_models/devices/ac_transmission_security_constrained_models.jl")
 include("devices_models/devices/area_interchange.jl")
 include("devices_models/devices/TwoTerminalDC_branches.jl")
 include("devices_models/devices/HVDCsystems.jl")

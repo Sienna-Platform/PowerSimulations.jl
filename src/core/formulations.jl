@@ -136,6 +136,63 @@ struct StaticBranchBounds <: AbstractBranchFormulation end
 Branch type to avoid flow constraints
 """
 struct StaticBranchUnbounded <: AbstractBranchFormulation end
+
+abstract type AbstractSecurityConstrainedStaticBranch <: AbstractBranchFormulation end
+
+"""
+Security-constrained branch formulation that enforces post-contingency
+emergency flow limits as inequality constraints on ACTransmission branches
+under N-k contingency scenarios. The set of contingencies modeled is the
+union of `outages` configured on each `DeviceModel{<:ACTransmission, <:AbstractSecurityConstrainedStaticBranch}`
+in the template.
+
+Concretely, for every monitored ACTransmission branch and every claimed
+outage, this formulation adds:
+
+```
+-rate_emergency ≤ post_contingency_flow ≤ rate_emergency
+```
+
+where `post_contingency_flow` is derived from the modification factors
+(MODF) provided by `PowerNetworkMatrices` and `rate_emergency` comes from
+the branch's `rating_b` (falling back to `rating` only when `rating_b` is
+unset), and becomes time-varying when a
+`PostContingencyBranchRatingTimeSeriesParameter` is attached.
+
+Outage modeling notes:
+- An outage UUID is "claimed" by `DeviceModel{D, SC}` iff `D` is among the
+  types of the outaged (associated) components on that outage. A
+  multi-component outage is therefore claimed by every SC `DeviceModel`
+  whose component type appears in its outaged set; the post-contingency
+  build deduplicates by referencing the first claimer. The OUTAGED
+  component's type — not the monitored components — must be covered by an
+  SC `DeviceModel` for the outage to contribute any constraints.
+- The monitored set is whatever each outage explicitly lists in its
+  `monitored_components`. There is no implicit "monitor everything" default:
+  an outage with empty `monitored_components` monitors nothing (a warning is
+  emitted) and contributes no post-contingency constraints. This is
+  deliberate — defaulting to monitoring every branch under every outage would
+  silently produce an N-1-everything-by-everything problem that is
+  intractable for realistic systems; the user must opt in to each monitored
+  branch.
+- A monitored component whose type is not a modeled `PSY.ACTransmission`
+  branch type (either absent from the template, or modeled but not a branch)
+  is skipped (warned once per type at template validation; no
+  post-contingency constraints are built for it).
+- `PSY.PlannedOutage` instances are excluded by default; set
+  `attributes = Dict("include_planned_outages" => true)` on the
+  `DeviceModel` to include them.
+- Both the monitored AND the outaged component endpoints are pinned in the
+  network reduction (added to `irreducible_buses`). This prevents radial /
+  degree-two reductions from collapsing the contingency arc out of the
+  reduced topology, which would otherwise leave PNM's MODF column without a
+  matching arc to apply.
+
+See `_build_device_model_outages!` for the full claim algorithm and the
+internal docstring on outage discovery.
+"""
+struct SecurityConstrainedStaticBranch <: AbstractSecurityConstrainedStaticBranch end
+
 """
 Branch formulation for PhaseShiftingTransformer flow control
 """

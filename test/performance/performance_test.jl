@@ -54,8 +54,9 @@ function set_device_models!(template::ProblemTemplate, uc::Bool = true)
 end
 
 # Copy every SingleTimeSeries attached to components of `src_sys` onto the
-# same-named component in `dst_sys`. Components not present in `dst_sys` are
-# skipped silently. Requires that `dst_sys` already has its own storage.
+# same-named component in `dst_sys`. Requires that `dst_sys` already has its
+# own storage and contains every TS-bearing component from `src_sys` — a
+# missing component is a data error and `add_time_series!` will surface it.
 function copy_single_time_series_across_systems!(dst_sys::System, src_sys::System)
     for src_component in IS.iterate_components_with_time_series(
         src_sys.data;
@@ -63,7 +64,6 @@ function copy_single_time_series_across_systems!(dst_sys::System, src_sys::Syste
     )
         dst_component =
             PSY.get_component(typeof(src_component), dst_sys, PSY.get_name(src_component))
-        dst_component === nothing && continue
         for ts_metadata in IS.get_time_series_metadata(
             src_component;
             time_series_type = PSY.SingleTimeSeries,

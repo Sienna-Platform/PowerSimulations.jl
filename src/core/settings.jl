@@ -53,7 +53,7 @@ function Settings(
         time_series_cache_size = 0
     end
 
-    if isa(optimizer, MOI.OptimizerWithAttributes) || optimizer === nothing
+    if isa(optimizer, MOI.OptimizerWithAttributes) || isnothing(optimizer)
         optimizer_ = optimizer
     elseif isa(optimizer, DataType)
         optimizer_ = MOI.OptimizerWithAttributes(optimizer)

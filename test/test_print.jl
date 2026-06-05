@@ -4,7 +4,7 @@ function _test_plain_print_methods(list::Array)
         io = IOBuffer()
         show(io, "text/plain", object)
         grabbed = String(take!(io))
-        @test grabbed !== nothing
+        @test !isnothing(grabbed)
     end
 end
 
@@ -14,7 +14,7 @@ function _test_html_print_methods(list::Array)
         io = IOBuffer()
         show(io, "text/html", object)
         grabbed = String(take!(io))
-        @test grabbed !== nothing
+        @test !isnothing(grabbed)
     end
 end
 

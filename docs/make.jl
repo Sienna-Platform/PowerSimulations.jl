@@ -10,8 +10,10 @@ links = InterLinks(
     "InfrastructureSystems" => "https://sienna-platform.github.io/InfrastructureSystems.jl/stable/",
     "PowerSystems" => "https://sienna-platform.github.io/PowerSystems.jl/stable/",
     "PowerSimulations" => "https://sienna-platform.github.io/PowerSimulations.jl/stable/",
+    "PowerSystemCaseBuilder" => "https://sienna-platform.github.io/PowerSystemCaseBuilder.jl/stable/",
     "StorageSystemsSimulations" => "https://sienna-platform.github.io/StorageSystemsSimulations.jl/stable/",
     "HydroPowerSimulations" => "https://sienna-platform.github.io/HydroPowerSimulations.jl/dev/",
+    "PowerFlows" => "https://sienna-platform.github.io/PowerFlows.jl/stable/",
 )
 
 include(joinpath(@__DIR__, "make_tutorials.jl"))
@@ -22,12 +24,15 @@ pages = OrderedDict(
     "Tutorials" => Any[
         "Single-step Problem" => "tutorials/generated_decision_problem.md",
         "Multi-stage Production Cost Simulation" => "tutorials/generated_pcm_simulation.md",
+        "Dynamic Line Ratings" => "tutorials/generated_dynamic_line_ratings.md",
+        "Running Power Flow In The Loop with Unit Commitment" => "tutorials/generated_uc_power_flow_in_the_loop.md",
     ],
     "How to..." => Any[
         "...register a variable in a custom operation model" => "how_to/register_variable.md",
         "...create a problem template" => "how_to/problem_templates.md",
         "...read the simulation results" => "how_to/read_results.md",
         "...debug an infeasible model" => "how_to/debugging_infeasible_models.md",
+        "...run security-constrained (N-1) models" => "how_to/security_constrained_models.md",
         "...configure logging" => "how_to/logging.md",
         "...inspect simulation events using the recorder" => "how_to/simulation_recorder.md",
         "...run a parallel simulation" => "how_to/parallel_simulations.md",
@@ -37,6 +42,7 @@ pages = OrderedDict(
         "explanation/feedforward.md",
         "explanation/chronologies.md",
         "explanation/sequencing.md",
+        "explanation/branch_rating_limits.md",
     ],
     "Reference" => Any[
         "Glossary and Acronyms" => "api/glossary.md",

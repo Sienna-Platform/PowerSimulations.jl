@@ -112,7 +112,7 @@ function open_store(
         store = HdfSimulationStore(joinpath(directory, filename), mode)
         return func(store)
     finally
-        if store !== nothing
+        if !isnothing(store)
             close(store)
         end
     end
@@ -126,7 +126,7 @@ function Base.close(store::HdfSimulationStore)
 end
 
 function Base.isopen(store::HdfSimulationStore)
-    return store.file === nothing ? false : HDF5.isopen(store.file)
+    return isnothing(store.file) ? false : HDF5.isopen(store.file)
 end
 
 function Base.flush(store::HdfSimulationStore)
@@ -682,6 +682,35 @@ function write_result!(
 end
 
 """
+Write a decision-model result whose container is a `SparseAxisArray`. The
+sparse container is flattened to a `(horizon × n_cols)` `Matrix{Float64}` via
+`to_matrix`, where columns are the unique non-time tuple keys (e.g. for
+post-contingency flows: `(outage_id, branch_name)`). Cache and HDF5 dataset
+shapes match the 3D dense path: `(horizon, n_cols, num_results)`.
+"""
+function write_result!(
+    store::HdfSimulationStore,
+    model_name::Symbol,
+    key::OptimizationContainerKey,
+    index::DecisionModelIndexType,
+    ::Dates.DateTime,
+    data::SparseAxisArray{Float64},
+)
+    output_cache = get_output_cache(store.cache, model_name, key)
+    cur_size = get_size(store.cache)
+    add_result!(output_cache, index, to_matrix(data), is_full(store.cache, cur_size))
+
+    if get_dirty_size(output_cache) >= get_min_flush_size(store.cache)
+        discard = !should_keep_in_cache(output_cache)
+        size_flushed = _flush_data!(output_cache, store, model_name, key, discard)
+        @debug "flushed data" LOG_GROUP_SIMULATION_STORE key size_flushed discard cur_size
+    end
+
+    @debug "write_result" get_size(store.cache) encode_key_as_string(key)
+    return
+end
+
+"""
 Write an emulation model result for an execution index value and the timestamp of the update
 """
 function write_result!(
@@ -765,15 +794,19 @@ function write_system_json!(store::HdfSimulationStore, uuid::String, json_text::
     return
 end
 
+function has_system(store::HdfSimulationStore, uuid::Base.UUID)
+    root = store.file[HDF_SIMULATION_ROOT_PATH]
+    haskey(root, "systems") || return false
+    return haskey(root["systems"], string(uuid))
+end
+
 function deserialize_system(store::HdfSimulationStore, uuid::Base.UUID)
     root = store.file[HDF_SIMULATION_ROOT_PATH]
-    systems_group = _get_group_or_create(root, "systems")
     uuid_str = string(uuid)
-    if !haskey(systems_group, uuid_str)
+    if !haskey(root, "systems") || !haskey(root["systems"], uuid_str)
         error("No system with UUID $uuid_str is stored")
     end
-
-    json_text = HDF5.read(systems_group[uuid_str])
+    json_text = HDF5.read(root["systems"][uuid_str])
     return PSY.from_json(json_text, PSY.System)
 end
 

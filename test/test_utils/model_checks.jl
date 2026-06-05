@@ -31,7 +31,7 @@ function psi_constraint_test(
 )
     constraints = PSI.get_constraints(model)
     for con in constraint_keys
-        if get(constraints, con, nothing) !== nothing
+        if !isnothing(get(constraints, con, nothing))
             # Ensure constraint container does not have undefined entries:
             if typeof(constraints[con]) == DenseAxisArray
                 @test all(x -> isassigned(constraints[con], x), eachindex(constraints[con]))
@@ -53,7 +53,7 @@ function psi_aux_variable_test(
     op_container = PSI.get_optimization_container(model)
     vars = PSI.get_aux_variables(op_container)
     for key in constraint_keys
-        @test get(vars, key, nothing) !== nothing
+        @test !isnothing(get(vars, key, nothing))
     end
     return
 end

@@ -26,7 +26,7 @@
         NetworkModel(
             PTDFPowerModel;
             PTDF_matrix = PTDF(system),
-            power_flow_evaluation = ACPowerFlow(),
+            power_flow_evaluation = ACPolarPowerFlow(),
         ),
     )
     set_device_model!(template, DeviceModel(PhaseShiftingTransformer, PhaseAngleControl))
@@ -89,7 +89,7 @@ end
             NetworkModel(
                 PTDFPowerModel;
                 PTDF_matrix = PTDF(system),
-                power_flow_evaluation = ACPowerFlow(),
+                power_flow_evaluation = ACPolarPowerFlow(),
             ),
         )
         model_m = DecisionModel(template, system; optimizer = HiGHS_optimizer)
@@ -149,7 +149,7 @@ end
         NetworkModel(
             PTDFPowerModel;
             PTDF_matrix = PTDF(system),
-            power_flow_evaluation = ACPowerFlow(),
+            power_flow_evaluation = ACPolarPowerFlow(),
         ),
     )
     model_m = DecisionModel(template, system; optimizer = HiGHS_optimizer)
@@ -322,7 +322,7 @@ end
         NetworkModel(
             ACPPowerModel;
             use_slacks = false,
-            power_flow_evaluation = ACPowerFlow(),
+            power_flow_evaluation = ACPolarPowerFlow(),
         ),
     )
 
@@ -367,7 +367,9 @@ end
     set_bustype!(get_component(ACBus, sys, "Arthur"), ACBusTypes.REF)
 
     template_uc =
-        ProblemTemplate(NetworkModel(PTDFPowerModel; power_flow_evaluation = ACPowerFlow()))
+        ProblemTemplate(
+            NetworkModel(PTDFPowerModel; power_flow_evaluation = ACPolarPowerFlow()),
+        )
 
     set_device_model!(template_uc, ThermalStandard, ThermalBasicUnitCommitment)
     set_device_model!(template_uc, RenewableDispatch, RenewableFullDispatch)
@@ -440,7 +442,7 @@ end
                 duals = [CopperPlateBalanceConstraint],
                 use_slacks = true,
                 power_flow_evaluation =
-                ACPowerFlow(;
+                ACPolarPowerFlow(;
                     exporter = PSSEExportPowerFlow(:v33, pf_path; write_comments = true),
                     calculate_loss_factors = calculate_loss_factors,
                     calculate_voltage_stability_factors = calculate_voltage_stability_factors,
@@ -524,7 +526,7 @@ end
         NetworkModel(
             PTDFPowerModel;
             PTDF_matrix = PTDF(system),
-            power_flow_evaluation = ACPowerFlow(),
+            power_flow_evaluation = ACPolarPowerFlow(),
         ),
     )
     model_m = DecisionModel(template, system; optimizer = HiGHS_optimizer)
@@ -554,7 +556,7 @@ end
         NetworkModel(
             PTDFPowerModel;
             PTDF_matrix = PTDF(system),
-            power_flow_evaluation = ACPowerFlow(;
+            power_flow_evaluation = ACPolarPowerFlow(;
                 distribute_slack_proportional_to_headroom = true,
                 correct_bustypes = true,
             ),
@@ -639,7 +641,7 @@ end
             PTDFPowerModel;
             PTDF_matrix = PTDF(system),
             use_slacks = true,
-            power_flow_evaluation = ACPowerFlow(;
+            power_flow_evaluation = ACPolarPowerFlow(;
                 distribute_slack_proportional_to_headroom = true,
                 correct_bustypes = true,
             ),
@@ -682,7 +684,7 @@ end
             PTDFPowerModel;
             PTDF_matrix = PTDF(system),
             use_slacks = true,
-            power_flow_evaluation = ACPowerFlow(;
+            power_flow_evaluation = ACPolarPowerFlow(;
                 distribute_slack_proportional_to_headroom = true,
                 correct_bustypes = true,
             ),
@@ -718,10 +720,10 @@ end
 
         entry = get(computed_gspf[t], (re_type, re_name), nothing)
         if expected_headroom > 0.0
-            @test entry !== nothing
+            @test !isnothing(entry)
             @test isapprox(entry, expected_headroom; atol = 1e-10)
         else
-            @test entry === nothing
+            @test isnothing(entry)
         end
     end
 
@@ -830,7 +832,7 @@ end
         NetworkModel(
             PTDFPowerModel;
             PTDF_matrix = PTDF(sys),
-            power_flow_evaluation = ACPowerFlow(;
+            power_flow_evaluation = ACPolarPowerFlow(;
                 distribute_slack_proportional_to_headroom = true,
                 correct_bustypes = true,
             ),
@@ -1000,4 +1002,109 @@ end
     # convention), so this directly guards the regression.
     @test any(source_net .> 1e-6)
     @test any(source_net .< -1e-6)
+end
+
+# PowerFlows 0.17 split the AC formulation into `ACPolarPowerFlow` and
+# `ACRectangularPowerFlow` (the legacy `ACPowerFlow` is now an alias for the
+# polar formulation). This testset drives the same model through the
+# power-flow-in-the-loop path with each formulation and asserts the rectangular
+# formulation both converges and lands on the same physical solution as polar.
+@testset "AC Power Flow in the loop: polar vs rectangular formulation" begin
+    pf_data_for(pf_eval) = begin
+        system = build_system(PSITestSystems, "c_sys5_uc")
+        template = get_template_dispatch_with_network(
+            NetworkModel(
+                PTDFPowerModel;
+                PTDF_matrix = PTDF(system),
+                power_flow_evaluation = pf_eval,
+            ),
+        )
+        model_m = DecisionModel(template, system; optimizer = HiGHS_optimizer)
+        @test build!(model_m; output_dir = mktempdir(; cleanup = true)) ==
+              PSI.ModelBuildStatus.BUILT
+        @test solve!(model_m) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+        return PSI.get_power_flow_data(
+            only(
+                PSI.get_power_flow_evaluation_data(
+                    PSI.get_optimization_container(model_m),
+                ),
+            ),
+        )
+    end
+
+    polar_data = pf_data_for(ACPolarPowerFlow())
+    rect_data = pf_data_for(ACRectangularPowerFlow())
+
+    # Both formulations must converge through the in-the-loop solve
+    # (`get_converged` returns a per-period vector for the multi-period path).
+    @test all(PFS.get_converged(polar_data))
+    @test all(PFS.get_converged(rect_data))
+
+    # Polar and rectangular are different Newton parametrizations of the same
+    # physical AC power flow, so the recovered state must agree.
+    @test isapprox(polar_data.bus_magnitude, rect_data.bus_magnitude;
+        atol = 1e-6, rtol = 0)
+    @test isapprox(polar_data.bus_angles, rect_data.bus_angles;
+        atol = 1e-6, rtol = 0)
+    @test isapprox(
+        polar_data.bus_active_power_injections,
+        rect_data.bus_active_power_injections;
+        atol = 1e-6,
+        rtol = 0,
+    )
+    @test isapprox(
+        polar_data.bus_reactive_power_injections,
+        rect_data.bus_reactive_power_injections;
+        atol = 1e-6,
+        rtol = 0,
+    )
+end
+
+# Regression test for issue: AC power flow evaluator on an active-power-only
+# network model (e.g. `PTDFPowerModel`) used to ignore reactive power because
+# `AbstractActivePowerModel` device constructors don't add
+# `ReactivePowerTimeSeriesParameter` to the optimization container, leaving
+# `_make_pf_input_map!` with zero input keys for `:reactive_power`.
+@testset "AC Power Flow in the loop populates reactive power on PTDFPowerModel" begin
+    system = build_system(PSITestSystems, "c_sys5_uc")
+    template = get_template_dispatch_with_network(
+        NetworkModel(
+            PTDFPowerModel;
+            PTDF_matrix = PTDF(system),
+            power_flow_evaluation = ACPolarPowerFlow(),
+        ),
+    )
+    model = DecisionModel(template, system; optimizer = HiGHS_optimizer)
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+    @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    container = PSI.get_optimization_container(model)
+    pf_e_data = only(PSI.get_power_flow_evaluation_data(container))
+    input_key_map = PSI.get_input_key_map(pf_e_data)
+
+    # The :reactive_power category must have a route from the
+    # ReactivePowerTimeSeriesParameter for PowerLoad components even though the
+    # PTDFPowerModel optimization formulation itself doesn't model reactive power.
+    @test haskey(input_key_map, :reactive_power)
+    reactive_keys = collect(keys(input_key_map[:reactive_power]))
+    @test any(
+        k ->
+            PSI.get_entry_type(k) == PSI.ReactivePowerTimeSeriesParameter &&
+                PSI.get_component_type(k) == PowerLoad,
+        reactive_keys,
+    )
+
+    # The PowerFlowData should have non-zero reactive power withdrawals at the
+    # buses that host the loads (loads in c_sys5_uc carry a reactive component).
+    data = PSI.get_power_flow_data(pf_e_data)
+    @test any(!iszero, data.bus_reactive_power_withdrawals)
+
+    # And the parameter should now exist in the container so the optimization
+    # path can route it to the PF (used to be missing under PTDFPowerModel).
+    @test PSI.has_container_key(
+        container,
+        PSI.ReactivePowerTimeSeriesParameter,
+        PowerLoad,
+    )
 end

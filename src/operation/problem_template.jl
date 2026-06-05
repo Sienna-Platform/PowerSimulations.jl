@@ -237,7 +237,7 @@ function _populate_contributing_devices!(template::ProblemTemplate, sys::PSY.Sys
         empty!(get_contributing_devices_map(service_model))
         S = get_component_type(service_model)
         service = PSY.get_component(S, sys, get_service_name(service_model))
-        if service === nothing
+        if isnothing(service)
             @info "The data doesn't include services of type $(S) and name $(get_service_name(service_model)), consider changing the service models" _group =
                 LOG_GROUP_SERVICE_CONSTUCTORS
             continue

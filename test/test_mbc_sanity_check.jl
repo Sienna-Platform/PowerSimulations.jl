@@ -72,7 +72,7 @@ function run_test_simulations(systems)
 
         il = first(get_components(InterruptiblePowerLoad, sys))
         il_ts = get_time_series(il, first(get_time_series_keys(il)))
-        @assert il !== nothing "InterruptibleLoad component not found in system"
+        @assert !isnothing(il) "InterruptibleLoad component not found in system"
         @assert length(PSY.get_components(InterruptiblePowerLoad, sys)) == 1 "Expected exactly one InterruptibleLoad component"
 
         load_power = read_variable(res, ActivePowerVariable, InterruptiblePowerLoad)

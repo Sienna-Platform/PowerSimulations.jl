@@ -1,12 +1,16 @@
 function apply_simulation_events!(simulation::Simulation)
     sequence = get_sequence(simulation)
     events = get_events(sequence)
+    isempty(events) && return
+    em_model = get_emulation_model(get_models(simulation))
+    isnothing(em_model) && error(
+        "Simulation has events configured but no emulation model; events require an emulator",
+    )
     simulation_state = get_simulation_state(simulation)
     for event_model in events
         extend_event_parameters!(simulation, event_model)
         if check_condition(simulation_state, event_model)
             # TODO: Events for other event categories we need to do something else
-            em_model = get_emulation_model(get_models(simulation))
             sys = get_system(em_model)
             model_name = get_name(em_model)
             for (event_uuid, device_type_maps) in
@@ -21,16 +25,14 @@ end
 function extend_event_parameters!(simulation::Simulation, event_model)
     sequence = get_sequence(simulation)
     sim_state = get_simulation_state(simulation)
+    # `apply_simulation_events!` already errored if there is no emulation
+    # model, and it is the only caller — `em_model` cannot be nothing here.
     em_model = get_emulation_model(get_models(simulation))
     model_name = get_name(em_model)
     for (event_uuid, device_type_maps) in
         event_model.attribute_device_map[model_name]
         sim_time = get_current_time(simulation)
         for (dtype, device_names) in device_type_maps
-            if dtype == PSY.RenewableDispatch
-                continue
-            end
-            em_model = get_emulation_model(get_models(simulation))
             status_change_countdown_data = get_decision_state_data(
                 sim_state,
                 ParameterKey(AvailableStatusChangeCountdownParameter, dtype),

@@ -470,7 +470,7 @@ function add_pm_variable_refs!(
         if pm_v in pm_variable_types
             for direction in fieldnames(typeof(ps_v))
                 var_type = getfield(ps_v, direction)
-                var_type === nothing && continue
+                isnothing(var_type) && continue
                 branch_names =
                     get_branch_argument_variable_axis(net_reduction_data, d_type)
                 var_container = add_variable_container!(
@@ -521,7 +521,7 @@ function add_pm_variable_refs!(
             if pm_v in pm_variable_types
                 for dir in fieldnames(typeof(ps_v))
                     var_type = getfield(ps_v, dir)
-                    var_type === nothing && continue
+                    isnothing(var_type) && continue
                     var_container = add_variable_container!(
                         container,
                         var_type,

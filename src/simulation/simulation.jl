@@ -84,7 +84,7 @@ mutable struct Simulation
             end
         end
         em = get_emulation_model(models)
-        if em !== nothing
+        if !isnothing(em)
             if get_sequence_uuid(em) != sequence.uuid
                 model_name = get_name(em)
                 throw(
@@ -181,7 +181,7 @@ function _get_simulation_initial_times!(sim::Simulation)
                 )
             end
         end
-        if sim_ini_time !== nothing &&
+        if !isnothing(sim_ini_time) &&
            !mapreduce(x -> x == sim_ini_time, |, model_initial_times[model_number])
             throw(
                 IS.ConflictingInputsError(
@@ -191,12 +191,12 @@ Manually provided initial times have to be compatible with the specified interva
             )
         end
     end
-    if get_initial_time(sim) === nothing
+    if isnothing(get_initial_time(sim))
         sim.initial_time = model_initial_times[1][1]
         @debug("Initial Simulation timestamp will be infered from the data. \\
                Initial Simulation timestamp set to $(sim.initial_time)")
     end
-    if get_models(sim).emulation_model !== nothing
+    if !isnothing(get_models(sim).emulation_model)
         em = get_models(sim).emulation_model
         system = get_system(em)
         resolution = get_resolution(em)
@@ -352,7 +352,7 @@ end
 function _build_emulation_model!(sim::Simulation)
     model = get_emulation_model(get_models(sim))
 
-    if model === nothing
+    if isnothing(model)
         return
     end
 
@@ -513,7 +513,7 @@ function _initialize_problem_storage!(
     end
 
     em = get_emulation_model(models)
-    if em === nothing
+    if isnothing(em)
         base_params = last(collect(values(decision_model_store_params)))
         resolution = minimum([v.resolution for v in values(decision_model_store_params)])
         emulation_model_store_params = OrderedDict(
@@ -592,7 +592,7 @@ function _build!(
     end
 
     em = get_emulation_model(simulation_models)
-    if em !== nothing
+    if !isnothing(em)
         em_resolution = get_resolution(em)
         set_executions!(em, get_steps(sim) * Int(step_resolution / em_resolution))
     end
@@ -945,7 +945,7 @@ function _execute!(
     disable_timer_outputs = false,
     results_channel = nothing,
 )
-    @assert sim.internal !== nothing
+    @assert !isnothing(sim.internal)
 
     set_simulation_status!(sim, RunStatus.RUNNING)
     execution_order = get_execution_order(sim)
@@ -970,12 +970,12 @@ function _execute!(
         set_cache_flush_rules!(store, rules)
     end
     store_params = get_params(store)
-    if exports !== nothing
+    if !isnothing(exports)
         if !(exports isa SimulationResultsExport)
             exports = SimulationResultsExport(exports, store_params)
         end
 
-        if exports.path === nothing
+        if isnothing(exports.path)
             exports.path = get_results_dir(sim)
         end
     end

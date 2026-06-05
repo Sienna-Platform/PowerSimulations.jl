@@ -39,6 +39,12 @@ VoltageDispatchHVDCNetworkModel
 HVDCTwoTerminalLCC
 ```
 
+### Security-Constrained Branch Formulations
+
+```@docs
+SecurityConstrainedStaticBranch
+```
+
 ### Converter Formulations
 
 ```@docs
@@ -419,6 +425,7 @@ DCCurrentBalance
 PostContingencyGenerationBalanceConstraint
 PostContingencyActivePowerVariableLimitsConstraint
 PostContingencyActivePowerReserveDeploymentVariableLimitsConstraint
+PostContingencyFlowRateConstraint
 ```
 
 ### Market Bid Cost Constraints
@@ -480,8 +487,8 @@ CostFunctionParameter
 AvailableStatusChangeCountdownParameter
 AvailableStatusParameter
 ActivePowerOffsetParameter
-DynamicBranchRatingTimeSeriesParameter
-PostContingencyDynamicBranchRatingTimeSeriesParameter
+BranchRatingTimeSeriesParameter
+PostContingencyBranchRatingTimeSeriesParameter
 ```
 
 ## Results

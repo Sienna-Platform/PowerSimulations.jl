@@ -274,10 +274,8 @@ function _add_reactive_power_contingency_constraint_impl!(
 end
 
 function _get_reactive_power_upper_bound(device::PSY.StaticInjection)
-    return maximum([
-        PSY.get_reactive_power_limits(device).max^2,
-        PSY.get_reactive_power_limits(device).min^2,
-    ])
+    limits = PSY.get_reactive_power_limits(device)
+    return max(limits.max^2, limits.min^2)
 end
 
 function _get_reactive_power_upper_bound(device::PSY.ElectricLoad)

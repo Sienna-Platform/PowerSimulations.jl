@@ -255,7 +255,7 @@ end
     results2 = OptimizationProblemResults(PSI.get_output_dir(model))
     var2 = read_variable(results2, ActivePowerVariable, ThermalStandard)
     @test var1_a == var2
-    @test get_system(results2) === nothing
+    @test isnothing(get_system(results2))
     # Commented out for now, as we no longer automatically serialize the system with results, but this should be added back in the future.
     #get_system!(results2)
     #@test get_system(results2) isa PSY.System
@@ -267,9 +267,9 @@ end
     results3 = OptimizationProblemResults(results_path)
     var3 = read_variable(results3, ActivePowerVariable, ThermalStandard)
     @test var1_a == var3
-    @test get_system(results3) === nothing
+    @test isnothing(get_system(results3))
     set_system!(results3, get_system(results1))
-    @test get_system(results3) !== nothing
+    @test !isnothing(get_system(results3))
 
     exp_file =
         joinpath(path, "results", "variables", "ActivePowerVariable__ThermalStandard.csv")
