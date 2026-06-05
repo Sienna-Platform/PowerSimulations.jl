@@ -634,20 +634,28 @@ function write_optimizer_stats!(optimizer_stats::OptimizerStats, jump_model::JuM
     return
 end
 
+# Read step of an export: copies the live model, so it must run on the main thread
+# before `JuMP.optimize!` mutates it. `fmt` is "LP" or "MOF".
+function _copy_jump_model_for_export(jump_model::JuMP.Model, fmt::String)
+    file_format = fmt == "LP" ? MOI.FileFormats.FORMAT_LP : MOI.FileFormats.FORMAT_MOF
+    dest = MOPFM(; format = file_format)
+    MOI.copy_to(dest, JuMP.backend(jump_model))
+    return dest
+end
+
+# Write step: pure file I/O on the independent copy, safe to run off the main thread.
+_write_export_model(dest, save_path::String) = MOI.write_to_file(dest, save_path)
+
 """
 Exports the JuMP object in MathOptFormat
 """
 function serialize_jump_optimization_model(jump_model::JuMP.Model, save_path::String)
-    MOF_model = MOPFM(; format = MOI.FileFormats.FORMAT_MOF)
-    MOI.copy_to(MOF_model, JuMP.backend(jump_model))
-    MOI.write_to_file(MOF_model, save_path)
+    _write_export_model(_copy_jump_model_for_export(jump_model, "MOF"), save_path)
     return
 end
 
 function write_lp_file(jump_model::JuMP.Model, save_path::String)
-    MOF_model = MOPFM(; format = MOI.FileFormats.FORMAT_LP)
-    MOI.copy_to(MOF_model, JuMP.backend(jump_model))
-    MOI.write_to_file(MOF_model, save_path)
+    _write_export_model(_copy_jump_model_for_export(jump_model, "LP"), save_path)
     return
 end
 
