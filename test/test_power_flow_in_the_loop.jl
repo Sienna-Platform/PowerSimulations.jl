@@ -898,8 +898,10 @@ end
     # in > 0) for the second half. The import half is what exercises the
     # `ActivePowerInTimeSeriesParameter`'s negative `.min` multiplier — the sign that
     # issue #1623 double-applied when writing into `bus_active_power_injections`.
-    out_day = vcat(fill(0.9, 12), fill(0.0, 12))
-    in_day = vcat(fill(0.0, 12), fill(0.7, 12))
+    # Magnitudes are kept small (≈ ±0.2 pu net after the ±2 limit multiplier) so the
+    # branch-limited network stays feasible while still moving power in both directions.
+    out_day = vcat(fill(0.1, 12), fill(0.0, 12))
+    in_day = vcat(fill(0.0, 12), fill(0.1, 12))
     ts_out = SingleTimeSeries(
         "max_active_power_out",
         TimeArray(tstamp, repeat(out_day, 2));
