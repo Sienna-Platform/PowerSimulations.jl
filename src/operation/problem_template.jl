@@ -67,9 +67,9 @@ end
 
 function get_model(template::ProblemTemplate, ::Type{T}) where {T <: PSY.Device}
     if T <: PSY.Branch
-        return get(template.branches, Symbol(T), nothing)
+        return get(template.branches, Symbol(IS.strip_module_name(T)), nothing)
     elseif T <: PSY.Device
-        return get(template.devices, Symbol(T), nothing)
+        return get(template.devices, Symbol(IS.strip_module_name(T)), nothing)
     else
         error("Component $T not present in the template")
     end
@@ -347,6 +347,39 @@ function _populate_aggregated_service_model!(template::ProblemTemplate, sys::PSY
         end
     end
     return
+end
+
+"""
+    _copy_template_for_build(template::ProblemTemplate)
+
+Return an independently-mutable copy of `template` for `build!` to own, sharing the
+network model's `PTDF_matrix`/`MODF_matrix` by reference. Those matrices wrap a
+libklu/libSparse factorization behind a finalizer-owned raw pointer that is not
+safe to `deepcopy` (copying it aliases one handle across two objects). The matrices
+are only ever reassigned during build, never mutated in place, so sharing is safe.
+"""
+function _copy_template_for_build(template::ProblemTemplate)
+    src_network = get_network_model(template)
+    ptdf = get_PTDF_matrix(src_network)
+    modf = get_MODF_matrix(src_network)
+    # Detach the matrices so the copy never deepcopies their solver caches; restore
+    # the caller's template even if the copy throws.
+    src_network.PTDF_matrix = nothing
+    src_network.MODF_matrix = nothing
+    new_network = try
+        deepcopy(src_network)
+    finally
+        src_network.PTDF_matrix = ptdf
+        src_network.MODF_matrix = modf
+    end
+    new_network.PTDF_matrix = ptdf
+    new_network.MODF_matrix = modf
+
+    new_template = ProblemTemplate(new_network)
+    new_template.devices = deepcopy(get_device_models(template))
+    new_template.branches = deepcopy(get_branch_models(template))
+    new_template.services = deepcopy(get_service_models(template))
+    return new_template
 end
 
 function finalize_template!(template::ProblemTemplate, sys::PSY.System)

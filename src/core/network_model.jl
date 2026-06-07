@@ -35,9 +35,6 @@ Establishes the NetworkModel for a given PowerModels formulation type.
     Enable radial branch reduction when building network matrices.
 - `reduce_degree_two_branches::Bool` = false
     Enable degree-two branch reduction when building network matrices.
-- `subnetworks::Dict{Int, Set{Int}}` = Dict()
-    Optional mapping of reference bus → set of mapped buses. If not provided,
-    subnetworks are inferred from PTDF/VirtualPTDF or discovered from the system.
 - `duals::Vector{DataType}` = Vector{DataType}()
     Constraint types for which duals should be recorded.
 - `power_flow_evaluation::Union{PFS.PowerFlowEvaluationModel, Vector{PFS.PowerFlowEvaluationModel}}`
@@ -54,8 +51,6 @@ Establishes the NetworkModel for a given PowerModels formulation type.
 ptdf = PNM.VirtualPTDF(system)
 nw = NetworkModel(PTDFPowerModel; PTDF_matrix = ptdf, reduce_radial_branches = true,
                   power_flow_evaluation = PFS.PowerFlowEvaluationModel())
-
-nw2 = NetworkModel(CopperPlatePowerModel; subnetworks = Dict(1 => Set([1,2,3])))
 """
 mutable struct NetworkModel{T <: PM.AbstractPowerModel}
     use_slacks::Bool
@@ -80,7 +75,6 @@ mutable struct NetworkModel{T <: PM.AbstractPowerModel}
         MODF_matrix = nothing,
         reduce_radial_branches = false,
         reduce_degree_two_branches = false,
-        subnetworks = Dict{Int, Set{Int}}(),
         duals = Vector{DataType}(),
         power_flow_evaluation::Union{
             PFS.PowerFlowEvaluationModel,
@@ -93,7 +87,7 @@ mutable struct NetworkModel{T <: PM.AbstractPowerModel}
             use_slacks,
             PTDF_matrix,
             MODF_matrix,
-            subnetworks,
+            Dict{Int, Set{Int}}(),
             Dict{PSY.ACBus, Int}(),
             duals,
             PNM.NetworkReductionData(),
@@ -169,67 +163,53 @@ function _consolidate_device_model_outages_with_modf!(
     return
 end
 
-function _build_network_reductions(model::NetworkModel, irreducible_buses::Vector{Int64})
+"""
+Build the `NetworkReduction` specs for one matrix construction. As of
+PowerNetworkMatrices 0.22 the reduction specs are field-less configuration
+objects; the set of buses to protect from elimination is supplied separately via
+the `irreducible_buses` keyword on the matrix constructor (`Ybus` / `VirtualPTDF`
+/ `VirtualMODF`), which seeds it once into the reduction container and shares it
+across all reduction stages.
+"""
+function _build_network_reductions(model::NetworkModel)
     reductions = PNM.NetworkReduction[]
     if model.reduce_radial_branches
-        push!(reductions, PNM.RadialReduction(; irreducible_buses = irreducible_buses))
+        push!(reductions, PNM.RadialReduction())
     end
     if model.reduce_degree_two_branches
-        push!(reductions, PNM.DegreeTwoReduction(; irreducible_buses = irreducible_buses))
+        push!(reductions, PNM.DegreeTwoReduction())
     end
     return reductions
 end
 
 """
-Buses retained by `nrd` (reduction representatives — i.e. keys of the bus
-reduction map). This is the matrix's bus dimension. PNM's invariant is that
-irreducible buses are never eliminated, so they remain keys of the bus
-reduction map; the `@assert` here makes that invariant load-bearing instead of
-silently papered over with a `union`.
+Buses retained by `nrd` — the keys of the bus reduction map, which PNM
+initializes with every available non-isolated bus and prunes as buses are
+eliminated (`Ybus` build). This key set is therefore exactly the matrix's bus
+dimension.
+
+This is *not* the same as `get_irreducible_buses(nrd)`: that field accumulates
+(via `union!`) every bus each reduction stage flagged as protected — including
+all injection buses added by a `DegreeTwoReduction`. A protected injection bus
+that sits on a radial leaf can still be eliminated by a `RadialReduction` stage,
+so `irreducible_buses` is not a subset of the retained keys and must not be
+treated as one.
 """
 function _retained_buses(nrd::PNM.NetworkReductionData)
-    retained = Set(keys(PNM.get_bus_reduction_map(nrd)))
-    @assert issubset(PNM.get_irreducible_buses(nrd), retained) "irreducible buses are not a subset of bus_reduction_map keys; PNM reduction invariant violated"
-    return retained
+    return Set(keys(PNM.get_bus_reduction_map(nrd)))
 end
 
 """
-Rebuild PTDF and MODF onto the union of their retained buses when they diverge.
-Returns `true` if a rebuild happened; throws if one pass fails to converge them,
-since mismatched reductions break the nodal-balance vs. MODF-column dimensions.
+True when two network matrices carry the same reduction, compared by full
+`bus_reduction_map` equality (keys *and* values). This is the invariant the
+post-contingency builder relies on: it resolves monitored arcs from the reduced
+bus/arc numbering and indexes `modf[arc, outage_spec]`, so the PTDF (which
+dimensions the nodal balance) and the MODF must agree on the entire map, not just
+the retained-bus key set.
 """
-function _reconcile_ptdf_modf_reduction!(
-    model::NetworkModel{<:AbstractPTDFModel},
-    sys::PSY.System,
-)
-    ptdf_nrd = PNM.get_network_reduction_data(model.PTDF_matrix)
-    modf_nrd = PNM.get_network_reduction_data(get_MODF_matrix(model))
-    retained_ptdf = _retained_buses(ptdf_nrd)
-    retained_modf = _retained_buses(modf_nrd)
-    retained_ptdf == retained_modf && return false
-
-    @warn "PTDF and MODF reduced to different bus sets \
-           (|PTDF retained|=$(length(retained_ptdf)), \
-           |MODF retained|=$(length(retained_modf))). Reconciling both onto \
-           the cohesive union of retained buses so the nodal-balance and \
-           post-contingency dimensions agree."
-    cohesive = collect(union(retained_ptdf, retained_modf))
-    reductions = _build_network_reductions(model, cohesive)
-    model.PTDF_matrix =
-        PNM.VirtualPTDF(sys; tol = PTDF_ZERO_TOL, network_reductions = reductions)
-    model.MODF_matrix =
-        PNM.VirtualMODF(sys; tol = PTDF_ZERO_TOL, network_reductions = reductions)
-
-    if _retained_buses(PNM.get_network_reduction_data(model.PTDF_matrix)) !=
-       _retained_buses(PNM.get_network_reduction_data(get_MODF_matrix(model)))
-        throw(
-            IS.ConflictingInputsError(
-                "PTDF and MODF reductions remain dimensionally inconsistent \
-                after one reconciliation pass; aborting build.",
-            ),
-        )
-    end
-    return true
+function _reductions_match(a::PNM.PowerNetworkMatrix, b::PNM.VirtualMODF)
+    return PNM.get_bus_reduction_map(PNM.get_network_reduction_data(a)) ==
+           PNM.get_bus_reduction_map(PNM.get_network_reduction_data(b))
 end
 
 function _get_filters(branch_models::BranchModelContainer)
@@ -434,9 +414,10 @@ function instantiate_network_model!(
         @info "Applying both radial and degree two reductions"
         ybus = PNM.Ybus(
             sys;
+            irreducible_buses = irreducible_buses,
             network_reductions = PNM.NetworkReduction[
-                PNM.RadialReduction(; irreducible_buses = irreducible_buses),
-                PNM.DegreeTwoReduction(; irreducible_buses = irreducible_buses),
+                PNM.RadialReduction(),
+                PNM.DegreeTwoReduction(),
             ],
         )
     elseif model.reduce_radial_branches
@@ -446,17 +427,15 @@ function instantiate_network_model!(
         end
         ybus = PNM.Ybus(
             sys;
-            network_reductions = PNM.NetworkReduction[PNM.RadialReduction(;
-                irreducible_buses = irreducible_buses,
-            )],
+            irreducible_buses = irreducible_buses,
+            network_reductions = PNM.NetworkReduction[PNM.RadialReduction()],
         )
     elseif model.reduce_degree_two_branches
         @info "Applying degree two reduction"
         ybus = PNM.Ybus(
             sys;
-            network_reductions = PNM.NetworkReduction[PNM.DegreeTwoReduction(;
-                irreducible_buses = irreducible_buses,
-            )],
+            irreducible_buses = irreducible_buses,
+            network_reductions = PNM.NetworkReduction[PNM.DegreeTwoReduction()],
         )
     else
         ybus = PNM.Ybus(sys)
@@ -466,13 +445,11 @@ function instantiate_network_model!(
     if isempty(model.subnetworks)
         model.subnetworks = _make_subnetworks_from_subnetwork_axes(ybus)
     end
+    PNM.populate_branch_maps_by_type!(
+        PNM.get_network_reduction_data(ybus),
+        _get_filters(branch_models),
+    )
     model.network_reduction = deepcopy(PNM.get_network_reduction_data(ybus))
-    #if !isempty(model.network_reductionget_net_reduction_data)
-    # TODO: Network reimplement this when it becomes necessary. We don't have any
-    # reductions that are incompatible right now.
-    # check_network_reduction_compatibility(T)
-    #end
-    PNM.populate_branch_maps_by_type!(model.network_reduction, _get_filters(branch_models))
     empty!(model.reduced_branch_tracker)
     set_number_of_steps!(model.reduced_branch_tracker, number_of_steps)
     return
@@ -509,26 +486,153 @@ function instantiate_network_model!(
     return
 end
 
-# Verify a user-provided MODF Matrix was built with the same network reduction
-# as the active reduction (derived from the PTDF Matrix). Equality of the bus
-# reduction map is the decisive check: it fixes the reduced bus/arc numbering
-# the post-contingency builder uses to index `modf_matrix[arc, outage_spec]`.
-function _validate_provided_modf_reduction!(
-    modf::PNM.VirtualMODF,
-    network_reduction::PNM.NetworkReductionData,
+function _build_virtual_ptdf(
+    model::NetworkModel{<:AbstractPTDFModel},
+    sys::PSY.System,
+    irreducible_buses::Vector{Int64},
 )
-    if PNM.get_bus_reduction_map(PNM.get_network_reduction_data(modf)) !=
-       PNM.get_bus_reduction_map(network_reduction)
+    return PNM.VirtualPTDF(
+        sys;
+        tol = PTDF_ZERO_TOL,
+        irreducible_buses = irreducible_buses,
+        network_reductions = _build_network_reductions(model),
+    )
+end
+
+function _build_virtual_modf(
+    model::NetworkModel{<:AbstractPTDFModel},
+    sys::PSY.System,
+    irreducible_buses::Vector{Int64},
+)
+    return PNM.VirtualMODF(
+        sys;
+        tol = PTDF_ZERO_TOL,
+        irreducible_buses = irreducible_buses,
+        network_reductions = _build_network_reductions(model),
+    )
+end
+
+"""
+Keep a provided reduced matrix only when it already retains every bus in
+`irreducible_buses` (the buses pinned by monitored components — time-series bounds
+and/or outage-monitored devices); otherwise rebuild it with `build` so those buses
+survive the reduction. Keeping a sufficient matrix avoids discarding valid user
+input. Shared by the PTDF and MODF paths; `label` (`"PTDF"` / `"MODF"`) only names
+the matrix in the log messages, and `build` is a zero-arg thunk that recomputes it
+with the identified irreducible buses pinned.
+"""
+function _resolve_reduced_matrix(
+    provided::Union{Nothing, PNM.PowerNetworkMatrix},
+    label::String,
+    irreducible_buses::Vector{Int64},
+    build,
+)
+    if isnothing(provided)
+        @info "No $label Matrix provided. Calculating using PowerNetworkMatrices.Virtual$label"
+        return build()
+    end
+    n_missing = length(
+        setdiff(
+            Set(irreducible_buses),
+            _retained_buses(PNM.get_network_reduction_data(provided)),
+        ),
+    )
+    if n_missing > 0
+        @warn "Provided $label Matrix does not retain $n_missing bus(es) pinned by \
+               monitored components (time-series bounds and/or outage-monitored \
+               devices). Recalculating $label Matrix with \
+               PowerNetworkMatrices.Virtual$label and the identified irreducible buses."
+        return build()
+    end
+    return provided
+end
+
+"""
+Validate a kept PTDF matrix's embedded reductions against the model's reduce
+flags. A rebuilt matrix satisfies these by construction; the checks matter when a
+provided matrix is kept.
+"""
+function _validate_ptdf_reduction_flags(model::NetworkModel{<:AbstractPTDFModel})
+    reductions = PNM.get_reductions(PNM.get_network_reduction_data(model.PTDF_matrix))
+    if !model.reduce_radial_branches && PNM.has_radial_reduction(reductions)
         throw(
             IS.ConflictingInputsError(
-                "The provided MODF Matrix was built with a different network \
-                reduction than the active reduction derived from the PTDF \
-                Matrix. Rebuild the MODF with a consistent network reduction, \
-                or omit it so it is recalculated automatically.",
+                "The provided PTDF Matrix has reduced radial branches and mismatches the network \
+                model specification reduce_radial_branches = false. Set the keyword argument \
+                reduce_radial_branches = true in your network model",
             ),
         )
     end
+    if !model.reduce_degree_two_branches && PNM.has_degree_two_reduction(reductions)
+        throw(
+            IS.ConflictingInputsError(
+                "The provided PTDF Matrix has reduced degree two branches and mismatches the network \
+                model specification reduce_degree_two_branches = false. Set the keyword argument \
+                reduce_degree_two_branches = true in your network model",
+            ),
+        )
+    end
+    if model.reduce_radial_branches && PNM.has_ward_reduction(reductions)
+        throw(
+            IS.ConflictingInputsError(
+                "The provided PTDF Matrix has  a ward reduction specified and the keyword argument \\
+                reduce_radial_branches = true. Set the keyword argument reduce_radial_branches = false \\
+                or provide a modified PTDF Matrix without the Ward reduction.",
+            ),
+        )
+    end
+    if model.reduce_radial_branches
+        @assert !isempty(PNM.get_network_reduction_data(model.PTDF_matrix))
+    end
     return
+end
+
+function _set_subnetworks_from_ptdf!(
+    model::NetworkModel{<:AbstractPTDFModel},
+    sys::PSY.System,
+)
+    if isempty(model.subnetworks)
+        model.subnetworks = _make_subnetworks_from_subnetwork_axes(model.PTDF_matrix)
+    end
+    if length(model.subnetworks) > 1
+        @debug "System Contains Multiple Subnetworks. Assigning buses to subnetworks."
+        _assign_subnetworks_to_buses(model, sys)
+    end
+    return
+end
+
+"""
+Guarantee the PTDF and MODF share an identical `bus_reduction_map` so the
+nodal-balance rows and post-contingency MODF columns are dimensionally aligned.
+`VirtualMODF` auto-protects monitored/outaged buses (`VirtualPTDF` does not), so
+the MODF's retained set is the maximal one and is taken as the source of truth.
+When the two disagree, keep the MODF and rebuild only the PTDF pinning the MODF's
+retained buses, which forces the PTDF to reproduce exactly the MODF reduction.
+Throw only if the two still diverge, which indicates a PowerNetworkMatrices
+reduction defect rather than mismatched inputs.
+"""
+function _ensure_ptdf_modf_consistent!(
+    model::NetworkModel{<:AbstractPTDFModel},
+    sys::PSY.System,
+)
+    _reductions_match(get_PTDF_matrix(model), get_MODF_matrix(model)) && return
+    @warn "PTDF and MODF were built with different network reductions. Rebuilding \
+           the PTDF to match the MODF's retained buses so the nodal-balance and \
+           post-contingency dimensions agree."
+    modf_retained =
+        collect(_retained_buses(PNM.get_network_reduction_data(get_MODF_matrix(model))))
+    model.PTDF_matrix = _build_virtual_ptdf(model, sys, modf_retained)
+    _reductions_match(get_PTDF_matrix(model), get_MODF_matrix(model)) && return
+    np = length(_retained_buses(PNM.get_network_reduction_data(get_PTDF_matrix(model))))
+    nm = length(_retained_buses(PNM.get_network_reduction_data(get_MODF_matrix(model))))
+    throw(
+        IS.ConflictingInputsError(
+            "PTDF and MODF resolved to different network reductions even after \
+            rebuilding the PTDF to match the MODF's retained buses (PTDF retains \
+            $(np) buses, MODF retains $(nm)). The nodal-balance and post-contingency \
+            dimensions cannot agree; this indicates a PowerNetworkMatrices reduction defect.",
+        ),
+    )
 end
 
 function instantiate_network_model!(
@@ -539,137 +643,36 @@ function instantiate_network_model!(
 )
     irreducible_buses =
         _get_irreducible_buses_due_to_monitored_components(sys, model, branch_models)
-    if isnothing(get_PTDF_matrix(model)) || !isempty(irreducible_buses)
-        if !isnothing(get_PTDF_matrix(model))
-            @warn "Provided PTDF Matrix is being ignored since irreducible buses were identified from monitored components (TimeSeriesBounds and/or outage-monitored devices). Recalculating PTDF Matrix with PowerNetworkMatrices.VirtualPTDF and the identified irreducible buses."
-        else
-            @info "No PTDF Matrix provided. Calculating using PowerNetworkMatrices.VirtualPTDF"
-        end
-
-        if model.reduce_radial_branches && model.reduce_degree_two_branches
-            @info "Applying both radial and degree two reductions"
-            ptdf = PNM.VirtualPTDF(
-                sys;
-                tol = PTDF_ZERO_TOL,
-                network_reductions = PNM.NetworkReduction[
-                    PNM.RadialReduction(; irreducible_buses = irreducible_buses),
-                    PNM.DegreeTwoReduction(; irreducible_buses = irreducible_buses),
-                ],
-            )
-        elseif model.reduce_radial_branches
-            @info "Applying radial reduction"
-            if !isempty(irreducible_buses)
-                @warn "Irreducible buses identified from monitored components. The reduction of any radial branch between 2 irreducible buses will be ignored"
-            end
-            ptdf = PNM.VirtualPTDF(
-                sys;
-                tol = PTDF_ZERO_TOL,
-                network_reductions = PNM.NetworkReduction[PNM.RadialReduction(;
-                    irreducible_buses = irreducible_buses,
-                )],
-            )
-        elseif model.reduce_degree_two_branches
-            @info "Applying degree two reduction"
-            ptdf = PNM.VirtualPTDF(
-                sys;
-                tol = PTDF_ZERO_TOL,
-                network_reductions = PNM.NetworkReduction[PNM.DegreeTwoReduction(;
-                    irreducible_buses = irreducible_buses,
-                )],
-            )
-        else
-            ptdf = PNM.VirtualPTDF(sys; tol = PTDF_ZERO_TOL)
-        end
-        model.PTDF_matrix = ptdf
-        model.network_reduction = deepcopy(PNM.get_network_reduction_data(ptdf))
-    else
-        model.network_reduction =
-            deepcopy(PNM.get_network_reduction_data(model.PTDF_matrix))
-    end
-
-    if !model.reduce_radial_branches && PNM.has_radial_reduction(
-        PNM.get_reductions(PNM.get_network_reduction_data(model.PTDF_matrix)),
+    # Resolve the PTDF first: it dimensions the nodal balance and supplies the
+    # active network reduction. The buses to protect from elimination are passed
+    # as `irreducible_buses` to each matrix constructor (see
+    # `_build_virtual_ptdf` / `_build_virtual_modf`), which seeds them into the
+    # reduction container; the reduction specs themselves are field-less config.
+    model.PTDF_matrix = _resolve_reduced_matrix(
+        get_PTDF_matrix(model),
+        "PTDF",
+        irreducible_buses,
+        () -> _build_virtual_ptdf(model, sys, irreducible_buses),
     )
-        throw(
-            IS.ConflictingInputsError(
-                "The provided PTDF Matrix has reduced radial branches and mismatches the network \
-                model specification reduce_radial_branches = false. Set the keyword argument \
-                reduce_radial_branches = true in your network model",
-            ),
-        )
-    end
-    if !model.reduce_degree_two_branches && PNM.has_degree_two_reduction(
-        PNM.get_reductions(PNM.get_network_reduction_data(model.PTDF_matrix)),
-    )
-        throw(
-            IS.ConflictingInputsError(
-                "The provided PTDF Matrix has reduced degree two branches and mismatches the network \
-                model specification reduce_degree_two_branches = false. Set the keyword argument \
-                reduce_degree_two_branches = true in your network model",
-            ),
-        )
-    end
-    if model.reduce_radial_branches &&
-       PNM.has_ward_reduction(
-        PNM.get_reductions(PNM.get_network_reduction_data(model.PTDF_matrix)),
-    )
-        throw(
-            IS.ConflictingInputsError(
-                "The provided PTDF Matrix has  a ward reduction specified and the keyword argument \\
-                reduce_radial_branches = true. Set the keyword argument reduce_radial_branches = false \\
-                or provide a modified PTDF Matrix without the Ward reduction.",
-            ),
-        )
-    end
-
-    if model.reduce_radial_branches
-        @assert !isempty(PNM.get_network_reduction_data(model.PTDF_matrix))
-    end
-    model.subnetworks = _make_subnetworks_from_subnetwork_axes(model.PTDF_matrix)
-    if length(model.subnetworks) > 1
-        @debug "System Contains Multiple Subnetworks. Assigning buses to subnetworks."
-        _assign_subnetworks_to_buses(model, sys)
-    end
+    _validate_ptdf_reduction_flags(model)
     if _template_uses_security_constrained_branch(branch_models)
-        if isnothing(get_MODF_matrix(model))
-            @info "No MODF Matrix provided. Calculating using PowerNetworkMatrices.VirtualMODF"
-            model.MODF_matrix = PNM.VirtualMODF(
-                sys;
-                tol = PTDF_ZERO_TOL,
-                network_reductions = _build_network_reductions(model, irreducible_buses),
-            )
-        elseif !isempty(irreducible_buses)
-            @warn "Provided MODF Matrix is being ignored since irreducible buses were identified from monitored components (TimeSeriesBounds and/or outage-monitored devices). Recalculating MODF Matrix with PowerNetworkMatrices.VirtualMODF and the identified irreducible buses."
-            model.MODF_matrix = PNM.VirtualMODF(
-                sys;
-                tol = PTDF_ZERO_TOL,
-                network_reductions = _build_network_reductions(model, irreducible_buses),
-            )
-        else
-            # The provided MODF is kept verbatim. The post-contingency
-            # expression builder resolves monitored arcs from
-            # `model.network_reduction` (taken from the PTDF) and then indexes
-            # `modf_matrix[arc, outage_spec]`; a MODF built with a different
-            # network reduction or bus numbering would silently mis-key or
-            # KeyError, so reject the mismatch up front.
-            _validate_provided_modf_reduction!(
-                get_MODF_matrix(model),
-                model.network_reduction,
-            )
-        end
-        # Reconcile PTDF/MODF reductions before outage consolidation populates
-        # the branch maps.
-        if _reconcile_ptdf_modf_reduction!(model, sys)
-            model.network_reduction =
-                deepcopy(PNM.get_network_reduction_data(model.PTDF_matrix))
-            model.subnetworks = _make_subnetworks_from_subnetwork_axes(model.PTDF_matrix)
-            if length(model.subnetworks) > 1
-                _assign_subnetworks_to_buses(model, sys)
-            end
-        end
+        model.MODF_matrix = _resolve_reduced_matrix(
+            get_MODF_matrix(model),
+            "MODF",
+            irreducible_buses,
+            () -> _build_virtual_modf(model, sys, irreducible_buses),
+        )
+        # Both matrices must share one reduction so the nodal-balance rows and the
+        # post-contingency MODF columns line up; reconcile (and fail fast) before
+        # outage consolidation populates the branch maps.
+        _ensure_ptdf_modf_consistent!(model, sys)
         _consolidate_device_model_outages_with_modf!(branch_models, get_MODF_matrix(model))
     end
-    PNM.populate_branch_maps_by_type!(model.network_reduction, _get_filters(branch_models))
+    PNM.populate_branch_maps_by_type!(
+        PNM.get_network_reduction_data(model.PTDF_matrix), _get_filters(branch_models),
+    )
+    model.network_reduction = deepcopy(PNM.get_network_reduction_data(model.PTDF_matrix))
+    _set_subnetworks_from_ptdf!(model, sys)
     empty!(model.reduced_branch_tracker)
     set_number_of_steps!(model.reduced_branch_tracker, number_of_steps)
     return

@@ -207,6 +207,11 @@ function validate_template_impl!(model::OperationModel)
 
     model_has_branch_filters = false
     branch_keys_to_delete = Symbol[]
+    # Rebuilt fresh on every validation pass so it always matches the branch
+    # types actually present in the template; otherwise stale entries from an
+    # earlier build (e.g. a branch type later pruned for an empty device cache)
+    # leak into the PTDF branch_models lookups and raise a KeyError.
+    empty!(network_model.modeled_ac_branch_types)
     for (k, device_model) in model.template.branches
         make_device_cache!(device_model, system, get_check_components(settings))
         if isempty(get_device_cache(device_model))

@@ -149,7 +149,7 @@ function _set_model!(
     dict::Dict,
     model::DeviceModel{D, B},
 ) where {D <: PSY.Device, B <: AbstractDeviceFormulation}
-    key = Symbol(D)
+    key = Symbol(IS.strip_module_name(D))
     if haskey(dict, key)
         @warn "Overwriting $(D) existing model"
     end

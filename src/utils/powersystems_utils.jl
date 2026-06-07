@@ -91,19 +91,6 @@ function get_available_components(
     )
 end
 
-#=
-function get_available_components(
-    ::Type{PSY.RegulationDevice{T}},
-    sys::PSY.System,
-) where {T <: PSY.Component}
-    return PSY.get_components(
-        x -> (PSY.get_available(x) && PSY.has_service(x, PSY.AGC)),
-        PSY.RegulationDevice{T},
-        sys,
-    )
-end
-=#
-
 make_system_filename(sys::PSY.System) = make_system_filename(IS.get_uuid(sys))
 make_system_filename(sys_uuid::Union{Base.UUID, AbstractString}) = "system-$(sys_uuid).json"
 
