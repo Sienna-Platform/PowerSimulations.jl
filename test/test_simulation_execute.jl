@@ -33,16 +33,31 @@ end
 
 @testset "Single stage sequential tests" begin
     for in_memory in (true, false), rebuild in (true, false)
-        test_single_stage_sequential(in_memory, rebuild, false)
+        test_single_stage_sequential(
+            in_memory,
+            rebuild,
+            PSI.OptimizationModelExportFormat.NONE,
+        )
     end
 end
 
 @testset "Test model export at each solve" begin
-    folder = test_single_stage_sequential(true, false, true)
-    test_path =
-        joinpath(folder, "consecutive", "problems", "ED", "optimization_model_exports")
-    @test ispath(test_path)
-    @test length(readdir(test_path)) == 4
+    # 2 simulation steps. Each format writes a single file per solve, so the
+    # export directory holds exactly 2 files of the selected extension and none
+    # of the other.
+    for (fmt, ext, other_ext) in (
+        (PSI.OptimizationModelExportFormat.LP, ".lp", ".json"),
+        (PSI.OptimizationModelExportFormat.MOF, ".json", ".lp"),
+    )
+        folder = test_single_stage_sequential(true, false, fmt)
+        test_path =
+            joinpath(folder, "consecutive", "problems", "ED", "optimization_model_exports")
+        @test ispath(test_path)
+        files = readdir(test_path)
+        @test length(files) == 2
+        @test all(endswith(f, ext) for f in files)
+        @test !any(endswith(f, other_ext) for f in files)
+    end
 end
 
 function test_2_stage_decision_models_with_feedforwards(in_memory)

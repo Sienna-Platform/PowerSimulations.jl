@@ -350,6 +350,29 @@ end
           PSI.RunStatus.SUCCESSFULLY_FINALIZED
 end
 
+@testset "Optimization-model export serialization (copy/write split + lifecycle)" begin
+    c_sys5 = PSB.build_system(PSITestSystems, "c_sys5")
+    template = get_thermal_dispatch_template_network(CopperPlatePowerModel)
+    model = DecisionModel(template, c_sys5; optimizer = HiGHS_optimizer)
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+    # No serialization task pending before any export.
+    @test PSI.get_serialization_task(model) === nothing
+
+    dir = mktempdir(; cleanup = true)
+    for (fmt, ext) in (("MOF", "json"), ("LP", "lp"))
+        path = joinpath(dir, "exported.$(ext)")
+        PSI.serialize_optimization_model(model, path, fmt)
+        # With nthreads() > 1 the write is backgrounded; join it. With a single
+        # thread it already ran inline and this is a no-op.
+        PSI.wait_for_serialization!(model)
+        @test isfile(path)
+        @test filesize(path) > 0
+        # The task handle is cleared once the write has been awaited.
+        @test PSI.get_serialization_task(model) === nothing
+    end
+end
+
 @testset "Test NonSpinning reseve model" begin
     c_sys5 = PSB.build_system(PSITestSystems, "c_sys5_uc_non_spin"; add_reserves = true)
     template = get_thermal_standard_uc_template()

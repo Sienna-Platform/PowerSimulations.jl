@@ -28,6 +28,7 @@ Build the optimization problem of type M with the specific system and template.
   - `direct_mode_optimizer::Bool = false`: True to use the solver in direct mode. Creates a [JuMP.direct_model](https://jump.dev/JuMP.jl/dev/reference/models/#JuMP.direct_model).
   - `store_variable_names::Bool = false`: True to store variable names in optimization model.
   - `rebuild_model::Bool = false`: It will force the rebuild of the underlying JuMP model with each call to update the model. It increases solution times, use only if the model can't be updated in memory.
+  - `export_optimization_model::OptimizationModelExportFormat = OptimizationModelExportFormat.NONE`: Format to export the optimization model to disk on each solve (written under `optimization_model_exports`). One of `OptimizationModelExportFormat.NONE` (no export), `OptimizationModelExportFormat.LP` (`.lp`), or `OptimizationModelExportFormat.MOF` (MathOptFormat `.json`). A case-insensitive string naming a value is also accepted.
   - `initial_time::Dates.DateTime = UNSET_INI_TIME`: Initial Time for the model solve.
   - `time_series_cache_size::Int = IS.TIME_SERIES_CACHE_SIZE_BYTES`: Size in bytes to cache for each time array. Default is 1 MiB. Set to 0 to disable.
 
@@ -96,6 +97,7 @@ function EmulationModel{M}(
     check_numerical_bounds = true,
     store_variable_names = false,
     rebuild_model = false,
+    export_optimization_model = OptimizationModelExportFormat.NONE,
     initial_time = UNSET_INI_TIME,
     time_series_cache_size::Int = IS.TIME_SERIES_CACHE_SIZE_BYTES,
 ) where {M <: EmulationProblem}
@@ -117,6 +119,7 @@ function EmulationModel{M}(
         check_numerical_bounds = check_numerical_bounds,
         store_variable_names = store_variable_names,
         rebuild_model = rebuild_model,
+        export_optimization_model = export_optimization_model,
         horizon = resolution,
         resolution = resolution,
     )
@@ -496,7 +499,7 @@ keyword arguments to that function.
   - `export_problem_results::Bool`: If true, export OptimizationProblemResults DataFrames to CSV files.
   - `output_dir::String`: Required if the model is not already built, otherwise ignored
   - `enable_progress_bar::Bool`: Enables/Disable progress bar printing
-  - `export_optimization_model::Bool`: If true, serialize the model to a file to allow re-execution later.
+  - `export_optimization_problem::Bool = true`: If true, serialize the model to a file to allow re-execution later.
 
 # Examples
 
@@ -511,7 +514,7 @@ function run!(
     console_level = Logging.Error,
     file_level = Logging.Info,
     disable_timer_outputs = false,
-    export_optimization_model = true,
+    export_optimization_problem = true,
     kwargs...,
 )
     build_if_not_already_built!(
@@ -544,7 +547,7 @@ function run!(
                     run_impl!(model; kwargs...)
                     set_run_status!(model, RunStatus.SUCCESSFULLY_FINALIZED)
                 end
-                if export_optimization_model
+                if export_optimization_problem
                     TimerOutputs.@timeit RUN_OPERATION_MODEL_TIMER "Serialize" begin
                         serialize_optimization_model(model)
                     end
@@ -561,6 +564,7 @@ function run!(
             end
         end
     finally
+        wait_for_serialization!(model)
         unregister_recorders!(model)
         close(logger)
     end
@@ -600,6 +604,7 @@ function solve!(
         )
         write_optimizer_stats!(store, model, get_execution_count(model))
     end
+    wait_for_serialization!(model)
     return get_run_status(model)
 end
 
