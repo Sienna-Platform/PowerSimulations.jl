@@ -57,6 +57,59 @@ end
     @test_throws ErrorException PSI.validate_template(emulation_model)
 end
 
+@testset "Branch validation scoped to modeled networks" begin
+    # A >1% endpoint voltage mismatch makes the line fail PSY.check_component.
+    sys = PSB.build_system(PSITestSystems, "c_sys5_uc")
+    arc = get_arc(first(get_components(Line, sys)))
+    set_base_voltage!(get_to(arc), 10 * get_base_voltage(get_from(arc)))
+
+    # CopperPlate does not model branches, so the invalid line is not validated
+    # and template validation succeeds.
+    cp_model =
+        DecisionModel(get_thermal_dispatch_template_network(CopperPlatePowerModel), sys)
+    @test PSI.validate_template(cp_model) === nothing
+
+    # PTDF models branches, so the same invalid line must raise during validation.
+    # The deliberate failure logs an @error before throwing; silence it with a
+    # NullLogger so it does not trip the suite-wide "no @error logged" assertion
+    # in runtests.jl (build! failures avoid this by logging under their own logger).
+    ptdf_model =
+        DecisionModel(get_thermal_dispatch_template_network(PTDFPowerModel), sys)
+    with_logger(NullLogger()) do
+        @test_throws IS.InvalidValue PSI.validate_template(ptdf_model)
+    end
+end
+
+@testset "Settings export_optimization_model format Tests" begin
+    sys = PSB.build_system(PSITestSystems, "c_sys5")
+    # Default is no export.
+    @test PSI.get_export_optimization_model(PSI.Settings(sys)) ==
+          PSI.OptimizationModelExportFormat.NONE
+    # The enum is accepted directly.
+    @test PSI.get_export_optimization_model(
+        PSI.Settings(sys; export_optimization_model = PSI.OptimizationModelExportFormat.LP),
+    ) == PSI.OptimizationModelExportFormat.LP
+    # A case-insensitive, trimmed string naming a value is also accepted.
+    @test PSI.get_export_optimization_model(
+        PSI.Settings(sys; export_optimization_model = "mof"),
+    ) == PSI.OptimizationModelExportFormat.MOF
+    @test PSI.get_export_optimization_model(
+        PSI.Settings(sys; export_optimization_model = " lp "),
+    ) == PSI.OptimizationModelExportFormat.LP
+    @test PSI.get_export_optimization_model(
+        PSI.Settings(sys; export_optimization_model = ""),
+    ) == PSI.OptimizationModelExportFormat.NONE
+    # Invalid string and the legacy Bool both raise a clear error.
+    @test_throws IS.ConflictingInputsError PSI.Settings(
+        sys;
+        export_optimization_model = "json",
+    )
+    @test_throws IS.ConflictingInputsError PSI.Settings(
+        sys;
+        export_optimization_model = true,
+    )
+end
+
 @testset "Feedforward Struct Tests" begin
     ffs = [
         UpperBoundFeedforward(;

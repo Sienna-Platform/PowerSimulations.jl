@@ -17,10 +17,41 @@ struct Settings
     export_pwl_vars::Bool
     allow_fails::Bool
     rebuild_model::Bool
-    export_optimization_model::Bool
+    export_optimization_model::OptimizationModelExportFormat
     store_variable_names::Bool
     check_numerical_bounds::Bool
     ext::Dict{String, Any}
+end
+
+# Normalize the `export_optimization_model` setting to an `OptimizationModelExportFormat`.
+# Accepts the enum directly, or a case-insensitive/trimmed string naming a value (with
+# "" mapping to `NONE`). The fallback method rejects everything else, including the
+# legacy `Bool`.
+_validate_export_optimization_model(value::OptimizationModelExportFormat) = value
+
+function _validate_export_optimization_model(value::AbstractString)
+    name = uppercase(strip(value))
+    isempty(name) && return OptimizationModelExportFormat.NONE
+    for fmt in instances(OptimizationModelExportFormat)
+        string(fmt) == name && return fmt
+    end
+    throw(
+        IS.ConflictingInputsError(
+            "export_optimization_model must be one of \
+            $(instances(OptimizationModelExportFormat)) or a string naming one \
+            (case-insensitive); got \"$(value)\".",
+        ),
+    )
+end
+
+function _validate_export_optimization_model(value)
+    throw(
+        IS.ConflictingInputsError(
+            "export_optimization_model must be an OptimizationModelExportFormat or a \
+            String naming one; got a $(typeof(value)) ($(repr(value))). \
+            The boolean form is no longer accepted.",
+        ),
+    )
 end
 
 function Settings(
@@ -44,7 +75,7 @@ function Settings(
     allow_fails::Bool = false,
     check_numerical_bounds = true,
     rebuild_model = false,
-    export_optimization_model = false,
+    export_optimization_model = OptimizationModelExportFormat.NONE,
     store_variable_names = false,
     ext = Dict{String, Any}(),
 )
@@ -62,6 +93,9 @@ function Settings(
             "The provided input for optimizer is invalid. Provide a JuMP.OptimizerWithAttributes object or a valid Optimizer constructor (e.g. HiGHS.Optimizer).",
         )
     end
+
+    export_optimization_model =
+        _validate_export_optimization_model(export_optimization_model)
 
     return Settings(
         Ref(IS.time_period_conversion(horizon)),

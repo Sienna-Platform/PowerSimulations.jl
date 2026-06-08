@@ -75,3 +75,10 @@ requires_all_branch_models(::Type{<:PM.AbstractPowerModel}) = true
 requires_all_branch_models(::Type{<:AbstractPTDFModel}) = false
 requires_all_branch_models(::Type{CopperPlatePowerModel}) = false
 requires_all_branch_models(::Type{AreaBalancePowerModel}) = false
+
+# Whether the network builds branch flow constraints. CopperPlate/AreaBalance do
+# not (their branch construct_device! is a no-op), so their branch components must
+# not be validated.
+branches_modeled(::Type{<:PM.AbstractPowerModel}) = true
+branches_modeled(::Type{CopperPlatePowerModel}) = false
+branches_modeled(::Type{AreaBalancePowerModel}) = false
