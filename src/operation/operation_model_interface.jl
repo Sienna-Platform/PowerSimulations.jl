@@ -113,11 +113,11 @@ function solve_impl!(model::OperationModel)
     output_dir = get_output_dir(model)
 
     fmt = get_export_optimization_model(get_settings(model))
-    if !isempty(fmt)
+    if fmt != OptimizationModelExportFormat.NONE
         model_output_dir = joinpath(output_dir, "optimization_model_exports")
         mkpath(model_output_dir)
         tss = replace("$(ts)", ":" => "_")
-        ext = fmt == "LP" ? "lp" : "json"
+        ext = fmt == OptimizationModelExportFormat.LP ? "lp" : "json"
         model_export_path =
             joinpath(model_output_dir, "exported_$(model_name)_$(tss).$(ext)")
         serialize_optimization_model(model, model_export_path, fmt)
@@ -422,13 +422,13 @@ function wait_for_serialization!(model::OperationModel)
     return
 end
 
-# Export the live model in `fmt` ("LP" or "MOF"). The copy runs here on the main
+# Export the live model in `fmt` (`LP` or `MOF`). The copy runs here on the main
 # thread; the write is backgrounded (when threaded) since it uses the independent
 # copy and cannot race the solve.
 function serialize_optimization_model(
     model::OperationModel,
     save_path::String,
-    fmt::String,
+    fmt::OptimizationModelExportFormat,
 )
     jump_model = get_jump_model(get_optimization_container(model))
     dest = _copy_jump_model_for_export(jump_model, fmt)

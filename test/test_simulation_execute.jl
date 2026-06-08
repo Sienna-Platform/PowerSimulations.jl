@@ -33,7 +33,11 @@ end
 
 @testset "Single stage sequential tests" begin
     for in_memory in (true, false), rebuild in (true, false)
-        test_single_stage_sequential(in_memory, rebuild, "")
+        test_single_stage_sequential(
+            in_memory,
+            rebuild,
+            PSI.OptimizationModelExportFormat.NONE,
+        )
     end
 end
 
@@ -41,7 +45,10 @@ end
     # 2 simulation steps. Each format writes a single file per solve, so the
     # export directory holds exactly 2 files of the selected extension and none
     # of the other.
-    for (fmt, ext, other_ext) in (("LP", ".lp", ".json"), ("MOF", ".json", ".lp"))
+    for (fmt, ext, other_ext) in (
+        (PSI.OptimizationModelExportFormat.LP, ".lp", ".json"),
+        (PSI.OptimizationModelExportFormat.MOF, ".json", ".lp"),
+    )
         folder = test_single_stage_sequential(true, false, fmt)
         test_path =
             joinpath(folder, "consecutive", "problems", "ED", "optimization_model_exports")

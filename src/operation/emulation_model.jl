@@ -28,7 +28,7 @@ Build the optimization problem of type M with the specific system and template.
   - `direct_mode_optimizer::Bool = false`: True to use the solver in direct mode. Creates a [JuMP.direct_model](https://jump.dev/JuMP.jl/dev/reference/models/#JuMP.direct_model).
   - `store_variable_names::Bool = false`: True to store variable names in optimization model.
   - `rebuild_model::Bool = false`: It will force the rebuild of the underlying JuMP model with each call to update the model. It increases solution times, use only if the model can't be updated in memory.
-  - `export_optimization_model::String = ""`: Format to export the optimization model to disk on each solve (written under `optimization_model_exports`). One of `""` (no export), `"LP"` (`.lp`), or `"MOF"` (MathOptFormat `.json`). Case-insensitive.
+  - `export_optimization_model::OptimizationModelExportFormat = OptimizationModelExportFormat.NONE`: Format to export the optimization model to disk on each solve (written under `optimization_model_exports`). One of `OptimizationModelExportFormat.NONE` (no export), `OptimizationModelExportFormat.LP` (`.lp`), or `OptimizationModelExportFormat.MOF` (MathOptFormat `.json`). A case-insensitive string naming a value is also accepted.
   - `initial_time::Dates.DateTime = UNSET_INI_TIME`: Initial Time for the model solve.
   - `time_series_cache_size::Int = IS.TIME_SERIES_CACHE_SIZE_BYTES`: Size in bytes to cache for each time array. Default is 1 MiB. Set to 0 to disable.
 
@@ -97,7 +97,7 @@ function EmulationModel{M}(
     check_numerical_bounds = true,
     store_variable_names = false,
     rebuild_model = false,
-    export_optimization_model = "",
+    export_optimization_model = OptimizationModelExportFormat.NONE,
     initial_time = UNSET_INI_TIME,
     time_series_cache_size::Int = IS.TIME_SERIES_CACHE_SIZE_BYTES,
 ) where {M <: EmulationProblem}

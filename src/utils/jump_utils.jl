@@ -635,9 +635,17 @@ function write_optimizer_stats!(optimizer_stats::OptimizerStats, jump_model::JuM
 end
 
 # Read step of an export: copies the live model, so it must run on the main thread
-# before `JuMP.optimize!` mutates it. `fmt` is "LP" or "MOF".
-function _copy_jump_model_for_export(jump_model::JuMP.Model, fmt::String)
-    file_format = fmt == "LP" ? MOI.FileFormats.FORMAT_LP : MOI.FileFormats.FORMAT_MOF
+# before `JuMP.optimize!` mutates it. `fmt` is `LP` or `MOF`.
+function _copy_jump_model_for_export(
+    jump_model::JuMP.Model,
+    fmt::OptimizationModelExportFormat,
+)
+    file_format =
+        if fmt == OptimizationModelExportFormat.LP
+            MOI.FileFormats.FORMAT_LP
+        else
+            MOI.FileFormats.FORMAT_MOF
+        end
     dest = MOPFM(; format = file_format)
     MOI.copy_to(dest, JuMP.backend(jump_model))
     return dest

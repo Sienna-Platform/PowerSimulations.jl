@@ -17,34 +17,38 @@ struct Settings
     export_pwl_vars::Bool
     allow_fails::Bool
     rebuild_model::Bool
-    export_optimization_model::String
+    export_optimization_model::OptimizationModelExportFormat
     store_variable_names::Bool
     check_numerical_bounds::Bool
     ext::Dict{String, Any}
 end
 
-# Allowed `export_optimization_model` formats: "" (off), "LP", "MOF". Input is
-# case-insensitive and trimmed; the fallback method rejects the legacy `Bool`.
-const _OPTIMIZATION_EXPORT_FORMATS = ("", "LP", "MOF")
+# Normalize the `export_optimization_model` setting to an `OptimizationModelExportFormat`.
+# Accepts the enum directly, or a case-insensitive/trimmed string naming a value (with
+# "" mapping to `NONE`). The fallback method rejects everything else, including the
+# legacy `Bool`.
+_validate_export_optimization_model(value::OptimizationModelExportFormat) = value
 
 function _validate_export_optimization_model(value::AbstractString)
-    fmt = uppercase(strip(value))
-    if !(fmt in _OPTIMIZATION_EXPORT_FORMATS)
-        throw(
-            IS.ConflictingInputsError(
-                "export_optimization_model must be one of $(_OPTIMIZATION_EXPORT_FORMATS) \
-                (case-insensitive); got \"$(value)\".",
-            ),
-        )
+    name = uppercase(strip(value))
+    isempty(name) && return OptimizationModelExportFormat.NONE
+    for fmt in instances(OptimizationModelExportFormat)
+        string(fmt) == name && return fmt
     end
-    return String(fmt)
+    throw(
+        IS.ConflictingInputsError(
+            "export_optimization_model must be one of \
+            $(instances(OptimizationModelExportFormat)) or a string naming one \
+            (case-insensitive); got \"$(value)\".",
+        ),
+    )
 end
 
 function _validate_export_optimization_model(value)
     throw(
         IS.ConflictingInputsError(
-            "export_optimization_model must be a String, one of \
-            $(_OPTIMIZATION_EXPORT_FORMATS); got a $(typeof(value)) ($(repr(value))). \
+            "export_optimization_model must be an OptimizationModelExportFormat or a \
+            String naming one; got a $(typeof(value)) ($(repr(value))). \
             The boolean form is no longer accepted.",
         ),
     )
@@ -71,7 +75,7 @@ function Settings(
     allow_fails::Bool = false,
     check_numerical_bounds = true,
     rebuild_model = false,
-    export_optimization_model = "",
+    export_optimization_model = OptimizationModelExportFormat.NONE,
     store_variable_names = false,
     ext = Dict{String, Any}(),
 )

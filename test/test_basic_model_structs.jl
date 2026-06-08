@@ -83,17 +83,22 @@ end
 @testset "Settings export_optimization_model format Tests" begin
     sys = PSB.build_system(PSITestSystems, "c_sys5")
     # Default is no export.
-    @test PSI.get_export_optimization_model(PSI.Settings(sys)) == ""
+    @test PSI.get_export_optimization_model(PSI.Settings(sys)) ==
+          PSI.OptimizationModelExportFormat.NONE
+    # The enum is accepted directly.
     @test PSI.get_export_optimization_model(
-        PSI.Settings(sys; export_optimization_model = "LP"),
-    ) == "LP"
-    # Case-insensitive and trimmed, normalized to uppercase.
+        PSI.Settings(sys; export_optimization_model = PSI.OptimizationModelExportFormat.LP),
+    ) == PSI.OptimizationModelExportFormat.LP
+    # A case-insensitive, trimmed string naming a value is also accepted.
     @test PSI.get_export_optimization_model(
         PSI.Settings(sys; export_optimization_model = "mof"),
-    ) == "MOF"
+    ) == PSI.OptimizationModelExportFormat.MOF
     @test PSI.get_export_optimization_model(
         PSI.Settings(sys; export_optimization_model = " lp "),
-    ) == "LP"
+    ) == PSI.OptimizationModelExportFormat.LP
+    @test PSI.get_export_optimization_model(
+        PSI.Settings(sys; export_optimization_model = ""),
+    ) == PSI.OptimizationModelExportFormat.NONE
     # Invalid string and the legacy Bool both raise a clear error.
     @test_throws IS.ConflictingInputsError PSI.Settings(
         sys;
