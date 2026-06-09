@@ -658,12 +658,18 @@ _write_export_model(dest, save_path::String) = MOI.write_to_file(dest, save_path
 Exports the JuMP object in MathOptFormat
 """
 function serialize_jump_optimization_model(jump_model::JuMP.Model, save_path::String)
-    _write_export_model(_copy_jump_model_for_export(jump_model, "MOF"), save_path)
+    _write_export_model(
+        _copy_jump_model_for_export(jump_model, OptimizationModelExportFormat.MOF),
+        save_path,
+    )
     return
 end
 
 function write_lp_file(jump_model::JuMP.Model, save_path::String)
-    _write_export_model(_copy_jump_model_for_export(jump_model, "LP"), save_path)
+    _write_export_model(
+        _copy_jump_model_for_export(jump_model, OptimizationModelExportFormat.LP),
+        save_path,
+    )
     return
 end
 
