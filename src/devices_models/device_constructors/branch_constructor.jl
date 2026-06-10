@@ -1557,7 +1557,7 @@ function _get_area_from_to(reduction_entry::PNM.ThreeWindingTransformerWinding)
         area_to = PSY.get_area(PSY.get_primary_star_arc(tfw).to)
     elseif winding_int == 2
         area_from = PSY.get_area(PSY.get_secondary_star_arc(tfw).from)
-        area_to = PSY.get_area(PSY.get_secondary_star_arc(tfw).to_index)
+        area_to = PSY.get_area(PSY.get_secondary_star_arc(tfw).to)
     elseif winding_int == 3
         area_from = PSY.get_area(PSY.get_tertiary_star_arc(tfw).from)
         area_to = PSY.get_area(PSY.get_tertiary_star_arc(tfw).to)
