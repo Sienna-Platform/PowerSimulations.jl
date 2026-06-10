@@ -360,7 +360,10 @@ end
     @test PSI.get_serialization_task(model) === nothing
 
     dir = mktempdir(; cleanup = true)
-    for (fmt, ext) in (("MOF", "json"), ("LP", "lp"))
+    for (fmt, ext) in (
+        (PSI.OptimizationModelExportFormat.MOF, "json"),
+        (PSI.OptimizationModelExportFormat.LP, "lp"),
+    )
         path = joinpath(dir, "exported.$(ext)")
         PSI.serialize_optimization_model(model, path, fmt)
         # With nthreads() > 1 the write is backgrounded; join it. With a single
