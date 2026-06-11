@@ -96,7 +96,12 @@ end
     )
     c_sys5_uc = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_reserves = true)
 
-    model = DecisionModel(template, c_sys5_uc; optimizer = HiGHS_optimizer, store_variable_names = true)
+    model = DecisionModel(
+        template,
+        c_sys5_uc;
+        optimizer = HiGHS_optimizer,
+        store_variable_names = true,
+    )
     @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
           PSI.ModelBuildStatus.BUILT
     moi_tests(model, 984, 0, 576, 216, 168, true)
@@ -1232,5 +1237,9 @@ end
         res_uc,
         "ServiceRequirementVariable__ReserveDemandCurve__ReserveUp__ORDC1",
     )
-    @test isapprox(sum(ordc1_sol[!, "value"] .- ordc1_sim[25:48, "value"]), 0.0; atol = 1e-12)
+    @test isapprox(
+        sum(ordc1_sol[!, "value"] .- ordc1_sim[25:48, "value"]),
+        0.0;
+        atol = 1e-12,
+    )
 end

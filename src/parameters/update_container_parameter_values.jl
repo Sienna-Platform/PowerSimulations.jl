@@ -217,7 +217,6 @@ function _update_parameter_values!(
     end
 end
 
-
 function _update_parameter_values!(
     parameter_array::DenseAxisArray{T},
     ::ParameterType,
@@ -753,7 +752,6 @@ function update_container_parameter_values!(
     )
     return
 end
-
 
 function update_container_parameter_values!(
     optimization_container::OptimizationContainer,

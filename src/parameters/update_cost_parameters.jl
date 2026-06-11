@@ -202,7 +202,8 @@ function handle_variable_cost_parameter(
         len = horizon,
         count = 1,
     )
-    ts_vector = PSY.read_and_convert_ts(ts, component, initial_forecast_time, horizon, nothing)
+    ts_vector =
+        PSY.read_and_convert_ts(ts, component, initial_forecast_time, horizon, nothing)
     for (t, value::PSY.PiecewiseStepData) in enumerate(TimeSeries.values(ts_vector))
         unwrapped_value =
             _unwrap_for_param(T(), value, lookup_additional_axes(parameter_array))

@@ -92,7 +92,11 @@ function add_parameters!(
     ::Type{T},
     service::U,
     model::ServiceModel{U, V},
-) where {T <: DecrementalPiecewiseLinearSlopeParameter, U <: PSY.Service, V <: AbstractServiceFormulation}
+) where {
+    T <: DecrementalPiecewiseLinearSlopeParameter,
+    U <: PSY.Service,
+    V <: AbstractServiceFormulation,
+}
     if get_rebuild_model(get_settings(container)) &&
        has_container_key(container, T(), U, PSY.get_name(service))
         return
@@ -505,11 +509,18 @@ end
 _get_time_series_name(::T, ::PSY.Component, model::DeviceModel) where {T <: ParameterType} =
     get_time_series_names(model)[T]
 
-_get_time_series_name(::T, ::PSY.Component, model::ServiceModel) where {T <: ParameterType} =
+_get_time_series_name(
+    ::T,
+    ::PSY.Component,
+    model::ServiceModel,
+) where {T <: ParameterType} =
     get_time_series_names(model)[T]
 
 _get_time_series_name(
-    ::Union{DecrementalPiecewiseLinearSlopeParameter, DecrementalPiecewiseLinearBreakpointParameter},
+    ::Union{
+        DecrementalPiecewiseLinearSlopeParameter,
+        DecrementalPiecewiseLinearBreakpointParameter,
+    },
     service::PSY.ReserveDemandCurve,
     ::ServiceModel,
 ) = get_name(PSY.get_variable(service))
@@ -584,11 +595,17 @@ _param_to_vars(
     (PiecewiseLinearBlockDecrementalOffer,)
 
 _param_to_vars(
-    ::Union{IncrementalPiecewiseLinearSlopeParameter, IncrementalPiecewiseLinearBreakpointParameter},
+    ::Union{
+        IncrementalPiecewiseLinearSlopeParameter,
+        IncrementalPiecewiseLinearBreakpointParameter,
+    },
     ::AbstractServiceFormulation,
 ) = (PiecewiseLinearBlockIncrementalOffer,)
 _param_to_vars(
-    ::Union{DecrementalPiecewiseLinearSlopeParameter, DecrementalPiecewiseLinearBreakpointParameter},
+    ::Union{
+        DecrementalPiecewiseLinearSlopeParameter,
+        DecrementalPiecewiseLinearBreakpointParameter,
+    },
     ::AbstractServiceFormulation,
 ) = (PiecewiseLinearBlockDecrementalOffer,)
 
@@ -628,7 +645,11 @@ function calc_additional_axes(
     ::P,
     service::U,
     ::ServiceModel{U, W},
-) where {P <: AbstractPiecewiseLinearSlopeParameter, U <: PSY.ReserveDemandCurve, W <: AbstractServiceFormulation}
+) where {
+    P <: AbstractPiecewiseLinearSlopeParameter,
+    U <: PSY.ReserveDemandCurve,
+    W <: AbstractServiceFormulation,
+}
     curves = PSY.get_variable(service)
     max_tranches = get_max_tranches(service, curves)
     return (make_tranche_axis(max_tranches),)
@@ -639,7 +660,11 @@ function calc_additional_axes(
     ::P,
     service::U,
     ::ServiceModel{U, W},
-) where {P <: AbstractPiecewiseLinearBreakpointParameter, U <: PSY.ReserveDemandCurve, W <: AbstractServiceFormulation}
+) where {
+    P <: AbstractPiecewiseLinearBreakpointParameter,
+    U <: PSY.ReserveDemandCurve,
+    W <: AbstractServiceFormulation,
+}
     curves = PSY.get_variable(service)
     max_tranches = get_max_tranches(service, curves)
     return (make_tranche_axis(max_tranches + 1),)
@@ -868,7 +893,13 @@ function _add_parameters!(
     set_subsystem!(get_attributes(parameter_container), get_subsystem(model))
     jump_model = get_jump_model(container)
     multiplier = get_multiplier_value(T(), service, V())
-    raw_ts_vals = get_time_series_initial_values!(container, ts_type, service, ts_name; interval = ts_interval)
+    raw_ts_vals = get_time_series_initial_values!(
+        container,
+        ts_type,
+        service,
+        ts_name;
+        interval = ts_interval,
+    )
     param_instance = T()
     ts_vals = _unwrap_for_param.(Ref(param_instance), raw_ts_vals, Ref(additional_axes))
     all(_size_wrapper.(ts_vals) .== Ref(length.(additional_axes))) || error(

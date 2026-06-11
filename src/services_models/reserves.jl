@@ -589,7 +589,6 @@ function _get_reserve_pwl_data(
     return breakpoints, slopes
 end
 
-
 function _add_variable_cost_to_objective!(
     container::OptimizationContainer,
     ::T,
@@ -623,7 +622,6 @@ function _add_variable_cost_to_objective!(
     end
     return
 end
-
 
 function add_proportional_cost!(
     container::OptimizationContainer,

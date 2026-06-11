@@ -1359,7 +1359,12 @@ function _add_param_container!(
             DenseAxisArray{param_type}(undef, multiplier_axs, additional_axs..., time_steps)
         multiplier_array =
             fill!(
-                DenseAxisArray{Float64}(undef, multiplier_axs, additional_axs..., time_steps),
+                DenseAxisArray{Float64}(
+                    undef,
+                    multiplier_axs,
+                    additional_axs...,
+                    time_steps,
+                ),
                 NaN,
             )
     end
