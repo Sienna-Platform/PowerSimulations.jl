@@ -603,11 +603,11 @@ Implement the constraints for PWL Block Offer variables for ORDC. That is:
 \\sum_{k\\in\\mathcal{K}} \\delta_{k,t} <= P_{k+1,t}^{max} - P_{k,t}^{max}
 ```
 """
-function _add_pwl_constraint!(
+function _add_pwl_ordc_constraint!(
     container::OptimizationContainer,
     component::T,
     ::U,
-    break_points::Vector{Float64},
+    break_points::Vector{<:JuMPOrFloat},
     sos_status::SOSStatusVariable,
     period::Int,
 ) where {T <: PSY.ReserveDemandCurve, U <: ServiceRequirementVariable}
@@ -615,14 +615,14 @@ function _add_pwl_constraint!(
     variables = get_variable(container, U(), T, name)
     const_container = lazy_container_addition!(
         container,
-        PiecewiseLinearBlockIncrementalOfferConstraint(),
+        PiecewiseLinearBlockDecrementalOfferConstraint(),
         T,
         axes(variables)...;
         meta = name,
     )
     len_cost_data = length(break_points) - 1
     jump_model = get_jump_model(container)
-    pwl_vars = get_variable(container, PiecewiseLinearBlockIncrementalOffer(), T)
+    pwl_vars = get_variable(container, PiecewiseLinearBlockDecrementalOffer(), T)
     const_container[name, period] = JuMP.@constraint(
         jump_model,
         variables[name, period] ==
@@ -694,7 +694,7 @@ function _get_pwl_cost_expression(
     multiplier::Float64,
 ) where {T <: PSY.ReserveDemandCurve}
     name = PSY.get_name(component)
-    pwl_var_container = get_variable(container, PiecewiseLinearBlockIncrementalOffer(), T)
+    pwl_var_container = get_variable(container, PiecewiseLinearBlockDecrementalOffer(), T)
     ordc_cost = JuMP.AffExpr(0.0)
     for (i, slope) in enumerate(slopes_normalized)
         JuMP.add_to_expression!(
@@ -827,44 +827,38 @@ end
 function _add_pwl_term!(
     container::OptimizationContainer,
     component::T,
-    cost_data::PSY.CostCurve{PSY.PiecewiseIncrementalCurve},
+    cost_data::W,
     ::U,
     ::V,
-) where {T <: PSY.Component, U <: VariableType, V <: AbstractServiceFormulation}
+) where {
+    T <: PSY.Component,
+    U <: VariableType,
+    V <: AbstractServiceFormulation,
+    W <: Union{PSY.CostCurve{PSY.PiecewiseIncrementalCurve}, IS.TimeSeriesKey},
+}
     multiplier = objective_function_multiplier(U(), V())
     resolution = get_resolution(container)
     dt = Dates.value(Dates.Second(resolution)) / SECONDS_IN_HOUR
-    base_power = get_base_power(container)
-    value_curve = PSY.get_value_curve(cost_data)
-    power_units = PSY.get_power_units(cost_data)
-    cost_component = PSY.get_function_data(value_curve)
-    device_base_power = PSY.get_base_power(component)
-    data = get_piecewise_curve_per_system_unit(
-        cost_component,
-        power_units,
-        base_power,
-        device_base_power,
-    )
     name = PSY.get_name(component)
     time_steps = get_time_steps(container)
     pwl_cost_expressions = Vector{JuMP.AffExpr}(undef, time_steps[end])
     sos_val = _get_sos_value(container, V, component)
     for t in time_steps
-        break_points = PSY.get_x_coords(data)
+        breakpoints, slopes = _get_reserve_pwl_data(container, component, cost_data, t)
         _add_pwl_variables!(
             container,
-            T,
+            typeof(component),
             name,
             t,
-            length(IS.get_y_coords(data)),
-            PiecewiseLinearBlockIncrementalOffer,
+            length(slopes),
+            PiecewiseLinearBlockDecrementalOffer,
         )
-        _add_pwl_constraint!(container, component, U(), break_points, sos_val, t)
+        _add_pwl_ordc_constraint!(container, component, U(), breakpoints, sos_val, t)
         pwl_cost = _get_pwl_cost_expression(
             container,
             component,
             t,
-            IS.get_y_coords(data),
+            slopes,
             multiplier * dt,
         )
         pwl_cost_expressions[t] = pwl_cost
