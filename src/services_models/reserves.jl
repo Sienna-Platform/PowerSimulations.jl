@@ -43,6 +43,8 @@ get_initial_parameter_value(::VariableValueParameter, d::Type{<:PSY.AbstractRese
 objective_function_multiplier(::ServiceRequirementVariable, ::StepwiseCostReserve) = -1.0
 sos_status(::PSY.ReserveDemandCurve, ::StepwiseCostReserve)=SOSStatusVariable.NO_VARIABLE
 uses_compact_power(::PSY.ReserveDemandCurve, ::StepwiseCostReserve)=false
+get_multiplier_value(::AbstractPiecewiseLinearBreakpointParameter, d::PSY.ReserveDemandCurve, ::AbstractReservesFormulation) = 1.0
+get_multiplier_value(::AbstractPiecewiseLinearSlopeParameter, d::PSY.ReserveDemandCurve, ::AbstractReservesFormulation) = 1.0
 #! format: on
 
 function get_initial_conditions_service_model(
@@ -534,6 +536,60 @@ function add_variable_cost!(
     return
 end
 
+"""
+Return `(breakpoints, slopes)` for a `ReserveDemandCurve` at time step `t`, reading
+from a static `CostCurve` or from the pre-allocated parameter arrays when the curve
+is time-varying. Mirrors `_get_pwl_data` in `market_bid.jl` for devices.
+"""
+function _get_reserve_pwl_data(
+    container::OptimizationContainer,
+    component::T,
+    variable_cost::Union{PSY.CostCurve{PSY.PiecewiseIncrementalCurve}, IS.TimeSeriesKey},
+    t::Int,
+) where {T <: PSY.ReserveDemandCurve}
+    base_power = get_base_power(container)
+    device_base_power = PSY.get_base_power(component)
+
+    if variable_cost isa PSY.CostCurve{PSY.PiecewiseIncrementalCurve}
+        cost_component = PSY.get_function_data(PSY.get_value_curve(variable_cost))
+        breakpoint_cost_component = PSY.get_x_coords(cost_component)
+        slope_cost_component = PSY.get_y_coords(cost_component)
+        unit_system = PSY.get_power_units(variable_cost)
+    else
+        name = PSY.get_name(component)
+        is_decremental = true
+        SlopeParam = _SLOPE_PARAMS[is_decremental]
+        slope_param_arr = get_parameter_array(container, SlopeParam(), T, name)
+        slope_param_mult = get_parameter_multiplier_array(container, SlopeParam(), T, name)
+        @assert size(slope_param_arr) == size(slope_param_mult)
+        slope_cost_component = slope_param_arr[name, :, t] .* slope_param_mult[name, :, t]
+        slope_cost_component = slope_cost_component.data
+
+        BreakpointParam = _BREAKPOINT_PARAMS[is_decremental]
+        breakpoint_param_container = get_parameter(container, BreakpointParam(), T, name)
+        breakpoint_param_arr = get_parameter_column_refs(breakpoint_param_container, name)
+        breakpoint_param_mult = get_multiplier_array(breakpoint_param_container)
+        @assert size(breakpoint_param_arr) == size(breakpoint_param_mult[name, :, :])
+        breakpoint_cost_component =
+            breakpoint_param_arr[:, t] .* breakpoint_param_mult[name, :, t]
+        breakpoint_cost_component = breakpoint_cost_component.data
+
+        @assert length(slope_cost_component) == length(breakpoint_cost_component) - 1
+        unit_system = PSY.UnitSystem.NATURAL_UNITS
+    end
+
+    breakpoints, slopes = get_piecewise_curve_per_system_unit(
+        breakpoint_cost_component,
+        slope_cost_component,
+        unit_system,
+        base_power,
+        device_base_power,
+    )
+
+    return breakpoints, slopes
+end
+
+
 function _add_variable_cost_to_objective!(
     container::OptimizationContainer,
     ::T,
@@ -542,19 +598,15 @@ function _add_variable_cost_to_objective!(
 ) where {T <: VariableType, U <: StepwiseCostReserve}
     component_name = PSY.get_name(component)
     @debug "PWL Variable Cost" _group = LOG_GROUP_COST_FUNCTIONS component_name
-    # If array is full of tuples with zeros return 0.0
     time_steps = get_time_steps(container)
     variable_cost = PSY.get_variable(component)
     if variable_cost isa Nothing
         error("ReserveDemandCurve $(component.name) does not have cost data.")
-    elseif typeof(variable_cost) <: PSY.TimeSeriesKey
-        error(
-            "Timeseries curve for ReserveDemandCurve $(component.name) is not supported yet.",
-        )
     end
 
     pwl_cost_expressions =
         _add_pwl_term!(container, component, variable_cost, T(), U())
+    is_t_variant = is_time_variant(PSY.get_variable(component))
     for t in time_steps
         add_to_expression!(
             container,
@@ -563,10 +615,15 @@ function _add_variable_cost_to_objective!(
             component,
             t,
         )
-        add_to_objective_invariant_expression!(container, pwl_cost_expressions[t])
+        if is_t_variant
+            add_to_objective_variant_expression!(container, pwl_cost_expressions[t])
+        else
+            add_to_objective_invariant_expression!(container, pwl_cost_expressions[t])
+        end
     end
     return
 end
+
 
 function add_proportional_cost!(
     container::OptimizationContainer,
@@ -588,4 +645,17 @@ function add_proportional_cost!(
         )
     end
     return
+end
+function process_stepwise_cost_reserve_parameters!(
+    container::OptimizationContainer,
+    devices_in,
+    model::ServiceModel,
+    service::D,
+) where {D <: PSY.ReserveDemandCurve}
+    for param in (
+        DecrementalPiecewiseLinearBreakpointParameter,
+        DecrementalPiecewiseLinearSlopeParameter,
+    )
+        add_parameters!(container, param, service, model)
+    end
 end
