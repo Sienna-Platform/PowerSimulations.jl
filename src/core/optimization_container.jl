@@ -1342,7 +1342,7 @@ function _add_param_container!(
     container::OptimizationContainer,
     key::ParameterKey{T, U},
     attribute::CostFunctionAttributes{V},
-    param_axs,
+    _param_axs,
     multiplier_axs,
     additional_axs,
     time_steps::UnitRange{Int};
@@ -1410,7 +1410,7 @@ function add_param_container!(
     ::Type{V},
     variable_types::Tuple{Vararg{Type}},
     name::String,
-    param_axs,
+    _param_axs,
     multiplier_axs,
     additional_axs,
     time_steps::UnitRange{Int};
