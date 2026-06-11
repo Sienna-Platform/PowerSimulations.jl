@@ -223,7 +223,6 @@ function construct_service!(
     if typeof(PSY.get_variable(service)) <: PSY.TimeSeriesKey
         process_stepwise_cost_reserve_parameters!(
             container,
-            contributing_devices,
             model,
             service,
         )

@@ -646,7 +646,6 @@ function add_proportional_cost!(
 end
 function process_stepwise_cost_reserve_parameters!(
     container::OptimizationContainer,
-    devices_in,
     model::ServiceModel,
     service::D,
 ) where {D <: PSY.ReserveDemandCurve}
