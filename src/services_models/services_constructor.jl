@@ -220,6 +220,9 @@ function construct_service!(
     service = PSY.get_component(SR, sys, name)
     !PSY.get_available(service) && return
     contributing_devices = get_contributing_devices(model)
+    if typeof(PSY.get_variable(service)) <: PSY.TimeSeriesKey
+        process_stepwise_cost_reserve_parameters!(container, contributing_devices, model, service)
+    end
     add_variable!(container, ServiceRequirementVariable(), service, StepwiseCostReserve())
     add_variables!(
         container,
