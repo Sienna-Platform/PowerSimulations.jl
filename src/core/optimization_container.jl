@@ -1430,7 +1430,7 @@ function add_param_container!(
         container,
         param_key,
         attributes,
-        param_axs,
+        _param_axs,
         multiplier_axs,
         additional_axs,
         time_steps;
