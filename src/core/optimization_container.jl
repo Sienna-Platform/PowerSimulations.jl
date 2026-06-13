@@ -1338,6 +1338,41 @@ function _add_param_container!(
     return param_container
 end
 
+function _add_param_container!(
+    container::OptimizationContainer,
+    key::ParameterKey{T, U},
+    attribute::CostFunctionAttributes{V},
+    _param_axs,
+    multiplier_axs,
+    additional_axs,
+    time_steps::UnitRange{Int};
+    sparse = false,
+) where {T <: ObjectiveFunctionParameter, U <: PSY.Component, V <: Float64}
+    param_type = Float64
+    if sparse
+        param_array =
+            sparse_container_spec(param_type, multiplier_axs, additional_axs..., time_steps)
+        multiplier_array =
+            sparse_container_spec(Float64, multiplier_axs, additional_axs..., time_steps)
+    else
+        param_array =
+            DenseAxisArray{param_type}(undef, multiplier_axs, additional_axs..., time_steps)
+        multiplier_array =
+            fill!(
+                DenseAxisArray{Float64}(
+                    undef,
+                    multiplier_axs,
+                    additional_axs...,
+                    time_steps,
+                ),
+                NaN,
+            )
+    end
+    param_container = ParameterContainer(attribute, param_array, multiplier_array)
+    _assign_container!(container.parameters, key, param_container)
+    return param_container
+end
+
 function add_param_container!(
     container::OptimizationContainer,
     ::T,
@@ -1361,6 +1396,41 @@ function add_param_container!(
         param_key,
         attributes,
         param_axs,
+        multiplier_axs,
+        additional_axs,
+        time_steps;
+        sparse = sparse,
+    )
+end
+
+function add_param_container!(
+    container::OptimizationContainer,
+    ::T,
+    ::Type{U},
+    ::Type{V},
+    variable_types::Tuple{Vararg{Type}},
+    name::String,
+    _param_axs,
+    multiplier_axs,
+    additional_axs,
+    time_steps::UnitRange{Int};
+    sparse = false,
+    meta = ISOPT.CONTAINER_KEY_EMPTY_META,
+) where {T <: ObjectiveFunctionParameter, U <: PSY.Component, V <: PSY.TimeSeriesData}
+    param_key = ParameterKey(T, U, meta)
+    if isabstracttype(V)
+        error("$V can't be abstract: $param_key")
+    end
+    attributes = CostFunctionAttributes{Float64}(
+        variable_types,
+        SOSStatusVariable.NO_VARIABLE,
+        false,
+    )
+    return _add_param_container!(
+        container,
+        param_key,
+        attributes,
+        _param_axs,
         multiplier_axs,
         additional_axs,
         time_steps;

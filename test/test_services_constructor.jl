@@ -96,10 +96,50 @@ end
     )
     c_sys5_uc = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_reserves = true)
 
-    model = DecisionModel(template, c_sys5_uc; optimizer = HiGHS_optimizer)
+    model = DecisionModel(
+        template,
+        c_sys5_uc;
+        optimizer = HiGHS_optimizer,
+        store_variable_names = true,
+    )
     @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
           PSI.ModelBuildStatus.BUILT
     moi_tests(model, 984, 0, 576, 216, 168, true)
+end
+
+@testset "Test Reserves with time varying cost" begin
+    template = get_thermal_standard_uc_template()
+    set_service_model!(
+        template,
+        ServiceModel(VariableReserve{ReserveUp}, RangeReserve, "Reserve1"),
+    )
+    set_service_model!(
+        template,
+        ServiceModel(VariableReserve{ReserveUp}, RangeReserve, "Reserve11"),
+    )
+    set_service_model!(
+        template,
+        ServiceModel(VariableReserve{ReserveDown}, RangeReserve, "Reserve2"),
+    )
+    set_service_model!(
+        template,
+        ServiceModel(ReserveDemandCurve{ReserveUp}, StepwiseCostReserve, "ORDC1"),
+    )
+    c_sys5_uc = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_reserves = true)
+    model = DecisionModel(template, c_sys5_uc; optimizer = HiGHS_optimizer)
+    rdc = first(get_components(PSY.ReserveDemandCurve, c_sys5_uc))
+    cost_curve = PSY.get_variable(rdc)
+    cost_curve_ts = make_deterministic_ts(
+        c_sys5_uc,
+        "ordc_cost_curve",
+        PSY.get_function_data(PSY.get_value_curve(cost_curve)),
+        (0.0, 0.0, 0.0),
+        (0.0, 0.0, 0.0),
+    )
+    ts_key = add_time_series!(c_sys5_uc, rdc, cost_curve_ts)
+    set_variable!(rdc, ts_key)
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
 end
 
 @testset "Test Reserves from Thermal Standard UC with NonSpinningReserve" begin
@@ -1029,4 +1069,177 @@ end
         console_level = Logging.AboveMaxLevel,  # Ignore expected errors.
         output_dir = mktempdir(; cleanup = true),
     ) == PSI.ModelBuildStatus.FAILED
+end
+
+@testset "Test ORDC with TimeSeries" begin
+    c_sys5_uc = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_reserves = true)
+    ordc = first(get_components(PSY.ReserveDemandCurve, c_sys5_uc))
+    ordc_2 = ReserveDemandCurve{ReserveUp}(
+        ordc.variable,
+        "ORDC2",
+        true,
+        ordc.time_frame,
+    )
+    add_service!(c_sys5_uc, ordc_2, get_components(ThermalStandard, c_sys5_uc))
+    ex_incr_x = (0.03, 0.13, 0.07)
+    ex_incr_y = (0.03, 0.13, 0.07)
+    ex_fd = ordc.variable.value_curve.function_data
+    ex_ts2 = make_deterministic_ts(
+        c_sys5_uc,
+        "variable_cost",
+        ex_fd,
+        ex_incr_x,
+        ex_incr_y;
+        override_min_x = 0.0,
+        override_max_x = last(get_x_coords(ex_fd)),
+        create_extra_tranches = true,
+    )
+    im_key2 = add_time_series!(c_sys5_uc, ordc_2, ex_ts2)
+    set_variable!(ordc_2, im_key2)
+    template = ProblemTemplate(NetworkModel(CopperPlatePowerModel; use_slacks = true))
+    set_device_model!(template, ThermalStandard, ThermalDispatchNoMin)
+    set_device_model!(template, PowerLoad, StaticPowerLoad)
+    set_service_model!(
+        template,
+        ServiceModel(VariableReserve{ReserveUp}, RangeReserve, "Reserve11"),
+    )
+    set_service_model!(
+        template,
+        ServiceModel(VariableReserve{ReserveUp}, RangeReserve, "Reserve1"),
+    )
+    set_service_model!(
+        template,
+        ServiceModel(VariableReserve{ReserveDown}, RangeReserve, "Reserve2"),
+    )
+    set_service_model!(
+        template,
+        ServiceModel(ReserveDemandCurve{ReserveUp}, StepwiseCostReserve, "ORDC1"),
+    )
+    set_service_model!(
+        template,
+        ServiceModel(ReserveDemandCurve{ReserveUp}, StepwiseCostReserve, "ORDC2"),
+    )
+    model = DecisionModel(
+        template,
+        c_sys5_uc;
+        name = "UC",
+        store_variable_names = true,
+        optimizer = HiGHS_optimizer,
+    )
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+    @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+end
+
+@testset "Test ORDC with TimeSeries Simulation" begin
+    c_sys5_uc = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_reserves = true)
+    ordc = first(get_components(PSY.ReserveDemandCurve, c_sys5_uc))
+    ordc_2 = ReserveDemandCurve{ReserveUp}(
+        ordc.variable,
+        "ORDC2",
+        true,
+        ordc.time_frame,
+    )
+    add_service!(c_sys5_uc, ordc_2, get_components(ThermalStandard, c_sys5_uc))
+    ex_incr_x = (0.03, 0.13, 0.07)
+    ex_incr_y = (0.03, 0.13, 0.07)
+    ex_fd = ordc.variable.value_curve.function_data
+    ex_ts = make_deterministic_ts(
+        c_sys5_uc,
+        "variable_cost",
+        ex_fd,
+        ex_incr_x,
+        ex_incr_y;
+        override_min_x = 0.0,
+        override_max_x = last(get_x_coords(ex_fd)),
+        create_extra_tranches = true,
+    )
+    ex_incr_x = (0.03, 0.13, 0.07)
+    ex_incr_y = (0.02, 0.14, 0.08)
+    ex_ts2 = make_deterministic_ts(
+        c_sys5_uc,
+        "variable_cost",
+        ex_fd,
+        ex_incr_x,
+        ex_incr_y;
+        override_min_x = 0.0,
+        override_max_x = last(get_x_coords(ex_fd)),
+        create_extra_tranches = true,
+    )
+    im_key = add_time_series!(c_sys5_uc, ordc, ex_ts)
+    set_variable!(ordc, im_key)
+    im_key2 = add_time_series!(c_sys5_uc, ordc_2, ex_ts2)
+    set_variable!(ordc_2, im_key2)
+    template = ProblemTemplate(NetworkModel(CopperPlatePowerModel; use_slacks = true))
+    set_device_model!(template, ThermalStandard, ThermalBasicUnitCommitment)
+    set_device_model!(template, PowerLoad, StaticPowerLoad)
+    set_service_model!(
+        template,
+        ServiceModel(VariableReserve{ReserveUp}, RangeReserve, "Reserve11"),
+    )
+    set_service_model!(
+        template,
+        ServiceModel(VariableReserve{ReserveUp}, RangeReserve, "Reserve1"),
+    )
+    set_service_model!(
+        template,
+        ServiceModel(VariableReserve{ReserveDown}, RangeReserve, "Reserve2"),
+    )
+    set_service_model!(
+        template,
+        ServiceModel(ReserveDemandCurve{ReserveUp}, StepwiseCostReserve, "ORDC1"),
+    )
+    set_service_model!(
+        template,
+        ServiceModel(ReserveDemandCurve{ReserveUp}, StepwiseCostReserve, "ORDC2"),
+    )
+    model = DecisionModel(
+        template,
+        c_sys5_uc;
+        name = "UC",
+        store_variable_names = true,
+        optimizer = HiGHS_optimizer,
+        initial_time = DateTime("2024-01-02T00:00:00"),
+    )
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+    @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+    res = OptimizationProblemResults(model)
+    ordc1_sol = read_variable(
+        res,
+        "ServiceRequirementVariable__ReserveDemandCurve__ReserveUp__ORDC1",
+    )
+    models = SimulationModels([
+        DecisionModel(
+            template,
+            c_sys5_uc;
+            name = "UC",
+            optimizer = HiGHS_optimizer,
+            store_variable_names = true,
+        ),
+    ])
+    test_sequence = SimulationSequence(;
+        models = models,
+        ini_cond_chronology = InterProblemChronology(),
+    )
+    sim = Simulation(;
+        name = "consecutive",
+        steps = 2,
+        models = models,
+        sequence = test_sequence,
+        simulation_folder = mktempdir(; cleanup = true),
+    )
+    @test build!(sim) == PSI.SimulationBuildStatus.BUILT
+    @test execute!(sim) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+    res_sim = SimulationResults(sim)
+    res_uc = get_decision_problem_results(res_sim, "UC")
+    ordc1_sim = read_realized_variable(
+        res_uc,
+        "ServiceRequirementVariable__ReserveDemandCurve__ReserveUp__ORDC1",
+    )
+    @test isapprox(
+        sum(ordc1_sol[!, "value"] .- ordc1_sim[25:48, "value"]),
+        0.0;
+        atol = 1e-12,
+    )
 end
