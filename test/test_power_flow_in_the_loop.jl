@@ -901,6 +901,11 @@ end
         0.9, 0.85, 0.95, 0.2, 0.0, 0.0,
         0.9, 0.85, 0.95, 0.2, 0.0, 0.0,
     ]
+    # Identical in/out series with the source's symmetric limits (min = -max) make the signed
+    # nodal contribution `out_param + in_param` net to zero, which keeps the small UC feasible.
+    # That still makes this a strong regression: the old double-flip bug would instead inject
+    # `out_param + |in_param| = 4·ts` at the source bus, so the net-injection equality below
+    # fails under the bug and holds only with the sign fix.
     ts_data = repeat(day_data, 2)
     ts_out = SingleTimeSeries(
         "max_active_power_out",
@@ -977,8 +982,12 @@ end
         end
     end
 
+    # `lookup_value` already applies each parameter's (signed) multiplier: the out parameter
+    # uses `active_power_limits.max` (≥ 0) and the in parameter uses `.min` (≤ 0). The source's
+    # signed nodal contribution is therefore their sum — exactly what `add_to_expression!`
+    # adds to `ActivePowerBalance`.
     source_net = [
-        PSI.jump_value(out_param["source", t]) - PSI.jump_value(in_param["source", t])
+        PSI.jump_value(out_param["source", t]) + PSI.jump_value(in_param["source", t])
         for t in 1:n_time_steps
     ]
     # Net bus injection = injections − withdrawals; loads route to withdrawals under
@@ -990,9 +999,207 @@ end
         atol = 1e-9,
     )
 
-    # Guard against a regression that drives both parameters to zero — the test
-    # above would then pass trivially without exercising the parameter path.
-    @test !all(isapprox.(source_net, 0.0; atol = 1e-10))
+    # Guard that both parameter routes actually carry power — otherwise the equality above
+    # could pass trivially without exercising the in/out parameter paths. (Their signed sum is
+    # zero by construction here, so guard the parameters individually rather than the net.)
+    @test !all(
+        isapprox.(
+            [PSI.jump_value(out_param["source", t]) for t in 1:n_time_steps], 0.0;
+            atol = 1e-10,
+        ),
+    )
+    @test !all(
+        isapprox.(
+            [PSI.jump_value(in_param["source", t]) for t in 1:n_time_steps], 0.0;
+            atol = 1e-10,
+        ),
+    )
+end
+
+@testset "PF in the loop matches optimization with FixedOutput Source (DC, issue #1623)" begin
+    # Regression for #1623: a FixedOutput Source emits ActivePowerIn/OutTimeSeriesParameter
+    # whose looked-up values are already signed (×min<0 for imports). The PF-in-the-loop
+    # injection writer used to re-apply the category sign, double-flipping imports and making
+    # PTDFBranchFlow disagree with PowerFlowBranchActivePowerFromTo.
+    sys = build_system(PSITestSystems, "c_sys5_uc"; add_single_time_series = true)
+
+    source = Source(;
+        name = "interconnect",
+        available = true,
+        bus = get_component(ACBus, sys, "nodeC"),
+        active_power = 0.0,
+        reactive_power = 0.0,
+        active_power_limits = (min = -1.0, max = 1.0),
+        reactive_power_limits = (min = -1.0, max = 1.0),
+        R_th = 0.01,
+        X_th = 0.02,
+        internal_voltage = 1.0,
+        internal_angle = 0.0,
+        base_power = 100.0,
+    )
+    add_component!(sys, source)
+
+    load = first(get_components(PowerLoad, sys))
+    tstamp = TimeSeries.timestamp(
+        get_time_series_array(SingleTimeSeries, load, "max_active_power"),
+    )
+    # Step 1 (hours 0–23): export to grid; Step 2 (hours 24–47): import from grid.
+    out_vals = vcat(fill(0.5, 24), fill(0.0, 24))
+    in_vals = vcat(fill(0.0, 24), fill(0.3, 24))
+    add_time_series!(
+        sys, source,
+        SingleTimeSeries(
+            "max_active_power_out", TimeArray(tstamp, out_vals);
+            scaling_factor_multiplier = get_max_active_power,
+        ),
+    )
+    add_time_series!(
+        sys, source,
+        SingleTimeSeries(
+            "max_active_power_in", TimeArray(tstamp, in_vals);
+            scaling_factor_multiplier = get_max_active_power,
+        ),
+    )
+    transform_single_time_series!(sys, Hour(24), Hour(24))
+
+    network_model = NetworkModel(
+        PTDFPowerModel;
+        PTDF_matrix = PTDF(sys),
+        power_flow_evaluation = DCPowerFlow(),
+    )
+    template = ProblemTemplate(network_model)
+    set_device_model!(template, ThermalStandard, ThermalBasicUnitCommitment)
+    set_device_model!(template, PowerLoad, StaticPowerLoad)
+    set_device_model!(template, DeviceModel(Source, FixedOutput))
+    set_device_model!(template, DeviceModel(Line, StaticBranch))
+
+    uc_model = DecisionModel(
+        template, sys; name = "UC", optimizer = HiGHS_optimizer,
+        store_variable_names = true,
+    )
+    models = SimulationModels(; decision_models = [uc_model])
+    sequence = SimulationSequence(;
+        models = models, ini_cond_chronology = InterProblemChronology(),
+    )
+    sim = Simulation(;
+        name = "pf_source_repro_dc",
+        steps = 2,
+        models = models,
+        sequence = sequence,
+        simulation_folder = mktempdir(; cleanup = true),
+    )
+    @test build!(sim; console_level = Logging.Error) == PSI.SimulationBuildStatus.BUILT
+    @test execute!(sim) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    sim_results = SimulationResults(sim)
+    uc_results = get_decision_problem_results(sim_results, "UC")
+    ptdf_flows = read_realized_expression(
+        uc_results, "PTDFBranchFlow__Line"; table_format = PSI.TableFormat.WIDE,
+    )
+    pf_flows = read_realized_aux_variable(
+        uc_results, "PowerFlowBranchActivePowerFromTo__Line";
+        table_format = PSI.TableFormat.WIDE,
+    )
+    line_cols = filter(c -> c != "DateTime",
+        intersect(names(ptdf_flows), names(pf_flows)))
+    @test !isempty(line_cols)
+    for col in line_cols
+        @test isapprox(ptdf_flows[!, col], pf_flows[!, col]; atol = 1e-3)
+    end
+end
+
+@testset "PF in the loop matches optimization with FixedOutput Source (AC, issue #1623)" begin
+    # AC counterpart of the #1623 DC regression: exercises the signed-parameter path through
+    # ACPolarPowerFlow (active + reactive) and checks the AC branch flow agrees with the
+    # optimization's PTDFBranchFlow at the source-affected lines.
+    sys = build_system(PSITestSystems, "c_sys5_uc"; add_single_time_series = true)
+
+    source = Source(;
+        name = "interconnect",
+        available = true,
+        bus = get_component(ACBus, sys, "nodeC"),
+        active_power = 0.0,
+        reactive_power = 0.0,
+        active_power_limits = (min = -1.0, max = 1.0),
+        reactive_power_limits = (min = -1.0, max = 1.0),
+        R_th = 0.01,
+        X_th = 0.02,
+        internal_voltage = 1.0,
+        internal_angle = 0.0,
+        base_power = 100.0,
+    )
+    add_component!(sys, source)
+
+    load = first(get_components(PowerLoad, sys))
+    tstamp = TimeSeries.timestamp(
+        get_time_series_array(SingleTimeSeries, load, "max_active_power"),
+    )
+    out_vals = vcat(fill(0.5, 24), fill(0.0, 24))
+    in_vals = vcat(fill(0.0, 24), fill(0.3, 24))
+    add_time_series!(
+        sys, source,
+        SingleTimeSeries(
+            "max_active_power_out", TimeArray(tstamp, out_vals);
+            scaling_factor_multiplier = get_max_active_power,
+        ),
+    )
+    add_time_series!(
+        sys, source,
+        SingleTimeSeries(
+            "max_active_power_in", TimeArray(tstamp, in_vals);
+            scaling_factor_multiplier = get_max_active_power,
+        ),
+    )
+    transform_single_time_series!(sys, Hour(24), Hour(24))
+
+    network_model = NetworkModel(
+        PTDFPowerModel;
+        PTDF_matrix = PTDF(sys),
+        power_flow_evaluation = ACPolarPowerFlow(),
+    )
+    template = ProblemTemplate(network_model)
+    set_device_model!(template, ThermalStandard, ThermalBasicUnitCommitment)
+    set_device_model!(template, PowerLoad, StaticPowerLoad)
+    set_device_model!(template, DeviceModel(Source, FixedOutput))
+    set_device_model!(template, DeviceModel(Line, StaticBranch))
+
+    uc_model = DecisionModel(
+        template, sys; name = "UC", optimizer = HiGHS_optimizer,
+        store_variable_names = true,
+    )
+    models = SimulationModels(; decision_models = [uc_model])
+    sequence = SimulationSequence(;
+        models = models, ini_cond_chronology = InterProblemChronology(),
+    )
+    sim = Simulation(;
+        name = "pf_source_repro_ac",
+        steps = 2,
+        models = models,
+        sequence = sequence,
+        simulation_folder = mktempdir(; cleanup = true),
+    )
+    @test build!(sim; console_level = Logging.Error) == PSI.SimulationBuildStatus.BUILT
+    @test execute!(sim) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    sim_results = SimulationResults(sim)
+    uc_results = get_decision_problem_results(sim_results, "UC")
+    ptdf_flows = read_realized_expression(
+        uc_results, "PTDFBranchFlow__Line"; table_format = PSI.TableFormat.WIDE,
+    )
+    pf_flows = read_realized_aux_variable(
+        uc_results, "PowerFlowBranchActivePowerFromTo__Line";
+        table_format = PSI.TableFormat.WIDE,
+    )
+    line_cols = filter(c -> c != "DateTime",
+        intersect(names(ptdf_flows), names(pf_flows)))
+    @test !isempty(line_cols)
+    # The DC PTDFBranchFlow is lossless while the AC PowerFlowBranchActivePowerFromTo carries
+    # AC losses, so the two agree only up to those losses (≲ 1% of the ~hundreds-of-MW flows
+    # here). A double-counted import sign would shift the nodeC injection by ~60 MW — far above
+    # this band — so a 5% relative tolerance confirms agreement while still catching the bug.
+    for col in line_cols
+        @test isapprox(ptdf_flows[!, col], pf_flows[!, col]; rtol = 0.05)
+    end
 end
 
 # PowerFlows 0.17 split the AC formulation into `ACPolarPowerFlow` and
