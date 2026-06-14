@@ -1249,3 +1249,110 @@ end
     nodal = PSI.get_expression(container, PSI.ActivePowerBalance(), PSY.ACBus)
     @test size(nodal.data, 1) == length(modf_retained)
 end
+
+# Every monitored post-contingency rate constraint references the slack
+# variable for its `(outage_id, name, t)`. A constraint without a slack term
+# means `use_slacks` was honored only for the pre-contingency flow limits.
+function _post_contingency_constraints_have_slack(container, slack_refs)
+    has_slack(ref) =
+        any(haskey(JuMP.constraint_object(ref).func.terms, v) for v in slack_refs)
+    all_have = true
+    n = 0
+    for meta in ("lb", "ub")
+        cons = PSI.get_constraint(
+            container,
+            PostContingencyFlowRateConstraint(),
+            PSY.Line,
+            meta,
+        )
+        for ref in values(cons.data)
+            n += 1
+            all_have &= has_slack(ref)
+        end
+    end
+    return n, all_have
+end
+
+@testset "Security Constrained branch slacks reach post-contingency flow constraints" begin
+    c_sys5 = _attach_all_branch_outages!(PSB.build_system(PSITestSystems, "c_sys5"))
+
+    function _build_sc(use_slacks)
+        template = get_thermal_dispatch_template_network(
+            NetworkModel(PTDFPowerModel; PTDF_matrix = PTDF(c_sys5)),
+        )
+        set_device_model!(
+            template,
+            DeviceModel(Line, SecurityConstrainedStaticBranch; use_slacks = use_slacks),
+        )
+        set_device_model!(
+            template,
+            DeviceModel(
+                Transformer2W,
+                SecurityConstrainedStaticBranch;
+                use_slacks = use_slacks,
+            ),
+        )
+        set_device_model!(
+            template,
+            DeviceModel(
+                TapTransformer,
+                SecurityConstrainedStaticBranch;
+                use_slacks = use_slacks,
+            ),
+        )
+        model = DecisionModel(template, c_sys5; optimizer = HiGHS_optimizer)
+        @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+              PSI.ModelBuildStatus.BUILT
+        return model
+    end
+
+    # use_slacks = true: per-contingency slack variables exist and are wired
+    # into every post-contingency rate inequality.
+    model = _build_sc(true)
+    container = PSI.get_optimization_container(model)
+    @test PSI.has_container_key(
+        container,
+        PostContingencyFlowActivePowerSlackUpperBound,
+        PSY.Line,
+    )
+    @test PSI.has_container_key(
+        container,
+        PostContingencyFlowActivePowerSlackLowerBound,
+        PSY.Line,
+    )
+    slack_ub =
+        PSI.get_variable(
+            container,
+            PostContingencyFlowActivePowerSlackUpperBound(),
+            PSY.Line,
+        )
+    slack_lb =
+        PSI.get_variable(
+            container,
+            PostContingencyFlowActivePowerSlackLowerBound(),
+            PSY.Line,
+        )
+    @test !isempty(slack_ub.data)
+    @test !isempty(slack_lb.data)
+    slack_refs = Set{JuMP.VariableRef}()
+    union!(slack_refs, values(slack_ub.data))
+    union!(slack_refs, values(slack_lb.data))
+    n, all_have = _post_contingency_constraints_have_slack(container, slack_refs)
+    @test n > 0
+    @test all_have
+    @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    # use_slacks = false: no post-contingency slack variables, hard limits.
+    model_hard = _build_sc(false)
+    container_hard = PSI.get_optimization_container(model_hard)
+    @test !PSI.has_container_key(
+        container_hard,
+        PostContingencyFlowActivePowerSlackUpperBound,
+        PSY.Line,
+    )
+    @test !PSI.has_container_key(
+        container_hard,
+        PostContingencyFlowActivePowerSlackLowerBound,
+        PSY.Line,
+    )
+end
