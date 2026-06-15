@@ -753,6 +753,22 @@ _add_signed_component_update!(
     value::Float64,
     sys_base::Float64,
 ) = (comp.reactive_power = -value * sys_base / PSY.get_base_power(comp))
+# `StandardLoad` (ZIP) has no scalar `active_power`/`reactive_power` field; the dispatched
+# power for a `StaticPowerLoad` corresponds to the constant-power component (its other
+# components are not represented in the active-power optimization), so the power-flow /
+# PSS/E write-back routes to `constant_active_power` / `constant_reactive_power`.
+_add_signed_component_update!(
+    comp::PSY.StandardLoad,
+    ::Val{:active_power},
+    value::Float64,
+    sys_base::Float64,
+) = (comp.constant_active_power = -value * sys_base / PSY.get_base_power(comp))
+_add_signed_component_update!(
+    comp::PSY.StandardLoad,
+    ::Val{:reactive_power},
+    value::Float64,
+    sys_base::Float64,
+) = (comp.constant_reactive_power = -value * sys_base / PSY.get_base_power(comp))
 # Sign-agnostic categories (voltage) delegate to the shared writer.
 _add_signed_component_update!(
     comp::PSY.Component,
