@@ -22,6 +22,10 @@ get_variable_binary(::OnVariable, ::Type{<:PSY.ElectricLoad}, ::AbstractLoadForm
 
 get_multiplier_value(::TimeSeriesParameter, d::PSY.ElectricLoad, ::StaticPowerLoad) = -1*PSY.get_max_active_power(d)
 get_multiplier_value(::ReactivePowerTimeSeriesParameter, d::PSY.ElectricLoad, ::StaticPowerLoad) = -1*PSY.get_max_reactive_power(d)
+# `StandardLoad` is a ZIP load with no single `get_max_reactive_power` (PSY throws for it);
+# its reactive injection for power-flow / PSS/E export is the constant-power Q component,
+# mirroring `get_max_active_power(::StandardLoad)`, which returns the constant active power.
+get_multiplier_value(::ReactivePowerTimeSeriesParameter, d::PSY.StandardLoad, ::StaticPowerLoad) = -1*PSY.get_max_constant_reactive_power(d)
 get_multiplier_value(::TimeSeriesParameter, d::PSY.ElectricLoad, ::AbstractControllablePowerLoadFormulation) = PSY.get_max_active_power(d)
 
 ########################### ShiftablePowerLoad #####################################
