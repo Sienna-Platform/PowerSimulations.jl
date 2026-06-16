@@ -488,7 +488,10 @@ end
 
 _warn_reduced_monitored_lines!(removed_arcs::Set{Tuple{Int, Int}}, ::DeviceModel) = nothing
 
-function _warn_reduced_monitored_lines!(removed_arcs::Set{Tuple{Int, Int}}, m::DeviceModel{PSY.MonitoredLine})
+function _warn_reduced_monitored_lines!(
+    removed_arcs::Set{Tuple{Int, Int}},
+    m::DeviceModel{PSY.MonitoredLine},
+)
     dropped = [
         PSY.get_name(ml) for ml in get_device_cache(m) if
         _branch_arc_removed(ml, removed_arcs)
