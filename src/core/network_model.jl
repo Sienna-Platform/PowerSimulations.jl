@@ -486,7 +486,7 @@ function _warn_partially_reduced_monitored_lines!(
     return
 end
 
-_warn_reduced_monitored_lines!(removed_arcs, ::DeviceModel) = nothing
+_warn_reduced_monitored_lines!(removed_arcs::Set{Tuple{Int, Int}}, ::DeviceModel) = nothing
 
 function _warn_reduced_monitored_lines!(removed_arcs::Set{Tuple{Int, Int}}, m::DeviceModel{PSY.MonitoredLine})
     dropped = [
