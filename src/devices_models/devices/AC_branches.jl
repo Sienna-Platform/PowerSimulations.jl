@@ -82,6 +82,37 @@ function get_default_attributes(
     )
 end
 
+"""
+`MonitoredLine` DeviceModel attribute. When `true`, both endpoint buses of every
+monitored line are pinned irreducible so zero-impedance lines survive the network
+reduction. Defaults to `false` (such lines are reduced away and not modeled). For
+the "base case flowgate" use case.
+"""
+const MODEL_ALL_BRANCHES_KEY = "model_all_branches"
+
+# Specialize the generic `ACTransmission` defaults for `MonitoredLine` to add
+# `MODEL_ALL_BRANCHES_KEY` (default `false`) alongside the inherited keys.
+function get_default_attributes(
+    ::Type{PSY.MonitoredLine},
+    ::Type{V},
+) where {V <: AbstractBranchFormulation}
+    return Dict{String, Any}(
+        PARALLEL_BRANCH_MAX_RATING_KEY => "single_element_contingency",
+        MODEL_ALL_BRANCHES_KEY => false,
+    )
+end
+
+function get_default_attributes(
+    ::Type{PSY.MonitoredLine},
+    ::Type{V},
+) where {V <: AbstractSecurityConstrainedStaticBranch}
+    return Dict{String, Any}(
+        PARALLEL_BRANCH_MAX_RATING_KEY => "single_element_contingency",
+        "include_planned_outages" => false,
+        MODEL_ALL_BRANCHES_KEY => false,
+    )
+end
+
 # Resolve the per-DeviceModel attribute to one of the explicit PNM rating functions.
 # `MixedBranchesParallel` ignores the attribute and always uses the plain sum, since
 # the constituent branches may carry different DeviceModel preferences and there is
