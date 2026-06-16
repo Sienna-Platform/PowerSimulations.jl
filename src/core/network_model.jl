@@ -470,6 +470,45 @@ function _prune_fully_reduced_branch_models!(
     return
 end
 
+# Warn about individual monitored lines the reduction merged away while their type
+# still has surviving members. The whole-type prune above misses this partial case,
+# so without a message the dropped line is silently unmodeled. Suggest
+# `model_all_branches` to retain it.
+function _warn_partially_reduced_monitored_lines!(
+    network_model::NetworkModel,
+    branch_models::BranchModelContainer,
+)
+    removed_arcs = PNM.get_removed_arcs(network_model.network_reduction)
+    isempty(removed_arcs) && return
+    for m in values(branch_models)
+        _warn_reduced_monitored_lines!(removed_arcs, m)
+    end
+    return
+end
+
+_warn_reduced_monitored_lines!(removed_arcs, ::DeviceModel) = nothing
+
+function _warn_reduced_monitored_lines!(removed_arcs, m::DeviceModel{PSY.MonitoredLine})
+    dropped = [
+        PSY.get_name(ml) for ml in get_device_cache(m) if
+        _branch_arc_removed(ml, removed_arcs)
+    ]
+    isempty(dropped) && return
+    @warn "MonitoredLine(s) $(dropped) were merged away by the network reduction " *
+          "(near-zero impedance) and will not be modeled or monitored, though other " *
+          "MonitoredLines remain. Set the `model_all_branches` attribute on the " *
+          "MonitoredLine DeviceModel to force all monitored lines to be modeled " *
+          "through the reduction."
+    return
+end
+
+function _branch_arc_removed(branch::PSY.Branch, removed_arcs)
+    arc = PSY.get_arc(branch)
+    from = PSY.get_number(PSY.get_from(arc))
+    to = PSY.get_number(PSY.get_to(arc))
+    return (from, to) in removed_arcs || (to, from) in removed_arcs
+end
+
 function instantiate_network_model!(
     model::NetworkModel{T},
     branch_models::BranchModelContainer,
@@ -742,6 +781,7 @@ function instantiate_network_model!(
     model.network_reduction = deepcopy(PNM.get_network_reduction_data(model.PTDF_matrix))
     # After the reduction is known, before the constructors run.
     _prune_fully_reduced_branch_models!(model, branch_models)
+    _warn_partially_reduced_monitored_lines!(model, branch_models)
     _set_subnetworks_from_ptdf!(model, sys)
     empty!(model.reduced_branch_tracker)
     set_number_of_steps!(model.reduced_branch_tracker, number_of_steps)
