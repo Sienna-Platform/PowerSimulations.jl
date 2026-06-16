@@ -972,7 +972,7 @@ end
     @test !(from_bus in removed_buses)
     @test !(to_bus in removed_buses)
     container = PSI.get_optimization_container(model)
-    @test PSI.has_container_key(container, PSI.FlowRateConstraint, MonitoredLine)
+    @test PSI.has_container_key(container, PSI.FlowRateConstraint, MonitoredLine, "ub")
 
     # false (default): line reduced away, its sole-of-type DeviceModel pruned,
     # build succeeds with no MonitoredLine flow-rate constraint.
@@ -984,5 +984,6 @@ end
         container_default,
         PSI.FlowRateConstraint,
         MonitoredLine,
+        "ub",
     )
 end

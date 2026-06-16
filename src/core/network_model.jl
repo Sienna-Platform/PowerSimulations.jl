@@ -431,22 +431,35 @@ function _push_component_buses!(buses::Set{Int64}, device::PSY.StaticInjection)
     return
 end
 
-# Drop (and warn about) any branch type whose every component was removed by the
-# reduction — e.g. a lone zero-impedance monitored line merged away. Such a type has
-# no surviving arc in `name_to_arc_map`, so building its flow vars/constraints would
-# fail. Uncommon; `model_all_branches` keeps such lines instead.
+# Drop (and warn about) any branch type whose components were all merged away by the
+# reduction — e.g. a lone zero-impedance monitored line. Such a type has no surviving
+# arc in `name_to_arc_map`, so building its flow vars/constraints would fail. Absence
+# from the map alone is not enough: types that never use it (e.g. HVDC) are also
+# absent, so we prune only when an endpoint bus was actually removed by the reduction.
+# Uncommon; `model_all_branches` keeps such lines instead.
 function _prune_fully_reduced_branch_models!(
     network_model::NetworkModel,
     branch_models::BranchModelContainer,
 )
+    merged_buses = Set{Int64}()
+    for removed in values(PNM.get_bus_reduction_map(network_model.network_reduction))
+        union!(merged_buses, removed)
+    end
+    isempty(merged_buses) && return
     name_to_arc_maps = PNM.get_name_to_arc_maps(network_model.network_reduction)
     pruned = DataType[]
     for branch_type in network_model.modeled_ac_branch_types
         survived = get(name_to_arc_maps, branch_type, nothing)
-        (isnothing(survived) || isempty(survived)) && push!(pruned, branch_type)
+        isnothing(survived) || isempty(survived) || continue
+        buses = Set{Int64}()
+        for component in get_device_cache(branch_models[nameof(branch_type)])
+            _push_component_buses!(buses, component)
+        end
+        isdisjoint(buses, merged_buses) && continue
+        push!(pruned, branch_type)
     end
     for branch_type in pruned
-        @warn "All components of branch type $(branch_type) were removed by the " *
+        @warn "All components of branch type $(branch_type) were merged away by the " *
               "network reduction (e.g. a zero-impedance branch merge). The " *
               "$(branch_type) DeviceModel is dropped from the template and will not " *
               "be modeled. Use the `model_all_branches` attribute on a MonitoredLine " *
