@@ -987,3 +987,44 @@ end
         "ub",
     )
 end
+
+# Partial reduction: with multiple monitored lines and `model_all_branches = false`,
+# a single near-zero-impedance monitored line is merged away while the type survives.
+# Whereas a fully-reduced type is pruned, here the reduced line is silently unmodeled,
+# so the build must still succeed and emit an actionable warning that names the line
+# and points the user at `model_all_branches`.
+@testset "MonitoredLine partial reduction warns and drops only the reduced line" begin
+    sys = PSB.build_system(PSITestSystems, "c_sys5_ml")
+    # MonitoredLine "1" forced near-zero impedance so the reduction merges it away.
+    ml = PSY.get_component(MonitoredLine, sys, "1")
+    PSY.set_r!(ml, 0.0)
+    PSY.set_x!(ml, 1e-5)
+    # A second MonitoredLine (converted from a healthy Line) keeps the type non-empty.
+    line = first(PSY.get_components(Line, sys))
+    survivor = PSY.get_name(line)
+    PSY.convert_component!(
+        sys,
+        line,
+        MonitoredLine;
+        flow_limits = (from_to = 1.0, to_from = 1.0),
+    )
+
+    template = get_thermal_dispatch_template_network(NetworkModel(PTDFPowerModel))
+    set_device_model!(template, DeviceModel(MonitoredLine, StaticBranch))
+    model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
+    output_dir = mktempdir(; cleanup = true)
+    @test build!(model; output_dir = output_dir) == PSI.ModelBuildStatus.BUILT
+
+    # The surviving monitored line is modeled; the merged-away one is dropped.
+    container = PSI.get_optimization_container(model)
+    constraint_names = axes(
+        PSI.get_constraint(container, PSI.FlowRateConstraint(), MonitoredLine, "ub"),
+    )[1]
+    @test survivor in constraint_names
+    @test !("1" in constraint_names)
+
+    # The drop is reported with an actionable warning naming the line.
+    log_contents = read(joinpath(output_dir, "operation_problem.log"), String)
+    @test occursin("MonitoredLine(s) [\"1\"]", log_contents)
+    @test occursin("model_all_branches", log_contents)
+end
