@@ -899,35 +899,13 @@ function compute_conflict!(container::OptimizationContainer)
     JuMP.unset_silent(jump_model)
     jump_model.is_model_dirty = false
     conflict = container.infeasibility_conflict
+    # Only the `JuMP.compute_conflict!` call itself signals whether the optimizer
+    # supports IIS/conflict refining. Keep its `try` narrow so that a failure to
+    # *read back* the conflict of a single constraint container (below) is not
+    # misreported as "optimizer doesn't support IIS" and does not discard the
+    # conflict that was successfully computed.
     try
         JuMP.compute_conflict!(jump_model)
-        conflict_status = MOI.get(jump_model, MOI.ConflictStatus())
-        if conflict_status != MOI.CONFLICT_FOUND
-            @error "No conflict could be found for the model. Status: $conflict_status"
-            if !get_optimizer_solve_log_print(settings)
-                JuMP.set_silent(jump_model)
-            end
-            return conflict_status
-        end
-
-        for (key, field_container) in get_constraints(container)
-            conflict_indices = check_conflict_status(jump_model, field_container)
-            if isempty(conflict_indices)
-                @info "Conflict Index returned empty for $key"
-                continue
-            else
-                conflict[ISOPT.encode_key(key)] = conflict_indices
-            end
-        end
-
-        msg = IOBuffer()
-        for (k, v) in conflict
-            PrettyTables.pretty_table(msg, v; header = [k])
-        end
-
-        @error "Constraints participating in conflict basis (IIS) \n\n$(String(take!(msg)))"
-
-        return conflict_status
     catch e
         jump_model.is_model_dirty = true
         if isa(e, MethodError)
@@ -935,9 +913,46 @@ function compute_conflict!(container::OptimizationContainer)
         else
             @error "Can't compute conflict" exception = (e, catch_backtrace())
         end
+        return MOI.NO_CONFLICT_EXISTS
     end
 
-    return MOI.NO_CONFLICT_EXISTS
+    conflict_status = MOI.get(jump_model, MOI.ConflictStatus())
+    if conflict_status != MOI.CONFLICT_FOUND
+        @error "No conflict could be found for the model. Status: $conflict_status"
+        if !get_optimizer_solve_log_print(settings)
+            JuMP.set_silent(jump_model)
+        end
+        return conflict_status
+    end
+
+    # Label each constraint container independently: a failure to read the
+    # conflict status of one container (e.g. an unsupported constraint type)
+    # must not abort the loop and hide the conflict found for the others.
+    for (key, field_container) in get_constraints(container)
+        conflict_indices = try
+            check_conflict_status(jump_model, field_container)
+        catch e
+            @warn "Could not read conflict status for $key; skipping" exception =
+                (e, catch_backtrace())
+            continue
+        end
+        if isempty(conflict_indices)
+            @info "Conflict Index returned empty for $key"
+        else
+            conflict[ISOPT.encode_key(key)] = conflict_indices
+        end
+    end
+
+    msg = IOBuffer()
+    for (k, v) in conflict
+        PrettyTables.pretty_table(msg, v; header = [k])
+    end
+    @error "Constraints participating in conflict basis (IIS) \n\n$(String(take!(msg)))"
+
+    if !get_optimizer_solve_log_print(settings)
+        JuMP.set_silent(jump_model)
+    end
+    return conflict_status
 end
 
 function write_optimizer_stats!(container::OptimizationContainer)

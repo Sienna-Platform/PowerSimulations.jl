@@ -673,10 +673,13 @@ function write_lp_file(jump_model::JuMP.Model, save_path::String)
     return
 end
 
-# check_conflict_status functions can't be tested on CI because free solvers don't support IIS
+# check_conflict_status functions can't be tested on CI because free solvers don't support IIS.
+# The element type is matched covariantly (`<:JuMP.ConstraintRef`) so containers whose eltype is
+# a concrete `ConstraintRef{...}` parametrization dispatch here too; an invariant `JuMP.ConstraintRef`
+# signature silently misses them and raises a MethodError that aborts the whole conflict report.
 function check_conflict_status(
     jump_model::JuMP.Model,
-    constraint_container::DenseAxisArray{JuMP.ConstraintRef},
+    constraint_container::DenseAxisArray{<:JuMP.ConstraintRef},
 )
     conflict_indices = Vector()
     dims = axes(constraint_container)
@@ -695,7 +698,7 @@ end
 
 function check_conflict_status(
     jump_model::JuMP.Model,
-    constraint_container::SparseAxisArray{JuMP.ConstraintRef},
+    constraint_container::SparseAxisArray{<:JuMP.ConstraintRef},
 )
     conflict_indices = Vector()
     for (index, constraint) in constraint_container
