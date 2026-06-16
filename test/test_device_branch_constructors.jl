@@ -925,3 +925,64 @@ end
           PSI.ModelBuildStatus.BUILT
     @test solve!(model_ac) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
 end
+
+# A zero-impedance `MonitoredLine` is merged away by the reduction. With
+# `model_all_branches = true` its buses are pinned so it survives and is modeled;
+# with the default `false` it is reduced away and its (sole-of-type) DeviceModel is
+# pruned. Both build; only the flow-rate constraint differs.
+@testset "MonitoredLine model_all_branches retains zero-impedance branch" begin
+    function _build_zib_monitored_line(model_all_branches)
+        sys = PSB.build_system(PSITestSystems, "c_sys5_ml")
+        # Force MonitoredLine "1" to be zero-impedance: r == 0 and a tiny reactance
+        # push |imag(Y[i,j])| above the zero-impedance susceptance threshold, so the
+        # reduction merges its endpoints unless they are pinned irreducible.
+        ml = PSY.get_component(MonitoredLine, sys, "1")
+        PSY.set_r!(ml, 0.0)
+        PSY.set_x!(ml, 1e-5)
+        # No `PTDF_matrix` provided, so PSI builds a VirtualPTDF and the reduction runs.
+        template = get_thermal_dispatch_template_network(NetworkModel(PTDFPowerModel))
+        set_device_model!(
+            template,
+            DeviceModel(
+                MonitoredLine,
+                StaticBranch;
+                attributes = Dict{String, Any}(
+                    "model_all_branches" => model_all_branches,
+                ),
+            ),
+        )
+        model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
+        status = build!(model; output_dir = mktempdir(; cleanup = true))
+        return model, ml, status
+    end
+
+    # The attribute defaults to false.
+    default_model = DeviceModel(MonitoredLine, StaticBranch)
+    @test PSI.get_attribute(default_model, "model_all_branches") == false
+
+    # true: line retained, build succeeds, buses not removed, line modeled.
+    model, ml, status = _build_zib_monitored_line(true)
+    @test status == PSI.ModelBuildStatus.BUILT
+    arc = PSY.get_arc(ml)
+    from_bus = PSY.get_number(PSY.get_from(arc))
+    to_bus = PSY.get_number(PSY.get_to(arc))
+    nm = PSI.get_network_model(PSI.get_template(model))
+    nrd = PSI.get_PTDF_matrix(nm).network_reduction_data
+    removed_buses = PNM.get_removed_buses(nrd)
+    @test !(from_bus in removed_buses)
+    @test !(to_bus in removed_buses)
+    container = PSI.get_optimization_container(model)
+    @test PSI.has_container_key(container, PSI.FlowRateConstraint, MonitoredLine)
+
+    # false (default): line reduced away, its sole-of-type DeviceModel pruned,
+    # build succeeds with no MonitoredLine flow-rate constraint.
+    model_default, _, status_default = _build_zib_monitored_line(false)
+    @test status_default == PSI.ModelBuildStatus.BUILT
+    @test !haskey(PSI.get_template(model_default).branches, :MonitoredLine)
+    container_default = PSI.get_optimization_container(model_default)
+    @test !PSI.has_container_key(
+        container_default,
+        PSI.FlowRateConstraint,
+        MonitoredLine,
+    )
+end
