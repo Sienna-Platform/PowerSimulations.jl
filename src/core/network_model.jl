@@ -252,7 +252,36 @@ function _get_irreducible_buses_due_to_monitored_components(
     # transformer modeled with a non-SC formulation) is ignored, so those
     # branches stay reducible unless monitored by an SC outage.
     _add_outage_monitored_irreducible_buses!(irreducible_buses, sys, branch_models)
+    # `model_all_branches` MonitoredLine models pin their lines so zero-impedance
+    # ones survive the reduction instead of being merged away.
+    _add_model_all_branches_irreducible_buses!(irreducible_buses, branch_models)
     return collect(irreducible_buses)
+end
+
+# Pin both endpoint buses of every branch a `model_all_branches` MonitoredLine model
+# covers. Dispatch on the model type so it is a no-op for other branch types.
+function _add_model_all_branches_irreducible_buses!(
+    irreducible_buses::Set{Int64},
+    branch_models::BranchModelContainer,
+)
+    for m in values(branch_models)
+        _pin_model_all_branches!(irreducible_buses, m)
+    end
+    return
+end
+
+_pin_model_all_branches!(::Set{Int64}, ::DeviceModel) = nothing
+
+function _pin_model_all_branches!(
+    irreducible_buses::Set{Int64},
+    m::DeviceModel{PSY.MonitoredLine},
+)
+    get_attribute(m, MODEL_ALL_BRANCHES_KEY) === true || return
+    # The device cache is the modeled set (available + filter_function).
+    for branch in get_device_cache(m)
+        _push_component_buses!(irreducible_buses, branch)
+    end
+    return
 end
 
 function _add_timeseries_irreducible_buses!(
@@ -399,6 +428,32 @@ end
 
 function _push_component_buses!(buses::Set{Int64}, device::PSY.StaticInjection)
     push!(buses, PSY.get_number(PSY.get_bus(device)))
+    return
+end
+
+# Drop (and warn about) any branch type whose every component was removed by the
+# reduction — e.g. a lone zero-impedance monitored line merged away. Such a type has
+# no surviving arc in `name_to_arc_map`, so building its flow vars/constraints would
+# fail. Uncommon; `model_all_branches` keeps such lines instead.
+function _prune_fully_reduced_branch_models!(
+    network_model::NetworkModel,
+    branch_models::BranchModelContainer,
+)
+    name_to_arc_maps = PNM.get_name_to_arc_maps(network_model.network_reduction)
+    pruned = DataType[]
+    for branch_type in network_model.modeled_ac_branch_types
+        survived = get(name_to_arc_maps, branch_type, nothing)
+        (isnothing(survived) || isempty(survived)) && push!(pruned, branch_type)
+    end
+    for branch_type in pruned
+        @warn "All components of branch type $(branch_type) were removed by the " *
+              "network reduction (e.g. a zero-impedance branch merge). The " *
+              "$(branch_type) DeviceModel is dropped from the template and will not " *
+              "be modeled. Use the `model_all_branches` attribute on a MonitoredLine " *
+              "model to retain such branches through the reduction."
+        delete!(branch_models, nameof(branch_type))
+        filter!(!=(branch_type), network_model.modeled_ac_branch_types)
+    end
     return
 end
 
@@ -672,6 +727,8 @@ function instantiate_network_model!(
         PNM.get_network_reduction_data(model.PTDF_matrix), _get_filters(branch_models),
     )
     model.network_reduction = deepcopy(PNM.get_network_reduction_data(model.PTDF_matrix))
+    # After the reduction is known, before the constructors run.
+    _prune_fully_reduced_branch_models!(model, branch_models)
     _set_subnetworks_from_ptdf!(model, sys)
     empty!(model.reduced_branch_tracker)
     set_number_of_steps!(model.reduced_branch_tracker, number_of_steps)
