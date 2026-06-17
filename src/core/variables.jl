@@ -397,24 +397,6 @@ Docs abbreviation: ``f^\\text{sl,lo}``
 struct FlowActivePowerSlackLowerBound <: AbstractACActivePowerFlow end
 
 """
-Struct to dispatch the creation of post-contingency active power flow upper bound
-slack variables. Relaxes the post-contingency emergency-rating upper limit of a
-monitored branch under a specific outage. Indexed per `(outage_id, name, t)`.
-
-Docs abbreviation: ``f^\\text{sl,up}_{c}``
-"""
-struct PostContingencyFlowActivePowerSlackUpperBound <: VariableType end
-
-"""
-Struct to dispatch the creation of post-contingency active power flow lower bound
-slack variables. Relaxes the post-contingency emergency-rating lower limit of a
-monitored branch under a specific outage. Indexed per `(outage_id, name, t)`.
-
-Docs abbreviation: ``f^\\text{sl,lo}_{c}``
-"""
-struct PostContingencyFlowActivePowerSlackLowerBound <: VariableType end
-
-"""
 Struct to dispatch the creation of Phase Shifters Variables
 
 Docs abbreviation: ``\\theta^\\text{shift}``

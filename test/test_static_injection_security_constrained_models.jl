@@ -2464,35 +2464,22 @@ end
     end
 end
 
-# Regression test for the per-service outage scoping bug in
-# `_assign_outage_to_sc_service_models!`. With two SC reserve services
-# (Reserve1_1 in Area1, Reserve1_2 in Area2) and a generator outage attached
-# to an Area1 contributor only, the outage must be assigned to Reserve1_1's
-# ServiceModel and NOT to Reserve1_2's.
-@testset "SC reserve outage auto-discovery is scoped per ServiceModel" begin
+# Regression test for per-service outage scoping under the
+# attachment-as-the-rule contract: a security-constrained reserve service
+# responds to exactly the outages attached to it via
+# `add_supplemental_attribute!(sys, service, outage)`. Generator attachment
+# is required for the post-contingency build (so the outaged generator can
+# be pinned to zero deployment), but it is the *service* attachment that
+# selects which `ServiceModel` claims the outage. Membership in the
+# service's contributing-devices set is irrelevant to the selection.
+@testset "SC reserve outage attachment scopes responding services" begin
     sys = PSB.build_system(PSISystems, "two_area_pjm_DA"; add_reserves = true)
     transform_single_time_series!(sys, Hour(24), Hour(1))
 
-    # Restrict each VariableReserve's contributing devices to its own area so
-    # the per-service scoping has a meaningful intersection to test.
     reserve1 = get_component(VariableReserve{ReserveUp}, sys, "Reserve1_1")
-    reserve2 = get_component(VariableReserve{ReserveUp}, sys, "Reserve1_2")
-    for g in get_components(
-        g -> get_name(get_area(get_bus(g))) == "Area2",
-        ThermalStandard,
-        sys,
-    )
-        PSY.has_service(g, reserve1) && PSY.remove_service!(g, reserve1)
-    end
-    for g in get_components(
-        g -> get_name(get_area(get_bus(g))) == "Area1",
-        ThermalStandard,
-        sys,
-    )
-        PSY.has_service(g, reserve2) && PSY.remove_service!(g, reserve2)
-    end
 
-    # Attach an UnplannedOutage to a single Area1 generator (Alta_1).
+    # Attach an UnplannedOutage to a single Area1 generator and to the
+    # reserve that should respond. Reserve1_2 is intentionally NOT attached.
     alta1 = get_component(ThermalStandard, sys, "Alta_1")
     transition_data = GeometricDistributionForcedOutage(;
         mean_time_to_recovery = 10,
@@ -2500,6 +2487,7 @@ end
         monitored_components = collect(get_components(ACTransmission, sys)),
     )
     add_supplemental_attribute!(sys, alta1, transition_data)
+    add_supplemental_attribute!(sys, reserve1, transition_data)
     outage_uuid = IS.get_uuid(transition_data)
 
     template = get_thermal_dispatch_template_network(
@@ -2518,6 +2506,7 @@ end
             "Reserve1_2",
         ))
 
+    # --- Unit-level: attachment scoping populates only the responding ServiceModel ---
     PSI._build_service_model_outages!(template, sys)
 
     services = PSI.get_service_models(template)
@@ -2525,12 +2514,41 @@ end
     sm2 = services[("Reserve1_2", Symbol(VariableReserve{ReserveUp}))]
     @test haskey(sm1.outages, outage_uuid)
     @test !haskey(sm2.outages, outage_uuid)
+
+    # --- Build-level: post-contingency constraints fire only on Reserve1_1 ---
+    ps_model =
+        DecisionModel(template, sys; resolution = Hour(1), optimizer = HiGHS_optimizer)
+    @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+
+    container = PSI.get_optimization_container(ps_model)
+    @test PSI.has_container_key(
+        container,
+        PostContingencyGenerationBalanceConstraint,
+        PSY.VariableReserve{ReserveUp},
+        "Reserve1_1",
+    )
+    @test !PSI.has_container_key(
+        container,
+        PostContingencyGenerationBalanceConstraint,
+        PSY.VariableReserve{ReserveUp},
+        "Reserve1_2",
+    )
+    cons_resp = PSI.get_constraint(
+        container,
+        PSI.ConstraintKey(
+            PostContingencyGenerationBalanceConstraint,
+            PSY.VariableReserve{ReserveUp},
+            "Reserve1_1",
+        ),
+    )
+    @test size(cons_resp) == (1, 24)
 end
 
-# Regression test for the single-reserve auto-discovery path: an outage
-# attached to a generator that contributes to the only SC reserve service
-# must end up in its ServiceModel.outages dict.
-@testset "SC reserve outage auto-discovery covers single-reserve case" begin
+# Regression test for the single-reserve case: when only one SC reserve
+# service is in the template, an outage attached to both the outaged
+# generator and the reserve must end up in that ServiceModel.outages dict.
+@testset "SC reserve outage attachment covers single-reserve case" begin
     sys = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_reserves = true)
 
     transition_data = GeometricDistributionForcedOutage(;
@@ -2539,7 +2557,9 @@ end
         monitored_components = collect(get_components(ACTransmission, sys)),
     )
     alta = get_component(ThermalStandard, sys, "Alta")
+    reserve_up = get_component(VariableReserve{ReserveUp}, sys, "Reserve1")
     add_supplemental_attribute!(sys, alta, transition_data)
+    add_supplemental_attribute!(sys, reserve_up, transition_data)
     outage_uuid = IS.get_uuid(transition_data)
 
     template = get_thermal_dispatch_template_network(
