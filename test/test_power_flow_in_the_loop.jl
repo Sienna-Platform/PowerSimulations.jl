@@ -272,6 +272,61 @@ end
     end
 end
 
+@testset "DC PF in the loop uses optimized HVDC flow, not the stale system seed" begin
+    # PowerFlows seeds bus_hvdc_net_power from the device's stored active_power_flow at
+    # construction; the DC solve reads (never repopulates) that array. PSI must send the
+    # OPTIMIZED flow into bus_hvdc_net_power for DC too, otherwise the DC power flow ignores the
+    # dispatch entirely. Seed a constant stale flow, then assert the channel tracks the
+    # per-timestep optimized flow (from = -flow, to = +flow for the lossless line).
+    sys = build_system(PSISystems, "2Area 5 Bus System")
+    hvdc = only(get_components(TwoTerminalGenericHVDCLine, sys))
+    from = get_from(get_arc(hvdc))
+    to = get_to(get_arc(hvdc))
+    set_loss!(hvdc, LinearCurve(0.0))
+    set_active_power_flow!(hvdc, 0.5)   # a stale system seed the optimization won't reproduce
+
+    template = ProblemTemplate(
+        NetworkModel(PTDFPowerModel; power_flow_evaluation = DCPowerFlow()),
+    )
+    set_device_model!(template, ThermalStandard, ThermalBasicUnitCommitment)
+    set_device_model!(template, RenewableDispatch, RenewableFullDispatch)
+    set_device_model!(template, PowerLoad, StaticPowerLoad)
+    set_device_model!(template, DeviceModel(Line, StaticBranch))
+    set_device_model!(
+        template,
+        DeviceModel(TwoTerminalGenericHVDCLine, HVDCTwoTerminalLossless),
+    )
+    model = DecisionModel(template, sys; name = "UC", optimizer = HiGHS_optimizer)
+    @test build!(model; output_dir = mktempdir()) == PSI.ModelBuildStatus.BUILT
+    @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    flow =
+        read_variables(OptimizationProblemResults(model))["FlowActivePowerVariable__TwoTerminalGenericHVDCLine"][
+            :,
+            :value,
+        ]
+    data = PSI.get_power_flow_data(
+        only(PSI.get_power_flow_evaluation_data(PSI.get_optimization_container(model))),
+    )
+    base_power = get_base_power(sys)
+    bus_lookup = PFS.get_bus_lookup(data)
+
+    @test isapprox(
+        data.bus_hvdc_net_power[bus_lookup[get_number(to)], :] * base_power,
+        flow,
+        atol = 1e-6,
+        rtol = 0,
+    )
+    @test isapprox(
+        data.bus_hvdc_net_power[bus_lookup[get_number(from)], :] * base_power,
+        -1 .* flow,
+        atol = 1e-6,
+        rtol = 0,
+    )
+    # the optimized flow is not the constant stale seed (sanity: the fix actually does something)
+    @test !all(isapprox.(flow, 0.5 * base_power; atol = 1e-6))
+end
+
 @testset "LCC HVDC with AC PF in the loop" begin
     sys5 = build_system(PSISystems, "2Area 5 Bus System")
     hvdc = first(get_components(TwoTerminalGenericHVDCLine, sys5))
@@ -400,12 +455,15 @@ end
     from_to = vd["FlowActivePowerFromToVariable__TwoTerminalGenericHVDCLine"][:, :value]
     to_from = vd["FlowActivePowerToFromVariable__TwoTerminalGenericHVDCLine"][:, :value]
 
+    # HVDC injections live in PowerFlows' dedicated bus_hvdc_net_power channel (not the generic
+    # bus_active_power_injections); the generic array is zero at these (injector-free) buses.
     @test isapprox(
-        data.bus_active_power_injections[bus_lookup[get_number(from)], :] * base_power,
+        data.bus_hvdc_net_power[bus_lookup[get_number(from)], :] * base_power,
         -1 .* from_to,
         atol = 1e-9,
         rtol = 0,
     )
+    @test all(data.bus_active_power_injections[bus_lookup[get_number(from)], :] .== 0.0)
     # verify the line loss curve is exactly 10% so the loss-ratio check below is meaningful
     hvdc_loss_curve = get_loss(hvdc)
     @assert hvdc_loss_curve isa PSY.LinearCurve
@@ -417,8 +475,153 @@ end
     @test all(ten_percent_loss[nonzeros])
 
     @test isapprox(
-        data.bus_active_power_injections[bus_lookup[get_number(to)], :] * base_power,
+        data.bus_hvdc_net_power[bus_lookup[get_number(to)], :] * base_power,
         -1 .* to_from,
+        atol = 1e-9,
+        rtol = 0,
+    )
+    @test all(data.bus_active_power_injections[bus_lookup[get_number(to)], :] .== 0.0)
+end
+
+@testset "lossless HVDC with AC PF in the loop" begin
+    # Regression test for the HVDC to-bus injection sign in the AC power-flow-in-the-loop
+    # hand-off. The sibling "generic HVDC" testset above uses HVDCTwoTerminalDispatch, which
+    # exposes directional FlowActivePowerFromToVariable/FlowActivePowerToFromVariable and is
+    # therefore unaffected. HVDCTwoTerminalLossless exposes a single FlowActivePowerVariable
+    # (positive for from->to flow); the PF input-map precedence falls back to it for BOTH the
+    # from_to and to_from injection categories, so the to-bus injection must be +flow.
+    # Before the fix it was written as -flow (the FlowActivePowerToFromVariable convention),
+    # which corrupted the PowerFlows AC solution.
+    sys = build_system(PSISystems, "RTS_GMLC_DA_sys")
+
+    hvdc = only(get_components(TwoTerminalGenericHVDCLine, sys))
+    from = get_from(get_arc(hvdc))
+    to = get_to(get_arc(hvdc))
+
+    # remove components that impact total bus power at the HVDC line buses.
+    components = collect(
+        get_components(
+            x -> get_number(get_bus(x)) ∈ (get_number(from), get_number(to)),
+            StaticInjection,
+            sys,
+        ),
+    )
+    foreach(x -> remove_component!(sys, x), components)
+    change_to_PQ = ["Chifa", "Arne"]
+    for bus_name in change_to_PQ
+        bus = get_component(PSY.ACBus, sys, bus_name)
+        @assert !isnothing(bus) "bus does not exist"
+        set_bustype!(bus, PSY.ACBusTypes.PQ)
+    end
+
+    set_bustype!(get_component(ACBus, sys, "Arthur"), ACBusTypes.REF)
+
+    template_uc =
+        ProblemTemplate(
+            NetworkModel(PTDFPowerModel; power_flow_evaluation = ACPolarPowerFlow()),
+        )
+
+    set_device_model!(template_uc, ThermalStandard, ThermalBasicUnitCommitment)
+    set_device_model!(template_uc, RenewableDispatch, RenewableFullDispatch)
+    set_device_model!(template_uc, PowerLoad, StaticPowerLoad)
+    set_device_model!(template_uc, DeviceModel(Line, StaticBranch))
+    set_device_model!(
+        template_uc,
+        DeviceModel(TwoTerminalGenericHVDCLine, HVDCTwoTerminalLossless),
+    )
+
+    model = DecisionModel(template_uc, sys; name = "UC", optimizer = HiGHS_optimizer)
+
+    @test build!(model; output_dir = mktempdir()) == PSI.ModelBuildStatus.BUILT
+    @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    results = OptimizationProblemResults(model)
+    vd = read_variables(results)
+
+    data = PSI.get_power_flow_data(
+        only(PSI.get_power_flow_evaluation_data(PSI.get_optimization_container(model))),
+    )
+    base_power = get_base_power(sys)
+    bus_lookup = PFS.get_bus_lookup(data)
+
+    # Lossless: a single from->to flow variable is withdrawn at the from bus and injected at
+    # the to bus (no losses, so the magnitudes match). The contribution lands in PowerFlows'
+    # dedicated bus_hvdc_net_power channel, not the generic bus_active_power_injections.
+    flow = vd["FlowActivePowerVariable__TwoTerminalGenericHVDCLine"][:, :value]
+
+    @test isapprox(
+        data.bus_hvdc_net_power[bus_lookup[get_number(from)], :] * base_power,
+        -1 .* flow,
+        atol = 1e-9,
+        rtol = 0,
+    )
+    @test isapprox(
+        data.bus_hvdc_net_power[bus_lookup[get_number(to)], :] * base_power,
+        flow,
+        atol = 1e-9,
+        rtol = 0,
+    )
+    @test all(data.bus_active_power_injections[bus_lookup[get_number(from)], :] .== 0.0)
+    @test all(data.bus_active_power_injections[bus_lookup[get_number(to)], :] .== 0.0)
+end
+
+@testset "HVDC bus_hvdc_net_power is not double-counted (issue #1635)" begin
+    # PowerFlows pre-populates bus_hvdc_net_power from the system's stored HVDC flow at
+    # construction. PSI must zero that channel before writing the optimized flow, otherwise the
+    # stale system value stacks on top of the optimized one. Set the stored flow to a value the
+    # optimization will not reproduce, then assert the channel holds ONLY the optimized flow.
+    sys = build_system(PSISystems, "RTS_GMLC_DA_sys")
+
+    hvdc = only(get_components(TwoTerminalGenericHVDCLine, sys))
+    from = get_from(get_arc(hvdc))
+    to = get_to(get_arc(hvdc))
+    set_loss!(hvdc, LinearCurve(0.0))
+    # A deliberately large stale system flow that would be obvious if it leaked through.
+    set_active_power_flow!(hvdc, 0.5)
+
+    components = collect(
+        get_components(
+            x -> get_number(get_bus(x)) ∈ (get_number(from), get_number(to)),
+            StaticInjection,
+            sys,
+        ),
+    )
+    foreach(x -> remove_component!(sys, x), components)
+    for bus_name in ("Chifa", "Arne")
+        set_bustype!(get_component(PSY.ACBus, sys, bus_name), PSY.ACBusTypes.PQ)
+    end
+    set_bustype!(get_component(ACBus, sys, "Arthur"), ACBusTypes.REF)
+
+    template = ProblemTemplate(
+        NetworkModel(PTDFPowerModel; power_flow_evaluation = ACPolarPowerFlow()),
+    )
+    set_device_model!(template, ThermalStandard, ThermalBasicUnitCommitment)
+    set_device_model!(template, RenewableDispatch, RenewableFullDispatch)
+    set_device_model!(template, PowerLoad, StaticPowerLoad)
+    set_device_model!(template, DeviceModel(Line, StaticBranch))
+    set_device_model!(
+        template,
+        DeviceModel(TwoTerminalGenericHVDCLine, HVDCTwoTerminalLossless),
+    )
+    model = DecisionModel(template, sys; name = "UC", optimizer = HiGHS_optimizer)
+    @test build!(model; output_dir = mktempdir()) == PSI.ModelBuildStatus.BUILT
+    @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    results = OptimizationProblemResults(model)
+    flow = read_variables(results)["FlowActivePowerVariable__TwoTerminalGenericHVDCLine"][
+        :,
+        :value,
+    ]
+    data = PSI.get_power_flow_data(
+        only(PSI.get_power_flow_evaluation_data(PSI.get_optimization_container(model))),
+    )
+    base_power = get_base_power(sys)
+    bus_lookup = PFS.get_bus_lookup(data)
+
+    # bus_hvdc_net_power must equal ONLY the optimized flow (system's stale 0.5 pu was cleared).
+    @test isapprox(
+        data.bus_hvdc_net_power[bus_lookup[get_number(to)], :] * base_power,
+        flow,
         atol = 1e-9,
         rtol = 0,
     )
