@@ -944,8 +944,11 @@ function compute_conflict!(container::OptimizationContainer)
     end
 
     msg = IOBuffer()
+    # PrettyTables v3 renamed the `header` keyword to `column_labels`; support both
+    # so the code works across the compat range (PrettyTables = "2.4, 3.1").
+    column_label_kwarg = pkgversion(PrettyTables) >= v"3" ? :column_labels : :header
     for (k, v) in conflict
-        PrettyTables.pretty_table(msg, v; header = [k])
+        PrettyTables.pretty_table(msg, v; (column_label_kwarg => [k],)...)
     end
     @error "Constraints participating in conflict basis (IIS) \n\n$(String(take!(msg)))"
 
