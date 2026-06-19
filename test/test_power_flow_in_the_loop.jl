@@ -400,8 +400,9 @@ end
     from_to = vd["FlowActivePowerFromToVariable__TwoTerminalGenericHVDCLine"][:, :value]
     to_from = vd["FlowActivePowerToFromVariable__TwoTerminalGenericHVDCLine"][:, :value]
 
+    # HVDC terminal injections are routed into bus_hvdc_net_power, not bus_active_power_injections.
     @test isapprox(
-        data.bus_active_power_injections[bus_lookup[get_number(from)], :] * base_power,
+        data.bus_hvdc_net_power[bus_lookup[get_number(from)], :] * base_power,
         -1 .* from_to,
         atol = 1e-9,
         rtol = 0,
@@ -417,11 +418,90 @@ end
     @test all(ten_percent_loss[nonzeros])
 
     @test isapprox(
-        data.bus_active_power_injections[bus_lookup[get_number(to)], :] * base_power,
+        data.bus_hvdc_net_power[bus_lookup[get_number(to)], :] * base_power,
         -1 .* to_from,
         atol = 1e-9,
         rtol = 0,
     )
+    # The HVDC contributions must NOT leak into bus_active_power_injections (injections at the
+    # HVDC buses were removed above, so anything nonzero there would be a misrouted HVDC term).
+    @test all(
+        iszero,
+        data.bus_active_power_injections[bus_lookup[get_number(from)], :],
+    )
+    @test all(
+        iszero,
+        data.bus_active_power_injections[bus_lookup[get_number(to)], :],
+    )
+end
+
+@testset "lossless generic HVDC with AC PF in the loop" begin
+    # Regression for the lossless single-variable sign bug: the from/to terminals must receive
+    # equal-and-opposite net injections (net zero, since lossless), routed into
+    # bus_hvdc_net_power. The previous code subtracted the single FlowActivePowerVariable at
+    # BOTH terminals, producing a large same-sign phantom injection. Mirrors the dispatch
+    # testset's RTS setup so the HVDC actually carries an inter-area transfer.
+    sys = build_system(PSISystems, "RTS_GMLC_DA_sys")
+
+    hvdc = only(get_components(TwoTerminalGenericHVDCLine, sys))
+    set_loss!(hvdc, LinearCurve(0.0))  # lossless
+    from = get_from(get_arc(hvdc))
+    to = get_to(get_arc(hvdc))
+
+    # remove components that impact total bus power at the HVDC line buses.
+    components = collect(
+        get_components(
+            x -> get_number(get_bus(x)) ∈ (get_number(from), get_number(to)),
+            StaticInjection,
+            sys,
+        ),
+    )
+    foreach(x -> remove_component!(sys, x), components)
+    for bus_name in ["Chifa", "Arne"]
+        set_bustype!(get_component(PSY.ACBus, sys, bus_name), PSY.ACBusTypes.PQ)
+    end
+    set_bustype!(get_component(ACBus, sys, "Arthur"), ACBusTypes.REF)
+
+    template_uc =
+        ProblemTemplate(
+            NetworkModel(PTDFPowerModel; power_flow_evaluation = ACPolarPowerFlow()),
+        )
+    set_device_model!(template_uc, ThermalStandard, ThermalBasicUnitCommitment)
+    set_device_model!(template_uc, RenewableDispatch, RenewableFullDispatch)
+    set_device_model!(template_uc, PowerLoad, StaticPowerLoad)
+    set_device_model!(template_uc, DeviceModel(Line, StaticBranch))
+    set_device_model!(
+        template_uc,
+        DeviceModel(TwoTerminalGenericHVDCLine, HVDCTwoTerminalLossless),
+    )
+
+    model = DecisionModel(template_uc, sys; name = "UC", optimizer = HiGHS_optimizer)
+    @test build!(model; output_dir = mktempdir()) == PSI.ModelBuildStatus.BUILT
+    @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    results = OptimizationProblemResults(model)
+    vd = read_variables(results)
+    data = PSI.get_power_flow_data(
+        only(PSI.get_power_flow_evaluation_data(PSI.get_optimization_container(model))),
+    )
+    base_power = get_base_power(sys)
+    bus_lookup = PFS.get_bus_lookup(data)
+
+    # Lossless formulation exposes a single flow variable wired to both terminals.
+    flow = vd["FlowActivePowerVariable__TwoTerminalGenericHVDCLine"][:, :value]
+    from_inj = data.bus_hvdc_net_power[bus_lookup[get_number(from)], :] * base_power
+    to_inj = data.bus_hvdc_net_power[bus_lookup[get_number(to)], :] * base_power
+
+    # The test is only meaningful if the line actually carries power.
+    @test maximum(abs, flow) > 1e-3
+    # from bus exports the flow (-F), to bus receives it (+F)...
+    @test isapprox(from_inj, -1 .* flow; atol = 1e-9, rtol = 0)
+    @test isapprox(to_inj, flow; atol = 1e-9, rtol = 0)
+    # ...so a lossless line nets to zero across its two terminals (the bug gave -2F).
+    @test isapprox(from_inj .+ to_inj, zeros(length(flow)); atol = 1e-9, rtol = 0)
+    # And the HVDC must not leak into bus_active_power_injections.
+    @test all(iszero, data.bus_active_power_injections[bus_lookup[get_number(from)], :])
+    @test all(iszero, data.bus_active_power_injections[bus_lookup[get_number(to)], :])
 end
 
 @testset "Test AC power flow in the loop: small system UCED, PSS/E export" for calculate_loss_factors in

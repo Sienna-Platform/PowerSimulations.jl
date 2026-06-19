@@ -448,6 +448,18 @@ function add_power_flow_data!(
 end
 
 # How to update the PowerFlowData given a component type. A bit duplicative of code in PowerFlows.jl.
+# Generic forwarder: most categories do not depend on which variable supplied the value, so
+# the entry (variable) type is dropped here. Only the HVDC writers below specialize on it, to
+# distinguish the lossless single-flow variable from the dispatch model's signed From/To pair.
+_update_pf_data_component!(
+    pf_data::PFS.PowerFlowData,
+    category::Val,
+    comp_type::Type,
+    ::Type,
+    index::Int,
+    t::Int,
+    value::Float64,
+) = _update_pf_data_component!(pf_data, category, comp_type, index, t, value)
 _update_pf_data_component!(
     pf_data::PFS.PowerFlowData,
     ::Val{:active_power},
@@ -514,25 +526,48 @@ _update_pf_data_component!(
     t::Int,
     value::Float64,
 ) = (pf_data.bus_magnitude[index, t] = value)
+# HVDC terminal injections are routed into `bus_hvdc_net_power` (mirroring how PowerFlows.jl
+# accumulates native HVDC setpoints), NOT `bus_active_power_injections`. `update_pf_data!`
+# zeroes `bus_hvdc_net_power` (via `clear_injection_data!`) before writing, so the OPF-derived
+# values fully replace the construction-time setpoints rather than double-counting them.
+#
+# At the from bus the flow leaves the network, so it is a negative net injection (`-= value`),
+# regardless of which variable supplied it.
 _update_pf_data_component!(
     pf_data::PFS.PowerFlowData,
     ::Val{:active_power_hvdc_pst_from_to},
     ::Type{<:PSY.TwoTerminalHVDC},
+    ::Type,
     index::Int,
     t::Int,
     value::Float64,
-) = (pf_data.bus_active_power_injections[index, t] -= value)
-# FlowActivePowerToFromVariable is signed negative when power flows from→to (since
-# `tf_var + ft_var == losses ≥ 0`), so subtracting yields the correct positive
-# injection at the receiving bus.
+) = (pf_data.bus_hvdc_net_power[index, t] -= value)
+# At the to bus the sign depends on the formulation:
+#   * HVDCTwoTerminalDispatch supplies the dedicated FlowActivePowerToFromVariable, which is
+#     signed negative when power flows from→to (since `tf_var + ft_var == losses ≥ 0`), so
+#     subtracting yields the correct positive injection at the receiving bus.
 _update_pf_data_component!(
     pf_data::PFS.PowerFlowData,
     ::Val{:active_power_hvdc_pst_to_from},
     ::Type{<:PSY.TwoTerminalHVDC},
+    ::Type{FlowActivePowerToFromVariable},
     index::Int,
     t::Int,
     value::Float64,
-) = (pf_data.bus_active_power_injections[index, t] -= value)
+) = (pf_data.bus_hvdc_net_power[index, t] -= value)
+#   * The lossless/unbounded formulations expose a single FlowActivePowerVariable (positive =
+#     from→to) wired to BOTH terminal categories. The to bus receives the flow, so it is a
+#     positive net injection (`+= value`); using `-= value` here would inject the same sign at
+#     both terminals and create a large phantom imbalance the slack must absorb.
+_update_pf_data_component!(
+    pf_data::PFS.PowerFlowData,
+    ::Val{:active_power_hvdc_pst_to_from},
+    ::Type{<:PSY.TwoTerminalHVDC},
+    ::Type{FlowActivePowerVariable},
+    index::Int,
+    t::Int,
+    value::Float64,
+) = (pf_data.bus_hvdc_net_power[index, t] += value)
 _update_pf_data_component!(
     pf_data::PFS.PowerFlowData,
     ::Val{:active_power_hvdc_pst_from_to},
@@ -631,6 +666,7 @@ function _write_value_to_pf_data!(
                     pf_data,
                     Val(category),
                     get_component_type(key),
+                    get_entry_type(key),
                     index,
                     t,
                     value,
