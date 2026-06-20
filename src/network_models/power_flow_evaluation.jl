@@ -154,6 +154,7 @@ function _make_pf_input_map!(
         # Map that persists to store the bus index to which the variable maps in the PowerFlowData, etc.
         pf_data_opt_container_map = Dict{OptimizationContainerKey, map_type}()
         @info "Adding input map to send $category to $(nameof(typeof(pf_data)))"
+        @assert haskey(PF_INPUT_KEY_PRECEDENCES, category) "No source precedence defined for power-flow input category $category"
         precedence = PF_INPUT_KEY_PRECEDENCES[category]
         _add_category_to_map!(
             precedence,
@@ -262,6 +263,12 @@ function _add_two_terminal_elements_map!(
     input_key_map::Dict{Symbol, <:Dict{OptimizationContainerKey, <:Dict}},
 )
     for element_type in (PSY.TwoTerminalHVDC, PSY.PhaseShiftingTransformer)
+        # A two-terminal element whose from and to resolve to one bus would collapse its
+        # from_to/to_from injections onto the same row; guard against that here.
+        for comp in PSY.get_available_components(element_type, sys)
+            @assert PSY.get_number(PSY.get_from_bus(comp)) !=
+                    PSY.get_number(PSY.get_to_bus(comp)) "Two-terminal $(PSY.get_name(comp)) maps from and to to the same bus"
+        end
         for (category, side) in zip(
             [:active_power_hvdc_pst_from_to, :active_power_hvdc_pst_to_from],
             [Val(:from), Val(:to)],
@@ -309,7 +316,10 @@ branch_aux_vars(::PFS.vPTDFPowerFlowData) =
     [PowerFlowBranchActivePowerFromTo, PowerFlowBranchActivePowerToFrom]
 branch_aux_vars(::PFS.PSSEExporter) = DataType[]
 
-# Same for bus aux vars
+# Same for bus aux vars. Loss/voltage-stability factors are registered ONLY when their
+# `get_calculate_*` flag is set — the same flag under which `_get_pf_result` returns a non-`nothing`
+# matrix (`PFS.get_loss_factors` / `get_voltage_stability_factors` are `nothing` otherwise). Keep
+# these two conditions in lockstep so the read-back never indexes a `nothing`.
 function bus_aux_vars(data::PFS.ACPowerFlowData)
     vars = [PowerFlowVoltageAngle, PowerFlowVoltageMagnitude]
     if PFS.get_calculate_loss_factors(data)
@@ -453,7 +463,7 @@ end
 # power-flow contribution. `sign` equals the multiplier `add_to_expression!` applied to the bus
 # balance, so PF reproduces the OPF nodal balance. Two thin writers consume it (below).
 #   quantity : :active | :reactive | :angle | :magnitude
-#   role     : :injection | :withdrawal | :hvdc_net | :voltage  (selects the PowerFlowData array)
+#   role     : active/reactive array selector :injection | :withdrawal | :hvdc_net (:none for voltage)
 #   sign     : nodal-balance multiplier (+1 / -1)
 #   partial  : System writer only — in/out variables accumulate onto a shared active_power field
 struct PFContribution
@@ -509,12 +519,12 @@ pf_contribution(
     ::Union{Val{:voltage_angle_export}, Val{:voltage_angle_opf}},
     ::Type{<:_PF_FLOW_ENTRY},
     ::Type{<:PSY.ACBus},
-) = PFContribution(:angle, :voltage, 1.0, false)
+) = PFContribution(:angle, :none, 1.0, false)
 pf_contribution(
     ::Union{Val{:voltage_magnitude_export}, Val{:voltage_magnitude_opf}},
     ::Type{<:_PF_FLOW_ENTRY},
     ::Type{<:PSY.ACBus},
-) = PFContribution(:magnitude, :voltage, 1.0, false)
+) = PFContribution(:magnitude, :none, 1.0, false)
 
 # ---- HVDC / PST two-terminal (variable entries) ----
 # HVDC re-targets to `:hvdc_net` (`bus_hvdc_net_power`); signs follow the injection convention.
@@ -584,41 +594,29 @@ pf_contribution(
     ::Union{Val{:voltage_angle_export}, Val{:voltage_angle_opf}},
     ::Type{<:_PF_PARAM_ENTRY},
     ::Type{<:PSY.ACBus},
-) = PFContribution(:angle, :voltage, 1.0, false)
+) = PFContribution(:angle, :none, 1.0, false)
 pf_contribution(
     ::Union{Val{:voltage_magnitude_export}, Val{:voltage_magnitude_opf}},
     ::Type{<:_PF_PARAM_ENTRY},
     ::Type{<:PSY.ACBus},
-) = PFContribution(:magnitude, :voltage, 1.0, false)
+) = PFContribution(:magnitude, :none, 1.0, false)
 
-# ---- PowerFlowData writer: (quantity, role) selects the array; voltages assign, injections accumulate ----
+# ---- PowerFlowData writer ----
+# Active/reactive quantities accumulate into an injection array chosen by (quantity, role);
+# voltage quantities (:angle/:magnitude) are assigned to a bus-state array.
+_pf_writes_voltage(q::Symbol) = q === :angle || q === :magnitude
+
 _pf_array(pfd::PFS.PowerFlowData, ::Val{:active}, ::Val{:injection}) =
     pfd.bus_active_power_injections
 _pf_array(pfd::PFS.PowerFlowData, ::Val{:active}, ::Val{:withdrawal}) =
     pfd.bus_active_power_withdrawals
+_pf_array(pfd::PFS.PowerFlowData, ::Val{:active}, ::Val{:hvdc_net}) = pfd.bus_hvdc_net_power
 _pf_array(pfd::PFS.PowerFlowData, ::Val{:reactive}, ::Val{:injection}) =
     pfd.bus_reactive_power_injections
 _pf_array(pfd::PFS.PowerFlowData, ::Val{:reactive}, ::Val{:withdrawal}) =
     pfd.bus_reactive_power_withdrawals
-_pf_array(pfd::PFS.PowerFlowData, ::Val{:active}, ::Val{:hvdc_net}) = pfd.bus_hvdc_net_power
-_pf_array(pfd::PFS.PowerFlowData, ::Val{:angle}, ::Val{:voltage}) = pfd.bus_angles
-_pf_array(pfd::PFS.PowerFlowData, ::Val{:magnitude}, ::Val{:voltage}) = pfd.bus_magnitude
-
-function _apply_pf_contribution!(
-    pf_data::PFS.PowerFlowData,
-    c::PFContribution,
-    index::Int,
-    t::Int,
-    value::Float64,
-)
-    arr = _pf_array(pf_data, Val(c.quantity), Val(c.role))
-    if c.role === :voltage
-        arr[index, t] = value
-    else
-        arr[index, t] += c.sign * value
-    end
-    return
-end
+_pf_bus_state_array(pfd::PFS.PowerFlowData, ::Val{:angle}) = pfd.bus_angles
+_pf_bus_state_array(pfd::PFS.PowerFlowData, ::Val{:magnitude}) = pfd.bus_magnitude
 
 function _write_value_to_pf_data!(
     pf_data::PFS.PowerFlowData,
@@ -628,15 +626,35 @@ function _write_value_to_pf_data!(
     component_map)
     result = lookup_value(container, key)
     c = pf_contribution(Val(category), get_entry_type(key), get_component_type(key))
+    # Resolve the target array once per key so the inner write loop runs on a concrete `Matrix`.
+    if _pf_writes_voltage(c.quantity)
+        _write_pf_array!(_pf_bus_state_array(pf_data, Val(c.quantity)), true, c.sign,
+            component_map, container, result)
+    else
+        _write_pf_array!(_pf_array(pf_data, Val(c.quantity), Val(c.role)), false, c.sign,
+            component_map, container, result)
+    end
+    return
+end
+
+# Function barrier: `arr` is a concrete `Matrix{Float64}`, so the per-(device, time) loop is
+# monomorphic. `assign` overwrites (voltages); otherwise contributions accumulate.
+function _write_pf_array!(
+    arr::Matrix{Float64},
+    assign::Bool,
+    sign::Float64,
+    component_map,
+    container::OptimizationContainer,
+    result,
+)
     for (device_name, index) in component_map
         for t in get_time_steps(container)
-            _apply_pf_contribution!(
-                pf_data,
-                c,
-                index,
-                t,
-                jump_value(result[device_name, t]),
-            )
+            value = jump_value(result[device_name, t])
+            if assign
+                arr[index, t] = value
+            else
+                arr[index, t] += sign * value
+            end
         end
     end
     return
@@ -1033,7 +1051,12 @@ end
 "Fetch the most recently solved `PowerFlowEvaluationData`"
 function latest_solved_power_flow_evaluation_data(container::OptimizationContainer)
     datas = get_power_flow_evaluation_data(container)
-    return datas[findlast(x -> x.is_solved, datas)]
+    idx = findlast(x -> x.is_solved, datas)
+    isnothing(idx) && error(
+        "No power flow evaluation converged; cannot read back power-flow aux variables. " *
+        "Check the convergence @error logged during the solve.",
+    )
+    return datas[idx]
 end
 
 function solve_power_flow!(
@@ -1059,10 +1082,12 @@ end
 # Containers that actually solve a power flow report convergence via `get_converged`;
 # pure exporters (PSSEExporter) never solve and are always considered "solved".
 function _check_pf_converged(pf_data::PFS.PowerFlowData)
-    converged = all(PFS.get_converged(pf_data))
+    flags = PFS.get_converged(pf_data)
+    converged = all(flags)
     converged || @error(
-        "Power flow evaluation $(typeof(pf_data)) failed to converge for one or " *
-        "more time steps; downstream aux-variable values would contain NaNs",
+        "Power flow evaluation $(typeof(pf_data)) failed to converge for $(count(!, flags)) of " *
+        "$(length(flags)) time step(s) (indices $(findall(!, flags))); the corresponding " *
+        "aux-variable values will be NaN.",
     )
     return converged
 end
@@ -1133,10 +1158,10 @@ function calculate_aux_variable_value!(container::OptimizationContainer,
         end
     end
     for (arc, parallel_brs) in PNM.get_parallel_branch_map(nrd) # parallel_brs is Set{ACTransmission}
+        sample_line = first(parallel_brs)
+        impedance = PSY.get_r(sample_line) + im * PSY.get_x(sample_line)
+        first_name = PSY.get_name(sample_line)
         for br in parallel_brs
-            sample_line = first(parallel_brs)
-            impedance = PSY.get_r(sample_line) + im * PSY.get_x(sample_line)
-            first_name = PSY.get_name(sample_line)
             if br isa U
                 name = PSY.get_name(br)
                 IS.@assert_op T <: BranchFlowAuxVariableType ||
