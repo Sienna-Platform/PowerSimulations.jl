@@ -273,11 +273,9 @@ end
 end
 
 @testset "DC PF in the loop uses optimized HVDC flow, not the stale system seed" begin
-    # PowerFlows seeds bus_hvdc_net_power from the device's stored active_power_flow at
-    # construction; the DC solve reads (never repopulates) that array. PSI must send the
-    # OPTIMIZED flow into bus_hvdc_net_power for DC too, otherwise the DC power flow ignores the
-    # dispatch entirely. Seed a constant stale flow, then assert the channel tracks the
-    # per-timestep optimized flow (from = -flow, to = +flow for the lossless line).
+    # PowerFlows seeds bus_hvdc_net_power from the stored flow and the DC solve never repopulates
+    # it, so PSI must send the optimized flow in for DC. Seed a stale flow, then assert the channel
+    # tracks the per-timestep optimized flow (from = -flow, to = +flow, lossless).
     sys = build_system(PSISystems, "2Area 5 Bus System")
     hvdc = only(get_components(TwoTerminalGenericHVDCLine, sys))
     from = get_from(get_arc(hvdc))
@@ -484,14 +482,9 @@ end
 end
 
 @testset "lossless HVDC with AC PF in the loop" begin
-    # Regression test for the HVDC to-bus injection sign in the AC power-flow-in-the-loop
-    # hand-off. The sibling "generic HVDC" testset above uses HVDCTwoTerminalDispatch, which
-    # exposes directional FlowActivePowerFromToVariable/FlowActivePowerToFromVariable and is
-    # therefore unaffected. HVDCTwoTerminalLossless exposes a single FlowActivePowerVariable
-    # (positive for from->to flow); the PF input-map precedence falls back to it for BOTH the
-    # from_to and to_from injection categories, so the to-bus injection must be +flow.
-    # Before the fix it was written as -flow (the FlowActivePowerToFromVariable convention),
-    # which corrupted the PowerFlows AC solution.
+    # HVDCTwoTerminalLossless exposes a single FlowActivePowerVariable (positive from->to); the
+    # PF input-map falls back to it for both injection categories, so the to-bus must be +flow.
+    # Regression for #1631 (was -flow, the directional FlowActivePowerToFromVariable convention).
     sys = build_system(PSISystems, "RTS_GMLC_DA_sys")
 
     hvdc = only(get_components(TwoTerminalGenericHVDCLine, sys))
@@ -566,10 +559,9 @@ end
 end
 
 @testset "HVDC bus_hvdc_net_power is not double-counted (issue #1635)" begin
-    # PowerFlows pre-populates bus_hvdc_net_power from the system's stored HVDC flow at
-    # construction. PSI must zero that channel before writing the optimized flow, otherwise the
-    # stale system value stacks on top of the optimized one. Set the stored flow to a value the
-    # optimization will not reproduce, then assert the channel holds ONLY the optimized flow.
+    # PSI must zero the construction-time HVDC seed before writing the optimized flow, else the
+    # stale value stacks on top. Set an unreproducible stored flow, assert the channel holds only
+    # the optimized flow.
     sys = build_system(PSISystems, "RTS_GMLC_DA_sys")
 
     hvdc = only(get_components(TwoTerminalGenericHVDCLine, sys))

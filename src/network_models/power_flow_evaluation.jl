@@ -62,10 +62,9 @@ pf_input_keys(::PFS.PSSEExporter) =
         :voltage_angle_export,
         :voltage_magnitude_export,
     ]
-# HVDC/PST optimized flows are sent into `bus_hvdc_net_power` for every power flow that solves
-# on a `PowerFlowData` (AC residual and DC solve both add that array to the bus injection). This
-# is what lets the scoped clear in `update_pf_data!` zero-and-repopulate the channel so the solve
-# sees the OPTIMIZED HVDC flow instead of PowerFlows' construction-time system seed.
+# HVDC/PST flows feed every `PowerFlowData` solve. They route by component (see the resolver
+# below: HVDC → `bus_hvdc_net_power`, PST → `bus_active_power_injections`); `update_pf_data!`
+# clears the HVDC channel before re-population.
 pf_input_keys_hvdc_pst(::PFS.PowerFlowData) =
     [:active_power_hvdc_pst_from_to, :active_power_hvdc_pst_to_from]
 
@@ -450,18 +449,13 @@ function add_power_flow_data!(
     return
 end
 
-# ============================================================================================
-# Injection-sign resolver: the single source of truth for how a mapped optimization value
-# contributes to power-flow state. PF must reproduce the nodal balance the OPF solved, so the
-# sign here equals the multiplier the matching `add_to_expression!` applied to the bus
-# expression. One resolver feeds two thin writers (PowerFlowData arrays and System fields).
-# ============================================================================================
-
-# A sink-neutral description of one value's contribution.
+# Injection-sign resolver: the single source of truth mapping an optimization value to its
+# power-flow contribution. `sign` equals the multiplier `add_to_expression!` applied to the bus
+# balance, so PF reproduces the OPF nodal balance. Two thin writers consume it (below).
 #   quantity : :active | :reactive | :angle | :magnitude
 #   role     : :injection | :withdrawal | :hvdc_net | :voltage  (selects the PowerFlowData array)
-#   sign     : the nodal-balance multiplier (+1 / -1) applied to the value
-#   partial  : true for in/out variables, which accumulate onto a shared System active_power field
+#   sign     : nodal-balance multiplier (+1 / -1)
+#   partial  : System writer only — in/out variables accumulate onto a shared active_power field
 struct PFContribution
     quantity::Symbol
     role::Symbol
@@ -523,19 +517,14 @@ pf_contribution(
 ) = PFContribution(:magnitude, :voltage, 1.0, false)
 
 # ---- HVDC / PST two-terminal (variable entries) ----
-# HVDC re-targets to `:hvdc_net` (PowerFlows' `bus_hvdc_net_power`), the channel its AC residual
-# adds to the bus injection — the same sign convention as `bus_active_power_injections`, so the
-# signs below are unchanged from the generic-injection convention.
-# from_to: withdrawal at the from bus (-1), for both single and directional variables.
+# HVDC re-targets to `:hvdc_net` (`bus_hvdc_net_power`); signs follow the injection convention.
+# from_to: -1. to_from: `FlowActivePowerToFromVariable` is -tf, signed negative for from→to flow
+# (sign -1); a single `FlowActivePowerVariable` (lossless / PowerModels `:p_dc`) is +flow (sign +1).
 pf_contribution(
     ::Val{:active_power_hvdc_pst_from_to},
     ::Type{<:_PF_FLOW_ENTRY},
     ::Type{<:PSY.TwoTerminalHVDC},
 ) = PFContribution(:active, :hvdc_net, -1.0, false)
-# to_from: `FlowActivePowerToFromVariable` is signed negative for from→to flow (tf+ft=losses),
-# so its receiving-bus injection is `-tf` (sign -1). A single `FlowActivePowerVariable`
-# (HVDCTwoTerminalLossless, or the AC/DC PowerModels `:p_dc` mapping) is signed positive for
-# from→to, so its receiving-bus injection is `+flow` (sign +1).
 pf_contribution(
     ::Val{:active_power_hvdc_pst_to_from},
     ::Type{FlowActivePowerToFromVariable},
@@ -546,7 +535,7 @@ pf_contribution(
     ::Type{FlowActivePowerVariable},
     ::Type{<:PSY.TwoTerminalHVDC},
 ) = PFContribution(:active, :hvdc_net, 1.0, false)
-# PhaseShiftingTransformer: from_to -1, to_from +1.
+# PhaseShiftingTransformer stays on the generic injection array: from_to -1, to_from +1.
 pf_contribution(
     ::Val{:active_power_hvdc_pst_from_to},
     ::Type{<:_PF_FLOW_ENTRY},
@@ -654,12 +643,10 @@ function update_pf_data!(
 )
     pf_data = get_power_flow_data(pf_e_data)
     PFS.clear_injection_data!(pf_data)
-    # HVDC contributions are written into `bus_hvdc_net_power`. `clear_injection_data!` does not
-    # reset that array, and PowerFlows pre-populates it from the system at construction, so zero
-    # it here before re-writing the optimized values — otherwise the construction-time system
-    # seed would double-count (AC, issue #1635 bug 1) or shadow the optimized flow (DC staleness).
-    # Clearing and repopulating are co-located so they cannot desync: the guard only skips the
-    # zero for a (hypothetical) `PowerFlowData` that opts out of the hvdc_pst categories below.
+    # `clear_injection_data!` does not reset `bus_hvdc_net_power`, which PowerFlows seeds from the
+    # system at construction. Zero it before re-writing optimized HVDC flows, else the seed
+    # double-counts (AC, #1635) or shadows the optimized DC flow. Co-located with the repopulate
+    # below so they can't desync; skipped only if a `PowerFlowData` opts out of hvdc_pst.
     isempty(pf_input_keys_hvdc_pst(pf_data)) || (pf_data.bus_hvdc_net_power .= 0.0)
     input_map = get_input_key_map(pf_e_data)
     for (category, inputs) in input_map
@@ -684,10 +671,9 @@ _pf_to_comp(
 ) =
     value
 
-# Set (or, for `partial` in/out contributions, accumulate) the signed quantity on the
-# component's field. `StandardLoad` (ZIP) has no scalar `active_power`/`reactive_power`; the
-# dispatched `StaticPowerLoad` power is its constant-power component, so it routes to
-# `constant_active_power`/`constant_reactive_power`. `ACBus` carries voltage.
+# Set (or accumulate, for `partial` in/out contributions) the signed quantity on the component's
+# field. `StandardLoad` (ZIP) has no scalar power field, so it routes to its constant-power
+# component (`constant_active_power`/`constant_reactive_power`).
 _set_comp_quantity!(comp::PSY.Component, ::Val{:active}, v::Float64, partial::Bool) =
     partial ? (comp.active_power += v) : (comp.active_power = v)
 _set_comp_quantity!(comp::PSY.Component, ::Val{:reactive}, v::Float64, ::Bool) =
