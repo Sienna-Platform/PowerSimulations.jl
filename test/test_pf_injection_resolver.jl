@@ -1,7 +1,5 @@
-# Unit test for the PSI->PowerFlows injection-sign resolver (`pf_contribution`). This is the
-# single source of truth for how a mapped optimization value is written into the power-flow
-# state; the sign must equal the OPF nodal-balance multiplier. The table below pins every
-# (category, entry, component) mapping in use so a new device cannot silently desync the path.
+# Pins every (category, entry, component) -> PFContribution mapping so a new device can't
+# silently desync the OPF->PowerFlows injection-sign path.
 @testset "pf_contribution resolver table" begin
     P = PSI.PFContribution
     FAPV = PSI.FlowActivePowerVariable
