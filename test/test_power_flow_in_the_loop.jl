@@ -393,47 +393,47 @@ end
     @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
 end
 
-@testset "generic HVDC with AC PF in the loop" begin
-    # TODO replace RTS with something smaller, so this test case doesn't take so long.
+# Shared RTS setup for the AC-PF-in-the-loop HVDC tests: isolate the HVDC line buses (remove
+# their injectors, retype the surrounding buses) and build a PTDF UC with an AC power-flow
+# evaluation. `loss`/`stored_flow`, when given, overwrite the HVDC line's loss curve / stored flow.
+# TODO replace RTS with something smaller, so these test cases don't take so long.
+function _build_rts_hvdc_acpf_model(hvdc_formulation; loss = nothing, stored_flow = nothing)
     sys = build_system(PSISystems, "RTS_GMLC_DA_sys")
-
     hvdc = only(get_components(TwoTerminalGenericHVDCLine, sys))
     from = get_from(get_arc(hvdc))
     to = get_to(get_arc(hvdc))
-
+    isnothing(loss) || set_loss!(hvdc, loss)
+    isnothing(stored_flow) || set_active_power_flow!(hvdc, stored_flow)
     # remove components that impact total bus power at the HVDC line buses.
-    components = collect(
+    injectors = collect(
         get_components(
             x -> get_number(get_bus(x)) ∈ (get_number(from), get_number(to)),
             StaticInjection,
             sys,
         ),
     )
-    foreach(x -> remove_component!(sys, x), components)
-    change_to_PQ = ["Chifa", "Arne"]
-    for bus_name in change_to_PQ
-        bus = get_component(PSY.ACBus, sys, bus_name)
-        @assert !isnothing(bus) "bus does not exist"
-        set_bustype!(bus, PSY.ACBusTypes.PQ)
+    foreach(x -> remove_component!(sys, x), injectors)
+    for bus_name in ("Chifa", "Arne")
+        set_bustype!(get_component(PSY.ACBus, sys, bus_name), PSY.ACBusTypes.PQ)
     end
-
     set_bustype!(get_component(ACBus, sys, "Arthur"), ACBusTypes.REF)
-
-    template_uc =
-        ProblemTemplate(
-            NetworkModel(PTDFPowerModel; power_flow_evaluation = ACPolarPowerFlow()),
-        )
-
-    set_device_model!(template_uc, ThermalStandard, ThermalBasicUnitCommitment)
-    set_device_model!(template_uc, RenewableDispatch, RenewableFullDispatch)
-    set_device_model!(template_uc, PowerLoad, StaticPowerLoad)
-    set_device_model!(template_uc, DeviceModel(Line, StaticBranch))
-    set_device_model!(
-        template_uc,
-        DeviceModel(TwoTerminalGenericHVDCLine, HVDCTwoTerminalDispatch),
+    template = ProblemTemplate(
+        NetworkModel(PTDFPowerModel; power_flow_evaluation = ACPolarPowerFlow()),
     )
+    set_device_model!(template, ThermalStandard, ThermalBasicUnitCommitment)
+    set_device_model!(template, RenewableDispatch, RenewableFullDispatch)
+    set_device_model!(template, PowerLoad, StaticPowerLoad)
+    set_device_model!(template, DeviceModel(Line, StaticBranch))
+    set_device_model!(
+        template,
+        DeviceModel(TwoTerminalGenericHVDCLine, hvdc_formulation),
+    )
+    model = DecisionModel(template, sys; name = "UC", optimizer = HiGHS_optimizer)
+    return (; model, sys, hvdc, from, to)
+end
 
-    model = DecisionModel(template_uc, sys; name = "UC", optimizer = HiGHS_optimizer)
+@testset "generic HVDC with AC PF in the loop" begin
+    (; model, sys, hvdc, from, to) = _build_rts_hvdc_acpf_model(HVDCTwoTerminalDispatch)
 
     @test build!(model; output_dir = mktempdir()) == PSI.ModelBuildStatus.BUILT
     @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
@@ -485,45 +485,7 @@ end
     # HVDCTwoTerminalLossless exposes a single FlowActivePowerVariable (positive from->to); the
     # PF input-map falls back to it for both injection categories, so the to-bus must be +flow.
     # Regression for #1631 (was -flow, the directional FlowActivePowerToFromVariable convention).
-    sys = build_system(PSISystems, "RTS_GMLC_DA_sys")
-
-    hvdc = only(get_components(TwoTerminalGenericHVDCLine, sys))
-    from = get_from(get_arc(hvdc))
-    to = get_to(get_arc(hvdc))
-
-    # remove components that impact total bus power at the HVDC line buses.
-    components = collect(
-        get_components(
-            x -> get_number(get_bus(x)) ∈ (get_number(from), get_number(to)),
-            StaticInjection,
-            sys,
-        ),
-    )
-    foreach(x -> remove_component!(sys, x), components)
-    change_to_PQ = ["Chifa", "Arne"]
-    for bus_name in change_to_PQ
-        bus = get_component(PSY.ACBus, sys, bus_name)
-        @assert !isnothing(bus) "bus does not exist"
-        set_bustype!(bus, PSY.ACBusTypes.PQ)
-    end
-
-    set_bustype!(get_component(ACBus, sys, "Arthur"), ACBusTypes.REF)
-
-    template_uc =
-        ProblemTemplate(
-            NetworkModel(PTDFPowerModel; power_flow_evaluation = ACPolarPowerFlow()),
-        )
-
-    set_device_model!(template_uc, ThermalStandard, ThermalBasicUnitCommitment)
-    set_device_model!(template_uc, RenewableDispatch, RenewableFullDispatch)
-    set_device_model!(template_uc, PowerLoad, StaticPowerLoad)
-    set_device_model!(template_uc, DeviceModel(Line, StaticBranch))
-    set_device_model!(
-        template_uc,
-        DeviceModel(TwoTerminalGenericHVDCLine, HVDCTwoTerminalLossless),
-    )
-
-    model = DecisionModel(template_uc, sys; name = "UC", optimizer = HiGHS_optimizer)
+    (; model, sys, hvdc, from, to) = _build_rts_hvdc_acpf_model(HVDCTwoTerminalLossless)
 
     @test build!(model; output_dir = mktempdir()) == PSI.ModelBuildStatus.BUILT
     @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
@@ -560,42 +522,10 @@ end
 
 @testset "HVDC bus_hvdc_net_power is not double-counted (issue #1635)" begin
     # PSI must zero the construction-time HVDC seed before writing the optimized flow, else the
-    # stale value stacks on top. Set an unreproducible stored flow, assert the channel holds only
-    # the optimized flow.
-    sys = build_system(PSISystems, "RTS_GMLC_DA_sys")
-
-    hvdc = only(get_components(TwoTerminalGenericHVDCLine, sys))
-    from = get_from(get_arc(hvdc))
-    to = get_to(get_arc(hvdc))
-    set_loss!(hvdc, LinearCurve(0.0))
-    # A deliberately large stale system flow that would be obvious if it leaked through.
-    set_active_power_flow!(hvdc, 0.5)
-
-    components = collect(
-        get_components(
-            x -> get_number(get_bus(x)) ∈ (get_number(from), get_number(to)),
-            StaticInjection,
-            sys,
-        ),
-    )
-    foreach(x -> remove_component!(sys, x), components)
-    for bus_name in ("Chifa", "Arne")
-        set_bustype!(get_component(PSY.ACBus, sys, bus_name), PSY.ACBusTypes.PQ)
-    end
-    set_bustype!(get_component(ACBus, sys, "Arthur"), ACBusTypes.REF)
-
-    template = ProblemTemplate(
-        NetworkModel(PTDFPowerModel; power_flow_evaluation = ACPolarPowerFlow()),
-    )
-    set_device_model!(template, ThermalStandard, ThermalBasicUnitCommitment)
-    set_device_model!(template, RenewableDispatch, RenewableFullDispatch)
-    set_device_model!(template, PowerLoad, StaticPowerLoad)
-    set_device_model!(template, DeviceModel(Line, StaticBranch))
-    set_device_model!(
-        template,
-        DeviceModel(TwoTerminalGenericHVDCLine, HVDCTwoTerminalLossless),
-    )
-    model = DecisionModel(template, sys; name = "UC", optimizer = HiGHS_optimizer)
+    # stale value stacks on top. Set an unreproducible stored flow (a deliberately large 0.5 pu
+    # that would be obvious if it leaked through), assert the channel holds only the optimized flow.
+    (; model, sys, hvdc, from, to) = _build_rts_hvdc_acpf_model(
+        HVDCTwoTerminalLossless; loss = LinearCurve(0.0), stored_flow = 0.5)
     @test build!(model; output_dir = mktempdir()) == PSI.ModelBuildStatus.BUILT
     @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
 
