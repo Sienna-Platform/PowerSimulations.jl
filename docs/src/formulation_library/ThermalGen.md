@@ -765,7 +765,7 @@ combo_table = DataFrame(
     "Valid DeviceModel" =>
         ["`DeviceModel($(c["device_type"]), $(c["formulation"]))`" for c in combos],
     "Device Type" => [
-        "[$(c["device_type"])](https://nrel-Sienna.github.io/PowerSystems.jl/stable/model_library/generated_$(c["device_type"])/)"
+        "[$(c["device_type"])](https://sienna-platform.github.io/PowerSystems.jl/stable/model_library/generated_$(c["device_type"])/)"
         for c in combos
     ],
     "Formulation" => ["[$(c["formulation"])](@ref)" for c in combos],

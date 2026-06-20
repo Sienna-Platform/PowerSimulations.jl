@@ -49,11 +49,11 @@ solver = optimizer_with_attributes(HiGHS.Optimizer, "mip_rel_gap" => 0.01)
 #
 # !!! note
 #
-#     [PowerSystemCaseBuilder.jl](https://github.com/NREL-Sienna/PowerSystemCaseBuilder.jl)
+#     [PowerSystemCaseBuilder.jl](https://github.com/Sienna-Platform/PowerSystemCaseBuilder.jl)
 #     is a helper library that makes it easier to reproduce examples in the documentation
 #     and tutorials. Normally you would pass your local files to create the system data
 #     instead of calling `build_system`. For more details visit
-#     [PowerSystemCaseBuilder Documentation](https://nrel-sienna.github.io/PowerSystems.jl/stable/how_to/powersystembuilder/)
+#     [PowerSystemCaseBuilder Documentation](https://sienna-platform.github.io/PowerSystems.jl/stable/how_to/powersystembuilder/)
 
 sys = build_system(PSISystems, "modified_RTS_GMLC_DA_sys")
 
