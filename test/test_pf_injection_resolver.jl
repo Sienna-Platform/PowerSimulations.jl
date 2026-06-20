@@ -41,13 +41,13 @@
 
     # --- voltages assign (no direction) ---
     @test PSI.pf_contribution(Val(:voltage_angle_opf), PSI.VoltageAngle, PSY.ACBus) ==
-          P(:angle, :voltage, 1.0, false)
+          P(:angle, :none, 1.0, false)
     @test PSI.pf_contribution(
         Val(:voltage_magnitude_opf),
         PSI.VoltageMagnitude,
         PSY.ACBus,
     ) ==
-          P(:magnitude, :voltage, 1.0, false)
+          P(:magnitude, :none, 1.0, false)
 
     # --- parameters are pre-signed: in/out collapse to +1 (the #1631 fix) ---
     @test PSI.pf_contribution(
