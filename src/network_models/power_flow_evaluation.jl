@@ -629,9 +629,14 @@ function _write_value_to_pf_data!(
     result = lookup_value(container, key)
     c = pf_contribution(Val(category), get_entry_type(key), get_component_type(key))
     for (device_name, index) in component_map
-        injection_values = result[device_name, :]
         for t in get_time_steps(container)
-            _apply_pf_contribution!(pf_data, c, index, t, jump_value(injection_values[t]))
+            _apply_pf_contribution!(
+                pf_data,
+                c,
+                index,
+                t,
+                jump_value(result[device_name, t]),
+            )
         end
     end
     return
