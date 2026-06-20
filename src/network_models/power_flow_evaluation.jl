@@ -642,7 +642,7 @@ end
 function _write_pf_array!(
     arr::Matrix{Float64},
     assign::Bool,
-    sign::Float64,
+    value_sign::Float64,
     component_map,
     container::OptimizationContainer,
     result,
@@ -653,7 +653,7 @@ function _write_pf_array!(
             if assign
                 arr[index, t] = value
             else
-                arr[index, t] += sign * value
+                arr[index, t] += value_sign * value
             end
         end
     end
