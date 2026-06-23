@@ -462,13 +462,29 @@ end
 # Injection-sign resolver: the single source of truth mapping an optimization value to its
 # power-flow contribution. `sign` equals the multiplier `add_to_expression!` applied to the bus
 # balance, so PF reproduces the OPF nodal balance. Two thin writers consume it (below).
-#   quantity : :active | :reactive | :angle | :magnitude
-#   role     : active/reactive array selector :injection | :withdrawal | :hvdc_net (:none for voltage)
+#   quantity : PFActiveQuantity | PFReactiveQuantity | PFAngleQuantity | PFMagnitudeQuantity
+#   role     : active/reactive array selector PFInjectionRole | PFWithdrawalRole | PFHVDCNetRole
+#              (PFNoRole for voltages, which assign to a bus-state array selected by quantity)
 #   sign     : nodal-balance multiplier (+1 / -1)
 #   partial  : System writer only — in/out variables accumulate onto a shared active_power field
-struct PFContribution
-    quantity::Symbol
-    role::Symbol
+# `quantity`/`role` are singleton tag types (not `Symbol`s) so the writers resolve the target
+# array by dispatch instead of branching on runtime Symbol values — this keeps
+# `PFContribution` concretely typed and `_write_value_to_pf_data!` type-stable.
+abstract type PFQuantity end
+struct PFActiveQuantity <: PFQuantity end
+struct PFReactiveQuantity <: PFQuantity end
+struct PFAngleQuantity <: PFQuantity end
+struct PFMagnitudeQuantity <: PFQuantity end
+
+abstract type PFRole end
+struct PFInjectionRole <: PFRole end
+struct PFWithdrawalRole <: PFRole end
+struct PFHVDCNetRole <: PFRole end
+struct PFNoRole <: PFRole end
+
+struct PFContribution{Q <: PFQuantity, R <: PFRole}
+    quantity::Q
+    role::R
     sign::Float64
     partial::Bool
 end
@@ -483,48 +499,48 @@ pf_contribution(
     ::Type{<:_PF_FLOW_ENTRY},
     ::Type{<:PSY.StaticInjection},
 ) =
-    PFContribution(:active, :injection, 1.0, false)
+    PFContribution(PFActiveQuantity(), PFInjectionRole(), 1.0, false)
 pf_contribution(
     ::Val{:active_power},
     ::Type{<:_PF_FLOW_ENTRY},
     ::Type{<:PSY.ElectricLoad},
 ) =
-    PFContribution(:active, :withdrawal, -1.0, false)
+    PFContribution(PFActiveQuantity(), PFWithdrawalRole(), -1.0, false)
 # ActivePowerOutVariable: power output (positive injection); ActivePowerInVariable: withdrawal.
 pf_contribution(
     ::Val{:active_power_out},
     ::Type{<:_PF_FLOW_ENTRY},
     ::Type{<:PSY.StaticInjection},
 ) =
-    PFContribution(:active, :injection, 1.0, true)
+    PFContribution(PFActiveQuantity(), PFInjectionRole(), 1.0, true)
 pf_contribution(
     ::Val{:active_power_in},
     ::Type{<:_PF_FLOW_ENTRY},
     ::Type{<:PSY.StaticInjection},
 ) =
-    PFContribution(:active, :injection, -1.0, true)
+    PFContribution(PFActiveQuantity(), PFInjectionRole(), -1.0, true)
 pf_contribution(
     ::Val{:reactive_power},
     ::Type{<:_PF_FLOW_ENTRY},
     ::Type{<:PSY.StaticInjection},
 ) =
-    PFContribution(:reactive, :injection, 1.0, false)
+    PFContribution(PFReactiveQuantity(), PFInjectionRole(), 1.0, false)
 pf_contribution(
     ::Val{:reactive_power},
     ::Type{<:_PF_FLOW_ENTRY},
     ::Type{<:PSY.ElectricLoad},
 ) =
-    PFContribution(:reactive, :withdrawal, -1.0, false)
+    PFContribution(PFReactiveQuantity(), PFWithdrawalRole(), -1.0, false)
 pf_contribution(
     ::Union{Val{:voltage_angle_export}, Val{:voltage_angle_opf}},
     ::Type{<:_PF_FLOW_ENTRY},
     ::Type{<:PSY.ACBus},
-) = PFContribution(:angle, :none, 1.0, false)
+) = PFContribution(PFAngleQuantity(), PFNoRole(), 1.0, false)
 pf_contribution(
     ::Union{Val{:voltage_magnitude_export}, Val{:voltage_magnitude_opf}},
     ::Type{<:_PF_FLOW_ENTRY},
     ::Type{<:PSY.ACBus},
-) = PFContribution(:magnitude, :none, 1.0, false)
+) = PFContribution(PFMagnitudeQuantity(), PFNoRole(), 1.0, false)
 
 # ---- HVDC / PST two-terminal (variable entries) ----
 # HVDC re-targets to `:hvdc_net` (`bus_hvdc_net_power`); signs follow the injection convention.
@@ -534,28 +550,28 @@ pf_contribution(
     ::Val{:active_power_hvdc_pst_from_to},
     ::Type{<:_PF_FLOW_ENTRY},
     ::Type{<:PSY.TwoTerminalHVDC},
-) = PFContribution(:active, :hvdc_net, -1.0, false)
+) = PFContribution(PFActiveQuantity(), PFHVDCNetRole(), -1.0, false)
 pf_contribution(
     ::Val{:active_power_hvdc_pst_to_from},
     ::Type{FlowActivePowerToFromVariable},
     ::Type{<:PSY.TwoTerminalHVDC},
-) = PFContribution(:active, :hvdc_net, -1.0, false)
+) = PFContribution(PFActiveQuantity(), PFHVDCNetRole(), -1.0, false)
 pf_contribution(
     ::Val{:active_power_hvdc_pst_to_from},
     ::Type{FlowActivePowerVariable},
     ::Type{<:PSY.TwoTerminalHVDC},
-) = PFContribution(:active, :hvdc_net, 1.0, false)
+) = PFContribution(PFActiveQuantity(), PFHVDCNetRole(), 1.0, false)
 # PhaseShiftingTransformer stays on the generic injection array: from_to -1, to_from +1.
 pf_contribution(
     ::Val{:active_power_hvdc_pst_from_to},
     ::Type{<:_PF_FLOW_ENTRY},
     ::Type{<:PSY.PhaseShiftingTransformer},
-) = PFContribution(:active, :injection, -1.0, false)
+) = PFContribution(PFActiveQuantity(), PFInjectionRole(), -1.0, false)
 pf_contribution(
     ::Val{:active_power_hvdc_pst_to_from},
     ::Type{<:_PF_FLOW_ENTRY},
     ::Type{<:PSY.PhaseShiftingTransformer},
-) = PFContribution(:active, :injection, 1.0, false)
+) = PFContribution(PFActiveQuantity(), PFInjectionRole(), 1.0, false)
 
 # ---- parameter entries: the value already stores the signed nodal contribution ----
 # `param_array .* multiplier_array` bakes the direction in, identical to what
@@ -566,72 +582,80 @@ pf_contribution(
     ::Type{<:_PF_PARAM_ENTRY},
     ::Type{<:PSY.StaticInjection},
 ) =
-    PFContribution(:active, :injection, 1.0, false)
+    PFContribution(PFActiveQuantity(), PFInjectionRole(), 1.0, false)
 pf_contribution(
     ::Union{Val{:active_power_in}, Val{:active_power_out}},
     ::Type{<:_PF_PARAM_ENTRY},
     ::Type{<:PSY.StaticInjection},
-) = PFContribution(:active, :injection, 1.0, true)
+) = PFContribution(PFActiveQuantity(), PFInjectionRole(), 1.0, true)
 pf_contribution(
     ::Val{:active_power},
     ::Type{<:_PF_PARAM_ENTRY},
     ::Type{<:PSY.ElectricLoad},
 ) =
-    PFContribution(:active, :withdrawal, -1.0, false)
+    PFContribution(PFActiveQuantity(), PFWithdrawalRole(), -1.0, false)
 pf_contribution(
     ::Val{:reactive_power},
     ::Type{<:_PF_PARAM_ENTRY},
     ::Type{<:PSY.StaticInjection},
 ) =
-    PFContribution(:reactive, :injection, 1.0, false)
+    PFContribution(PFReactiveQuantity(), PFInjectionRole(), 1.0, false)
 pf_contribution(
     ::Val{:reactive_power},
     ::Type{<:_PF_PARAM_ENTRY},
     ::Type{<:PSY.ElectricLoad},
 ) =
-    PFContribution(:reactive, :withdrawal, -1.0, false)
+    PFContribution(PFReactiveQuantity(), PFWithdrawalRole(), -1.0, false)
 pf_contribution(
     ::Union{Val{:voltage_angle_export}, Val{:voltage_angle_opf}},
     ::Type{<:_PF_PARAM_ENTRY},
     ::Type{<:PSY.ACBus},
-) = PFContribution(:angle, :none, 1.0, false)
+) = PFContribution(PFAngleQuantity(), PFNoRole(), 1.0, false)
 pf_contribution(
     ::Union{Val{:voltage_magnitude_export}, Val{:voltage_magnitude_opf}},
     ::Type{<:_PF_PARAM_ENTRY},
     ::Type{<:PSY.ACBus},
-) = PFContribution(:magnitude, :none, 1.0, false)
+) = PFContribution(PFMagnitudeQuantity(), PFNoRole(), 1.0, false)
 
 # ---- PowerFlowData writer ----
 # Active/reactive quantities accumulate into an injection array chosen by (quantity, role);
-# voltage quantities (:angle/:magnitude) are assigned to a bus-state array.
-_pf_writes_voltage(q::Symbol) = q === :angle || q === :magnitude
+# voltage quantities are assigned to a bus-state array selected by quantity.
+_pf_writes_voltage(::PFQuantity) = false
+_pf_writes_voltage(::PFAngleQuantity) = true
+_pf_writes_voltage(::PFMagnitudeQuantity) = true
 
-_pf_array(pfd::PFS.PowerFlowData, ::Val{:active}, ::Val{:injection}) =
+_pf_array(pfd::PFS.PowerFlowData, ::PFActiveQuantity, ::PFInjectionRole) =
     pfd.bus_active_power_injections
-_pf_array(pfd::PFS.PowerFlowData, ::Val{:active}, ::Val{:withdrawal}) =
+_pf_array(pfd::PFS.PowerFlowData, ::PFActiveQuantity, ::PFWithdrawalRole) =
     pfd.bus_active_power_withdrawals
-_pf_array(pfd::PFS.PowerFlowData, ::Val{:active}, ::Val{:hvdc_net}) = pfd.bus_hvdc_net_power
-_pf_array(pfd::PFS.PowerFlowData, ::Val{:reactive}, ::Val{:injection}) =
+_pf_array(pfd::PFS.PowerFlowData, ::PFActiveQuantity, ::PFHVDCNetRole) =
+    pfd.bus_hvdc_net_power
+_pf_array(pfd::PFS.PowerFlowData, ::PFReactiveQuantity, ::PFInjectionRole) =
     pfd.bus_reactive_power_injections
-_pf_array(pfd::PFS.PowerFlowData, ::Val{:reactive}, ::Val{:withdrawal}) =
+_pf_array(pfd::PFS.PowerFlowData, ::PFReactiveQuantity, ::PFWithdrawalRole) =
     pfd.bus_reactive_power_withdrawals
-_pf_bus_state_array(pfd::PFS.PowerFlowData, ::Val{:angle}) = pfd.bus_angles
-_pf_bus_state_array(pfd::PFS.PowerFlowData, ::Val{:magnitude}) = pfd.bus_magnitude
+_pf_bus_state_array(pfd::PFS.PowerFlowData, ::PFAngleQuantity) = pfd.bus_angles
+_pf_bus_state_array(pfd::PFS.PowerFlowData, ::PFMagnitudeQuantity) = pfd.bus_magnitude
 
+# Function barrier: `category`, `T` (entry type) and `U` (component type) are compile-time
+# constants here, so `pf_contribution` resolves statically and the resulting singleton
+# `quantity`/`role` dispatch the array lookup with no runtime Symbol branching. One (dynamic)
+# dispatch into this method happens per (category, key) in the caller's loop.
 function _write_value_to_pf_data!(
     pf_data::PFS.PowerFlowData,
-    category::Symbol,
+    ::Val{category},
     container::OptimizationContainer,
-    key::OptimizationContainerKey,
-    component_map)
+    key::OptimizationContainerKey{T, U},
+    component_map,
+) where {category, T, U}
     result = lookup_value(container, key)
-    c = pf_contribution(Val(category), get_entry_type(key), get_component_type(key))
+    c = pf_contribution(Val(category), T, U)
     # Resolve the target array once per key so the inner write loop runs on a concrete `Matrix`.
     if _pf_writes_voltage(c.quantity)
-        _write_pf_array!(_pf_bus_state_array(pf_data, Val(c.quantity)), true, c.sign,
+        _write_pf_array!(_pf_bus_state_array(pf_data, c.quantity), true, c.sign,
             component_map, container, result)
     else
-        _write_pf_array!(_pf_array(pf_data, Val(c.quantity), Val(c.role)), false, c.sign,
+        _write_pf_array!(_pf_array(pf_data, c.quantity, c.role), false, c.sign,
             component_map, container, result)
     end
     return
@@ -675,7 +699,7 @@ function update_pf_data!(
     for (category, inputs) in input_map
         @debug "Writing $category to $(nameof(typeof(pf_data)))"
         for (key, component_map) in inputs
-            _write_value_to_pf_data!(pf_data, category, container, key, component_map)
+            _write_value_to_pf_data!(pf_data, Val(category), container, key, component_map)
         end
     end
     return
@@ -684,10 +708,11 @@ end
 # ---- System writer: same `PFContribution`, sunk into component fields ----
 # PERF we use direct dot access here, and implement our own unit conversions, for performance.
 # active/reactive convert to the component base; voltages are written raw.
-_pf_to_comp(::Union{Val{:active}, Val{:reactive}}, value::Float64, sys_base::Float64,
+_pf_to_comp(::Union{PFActiveQuantity, PFReactiveQuantity}, value::Float64,
+    sys_base::Float64,
     comp::PSY.Component) = value * sys_base / PSY.get_base_power(comp)
 _pf_to_comp(
-    ::Union{Val{:angle}, Val{:magnitude}},
+    ::Union{PFAngleQuantity, PFMagnitudeQuantity},
     value::Float64,
     ::Float64,
     ::PSY.Component,
@@ -697,16 +722,28 @@ _pf_to_comp(
 # Set (or accumulate, for `partial` in/out contributions) the signed quantity on the component's
 # field. `StandardLoad` (ZIP) has no scalar power field, so it routes to its constant-power
 # component (`constant_active_power`/`constant_reactive_power`).
-_set_comp_quantity!(comp::PSY.Component, ::Val{:active}, v::Float64, partial::Bool) =
-    partial ? (comp.active_power += v) : (comp.active_power = v)
-_set_comp_quantity!(comp::PSY.Component, ::Val{:reactive}, v::Float64, ::Bool) =
+function _set_comp_quantity!(
+    comp::PSY.Component,
+    ::PFActiveQuantity,
+    v::Float64,
+    partial::Bool,
+)
+    if partial
+        comp.active_power += v
+    else
+        comp.active_power = v
+    end
+    return
+end
+_set_comp_quantity!(comp::PSY.Component, ::PFReactiveQuantity, v::Float64, ::Bool) =
     (comp.reactive_power = v)
-_set_comp_quantity!(comp::PSY.StandardLoad, ::Val{:active}, v::Float64, ::Bool) =
+_set_comp_quantity!(comp::PSY.StandardLoad, ::PFActiveQuantity, v::Float64, ::Bool) =
     (comp.constant_active_power = v)
-_set_comp_quantity!(comp::PSY.StandardLoad, ::Val{:reactive}, v::Float64, ::Bool) =
+_set_comp_quantity!(comp::PSY.StandardLoad, ::PFReactiveQuantity, v::Float64, ::Bool) =
     (comp.constant_reactive_power = v)
-_set_comp_quantity!(comp::PSY.ACBus, ::Val{:angle}, v::Float64, ::Bool) = (comp.angle = v)
-_set_comp_quantity!(comp::PSY.ACBus, ::Val{:magnitude}, v::Float64, ::Bool) =
+_set_comp_quantity!(comp::PSY.ACBus, ::PFAngleQuantity, v::Float64, ::Bool) =
+    (comp.angle = v)
+_set_comp_quantity!(comp::PSY.ACBus, ::PFMagnitudeQuantity, v::Float64, ::Bool) =
     (comp.magnitude = v)
 
 function _apply_component_contribution!(
@@ -715,8 +752,30 @@ function _apply_component_contribution!(
     value::Float64,
     sys_base::Float64,
 )
-    v = c.sign * _pf_to_comp(Val(c.quantity), value, sys_base, comp)
-    _set_comp_quantity!(comp, Val(c.quantity), v, c.partial)
+    v = c.sign * _pf_to_comp(c.quantity, value, sys_base, comp)
+    _set_comp_quantity!(comp, c.quantity, v, c.partial)
+    return
+end
+
+# Function barrier mirroring `_write_value_to_pf_data!`: `category`/`T`/`U` are compile-time
+# constants, so `pf_contribution` and `PSY.get_component(U, …)` resolve statically and the
+# singleton `quantity` dispatches the field writes in `_apply_component_contribution!`.
+function _write_component_contributions!(
+    sys::PSY.System,
+    container::OptimizationContainer,
+    ::Val{category},
+    key::OptimizationContainerKey{T, U},
+    component_map,
+    time_step::Int,
+) where {category, T, U}
+    result = lookup_value(container, key)
+    c = pf_contribution(Val(category), T, U)
+    sys_base = get_base_power(container)
+    for (device_id, device_name) in component_map
+        comp = PSY.get_component(U, sys, device_name)
+        val = jump_value(result[device_id, time_step])
+        _apply_component_contribution!(comp, c, val, sys_base)
+    end
     return
 end
 
@@ -745,13 +804,8 @@ function update_pf_system!(
     for (category, inputs) in input_map
         @debug "Writing $category to (possibly internal) System"
         for (key, component_map) in inputs
-            result = lookup_value(container, key)
-            c = pf_contribution(Val(category), get_entry_type(key), get_component_type(key))
-            for (device_id, device_name) in component_map
-                comp = PSY.get_component(get_component_type(key), sys, device_name)
-                val = jump_value(result[device_id, time_step])
-                _apply_component_contribution!(comp, c, val, get_base_power(container))
-            end
+            _write_component_contributions!(
+                sys, container, Val(category), key, component_map, time_step)
         end
     end
 end
