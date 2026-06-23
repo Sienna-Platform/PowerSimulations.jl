@@ -57,6 +57,29 @@ psse_export = PSSEExportPowerFlow(;
 
 power_flow_model = ACPowerFlow(; exporter = psse_export)
 
+# ### Alternative: Fast Decoupled (FDNR) solver
+#
+# PowerFlows 0.22 adds a fast-decoupled AC solver, selected via the solver type parameter of
+# [`PowerFlows.ACPowerFlow`](@extref). It plugs into `power_flow_evaluation` exactly like the
+# default Newton-Raphson solver (same auxiliary variables and PSS/e exports) and matches its
+# converged solution, but is often faster on large networks. Optionally hand off to an exact
+# Newton solver for the final refinement:
+#
+# ```julia
+# using PowerFlows: FastDecoupledACPowerFlow, NewtonRaphsonACPowerFlow
+#
+# fd_power_flow_model = ACPowerFlow{FastDecoupledACPowerFlow}(;
+#     exporter = psse_export,
+#     solver_settings = Dict{Symbol, Any}(
+#         :handoff_solver => NewtonRaphsonACPowerFlow,  # refine FD result with Newton-Raphson
+#         :handoff_tol => 1e-3,                         # FD-stage exit tolerance before handoff
+#     ),
+# )
+# ```
+#
+# Use it in place of `power_flow_model` below. Omit `solver_settings` for pure fast decoupled, or
+# use the `FastDecoupledFixed` alias for the formulation-agnostic frozen-Jacobian variant.
+
 # ## Building the UC Problem Template
 #
 # Create a [`ProblemTemplate`](@ref) with a [`NetworkModel`](@ref) that uses
