@@ -357,7 +357,7 @@ function add_to_expression!(
     ::Type{T},
     ::Type{U},
     attribute_device_map::Vector{
-        NamedTuple{(:component, :supplemental_attribute), Tuple{V, PSY.UnplannedOutage}},
+        NamedTuple{(:component, :supplemental_attribute), Tuple{V, PSY.Outage}},
     },
     service::R,
     service_model::ServiceModel{R, F},
