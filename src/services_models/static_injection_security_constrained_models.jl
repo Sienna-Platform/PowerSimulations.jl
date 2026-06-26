@@ -554,7 +554,7 @@ function add_to_expression!(
 }
     attribute_device_map = PSY.get_component_supplemental_attribute_pairs(
         PSY.Generator,
-        PSY.UnplannedOutage,
+        PSY.Outage,
         sys,
     )
     time_steps = get_time_steps(container)
