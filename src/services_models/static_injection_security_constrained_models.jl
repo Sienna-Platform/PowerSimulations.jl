@@ -1460,7 +1460,7 @@ function _construct_service_post_contingency_balance!(
         contributing_devices, service, model, network_model,
     )
     attribute_device_map = PSY.get_component_supplemental_attribute_pairs(
-        PSY.Generator, PSY.UnplannedOutage, sys,
+        PSY.Generator, PSY.Outage, sys,
     )
     add_to_expression!(
         container, sys, PostContingencyActivePowerBalance, ActivePowerVariable,
