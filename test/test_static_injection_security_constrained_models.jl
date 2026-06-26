@@ -44,11 +44,12 @@ function get_reserve_total_power_by_step_dict(
     total_variable_dict = Dict{String, Vector{Float64}}()
     for outage in associated_outages
         outage_name = string(IS.get_uuid(outage))
+        outage_rows = filter(x -> x["name"] == outage_name, required_variables)
         outage_power_v = Vector{Float64}()
         for (i, device) in enumerate(contributing_devices)
             device_name = PSY.get_name(device)
             current_v =
-                filter(x -> x[col_name] == device_name, required_variables)[!, "value"]
+                filter(x -> x[col_name] == device_name, outage_rows)[!, "value"]
             if i == 1
                 outage_power_v = current_v
             else
