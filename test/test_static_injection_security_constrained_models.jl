@@ -78,8 +78,11 @@ function compare_outage_power_and_deployed_reserves(
     variablesdict = read_variables(res)
     associated_outages =
         collect(PSY.get_supplemental_attributes(PSY.UnplannedOutage, service))
-    # Fall back: in the new G-1 pattern, outages are attached to the outaged
-    # generator, not the reserve service. Resolve from system if empty.
+    # Back-compat fallback: when the service has no outages attached via
+    # `add_supplemental_attribute!(sys, service, outage)`, resolve every
+    # unplanned outage from the system. The current G-1 implementation
+    # scopes contingencies per `ServiceModel` via attachments to the
+    # `PSY.Service`, so this branch only fires for legacy systems.
     if isempty(associated_outages)
         all_outages = collect(PSY.get_supplemental_attributes(PSY.UnplannedOutage, sys))
         associated_outages = all_outages
