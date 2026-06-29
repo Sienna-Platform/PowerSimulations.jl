@@ -1515,7 +1515,7 @@ function _get_branch_map(network_model::NetworkModel)
                     (PSY.get_name(area_from), PSY.get_name(area_to)),
                     Dict{DataType, Vector{String}}(),
                 )
-                _add_to_branch_map!(branch_typed_dict, reduction_entry, name)
+                _add_to_branch_map!(branch_typed_dict, br_type, name)
             end
         end
     end
@@ -1536,10 +1536,14 @@ end
 
 function _add_to_branch_map!(
     branch_typed_dict::Dict{DataType, Vector{String}},
-    reduction_entry::Union{PNM.BranchesParallel, PNM.BranchesSeries},
+    branch_type::DataType,
     name::String,
 )
-    _add_to_branch_map!(branch_typed_dict, first(reduction_entry), name)
+    if !haskey(branch_typed_dict, branch_type)
+        branch_typed_dict[branch_type] = [name]
+    else
+        push!(branch_typed_dict[branch_type], name)
+    end
 end
 
 # This method uses ACBranch to support 2T - HVDC
@@ -1568,6 +1572,10 @@ function _get_area_from_to(reduction_entry::PNM.ThreeWindingTransformerWinding)
 end
 
 function _get_area_from_to(reduction_entry::PNM.BranchesParallel)
+    return _get_area_from_to(first(reduction_entry))
+end
+
+function _get_area_from_to(reduction_entry::PNM.AbstractBranchesParallel)
     return _get_area_from_to(first(reduction_entry))
 end
 

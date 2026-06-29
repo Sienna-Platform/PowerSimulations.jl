@@ -407,6 +407,11 @@ function _add_outage_monitored_irreducible_buses!(
     return
 end
 
+function _push_component_buses!(buses::Set{Int64}, branch::PSY.AreaInterchange)
+    # AreaInterchange is area-to-area and not bus-to-bus
+    return
+end
+
 function _push_component_buses!(buses::Set{Int64}, branch::PSY.Branch)
     arc = PSY.get_arc(branch)
     push!(buses, PSY.get_number(PSY.get_from(arc)))
