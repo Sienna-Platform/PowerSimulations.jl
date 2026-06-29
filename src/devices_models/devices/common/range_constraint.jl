@@ -648,7 +648,7 @@ function add_parameterized_lower_bound_range_constraints(
     ::Type{T},
     ::Type{U},
     ::Type{P},
-    devices::IS.FlattenIteratorWrapper{V},
+    devices::Union{Vector{V}, IS.FlattenIteratorWrapper{V}},
     model::DeviceModel{V, W},
     ::Type{X},
 ) where {
@@ -664,7 +664,7 @@ function add_parameterized_lower_bound_range_constraints(
         container,
         T,
         array,
-        P,
+        P(),
         devices,
         model,
     )
@@ -676,7 +676,7 @@ function add_parameterized_lower_bound_range_constraints(
     ::Type{T},
     ::Type{U},
     ::Type{P},
-    devices::IS.FlattenIteratorWrapper{V},
+    devices::Union{Vector{V}, IS.FlattenIteratorWrapper{V}},
     model::DeviceModel{V, W},
     ::Type{X},
 ) where {
@@ -692,7 +692,7 @@ function add_parameterized_lower_bound_range_constraints(
         container,
         T,
         array,
-        P,
+        P(),
         devices,
         model,
     )
@@ -704,11 +704,11 @@ function lower_bound_range_with_parameter!(
     container::OptimizationContainer,
     constraint_container::JuMPConstraintArray,
     lhs_array,
-    ::Type{P},
-    devices::IS.FlattenIteratorWrapper{V},
-    model::DeviceModel{V, W},
+    param::P,
+    devices::Union{Vector{V}, IS.FlattenIteratorWrapper{V}},
+    ::DeviceModel{V, W},
 ) where {P <: ParameterType, V <: PSY.Component, W <: AbstractDeviceFormulation}
-    param_array = get_parameter_array(container, P(), V)
+    param_array = get_parameter_array(container, param, V)
     param_multiplier = get_parameter_multiplier_array(container, P(), V)
     jump_model = get_jump_model(container)
     time_steps = axes(constraint_container)[2]
@@ -726,21 +726,21 @@ function lower_bound_range_with_parameter!(
     container::OptimizationContainer,
     constraint_container::JuMPConstraintArray,
     lhs_array,
-    ::Type{P},
+    param::P,
     devices::IS.FlattenIteratorWrapper{V},
     model::DeviceModel{V, W},
 ) where {P <: TimeSeriesParameter, V <: PSY.Component, W <: AbstractDeviceFormulation}
-    param_container = get_parameter(container, U(), V)
+    param_container = get_parameter(container, param, V)
     mult = get_multiplier_array(param_container)
     jump_model = get_jump_model(container)
     time_steps = axes(constraint_container)[2]
     ts_name = get_time_series_names(model)[P]
     ts_type = get_default_time_series_type(container)
     for device in devices
+        name = PSY.get_name(device)
         if !(PSY.has_time_series(device, ts_type, ts_name))
             continue
         end
-        name = PSY.get_name(device)
         param = get_parameter_column_refs(param_container, name)
         for t in time_steps
             constraint_container[name, t] =
@@ -754,37 +754,51 @@ function _add_parameterized_lower_bound_range_constraints_impl!(
     container::OptimizationContainer,
     ::Type{T},
     array,
-    ::Type{U},
-    devices::IS.FlattenIteratorWrapper{V},
+    param::P,
+    devices::Union{Vector{V}, IS.FlattenIteratorWrapper{V}},
     model::DeviceModel{V, W},
 ) where {
     T <: ConstraintType,
-    U <: ParameterType,
+    P <: TimeSeriesParameter,
     V <: PSY.Component,
     W <: AbstractDeviceFormulation,
 }
     time_steps = get_time_steps(container)
-    ts_name = get_time_series_names(model)[U]
+    ts_name = get_time_series_names(model)[P]
     ts_type = get_default_time_series_type(container)
+    # PERF: compilation hotspot. Switch to TSC.
     names = [PSY.get_name(d) for d in devices if PSY.has_time_series(d, ts_type, ts_name)]
     if isempty(names)
-        @debug "There are no $V devices with time series data"
+        @debug "There are no $V devices with time series data $ts_type, $ts_name"
         return
     end
+
     constraint =
         add_constraints_container!(container, T(), V, names, time_steps; meta = "lb")
 
-    parameter = get_parameter_array(container, U(), V)
-    multiplier = get_parameter_multiplier_array(container, U(), V)
-    jump_model = get_jump_model(container)
-    lower_bound_range_with_parameter!(
-        jump_model,
-        constraint,
-        array,
-        multiplier,
-        parameter,
-        devices,
-    )
+    lower_bound_range_with_parameter!(container, constraint, array, param, devices, model)
+    return
+end
+
+function _add_parameterized_lower_bound_range_constraints_impl!(
+    container::OptimizationContainer,
+    ::Type{T},
+    array,
+    param::P,
+    devices::Union{Vector{V}, IS.FlattenIteratorWrapper{V}},
+    model::DeviceModel{V, W},
+) where {
+    T <: ConstraintType,
+    P <: ParameterType,
+    V <: PSY.Component,
+    W <: AbstractDeviceFormulation,
+}
+    time_steps = get_time_steps(container)
+    names = PSY.get_name.(devices)
+    constraint =
+        add_constraints_container!(container, T(), V, names, time_steps; meta = "lb")
+
+    lower_bound_range_with_parameter!(container, constraint, array, param, devices, model)
     return
 end
 

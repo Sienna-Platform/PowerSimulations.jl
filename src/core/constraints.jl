@@ -560,6 +560,19 @@ p_t \\le \\text{ActivePowerTimeSeriesParameter}_t, \\quad \\forall t \\in \\{1,\
 struct ActivePowerVariableTimeSeriesLimitsConstraint <: PowerVariableLimitsConstraint end
 
 """
+Struct to create the constraint to lower-bound active power expressions by a time series parameter.
+For more information check [Device Formulations](@ref formulation_intro).
+
+The specified constraint depends on the LowerBound expressions, but
+in its most basic formulation is of the form:
+
+```math
+p_t \\ge \\text{MinActivePowerTimeSeriesParameter}_t, \\quad \\forall t \\in \\{1,\\dots,T\\}
+```
+"""
+struct ActivePowerVariableTimeSeriesLowerLimitsConstraint <: PowerVariableLimitsConstraint end
+
+"""
 Struct to create the constraint to limit active power expressions by a time series parameter.
 For more information check [Device Formulations](@ref formulation_intro).
 

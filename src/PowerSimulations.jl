@@ -295,6 +295,7 @@ export PowerFlowVoltageStabilityFactors
 # Constraints
 export AbsoluteValueConstraint
 export ActivePowerVariableTimeSeriesLimitsConstraint
+export ActivePowerVariableTimeSeriesLowerLimitsConstraint
 export LineFlowBoundConstraint
 export ActivePowerVariableLimitsConstraint
 export ActivePowerInVariableTimeSeriesLimitsConstraint
@@ -369,6 +370,7 @@ export NonAnticipativityConstraint
 # Parameters
 # Time Series Parameters
 export ActivePowerTimeSeriesParameter
+export MinActivePowerTimeSeriesParameter
 export ActivePowerOutTimeSeriesParameter
 export ActivePowerInTimeSeriesParameter
 export ReactivePowerTimeSeriesParameter

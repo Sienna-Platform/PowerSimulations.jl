@@ -444,6 +444,11 @@ Parameter to define active power time series
 struct ActivePowerTimeSeriesParameter <: TimeSeriesParameter end
 
 """
+Parameter to define minimum active power time series
+"""
+struct MinActivePowerTimeSeriesParameter <: TimeSeriesParameter end
+
+"""
 Parameter to define reactive power time series
 """
 struct ReactivePowerTimeSeriesParameter <: TimeSeriesParameter end
@@ -615,6 +620,7 @@ convert_result_to_natural_units(
     ::Type{PostContingencyBranchRatingTimeSeriesParameter},
 ) = true
 convert_result_to_natural_units(::Type{ActivePowerTimeSeriesParameter}) = true
+convert_result_to_natural_units(::Type{MinActivePowerTimeSeriesParameter}) = true
 convert_result_to_natural_units(::Type{ReactivePowerTimeSeriesParameter}) = true
 convert_result_to_natural_units(::Type{ActivePowerOutTimeSeriesParameter}) = true
 convert_result_to_natural_units(::Type{ActivePowerInTimeSeriesParameter}) = true
