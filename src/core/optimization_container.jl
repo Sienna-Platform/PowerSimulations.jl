@@ -723,13 +723,15 @@ function build_impl!(
         @debug "Building Arguments for $(get_component_type(device_model)) with $(get_formulation(device_model)) formulation" _group =
             LOG_GROUP_OPTIMIZATION_CONTAINER
         TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "$(get_component_type(device_model))" begin
-            construct_device!(
-                container,
-                sys,
-                ArgumentConstructStage(),
-                device_model,
-                transmission_model,
-            )
+            if validate_available_devices(device_model, sys)
+                construct_device!(
+                    container,
+                    sys,
+                    ArgumentConstructStage(),
+                    device_model,
+                    transmission_model,
+                )
+            end
             @debug "Problem size:" get_problem_size(container) _group =
                 LOG_GROUP_OPTIMIZATION_CONTAINER
         end
@@ -750,13 +752,15 @@ function build_impl!(
         @debug "Building Arguments for $(get_component_type(branch_model)) with $(get_formulation(branch_model)) formulation" _group =
             LOG_GROUP_OPTIMIZATION_CONTAINER
         TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "$(get_component_type(branch_model))" begin
-            construct_device!(
-                container,
-                sys,
-                ArgumentConstructStage(),
-                branch_model,
-                transmission_model,
-            )
+            if validate_available_devices(branch_model, sys)
+                construct_device!(
+                    container,
+                    sys,
+                    ArgumentConstructStage(),
+                    branch_model,
+                    transmission_model,
+                )
+            end
             @debug "Problem size:" get_problem_size(container) _group =
                 LOG_GROUP_OPTIMIZATION_CONTAINER
         end
@@ -765,13 +769,15 @@ function build_impl!(
         @debug "Building Model for $(get_component_type(device_model)) with $(get_formulation(device_model)) formulation" _group =
             LOG_GROUP_OPTIMIZATION_CONTAINER
         TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "$(get_component_type(device_model))" begin
-            construct_device!(
-                container,
-                sys,
-                ModelConstructStage(),
-                device_model,
-                transmission_model,
-            )
+            if validate_available_devices(device_model, sys)
+                construct_device!(
+                    container,
+                    sys,
+                    ModelConstructStage(),
+                    device_model,
+                    transmission_model,
+                )
+            end
             @debug "Problem size:" get_problem_size(container) _group =
                 LOG_GROUP_OPTIMIZATION_CONTAINER
         end
@@ -790,13 +796,15 @@ function build_impl!(
         @debug "Building Model for $(get_component_type(branch_model)) with $(get_formulation(branch_model)) formulation" _group =
             LOG_GROUP_OPTIMIZATION_CONTAINER
         TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "$(get_component_type(branch_model))" begin
-            construct_device!(
-                container,
-                sys,
-                ModelConstructStage(),
-                branch_model,
-                transmission_model,
-            )
+            if validate_available_devices(branch_model, sys)
+                construct_device!(
+                    container,
+                    sys,
+                    ModelConstructStage(),
+                    branch_model,
+                    transmission_model,
+                )
+            end
             @debug "Problem size:" get_problem_size(container) _group =
                 LOG_GROUP_OPTIMIZATION_CONTAINER
         end

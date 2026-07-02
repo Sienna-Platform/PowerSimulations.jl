@@ -431,6 +431,10 @@ function _push_component_buses!(buses::Set{Int64}, device::PSY.StaticInjection)
     return
 end
 
+function _push_component_buses!(buses::Set{Int64}, branch::PSY.AreaInterchange)
+    return
+end
+
 # Drop (and warn about) any branch type whose components were all merged away by the
 # reduction — e.g. a lone zero-impedance monitored line. Such a type has no surviving
 # arc in `name_to_arc_map`, so building its flow vars/constraints would fail. Absence

@@ -770,6 +770,21 @@ function write_result!(
     return
 end
 
+function write_result!(
+    store::HdfSimulationStore,
+    ::Symbol,
+    key::OptimizationContainerKey,
+    index::EmulationModelIndexType,
+    simulation_time::Dates.DateTime,
+    array::SparseAxisArray{Float64},
+)
+    dataset = _get_em_dataset(store, key)
+    _write_dataset!(dataset.values, to_matrix(array), index)
+    set_last_recorded_row!(dataset, index)
+    set_update_timestamp!(dataset, simulation_time)
+    return
+end
+
 function serialize_system!(store::HdfSimulationStore, sys::PSY.System)
     root = store.file[HDF_SIMULATION_ROOT_PATH]
     systems_group = _get_group_or_create(root, "systems")
