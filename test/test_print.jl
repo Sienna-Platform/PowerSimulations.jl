@@ -40,6 +40,24 @@ end
 
     _test_plain_print_methods(list)
     _test_html_print_methods(list)
+
+    # Regression: showing results with a single time period used to throw
+    # `MethodError: no method matching Minute(::Nothing)` because the
+    # resolution is `nothing` when there is only one timestamp.
+    dm_model_single = DecisionModel(
+        template,
+        c_sys5;
+        optimizer = HiGHS_optimizer,
+        horizon = Dates.Hour(1),
+    )
+    @test build!(dm_model_single; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+    @test solve!(dm_model_single; optimizer = HiGHS_optimizer) ==
+          PSI.RunStatus.SUCCESSFULLY_FINALIZED
+    results_single = OptimizationProblemResults(dm_model_single)
+    @test length(get_timestamps(results_single)) == 1
+    output = sprint(show, "text/plain", results_single)
+    @test occursin("Resolution: N/A (single period)", output)
 end
 
 @testset "Test Simulation Print Methods" begin

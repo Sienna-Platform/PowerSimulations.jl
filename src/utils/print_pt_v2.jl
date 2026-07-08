@@ -505,17 +505,21 @@ function _show_method(
 ) where {T <: ProblemResultsTypes}
     timestamps = get_timestamps(results)
 
+    # `get_resolution` returns `nothing` when there is a single timestamp (no
+    # interval to diff), so guard against `Dates.Minute(nothing)`.
+    resolution = ISOPT.get_resolution(results)
+    resolution_str =
+        isnothing(resolution) ? "N/A (single period)" :
+        string(Dates.Minute(resolution))
+
     if backend == :html
         println(io, "<p> Start: $(first(timestamps))</p>")
         println(io, "<p> End: $(last(timestamps))</p>")
-        println(
-            io,
-            "<p> Resolution: $(Dates.Minute(ISOPT.get_resolution(results)))</p>",
-        )
+        println(io, "<p> Resolution: $(resolution_str)</p>")
     else
         println(io, "Start: $(first(timestamps))")
         println(io, "End: $(last(timestamps))")
-        println(io, "Resolution: $(Dates.Minute(ISOPT.get_resolution(results)))")
+        println(io, "Resolution: $(resolution_str)")
     end
 
     values = Dict{String, Vector{String}}(
