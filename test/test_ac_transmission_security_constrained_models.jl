@@ -4,6 +4,28 @@
 # `comment out unfeasible test` (commit 5fe9232bc) was a real modeling issue,
 # not KLU instability — re-commented and left as a follow-up.
 
+# Ground-truth comparisons below read a SECOND, independent VirtualMODF/VirtualPTDF. Those
+# columns are solved through multithreaded BLAS, whose reduction order is not deterministic,
+# so two instances agree only to machine precision (~1e-16), never bit-for-bit. Exact
+# `JuMP.isequal_canonical` therefore fails or passes depending on the BLAS thread count of
+# the machine. Compare coefficients to `PTDF_ZERO_TOL` instead: a variable absent from one
+# side counts as a zero coefficient, so a term sitting on the sparsity threshold cannot flip
+# the result, while a genuinely wrong term (sign flip, wrong arc) differs by orders of
+# magnitude more and still fails.
+function aff_exprs_approx_equal(actual::JuMP.AffExpr, expected::JuMP.AffExpr)
+    if !isapprox(actual.constant, expected.constant; atol = PSI.PTDF_ZERO_TOL)
+        return false
+    end
+    for v in union(keys(actual.terms), keys(expected.terms))
+        a = get(actual.terms, v, 0.0)
+        e = get(expected.terms, v, 0.0)
+        if !isapprox(a, e; atol = PSI.PTDF_ZERO_TOL)
+            return false
+        end
+    end
+    return true
+end
+
 @testset "Security Constrained branch formulation Network DC-PF with VirtualPTDF + auto-MODF" begin
     # Guards against regressions on the threaded Woodbury code path: combining
     # VirtualPTDF with MODF contingency solves has shown KLU-solver instability,
@@ -601,15 +623,12 @@ end
             modf_col = ground_truth_modf[arc, ctg]
             nz_idx =
                 [i for i in eachindex(modf_col) if abs(modf_col[i]) > PSI.PTDF_ZERO_TOL]
-            # Mirror `_make_flow_expressions!` exactly (including
-            # `get_hinted_aff_expr`) so `JuMP.isequal_canonical` cannot
-            # diverge due to internal AffExpr capacity differences.
             expected = PSI.get_hinted_aff_expr(length(nz_idx))
             for i in nz_idx
                 JuMP.add_to_expression!(expected, modf_col[i], nodal_balance[i, t])
             end
             actual = pcbf[outage_id_str, name, t]
-            @test JuMP.isequal_canonical(actual, expected)
+            @test aff_exprs_approx_equal(actual, expected)
         end
     end
     # Sanity: at least one branch type should have had a container; otherwise
@@ -665,16 +684,13 @@ end
             ptdf_col = ground_truth_ptdf[arc, :]
             nz_idx =
                 [i for i in eachindex(ptdf_col) if abs(ptdf_col[i]) > PSI.PTDF_ZERO_TOL]
-            # Mirror `_make_flow_expressions!` (including
-            # `get_hinted_aff_expr`) so `JuMP.isequal_canonical` cannot
-            # diverge due to internal AffExpr capacity differences.
             for t in time_steps
                 expected = PSI.get_hinted_aff_expr(length(nz_idx))
                 for i in nz_idx
                     JuMP.add_to_expression!(expected, ptdf_col[i], nodal_balance[i, t])
                 end
                 actual = pbf[name, t]
-                @test JuMP.isequal_canonical(actual, expected)
+                @test aff_exprs_approx_equal(actual, expected)
             end
         end
     end

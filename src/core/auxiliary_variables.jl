@@ -35,7 +35,9 @@ Auxiliary Variable for the bus voltage magnitued results from power flow evaluat
 struct PowerFlowVoltageMagnitude <: PowerFlowAuxVariableType end
 
 """
-Auxiliary Variable for line power flow results from power flow evaluation
+Auxiliary Variable for line power flow results (directional flows and losses) from power flow
+evaluation. Every branch-indexed aux variable is a subtype; the generic arc-flow
+`calculate_aux_variable_value!` method dispatches on this.
 """
 abstract type BranchFlowAuxVariableType <: PowerFlowAuxVariableType end
 
@@ -69,11 +71,10 @@ Auxiliary Variable for the voltage stability factors from AC power flow evaluati
 """
 struct PowerFlowVoltageStabilityFactors <: PowerFlowAuxVariableType end
 
-# should this be a subtype of BranchFlowAuxVariableType? It's line-related but has no flow direction.
 """
 Auxiliary Variable for the active power loss on a line from AC power flow evaluation.
 """
-struct PowerFlowBranchActivePowerLoss <: PowerFlowAuxVariableType end
+struct PowerFlowBranchActivePowerLoss <: BranchFlowAuxVariableType end
 
 # TODO reactive loss?
 
@@ -98,6 +99,11 @@ struct PowerFlowFACTSReactivePower <: PowerFlowAuxVariableType end
 """
 Auxiliary Variable for the net HVDC active power (p.u.) at each bus as used by the power flow
 evaluation, per time step. Registered only when the system carries HVDC components.
+
+Indexed by **bus**, not by HVDC component — which is why it is not a
+`PowerFlowHVDCAuxVariableType` despite the name. It is registered through `bus_aux_vars`
+on an `(ACBus, bus_number)` axis and filled from `PowerFlows.get_bus_hvdc_net_power`, whereas
+every `PowerFlowHVDCAuxVariableType` is per-component and read from `PowerFlows.get_hvdc_results`.
 """
 struct PowerFlowHVDCNetPower <: PowerFlowAuxVariableType end
 
@@ -194,11 +200,9 @@ the AC power flow solution.
 struct PowerFlowConverterDCVoltage <: PowerFlowHVDCAuxVariableType end
 
 convert_result_to_natural_units(::Type{PowerOutput}) = true
-convert_result_to_natural_units(::Type{PowerFlowBranchReactivePowerFromTo}) = true
-convert_result_to_natural_units(::Type{PowerFlowBranchReactivePowerToFrom}) = true
-convert_result_to_natural_units(::Type{PowerFlowBranchActivePowerFromTo}) = true
-convert_result_to_natural_units(::Type{PowerFlowBranchActivePowerToFrom}) = true
-convert_result_to_natural_units(::Type{PowerFlowBranchActivePowerLoss}) = true
+# Every branch flow quantity is a power; the HVDC group is NOT uniform (taps, angles,
+# DC currents and DC voltages are not powers), so those stay enumerated below.
+convert_result_to_natural_units(::Type{<:BranchFlowAuxVariableType}) = true
 convert_result_to_natural_units(::Type{PowerFlowFACTSReactivePower}) = true
 convert_result_to_natural_units(::Type{PowerFlowHVDCNetPower}) = true
 convert_result_to_natural_units(::Type{PowerFlowHVDCActivePowerFromTo}) = true
