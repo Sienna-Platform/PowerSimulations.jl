@@ -305,6 +305,7 @@ PowerFlowVoltageAngle
 PowerFlowVoltageMagnitude
 PowerFlowLossFactors
 PowerFlowVoltageStabilityFactors
+PowerFlowHVDCNetPower
 ```
 
 ### Branch Auxiliary Variables
@@ -315,6 +316,34 @@ PowerFlowBranchReactivePowerToFrom
 PowerFlowBranchActivePowerFromTo
 PowerFlowBranchActivePowerToFrom
 PowerFlowBranchActivePowerLoss
+```
+
+### Device Control Auxiliary Variables
+
+```@docs
+PowerFlowTapRatio
+PowerFlowSwitchedShuntSusceptance
+PowerFlowFACTSReactivePower
+```
+
+### HVDC Auxiliary Variables
+
+```@docs
+PowerFlowHVDCActivePowerFromTo
+PowerFlowHVDCActivePowerToFrom
+PowerFlowHVDCReactivePowerFromTo
+PowerFlowHVDCReactivePowerToFrom
+PowerFlowHVDCActivePowerLoss
+PowerFlowHVDCDCCurrent
+PowerFlowHVDCDCVoltageFrom
+PowerFlowHVDCDCVoltageTo
+PowerFlowLCCRectifierTap
+PowerFlowLCCInverterTap
+PowerFlowLCCRectifierDelayAngle
+PowerFlowLCCInverterExtinctionAngle
+PowerFlowConverterDCPower
+PowerFlowConverterReactivePower
+PowerFlowConverterDCVoltage
 ```
 
 ```@raw html
