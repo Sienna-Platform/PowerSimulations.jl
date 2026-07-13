@@ -196,11 +196,13 @@ function build_pf_evaluation(
     )
 end
 
-"RTS has HydroDispatch/HydroTurbine/HydroReservoir/EnergyReservoirStorage generation that
-`template_economic_dispatch`'s defaults don't cover; leaving them unmodeled starves the
-balance of real capacity and the UC becomes infeasible (verified directly against baseline
-RTS with no reactive-control augmentation). ThermalBasicUnitCommitment (not the no-commitment
-Dispatch variant) mirrors the RTS AC-PF-in-the-loop idiom in test_power_flow_in_the_loop.jl."
+"ThermalBasicUnitCommitment, not the `ThermalBasicDispatch` that `template_economic_dispatch`
+defaults to: without a commitment binary every RTS thermal unit is pinned at or above its own
+P_min, and the P_min sum (3745 MW) exceeds the load in the low hours this script runs (3337 MW
+at t=1), so the balance is infeasible from over-generation. Commitment lets units decommit.
+It also mirrors the RTS AC-PF-in-the-loop idiom in test_power_flow_in_the_loop.jl.
+The Hydro/EnergyReservoirStorage models are here for fleet fidelity — the built-in templates
+cover only a subset of RTS's generation — not for feasibility."
 function build_template(pf_evaluation, ptdf::PNM.PTDF)
     template = PSI.ProblemTemplate(
         PSI.NetworkModel(
@@ -233,6 +235,45 @@ struct ComboResult
     max_v_violation::Float64
     max_setpoint_error::Float64
     device_settings_varied::Bool
+    aux_vars_ingested::Bool   # PF device results readable as PSI aux variables
+end
+
+# Verify the PF solve's device results were ingested into PSI as aux variables: every
+# (family, name, time_step, final/delivered) row of `get_controlled_device_results` must be
+# readable back, value-identical, from the model's aux-variable containers. FACTS delivered Q
+# is MVAr in the results table but stored p.u. in the aux variable (hence the divisor).
+function verify_aux_var_ingestion(model::PSI.DecisionModel, sys::PSY.System, data)::Bool
+    container = PSI.get_optimization_container(model)
+    df = PFS.get_controlled_device_results(data)
+    base_power = PSY.get_base_power(sys)
+    for (family, comp_type, aux_var, col, divisor) in (
+        ("TapTransformer", PSY.TapTransformer, PSI.PowerFlowTapRatio, :final, 1.0),
+        (
+            "SwitchedAdmittance",
+            PSY.SwitchedAdmittance,
+            PSI.PowerFlowSwitchedShuntSusceptance,
+            :final,
+            1.0,
+        ),
+        (
+            "FACTSControlDevice",
+            PSY.FACTSControlDevice,
+            PSI.PowerFlowFACTSReactivePower,
+            :delivered_q_mvar,
+            base_power,
+        ),
+    )
+        rows = df[df.family .== family, :]
+        isempty(rows) && continue
+        aux = PSI.get_aux_variable(container, aux_var(), comp_type)
+        for row in eachrow(rows)
+            if aux[row.name, row.time_step] != row[col] / divisor
+                @error "aux-var ingestion mismatch" family row.name row.time_step
+                return false
+            end
+        end
+    end
+    return true
 end
 
 function regulated_bus_number(t::PSY.TapTransformer)
@@ -324,11 +365,13 @@ function run_combo(
     )
     build_status = PSI.build!(model; output_dir = mktempdir(; cleanup = true))
     if build_status != PSI.ModelBuildStatus.BUILT
-        return ComboResult(label, :FAIL, "build! -> $build_status", false, NaN, NaN, false)
+        return ComboResult(
+            label, :FAIL, "build! -> $build_status", false, NaN, NaN, false, false)
     end
     run_status = PSI.solve!(model)
     if run_status != PSI.RunStatus.SUCCESSFULLY_FINALIZED
-        return ComboResult(label, :FAIL, "solve! -> $run_status", false, NaN, NaN, false)
+        return ComboResult(
+            label, :FAIL, "solve! -> $run_status", false, NaN, NaN, false, false)
     end
 
     data = PSI.get_power_flow_data(
@@ -360,12 +403,19 @@ function run_combo(
         varied = device_settings_varied(data)
     end
 
+    aux_ingested = true
+    if control_discrete_devices
+        aux_ingested = verify_aux_var_ingestion(model, vsys.sys, data)
+    end
+
     status = :FAIL
     note = ""
-    if converged
-        status = :PASS
-    else
+    if !converged
         note = "not all time steps converged"
+    elseif !aux_ingested
+        note = "PF device results not ingested as PSI aux variables"
+    else
+        status = :PASS
     end
     return ComboResult(
         label,
@@ -375,6 +425,7 @@ function run_combo(
         max_v_violation,
         max_setpoint_error,
         varied,
+        aux_ingested,
     )
 end
 
@@ -416,8 +467,9 @@ end
 function print_results(results::Vector{ComboResult})
     println()
     println(rpad("LABEL", 26), rpad("STATUS", 10), rpad("CONVERGED", 11),
-        rpad("MAX |V| VIOL", 14), rpad("MAX SETPT ERR", 15), rpad("VARIED", 8), "NOTE")
-    println("-"^100)
+        rpad("MAX |V| VIOL", 14), rpad("MAX SETPT ERR", 15), rpad("VARIED", 8),
+        rpad("AUX INGESTED", 14), "NOTE")
+    println("-"^114)
     for r in results
         println(
             rpad(r.label, 26),
@@ -426,6 +478,7 @@ function print_results(results::Vector{ComboResult})
             rpad(string(round(r.max_v_violation; digits = 5)), 14),
             rpad(string(round(r.max_setpoint_error; digits = 5)), 15),
             rpad(string(r.device_settings_varied), 8),
+            rpad(string(r.aux_vars_ingested), 14),
             r.note,
         )
     end
