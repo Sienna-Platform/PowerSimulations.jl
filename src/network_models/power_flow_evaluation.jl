@@ -328,13 +328,125 @@ function bus_aux_vars(data::PFS.ACPowerFlowData)
     if PFS.get_calculate_voltage_stability_factors(data)
         push!(vars, PowerFlowVoltageStabilityFactors)
     end
+    if _has_hvdc(data)
+        push!(vars, PowerFlowHVDCNetPower)
+    end
     return vars
 end
 
-bus_aux_vars(::PFS.ABAPowerFlowData) = [PowerFlowVoltageAngle]
+function bus_aux_vars(data::PFS.ABAPowerFlowData)
+    vars = [PowerFlowVoltageAngle]
+    if _has_hvdc(data)
+        push!(vars, PowerFlowHVDCNetPower)
+    end
+    return vars
+end
 bus_aux_vars(::PFS.PTDFPowerFlowData) = DataType[]
 bus_aux_vars(::PFS.vPTDFPowerFlowData) = DataType[]
 bus_aux_vars(::PFS.PSSEExporter) = DataType[]
+
+# HVDC net bus power is registered only when the data actually carries DC components,
+# so HVDC-free systems don't get an all-zeros aux variable in their results.
+function _has_hvdc(data::PFS.PowerFlowData)
+    if PFS.get_lcc_count(data) > 0
+        return true
+    end
+    if PFS.has_dc_network(PFS.get_dc_network(data))
+        return true
+    end
+    return !isempty(PFS.get_generic_hvdc_flows(data))
+end
+
+# The HVDC quantities the AC power flow solves for, one aux variable per (quantity,
+# component type), all read from `PFS.get_hvdc_results`'s per-family tables. Single source
+# of truth for registration and fill: (aux var, component type, table, name column, value
+# column, natural-units power quantity).
+const _HVDC_AUX_SPECS = (
+    (PowerFlowHVDCActivePowerFromTo, PSY.TwoTerminalLCCLine, :lcc, :line_name,
+        :P_from_to, true),
+    (PowerFlowHVDCActivePowerToFrom, PSY.TwoTerminalLCCLine, :lcc, :line_name,
+        :P_to_from, true),
+    (PowerFlowHVDCReactivePowerFromTo, PSY.TwoTerminalLCCLine, :lcc, :line_name,
+        :Q_from_to, true),
+    (PowerFlowHVDCReactivePowerToFrom, PSY.TwoTerminalLCCLine, :lcc, :line_name,
+        :Q_to_from, true),
+    (PowerFlowHVDCActivePowerLoss, PSY.TwoTerminalLCCLine, :lcc, :line_name,
+        :P_losses, true),
+    (PowerFlowLCCRectifierTap, PSY.TwoTerminalLCCLine, :lcc, :line_name,
+        :rectifier_tap, false),
+    (PowerFlowLCCInverterTap, PSY.TwoTerminalLCCLine, :lcc, :line_name,
+        :inverter_tap, false),
+    (PowerFlowLCCRectifierDelayAngle, PSY.TwoTerminalLCCLine, :lcc, :line_name,
+        :rectifier_delay_angle, false),
+    (PowerFlowLCCInverterExtinctionAngle, PSY.TwoTerminalLCCLine, :lcc, :line_name,
+        :inverter_extinction_angle, false),
+    (PowerFlowHVDCActivePowerFromTo, PSY.TwoTerminalVSCLine, :vsc, :line_name,
+        :P_from_to, true),
+    (PowerFlowHVDCActivePowerToFrom, PSY.TwoTerminalVSCLine, :vsc, :line_name,
+        :P_to_from, true),
+    (PowerFlowHVDCReactivePowerFromTo, PSY.TwoTerminalVSCLine, :vsc, :line_name,
+        :Q_from_to, true),
+    (PowerFlowHVDCReactivePowerToFrom, PSY.TwoTerminalVSCLine, :vsc, :line_name,
+        :Q_to_from, true),
+    (PowerFlowHVDCActivePowerLoss, PSY.TwoTerminalVSCLine, :vsc, :line_name,
+        :P_losses, true),
+    (PowerFlowHVDCDCCurrent, PSY.TwoTerminalVSCLine, :vsc, :line_name,
+        :dc_current, false),
+    (PowerFlowHVDCDCVoltageFrom, PSY.TwoTerminalVSCLine, :vsc, :line_name,
+        :Vdc_from, false),
+    (PowerFlowHVDCDCVoltageTo, PSY.TwoTerminalVSCLine, :vsc, :line_name,
+        :Vdc_to, false),
+    (PowerFlowConverterDCPower, PSY.InterconnectingConverter, :mtdc_converters,
+        :converter_name, :P_dc, true),
+    (PowerFlowConverterReactivePower, PSY.InterconnectingConverter, :mtdc_converters,
+        :converter_name, :Q, true),
+    (PowerFlowConverterDCVoltage, PSY.InterconnectingConverter, :mtdc_converters,
+        :converter_name, :Vdc, false),
+    (PowerFlowHVDCDCCurrent, PSY.TModelHVDCLine, :mtdc_lines, :line_name,
+        :dc_current, false),
+    (PowerFlowHVDCActivePowerLoss, PSY.TModelHVDCLine, :mtdc_lines, :line_name,
+        :P_losses, true),
+)
+
+# HVDC per-component aux variables; the name axes come from the built PowerFlowData (the
+# same pre-solve enumeration `device_aux_vars` uses — names are valid before the solve).
+hvdc_aux_vars(::PFS.PowerFlowContainer, ::PSY.System) =
+    Dict{DataType, Vector{Tuple{DataType, String}}}()
+function hvdc_aux_vars(pf_data::PFS.ACPowerFlowData, sys::PSY.System)
+    out = Dict{DataType, Vector{Tuple{DataType, String}}}()
+    _has_hvdc(pf_data) || return out
+    tables = PFS.get_hvdc_results(sys, pf_data)
+    for (aux_var, comp_type, table, name_col, _, _) in _HVDC_AUX_SPECS
+        names = unique(getproperty(tables[table], name_col))
+        isempty(names) && continue
+        append!(
+            get!(out, aux_var, Tuple{DataType, String}[]),
+            [(comp_type, n) for n in names],
+        )
+    end
+    return out
+end
+
+# Devices enrolled in power-flow discrete control expose their solved per-time-step
+# settings as aux variables; enrollment (and therefore the name axis) is only known
+# from the built PowerFlowData.
+device_aux_vars(::PFS.PowerFlowContainer) =
+    Dict{DataType, Vector{Tuple{DataType, String}}}()
+function device_aux_vars(pf_data::PFS.ACPowerFlowData)
+    out = Dict{DataType, Vector{Tuple{DataType, String}}}()
+    df = PFS.get_controlled_device_results(pf_data)
+    isempty(df) && return out
+    for (family, comp_type, aux_var) in (
+        ("TapTransformer", PSY.TapTransformer, PowerFlowTapRatio),
+        ("SwitchedAdmittance", PSY.SwitchedAdmittance, PowerFlowSwitchedShuntSusceptance),
+        ("FACTSControlDevice", PSY.FACTSControlDevice, PowerFlowFACTSReactivePower),
+    )
+        names = unique(df[df.family .== family, :name])
+        isempty(names) && continue
+        out[aux_var] = [(comp_type, n) for n in names]
+    end
+    return out
+end
 
 # TODO: Needs update for MultiTerminal HVDC
 _get_branch_component_tuples(sys::PSY.System) = [
@@ -409,6 +521,8 @@ function add_power_flow_data!(
     branch_aux_var_components =
         Dict{Type{<:AuxVariableType}, Set{Tuple{<:DataType, String}}}()
     bus_aux_var_components = Dict{Type{<:AuxVariableType}, Set{Tuple{<:DataType, <:Int}}}()
+    device_aux_var_components =
+        Dict{Type{<:AuxVariableType}, Set{Tuple{<:DataType, String}}}()
     # Categories of input data needed across all configured PF evaluators.
     needed_categories = Set{Symbol}()
     # we ought to be providing the time_steps when constructing the PF evaluation model,
@@ -438,6 +552,17 @@ function add_power_flow_data!(
                 get!(bus_aux_var_components, bus_aux_var, Set{Tuple{<:DataType, <:Int}}())
             push!.(Ref(to_add_to), my_bus_components)
         end
+
+        for aux_var_map in (device_aux_vars(pf_data), hvdc_aux_vars(pf_data, sys))
+            for (device_aux_var, components) in aux_var_map
+                to_add_to = get!(
+                    device_aux_var_components,
+                    device_aux_var,
+                    Set{Tuple{<:DataType, String}}(),
+                )
+                push!.(Ref(to_add_to), components)
+            end
+        end
         for category in pf_input_keys(pf_data)
             push!(needed_categories, category)
         end
@@ -446,6 +571,7 @@ function add_power_flow_data!(
 
     _add_aux_variables!(container, branch_aux_var_components)
     _add_aux_variables!(container, bus_aux_var_components)
+    _add_aux_variables!(container, device_aux_var_components)
 
     # Add time-series parameters that the PF evaluators need but that the
     # optimization formulation may not have added (e.g., reactive power for
@@ -1164,6 +1290,8 @@ _get_pf_result(::Type{PowerFlowBranchActivePowerFromTo}, pf_data::PFS.PowerFlowD
     PFS.get_arc_active_power_flow_from_to(pf_data)
 _get_pf_result(::Type{PowerFlowBranchActivePowerToFrom}, pf_data::PFS.PowerFlowData) =
     PFS.get_arc_active_power_flow_to_from(pf_data)
+_get_pf_result(::Type{PowerFlowHVDCNetPower}, pf_data::PFS.PowerFlowData) =
+    PFS.get_bus_hvdc_net_power(pf_data)
 _get_pf_result(::Type{PowerFlowLossFactors}, pf_data::PFS.PowerFlowData) =
     PFS.get_loss_factors(pf_data)
 _get_pf_result(::Type{PowerFlowVoltageStabilityFactors}, pf_data::PFS.PowerFlowData) =
@@ -1172,6 +1300,112 @@ _get_pf_result(::Type{PowerFlowVoltageStabilityFactors}, pf_data::PFS.PowerFlowD
 _get_pf_result(::Type{PowerFlowBranchActivePowerLoss}, pf_data::PFS.PowerFlowData) =
     PFS.get_arc_active_power_flow_from_to(pf_data) .+
     PFS.get_arc_active_power_flow_to_from(pf_data)
+
+# Solved discrete-control device settings, read from the per-time-step results table.
+# Concrete key types: the TapTransformer method must out-dispatch the generic
+# `AuxVarKey{T, U <: PSY.Branch}` arc-flow method below.
+function _fill_device_aux_var!(
+    container::OptimizationContainer,
+    key::AuxVarKey,
+    pf_e_data::PowerFlowEvaluationData,
+    family::String,
+    col::Symbol,
+    divisor::Float64 = 1.0,
+)
+    @debug "Updating $key from PowerFlowData"
+    pf_data = get_power_flow_data(pf_e_data)
+    df = PFS.get_controlled_device_results(pf_data)
+    dest = get_aux_variable(container, key)
+    for row in eachrow(df[df.family .== family, :])
+        dest[row.name, row.time_step] = row[col] / divisor
+    end
+    return
+end
+
+calculate_aux_variable_value!(container::OptimizationContainer,
+    key::AuxVarKey{PowerFlowTapRatio, PSY.TapTransformer},
+    ::PSY.System,
+    pf_e_data::PowerFlowEvaluationData{<:PFS.PowerFlowData},
+) = _fill_device_aux_var!(container, key, pf_e_data, "TapTransformer", :final)
+
+calculate_aux_variable_value!(container::OptimizationContainer,
+    key::AuxVarKey{PowerFlowSwitchedShuntSusceptance, PSY.SwitchedAdmittance},
+    ::PSY.System,
+    pf_e_data::PowerFlowEvaluationData{<:PFS.PowerFlowData},
+) = _fill_device_aux_var!(container, key, pf_e_data, "SwitchedAdmittance", :final)
+
+calculate_aux_variable_value!(container::OptimizationContainer,
+    key::AuxVarKey{PowerFlowFACTSReactivePower, PSY.FACTSControlDevice},
+    sys::PSY.System,
+    pf_e_data::PowerFlowEvaluationData{<:PFS.PowerFlowData},
+) = _fill_device_aux_var!(
+    container,
+    key,
+    pf_e_data,
+    "FACTSControlDevice",
+    :delivered_q_mvar,
+    # `delivered_q_mvar` is MVAr; store p.u. like every other power aux var
+    # (`convert_result_to_natural_units` restores MVAr on export).
+    PSY.get_base_power(sys),
+)
+
+# Solved HVDC quantities, read from the `get_hvdc_results` table the spec maps this
+# (aux var, component type) pair to. PF tables carry MW/MVAr; power quantities are stored in
+# p.u. (`convert_result_to_natural_units` restores natural units on export).
+function _fill_hvdc_aux_var!(
+    container::OptimizationContainer,
+    key::AuxVarKey{T, U},
+    sys::PSY.System,
+    pf_e_data::PowerFlowEvaluationData,
+) where {T <: PowerFlowHVDCAuxVariableType, U <: PSY.Component}
+    @debug "Updating $key from PowerFlowData"
+    pf_data = get_power_flow_data(pf_e_data)
+    tables = PFS.get_hvdc_results(sys, pf_data)
+    base_power = PSY.get_base_power(sys)
+    dest = get_aux_variable(container, key)
+    for (aux_var, comp_type, table, name_col, value_col, natural_units) in _HVDC_AUX_SPECS
+        (aux_var == T && comp_type == U) || continue
+        divisor = 1.0
+        if natural_units
+            divisor = base_power
+        end
+        for row in eachrow(tables[table])
+            dest[row[name_col], row.time_step] = row[value_col] / divisor
+        end
+    end
+    return
+end
+
+# Concrete component types are required: the HVDC line types are `<: PSY.Branch`, and the
+# generic arc-flow method dispatches on `AuxVarKey{T, U <: PSY.Branch}` — a concrete `U`
+# out-dispatches it without ambiguity.
+calculate_aux_variable_value!(container::OptimizationContainer,
+    key::AuxVarKey{T, PSY.TwoTerminalLCCLine},
+    sys::PSY.System,
+    pf_e_data::PowerFlowEvaluationData{<:PFS.PowerFlowData},
+) where {T <: PowerFlowHVDCAuxVariableType} =
+    _fill_hvdc_aux_var!(container, key, sys, pf_e_data)
+
+calculate_aux_variable_value!(container::OptimizationContainer,
+    key::AuxVarKey{T, PSY.TwoTerminalVSCLine},
+    sys::PSY.System,
+    pf_e_data::PowerFlowEvaluationData{<:PFS.PowerFlowData},
+) where {T <: PowerFlowHVDCAuxVariableType} =
+    _fill_hvdc_aux_var!(container, key, sys, pf_e_data)
+
+calculate_aux_variable_value!(container::OptimizationContainer,
+    key::AuxVarKey{T, PSY.InterconnectingConverter},
+    sys::PSY.System,
+    pf_e_data::PowerFlowEvaluationData{<:PFS.PowerFlowData},
+) where {T <: PowerFlowHVDCAuxVariableType} =
+    _fill_hvdc_aux_var!(container, key, sys, pf_e_data)
+
+calculate_aux_variable_value!(container::OptimizationContainer,
+    key::AuxVarKey{T, PSY.TModelHVDCLine},
+    sys::PSY.System,
+    pf_e_data::PowerFlowEvaluationData{<:PFS.PowerFlowData},
+) where {T <: PowerFlowHVDCAuxVariableType} =
+    _fill_hvdc_aux_var!(container, key, sys, pf_e_data)
 
 function calculate_aux_variable_value!(container::OptimizationContainer,
     key::AuxVarKey{T, <:PSY.ACBus},
