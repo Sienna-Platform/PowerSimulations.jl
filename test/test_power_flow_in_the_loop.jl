@@ -391,6 +391,84 @@ end
     @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
           PSI.ModelBuildStatus.BUILT
     @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    # The LCC quantities the PF solved for are ingested as PSI aux variables, one value
+    # per line per time step, matching the get_hvdc_results table (power in p.u.).
+    container = PSI.get_optimization_container(model)
+    data = PSI.get_power_flow_data(
+        only(PSI.get_power_flow_evaluation_data(container)),
+    )
+    lcc_tbl = PFS.get_hvdc_results(sys5, data).lcc
+    @test nrow(lcc_tbl) == PFS.get_time_steps(data)
+    base_power = get_base_power(sys5)
+    p_ft = PSI.get_aux_variable(
+        container, PSI.PowerFlowHVDCActivePowerFromTo(), TwoTerminalLCCLine)
+    q_tf = PSI.get_aux_variable(
+        container, PSI.PowerFlowHVDCReactivePowerToFrom(), TwoTerminalLCCLine)
+    rect_tap = PSI.get_aux_variable(
+        container, PSI.PowerFlowLCCRectifierTap(), TwoTerminalLCCLine)
+    inv_angle = PSI.get_aux_variable(
+        container, PSI.PowerFlowLCCInverterExtinctionAngle(), TwoTerminalLCCLine)
+    for row in eachrow(lcc_tbl)
+        @test p_ft[row.line_name, row.time_step] == row.P_from_to / base_power
+        @test q_tf[row.line_name, row.time_step] == row.Q_to_from / base_power
+        @test rect_tap[row.line_name, row.time_step] == row.rectifier_tap
+        @test inv_angle[row.line_name, row.time_step] == row.inverter_extinction_angle
+    end
+end
+
+@testset "VSC HVDC with AC PF in the loop ingests DC quantities" begin
+    sys5 = build_system(PSISystems, "2Area 5 Bus System")
+    replace_hvdc!(sys5, TwoTerminalVSCLine)
+    # The minimal fixture VSC is not a joint-model converter yet: give it a DC conductance
+    # and the well-posed control config (from = DC-voltage slack, to = power order).
+    vsc = only(get_components(TwoTerminalVSCLine, sys5))
+    set_g!(vsc, 50.0)
+    PSY.set_dc_control_from!(vsc, PSY.VSCDCControlModes.DC_VOLTAGE)
+    PSY.set_ac_control_from!(vsc, PSY.VSCACControlModes.AC_REACTIVE_POWER)
+    PSY.set_dc_setpoint_from!(vsc, 1.04)
+    PSY.set_reactive_power_from!(vsc, 0.0)
+    PSY.set_dc_control_to!(vsc, PSY.VSCDCControlModes.DC_POWER)
+    PSY.set_ac_control_to!(vsc, PSY.VSCACControlModes.AC_REACTIVE_POWER)
+    PSY.set_dc_setpoint_to!(vsc, 0.3)
+    PSY.set_reactive_power_to!(vsc, 0.05)
+
+    template = ProblemTemplate(
+        NetworkModel(PTDFPowerModel; power_flow_evaluation = ACPolarPowerFlow()),
+    )
+    set_device_model!(template, ThermalStandard, ThermalBasicUnitCommitment)
+    set_device_model!(template, PowerLoad, StaticPowerLoad)
+    set_device_model!(template, DeviceModel(Line, StaticBranch))
+    set_device_model!(template, DeviceModel(TwoTerminalVSCLine, HVDCTwoTerminalLossless))
+    model = DecisionModel(template, sys5; optimizer = HiGHS_optimizer, horizon = Hour(2))
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+    @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    container = PSI.get_optimization_container(model)
+    data = PSI.get_power_flow_data(
+        only(PSI.get_power_flow_evaluation_data(container)),
+    )
+    vsc_tbl = PFS.get_hvdc_results(sys5, data).vsc
+    @test nrow(vsc_tbl) == PFS.get_time_steps(data)
+    @test all(
+        isapprox.(vsc_tbl.P_losses, vsc_tbl.P_from_to .+ vsc_tbl.P_to_from; atol = 1e-9),
+    )
+    base_power = get_base_power(sys5)
+    p_ft = PSI.get_aux_variable(
+        container, PSI.PowerFlowHVDCActivePowerFromTo(), TwoTerminalVSCLine)
+    p_loss = PSI.get_aux_variable(
+        container, PSI.PowerFlowHVDCActivePowerLoss(), TwoTerminalVSCLine)
+    vdc_from = PSI.get_aux_variable(
+        container, PSI.PowerFlowHVDCDCVoltageFrom(), TwoTerminalVSCLine)
+    dc_current = PSI.get_aux_variable(
+        container, PSI.PowerFlowHVDCDCCurrent(), TwoTerminalVSCLine)
+    for row in eachrow(vsc_tbl)
+        @test p_ft[row.line_name, row.time_step] == row.P_from_to / base_power
+        @test p_loss[row.line_name, row.time_step] == row.P_losses / base_power
+        @test vdc_from[row.line_name, row.time_step] == row.Vdc_from
+        @test dc_current[row.line_name, row.time_step] == row.dc_current
+    end
 end
 
 # Shared RTS setup for the AC-PF-in-the-loop HVDC tests: isolate the HVDC line buses (remove
@@ -479,6 +557,24 @@ end
         rtol = 0,
     )
     @test all(data.bus_active_power_injections[bus_lookup[get_number(to)], :] .== 0.0)
+
+    # The PF-side HVDC net bus power is exposed as an aux variable (natural units).
+    hvdc_net = ad["PowerFlowHVDCNetPower__ACBus"]
+    for bus in (from, to)
+        vals = filter(
+            row -> string(row[:name]) == string(get_number(bus)),
+            hvdc_net,
+        )[
+            !,
+            :value,
+        ]
+        @test isapprox(
+            vals,
+            data.bus_hvdc_net_power[bus_lookup[get_number(bus)], :] * base_power,
+            atol = 1e-9,
+            rtol = 0,
+        )
+    end
 end
 
 @testset "lossless HVDC with AC PF in the loop" begin
@@ -1592,4 +1688,15 @@ end
     results = PFS.get_controlled_device_results(data)
     @test nrow(results) == n_time_steps   # one shunt row per step
     @test all(>(0.0), results.final)      # capacitive support engaged at every step
+
+    # The solved device settings are exposed as a PSI aux variable, one value per step.
+    container = PSI.get_optimization_container(model)
+    shunt_aux = PSI.get_aux_variable(
+        container,
+        PSI.PowerFlowSwitchedShuntSusceptance(),
+        SwitchedAdmittance,
+    )
+    for row in eachrow(results)
+        @test shunt_aux[row.name, row.time_step] == row.final
+    end
 end
