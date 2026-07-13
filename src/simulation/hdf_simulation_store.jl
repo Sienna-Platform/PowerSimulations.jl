@@ -778,8 +778,10 @@ function write_result!(
     simulation_time::Dates.DateTime,
     array::SparseAxisArray{Float64},
 )
+    matrix = permutedims(to_matrix(array))
+    data = size(matrix, 2) == 1 ? reshape(matrix, length(matrix)) : matrix
     dataset = _get_em_dataset(store, key)
-    _write_dataset!(dataset.values, to_matrix(array), index)
+    _write_dataset!(dataset.values, data, index)
     set_last_recorded_row!(dataset, index)
     set_update_timestamp!(dataset, simulation_time)
     return
