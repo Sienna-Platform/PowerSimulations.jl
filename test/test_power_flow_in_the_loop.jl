@@ -1530,3 +1530,66 @@ end
         PowerLoad,
     )
 end
+
+@testset "PF-in-the-loop: control_discrete_devices survives _with_time_steps" begin
+    # PSI injects the horizon via `_with_time_steps` (reflection rebuild); this locks that
+    # invariant so a future PowerFlows field addition on ACPolarPowerFlow can't silently
+    # drop control_discrete_devices (or any other field) from the rebuilt evaluator.
+    ev = ACPolarPowerFlow(; control_discrete_devices = true)
+    ev2 = PSI._with_time_steps(ev, 4)
+    @test PFS.get_control_discrete_devices(ev2)
+    @test PFS.get_time_steps(ev2) == 4
+end
+
+@testset "AC Power Flow in the loop with multiperiod discrete control (switched shunt)" begin
+    # c_sys5_uc's nodeB (PQ) settles at ~0.989 pu under a plain AC solve (see the reactive
+    # power test above), well outside a tight voltage band, so a switched shunt regulating
+    # it must actually act. Verifies control_discrete_devices=true flows through PSI's
+    # PF-in-the-loop path over a >1-step horizon (locks the reflection invariant above with
+    # a real multiperiod solve, not just the field round-trip).
+    system = build_system(PSITestSystems, "c_sys5_uc")
+    node_b = get_component(ACBus, system, "nodeB")
+    shunt = SwitchedAdmittance(;
+        name = "shunt_nodeB",
+        available = true,
+        bus = node_b,
+        Y = 0.0 + 0.0im,
+        initial_status = [0],
+        number_of_steps = [12],
+        Y_increase = [0.0 + 0.1im],
+        admittance_limits = (min = 0.995, max = 1.005),
+        control_mode = PSY.SwitchedAdmittanceControlMode.CONTINUOUS_VOLTAGE,
+    )
+    add_component!(system, shunt)
+
+    template = get_template_dispatch_with_network(
+        NetworkModel(
+            PTDFPowerModel;
+            PTDF_matrix = PTDF(system),
+            power_flow_evaluation = ACPolarPowerFlow(; control_discrete_devices = true),
+        ),
+    )
+    model = DecisionModel(template, system; optimizer = HiGHS_optimizer, horizon = Hour(3))
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+    @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    data = PSI.get_power_flow_data(
+        only(PSI.get_power_flow_evaluation_data(PSI.get_optimization_container(model))),
+    )
+    n_time_steps = length(PSI.get_time_steps(PSI.get_optimization_container(model)))
+    @test n_time_steps > 1
+    @test all(PFS.get_converged(data))
+    @test all(isfinite, PFS.get_bus_magnitude(data))
+    @test all(v -> 0.5 < v < 1.5, PFS.get_bus_magnitude(data))
+    # The shunt genuinely regulated: nodeB sits at ~0.989 pu uncontrolled (below the
+    # [0.995, 1.005] band), so at every step the control must have raised it into the band
+    # and reported a nonzero capacitive setting.
+    node_b_ix = PFS.get_bus_lookup(data)[get_number(node_b)]
+    for t in 1:n_time_steps
+        @test PFS.get_bus_magnitude(data)[node_b_ix, t] >= 0.995 - 1e-3
+    end
+    results = PFS.get_controlled_device_results(data)
+    @test nrow(results) == n_time_steps   # one shunt row per step
+    @test all(>(0.0), results.final)      # capacitive support engaged at every step
+end
