@@ -1700,3 +1700,47 @@ end
         @test shunt_aux[row.name, row.time_step] == row.final
     end
 end
+
+@testset "_pf_provides_aux_var trait picks the correct evaluator per aux var" begin
+    # Regression test: `calculate_aux_variable_value!`'s 3-arg method must only recompute
+    # a key from the evaluator that actually provides it, not from whichever evaluator
+    # solved last (see PSI.branch_aux_vars / PSI.bus_aux_vars / PSI._pf_provides_aux_var).
+    system = build_system(PSITestSystems, "c_sys5_uc")
+    ac_data = PFS.make_power_flow_container(ACPolarPowerFlow(), system)
+    dc_data = PFS.make_power_flow_container(PTDFDCPowerFlow(), system)
+
+    @test PSI._pf_provides_aux_var(PSI.PowerFlowVoltageMagnitude, ac_data)
+    @test !PSI._pf_provides_aux_var(PSI.PowerFlowVoltageMagnitude, dc_data)
+    @test PSI._pf_provides_aux_var(PSI.PowerFlowTapRatio, ac_data)
+    @test !PSI._pf_provides_aux_var(PSI.PowerFlowTapRatio, dc_data)
+    @test PSI._pf_provides_aux_var(PSI.PowerFlowSwitchedShuntSusceptance, ac_data)
+    @test !PSI._pf_provides_aux_var(PSI.PowerFlowSwitchedShuntSusceptance, dc_data)
+    @test PSI._pf_provides_aux_var(PSI.PowerFlowBranchActivePowerFromTo, dc_data)
+end
+
+@testset "AC-only aux vars survive a later DC/PTDF evaluator in the same model" begin
+    # Regression test for the same bug: with an AC evaluator followed by a PTDF/DC
+    # evaluator, `latest_solved_power_flow_evaluation_data` resolves to the PTDF data for
+    # every aux-var key. Under the bug, PowerFlowVoltageMagnitude (an AC-only bus aux var)
+    # got recomputed from the PTDF data's flat 1.0 voltage magnitudes, clobbering the real
+    # AC solve. nodeB is PQ and settles at ~0.99 pu under a plain AC solve (see the
+    # multiperiod discrete-control testset above), so a flat 1.0 there is the clobber
+    # signature.
+    system = build_system(PSITestSystems, "c_sys5_uc")
+    template = get_template_dispatch_with_network(
+        NetworkModel(
+            PTDFPowerModel;
+            PTDF_matrix = PTDF(system),
+            power_flow_evaluation = [ACPolarPowerFlow(), PTDFDCPowerFlow()],
+        ),
+    )
+    model = DecisionModel(template, system; optimizer = HiGHS_optimizer)
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+    @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    container = PSI.get_optimization_container(model)
+    @test length(PSI.get_power_flow_evaluation_data(container)) == 2
+    voltage_aux = PSI.get_aux_variable(container, PSI.PowerFlowVoltageMagnitude(), ACBus)
+    @test !all(v -> isapprox(v, 1.0; atol = 1e-8), voltage_aux.data)
+end

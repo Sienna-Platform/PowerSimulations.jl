@@ -345,6 +345,33 @@ bus_aux_vars(::PFS.PTDFPowerFlowData) = DataType[]
 bus_aux_vars(::PFS.vPTDFPowerFlowData) = DataType[]
 bus_aux_vars(::PFS.PSSEExporter) = DataType[]
 
+# The discrete-control and HVDC per-component aux vars are registered only from AC
+# power flow data (see device_aux_vars / hvdc_aux_vars below).
+_provides_control_aux_vars(::PFS.PowerFlowContainer) = false
+_provides_control_aux_vars(::PFS.ACPowerFlowData) = true
+
+# Whether `pf_data` is the source that populates `key`'s aux variable; used to skip
+# recomputing a key from an evaluator that doesn't provide it (see the 3-arg
+# `calculate_aux_variable_value!` below).
+_pf_provides_aux_var(
+    ::Type{T},
+    pf_data::PFS.PowerFlowContainer,
+) where {T <: PowerFlowAuxVariableType} =
+    T in branch_aux_vars(pf_data) || T in bus_aux_vars(pf_data)
+_pf_provides_aux_var(
+    ::Type{T},
+    pf_data::PFS.PowerFlowContainer,
+) where {T <: PowerFlowHVDCAuxVariableType} = _provides_control_aux_vars(pf_data)
+_pf_provides_aux_var(::Type{PowerFlowTapRatio}, pf_data::PFS.PowerFlowContainer) =
+    _provides_control_aux_vars(pf_data)
+_pf_provides_aux_var(
+    ::Type{PowerFlowSwitchedShuntSusceptance},
+    pf_data::PFS.PowerFlowContainer,
+) =
+    _provides_control_aux_vars(pf_data)
+_pf_provides_aux_var(::Type{PowerFlowFACTSReactivePower}, pf_data::PFS.PowerFlowContainer) =
+    _provides_control_aux_vars(pf_data)
+
 # HVDC net bus power is registered only when the data actually carries DC components,
 # so HVDC-free systems don't get an all-zeros aux variable in their results.
 function _has_hvdc(data::PFS.PowerFlowData)
@@ -1452,10 +1479,10 @@ end
 function calculate_aux_variable_value!(container::OptimizationContainer,
     key::AuxVarKey{<:PowerFlowAuxVariableType, <:PSY.Component},
     system::PSY.System)
-    # Skip the aux vars that the current power flow isn't meant to update
     pf_e_data = latest_solved_power_flow_evaluation_data(container)
     pf_data = get_power_flow_data(pf_e_data)
-    (key in branch_aux_vars(pf_data) || key in bus_aux_vars(pf_data)) && return
-    calculate_aux_variable_value!(container, key, system, pf_e_data)
+    if _pf_provides_aux_var(get_entry_type(key), pf_data)
+        calculate_aux_variable_value!(container, key, system, pf_e_data)
+    end
     return
 end
