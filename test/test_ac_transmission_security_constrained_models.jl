@@ -769,7 +769,7 @@ end
                 for i in nz_idx
                     JuMP.add_to_expression!(expected, ptdf_col[i], nodal_balance[i, t])
                 end
-                @test JuMP.isequal_canonical(pbf[name, t], expected)
+                @test aff_exprs_approx_equal(pbf[name, t], expected)
             end
         end
     end
