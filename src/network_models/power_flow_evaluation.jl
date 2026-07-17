@@ -375,13 +375,9 @@ _pf_provides_aux_var(::Type{PowerFlowFACTSReactivePower}, pf_data::PFS.PowerFlow
 # HVDC net bus power is registered only when the data actually carries DC components,
 # so HVDC-free systems don't get an all-zeros aux variable in their results.
 function _has_hvdc(data::PFS.PowerFlowData)
-    if PFS.get_lcc_count(data) > 0
-        return true
-    end
-    if PFS.has_dc_network(PFS.get_dc_network(data))
-        return true
-    end
-    return !isempty(PFS.get_generic_hvdc_flows(data))
+    return !iszero(PFS.get_lcc_count(data)) ||
+           PFS.has_dc_network(PFS.get_dc_network(data)) ||
+           !isempty(PFS.get_generic_hvdc_flows(data))
 end
 
 # The HVDC quantities the AC power flow solves for, one aux variable per (quantity,
@@ -443,21 +439,32 @@ const _HVDC_AUX_SPECS = (
     (PowerFlowHVDCActivePowerLoss, PSY.TModelHVDCLine, :mtdc_lines, :line_name, :P_losses),
 )
 
+const _AuxVarComponentMap = Dict{DataType, Vector{Tuple{DataType, String}}}
+
+function _append_aux_var_components!(
+    out::_AuxVarComponentMap,
+    aux_var::DataType,
+    comp_type::DataType,
+    names,
+)
+    isempty(names) && return
+    append!(
+        get!(out, aux_var, Tuple{DataType, String}[]),
+        Tuple{DataType, String}[(comp_type, n) for n in names],
+    )
+    return
+end
+
 # HVDC per-component aux variables; the name axes come from the built PowerFlowData (the
 # same pre-solve enumeration `device_aux_vars` uses — names are valid before the solve).
-hvdc_aux_vars(::PFS.PowerFlowContainer, ::PSY.System) =
-    Dict{DataType, Vector{Tuple{DataType, String}}}()
+hvdc_aux_vars(::PFS.PowerFlowContainer, ::PSY.System) = _AuxVarComponentMap()
 function hvdc_aux_vars(pf_data::PFS.ACPowerFlowData, sys::PSY.System)
-    out = Dict{DataType, Vector{Tuple{DataType, String}}}()
+    out = _AuxVarComponentMap()
     _has_hvdc(pf_data) || return out
     tables = PFS.get_hvdc_results(sys, pf_data)
     for (aux_var, comp_type, table, name_col, _) in _HVDC_AUX_SPECS
         names = unique(getproperty(tables[table], name_col))
-        isempty(names) && continue
-        append!(
-            get!(out, aux_var, Tuple{DataType, String}[]),
-            Tuple{DataType, String}[(comp_type, n) for n in names],
-        )
+        _append_aux_var_components!(out, aux_var, comp_type, names)
     end
     return out
 end
@@ -465,10 +472,9 @@ end
 # Devices enrolled in power-flow discrete control expose their solved per-time-step
 # settings as aux variables; enrollment (and therefore the name axis) is only known
 # from the built PowerFlowData.
-device_aux_vars(::PFS.PowerFlowContainer) =
-    Dict{DataType, Vector{Tuple{DataType, String}}}()
+device_aux_vars(::PFS.PowerFlowContainer) = _AuxVarComponentMap()
 function device_aux_vars(pf_data::PFS.ACPowerFlowData)
-    out = Dict{DataType, Vector{Tuple{DataType, String}}}()
+    out = _AuxVarComponentMap()
     df = PFS.get_controlled_device_results(pf_data)
     isempty(df) && return out
     for (family, comp_type, aux_var) in (
@@ -477,8 +483,7 @@ function device_aux_vars(pf_data::PFS.ACPowerFlowData)
         ("FACTSControlDevice", PSY.FACTSControlDevice, PowerFlowFACTSReactivePower),
     )
         names = unique(df[df.family .== family, :name])
-        isempty(names) && continue
-        out[aux_var] = Tuple{DataType, String}[(comp_type, n) for n in names]
+        _append_aux_var_components!(out, aux_var, comp_type, names)
     end
     return out
 end
@@ -1337,19 +1342,27 @@ _get_pf_result(::Type{PowerFlowBranchActivePowerLoss}, pf_data::PFS.PowerFlowDat
     PFS.get_arc_active_power_flow_to_from(pf_data)
 
 # Solved discrete-control device settings, read from the per-time-step results table.
+# The table carries natural units for power quantities (e.g. `delivered_q_mvar`); those are
+# stored in p.u., with `convert_result_to_natural_units` deciding which quantities convert
+# (same trait `_fill_hvdc_aux_var!` reads, and the one that restores units on export).
 function _fill_device_aux_var!(
     container::OptimizationContainer,
-    key::AuxVarKey,
+    key::AuxVarKey{T},
+    sys::PSY.System,
     pf_e_data::PowerFlowEvaluationData,
     family::String,
     col::Symbol,
-    divisor::Float64 = 1.0,
-)
+) where {T <: PowerFlowAuxVariableType}
     @debug "Updating $key from PowerFlowData"
     pf_data = get_power_flow_data(pf_e_data)
     df = PFS.get_controlled_device_results(pf_data)
     dest = get_aux_variable(container, key)
-    for row in eachrow(df[df.family .== family, :])
+    divisor = 1.0
+    if convert_result_to_natural_units(T)
+        divisor = PSY.get_base_power(sys)
+    end
+    for row in eachrow(df)
+        row.family == family || continue
         dest[row.name, row.time_step] = row[col] / divisor
     end
     return
@@ -1357,15 +1370,15 @@ end
 
 calculate_aux_variable_value!(container::OptimizationContainer,
     key::AuxVarKey{PowerFlowTapRatio, PSY.TapTransformer},
-    ::PSY.System,
+    sys::PSY.System,
     pf_e_data::PowerFlowEvaluationData{<:PFS.PowerFlowData},
-) = _fill_device_aux_var!(container, key, pf_e_data, "TapTransformer", :final)
+) = _fill_device_aux_var!(container, key, sys, pf_e_data, "TapTransformer", :final)
 
 calculate_aux_variable_value!(container::OptimizationContainer,
     key::AuxVarKey{PowerFlowSwitchedShuntSusceptance, PSY.SwitchedAdmittance},
-    ::PSY.System,
+    sys::PSY.System,
     pf_e_data::PowerFlowEvaluationData{<:PFS.PowerFlowData},
-) = _fill_device_aux_var!(container, key, pf_e_data, "SwitchedAdmittance", :final)
+) = _fill_device_aux_var!(container, key, sys, pf_e_data, "SwitchedAdmittance", :final)
 
 calculate_aux_variable_value!(container::OptimizationContainer,
     key::AuxVarKey{PowerFlowFACTSReactivePower, PSY.FACTSControlDevice},
@@ -1374,12 +1387,10 @@ calculate_aux_variable_value!(container::OptimizationContainer,
 ) = _fill_device_aux_var!(
     container,
     key,
+    sys,
     pf_e_data,
     "FACTSControlDevice",
     :delivered_q_mvar,
-    # `delivered_q_mvar` is MVAr; store p.u. like every other power aux var
-    # (`convert_result_to_natural_units` restores MVAr on export).
-    PSY.get_base_power(sys),
 )
 
 # Solved HVDC quantities, read from the `get_hvdc_results` table the spec maps this
@@ -1394,11 +1405,10 @@ function _fill_hvdc_aux_var!(
     @debug "Updating $key from PowerFlowData"
     pf_data = get_power_flow_data(pf_e_data)
     tables = PFS.get_hvdc_results(sys, pf_data)
-    base_power = PSY.get_base_power(sys)
     dest = get_aux_variable(container, key)
     divisor = 1.0
     if convert_result_to_natural_units(T)
-        divisor = base_power
+        divisor = PSY.get_base_power(sys)
     end
     for (aux_var, comp_type, table, name_col, value_col) in _HVDC_AUX_SPECS
         (aux_var == T && comp_type == U) || continue
@@ -1477,11 +1487,11 @@ function calculate_aux_variable_value!(container::OptimizationContainer,
 end
 
 function calculate_aux_variable_value!(container::OptimizationContainer,
-    key::AuxVarKey{<:PowerFlowAuxVariableType, <:PSY.Component},
-    system::PSY.System)
+    key::AuxVarKey{T, <:PSY.Component},
+    system::PSY.System) where {T <: PowerFlowAuxVariableType}
     pf_e_data = latest_solved_power_flow_evaluation_data(container)
     pf_data = get_power_flow_data(pf_e_data)
-    if _pf_provides_aux_var(get_entry_type(key), pf_data)
+    if _pf_provides_aux_var(T, pf_data)
         calculate_aux_variable_value!(container, key, system, pf_e_data)
     end
     return
