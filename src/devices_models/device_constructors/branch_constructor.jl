@@ -1515,31 +1515,23 @@ function _get_branch_map(network_model::NetworkModel)
                     (PSY.get_name(area_from), PSY.get_name(area_to)),
                     Dict{DataType, Vector{String}}(),
                 )
-                _add_to_branch_map!(branch_typed_dict, reduction_entry, name)
+                _add_to_branch_map!(branch_typed_dict, br_type, name)
             end
         end
     end
     return inter_area_branch_map
 end
 
+# Files under br_type (the key of name_to_arc_map that produced `name`), not
+# typeof(first(reduction_entry)): for a MixedBranchesParallel group, first(entry)
+# is an arbitrary member and would misfile e.g. a MonitoredLine's name under Line.
 function _add_to_branch_map!(
     branch_typed_dict::Dict{DataType, Vector{String}},
-    ::T,
-    name::String,
-) where {T <: PSY.ACBranch}
-    if !haskey(branch_typed_dict, T)
-        branch_typed_dict[T] = [name]
-    else
-        push!(branch_typed_dict[T], name)
-    end
-end
-
-function _add_to_branch_map!(
-    branch_typed_dict::Dict{DataType, Vector{String}},
-    reduction_entry::Union{PNM.BranchesParallel, PNM.BranchesSeries},
+    branch_type::DataType,
     name::String,
 )
-    _add_to_branch_map!(branch_typed_dict, first(reduction_entry), name)
+    push!(get!(branch_typed_dict, branch_type, String[]), name)
+    return
 end
 
 # This method uses ACBranch to support 2T - HVDC
@@ -1567,7 +1559,7 @@ function _get_area_from_to(reduction_entry::PNM.ThreeWindingTransformerWinding)
     return area_from, area_to
 end
 
-function _get_area_from_to(reduction_entry::PNM.BranchesParallel)
+function _get_area_from_to(reduction_entry::PNM.AbstractBranchesParallel)
     return _get_area_from_to(first(reduction_entry))
 end
 

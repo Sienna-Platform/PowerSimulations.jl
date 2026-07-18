@@ -223,7 +223,7 @@ function validate_template_impl!(model::OperationModel)
             @info "The system data doesn't include Branches of type $(k), consider changing the models in the template" _group =
                 LOG_GROUP_MODELS_VALIDATION
             push!(branch_keys_to_delete, k)
-        else
+        elseif _contributes_to_ac_branch_types(get_component_type(device_model))
             push!(network_model.modeled_ac_branch_types, get_component_type(device_model))
         end
         if !isnothing(get_attribute(device_model, "filter_function"))

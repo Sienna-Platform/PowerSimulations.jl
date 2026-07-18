@@ -123,6 +123,12 @@ set_subsystem!(m::NetworkModel, id::String) = m.subsystem = id
 set_hvdc_network_model!(m::NetworkModel, val::Union{Nothing, AbstractHVDCNetworkModel}) =
     m.hvdc_network_model = val
 
+# `modeled_ac_branch_types` is consumed exclusively by arc-based bus/reduction
+# lookups (name_to_arc_maps, _push_component_buses!). AreaInterchange is an
+# area-level Branch with no arc, so it must never populate this list.
+_contributes_to_ac_branch_types(::Type{<:PSY.Branch}) = true
+_contributes_to_ac_branch_types(::Type{PSY.AreaInterchange}) = false
+
 function add_dual!(model::NetworkModel, dual)
     dual in model.duals && error("dual = $dual is already stored")
     push!(model.duals, dual)

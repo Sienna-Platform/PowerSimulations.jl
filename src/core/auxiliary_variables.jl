@@ -36,8 +36,9 @@ struct PowerFlowVoltageMagnitude <: PowerFlowAuxVariableType end
 
 """
 Auxiliary Variable for line power flow results (directional flows and losses) from power flow
-evaluation. Every branch-indexed aux variable is a subtype; the generic arc-flow
-`calculate_aux_variable_value!` method dispatches on this.
+evaluation. AC-branch arc-flow quantities are subtypes; the generic arc-flow
+`calculate_aux_variable_value!` method dispatches on this. Per-component HVDC quantities
+are grouped under `PowerFlowHVDCAuxVariableType` instead.
 """
 abstract type BranchFlowAuxVariableType <: PowerFlowAuxVariableType end
 
