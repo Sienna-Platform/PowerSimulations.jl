@@ -290,6 +290,55 @@ LowerBoundFeedForwardSlack
 
 ## Auxiliary Variables
 
+Auxiliary variables recovered from a power flow evaluation all descend from
+`PowerFlowAuxVariableType`. The tree below groups them by the **axis they are indexed on**,
+which is what determines how each one is registered and filled — note that
+`PowerFlowHVDCNetPower` is a *bus* quantity despite its name, while the
+`PowerFlowHVDCAuxVariableType` group is per *HVDC component*:
+
+```
+PowerFlowAuxVariableType
+├── bus-indexed  (ACBus, bus_number)
+│   ├── PowerFlowVoltageAngle
+│   ├── PowerFlowVoltageMagnitude
+│   ├── PowerFlowLossFactors                  (only if calculate_loss_factors)
+│   ├── PowerFlowVoltageStabilityFactors      (only if calculate_voltage_stability_factors)
+│   └── PowerFlowHVDCNetPower                 (only if the system carries HVDC)
+│
+├── BranchFlowAuxVariableType                 branch-indexed (branch type, name)
+│   ├── PowerFlowBranchActivePowerFromTo
+│   ├── PowerFlowBranchActivePowerToFrom
+│   ├── PowerFlowBranchReactivePowerFromTo
+│   ├── PowerFlowBranchReactivePowerToFrom
+│   └── PowerFlowBranchActivePowerLoss
+│
+├── device-control  (device type, name)       enrolled in power-flow discrete control
+│   ├── PowerFlowTapRatio                     TapTransformer
+│   ├── PowerFlowSwitchedShuntSusceptance     SwitchedAdmittance
+│   └── PowerFlowFACTSReactivePower           FACTSControlDevice
+│
+└── PowerFlowHVDCAuxVariableType              HVDC-component-indexed (component type, name)
+    ├── PowerFlowHVDCActivePowerFromTo        LCC, VSC
+    ├── PowerFlowHVDCActivePowerToFrom        LCC, VSC
+    ├── PowerFlowHVDCReactivePowerFromTo      LCC, VSC
+    ├── PowerFlowHVDCReactivePowerToFrom      LCC, VSC
+    ├── PowerFlowHVDCActivePowerLoss          LCC, VSC, TModelHVDCLine
+    ├── PowerFlowHVDCDCCurrent                VSC, TModelHVDCLine
+    ├── PowerFlowHVDCDCVoltageFrom            VSC
+    ├── PowerFlowHVDCDCVoltageTo              VSC
+    ├── PowerFlowLCCRectifierTap              LCC
+    ├── PowerFlowLCCInverterTap               LCC
+    ├── PowerFlowLCCRectifierDelayAngle       LCC
+    ├── PowerFlowLCCInverterExtinctionAngle   LCC
+    ├── PowerFlowConverterDCPower             InterconnectingConverter
+    ├── PowerFlowConverterReactivePower       InterconnectingConverter
+    └── PowerFlowConverterDCVoltage           InterconnectingConverter
+```
+
+Every branch flow quantity is a power and is exported in natural units. The HVDC group is
+**not** uniform: the power quantities convert to natural units, while the taps, delay/extinction
+angles, DC currents and DC voltages are per-unit or radian quantities and are exported as-is.
+
 ### Thermal Unit Auxiliary Variables
 
 ```@docs
@@ -305,6 +354,7 @@ PowerFlowVoltageAngle
 PowerFlowVoltageMagnitude
 PowerFlowLossFactors
 PowerFlowVoltageStabilityFactors
+PowerFlowHVDCNetPower
 ```
 
 ### Branch Auxiliary Variables
@@ -315,6 +365,34 @@ PowerFlowBranchReactivePowerToFrom
 PowerFlowBranchActivePowerFromTo
 PowerFlowBranchActivePowerToFrom
 PowerFlowBranchActivePowerLoss
+```
+
+### Device Control Auxiliary Variables
+
+```@docs
+PowerFlowTapRatio
+PowerFlowSwitchedShuntSusceptance
+PowerFlowFACTSReactivePower
+```
+
+### HVDC Auxiliary Variables
+
+```@docs
+PowerFlowHVDCActivePowerFromTo
+PowerFlowHVDCActivePowerToFrom
+PowerFlowHVDCReactivePowerFromTo
+PowerFlowHVDCReactivePowerToFrom
+PowerFlowHVDCActivePowerLoss
+PowerFlowHVDCDCCurrent
+PowerFlowHVDCDCVoltageFrom
+PowerFlowHVDCDCVoltageTo
+PowerFlowLCCRectifierTap
+PowerFlowLCCInverterTap
+PowerFlowLCCRectifierDelayAngle
+PowerFlowLCCInverterExtinctionAngle
+PowerFlowConverterDCPower
+PowerFlowConverterReactivePower
+PowerFlowConverterDCVoltage
 ```
 
 ```@raw html

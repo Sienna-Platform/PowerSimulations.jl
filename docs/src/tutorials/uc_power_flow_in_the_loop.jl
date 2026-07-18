@@ -164,6 +164,33 @@ uc_results = get_decision_problem_results(sim_results, "UC")
 # reactive power flow and bus voltage magnitude and angle results from the AC power flow  (e.g., `PowerFlowBranchReactivePowerFromTo__Line`, `PowerFlowVoltageMagnitude__ACBus`).
 # These are not output when a UC problem is run alone.
 
+# ### Power Flow Auxiliary Variable Types
+#
+# The AC power flow writes its solved quantities into auxiliary variables, all subtypes of
+# `PowerFlowAuxVariableType`. They are grouped by what each is indexed on:
+#
+# ```text
+# PowerFlowAuxVariableType
+# ├─ BranchFlowAuxVariableType              # per-AC-branch flows (natural-units powers)
+# │    ├─ PowerFlowBranchActivePowerFromTo / …ToFrom / …Loss
+# │    └─ PowerFlowBranchReactivePowerFromTo / …ToFrom
+# ├─ PowerFlowHVDCAuxVariableType           # per-HVDC-component, from PowerFlows.get_hvdc_results
+# │    ├─ PowerFlowHVDCActivePower/ReactivePower {FromTo,ToFrom} + PowerFlowHVDCActivePowerLoss
+# │    ├─ PowerFlowHVDCDCCurrent / DCVoltageFrom / DCVoltageTo
+# │    ├─ PowerFlowLCC{Rectifier,Inverter}Tap / RectifierDelayAngle / InverterExtinctionAngle
+# │    └─ PowerFlowConverterDCPower / ReactivePower / DCVoltage
+# ├─ bus-indexed:   PowerFlowVoltageAngle, PowerFlowVoltageMagnitude, PowerFlowHVDCNetPower,
+# │                 PowerFlowLossFactors, PowerFlowVoltageStabilityFactors
+# └─ control-device-indexed:  PowerFlowTapRatio (TapTransformer),
+#                  PowerFlowSwitchedShuntSusceptance (SwitchedAdmittance),
+#                  PowerFlowFACTSReactivePower (FACTSControlDevice)
+# ```
+#
+# `PowerFlowHVDCNetPower` is a *per-bus* net-injection quantity, which is why it is a direct
+# subtype of `PowerFlowAuxVariableType` and not a `PowerFlowHVDCAuxVariableType` (those are all
+# per-component).
+#
+
 # ## PTDF UC Flows vs. AC Power Flow In the Loop
 #
 # Now, we'll compare the PTDF UC flows to the AC power flow results. 
