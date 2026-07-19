@@ -3,17 +3,51 @@ using PowerSystems
 using PowerSimulations
 using DataStructures
 using DocumenterInterLinks
+using Downloads: download
 using Literate
+
+# DocumenterInterLinks fetches each remote `objects.inv` through DocInventories,
+# which defaults to a 1-second timeout — CI runners occasionally miss that on a
+# cold connection to GitHub Pages, failing the whole doc build. Pre-fetch each
+# inventory to a local file with a generous timeout and hand InterLinks that as
+# the primary source (as a Tuple, so InterLinks still applies its normal
+# method-to-function aliasing); fall back to the live URL if the pre-fetch fails.
+const inventory_cache_dir = mktempdir()
+
+function inventory_source(root_url; inventory_file = "objects.inv")
+    url = root_url * inventory_file
+    local_path = joinpath(inventory_cache_dir, replace(root_url, r"[^A-Za-z0-9]" => "_"))
+    try
+        download(url, local_path; timeout = 30.0)
+        return (root_url, local_path, url)
+    catch exception
+        @warn "Failed to pre-fetch inventory" root_url exception
+        return (root_url, url)
+    end
+end
 
 links = InterLinks(
     "Julia" => "https://docs.julialang.org/en/v1/",
-    "InfrastructureSystems" => "https://sienna-platform.github.io/InfrastructureSystems.jl/stable/",
-    "PowerSystems" => "https://sienna-platform.github.io/PowerSystems.jl/stable/",
-    "PowerSimulations" => "https://sienna-platform.github.io/PowerSimulations.jl/stable/",
-    "PowerSystemCaseBuilder" => "https://sienna-platform.github.io/PowerSystemCaseBuilder.jl/stable/",
-    "StorageSystemsSimulations" => "https://sienna-platform.github.io/StorageSystemsSimulations.jl/stable/",
-    "HydroPowerSimulations" => "https://sienna-platform.github.io/HydroPowerSimulations.jl/dev/",
-    "PowerFlows" => "https://sienna-platform.github.io/PowerFlows.jl/stable/",
+    "InfrastructureSystems" =>
+        inventory_source(
+            "https://sienna-platform.github.io/InfrastructureSystems.jl/stable/",
+        ),
+    "PowerSystems" =>
+        inventory_source("https://sienna-platform.github.io/PowerSystems.jl/stable/"),
+    "PowerSimulations" =>
+        inventory_source("https://sienna-platform.github.io/PowerSimulations.jl/stable/"),
+    "PowerSystemCaseBuilder" =>
+        inventory_source(
+            "https://sienna-platform.github.io/PowerSystemCaseBuilder.jl/stable/",
+        ),
+    "StorageSystemsSimulations" =>
+        inventory_source(
+            "https://sienna-platform.github.io/StorageSystemsSimulations.jl/stable/",
+        ),
+    "HydroPowerSimulations" =>
+        inventory_source("https://sienna-platform.github.io/HydroPowerSimulations.jl/dev/"),
+    "PowerFlows" =>
+        inventory_source("https://sienna-platform.github.io/PowerFlows.jl/stable/"),
 )
 
 include(joinpath(@__DIR__, "make_tutorials.jl"))
