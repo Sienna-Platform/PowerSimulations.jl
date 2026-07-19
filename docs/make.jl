@@ -2,18 +2,38 @@ using Documenter
 using PowerSystems
 using PowerSimulations
 using DataStructures
+using DocInventories: Inventory
 using DocumenterInterLinks
 using Literate
 
+# DocInventories defaults to a 1-second timeout per inventory fetch, which CI
+# runners occasionally miss on a cold connection to GitHub Pages, failing the
+# whole doc build. Fetch each remote inventory explicitly with a longer timeout.
+remote_inventory(root_url; inventory_file = "objects.inv", timeout = 10.0) =
+    Inventory(root_url * inventory_file; root_url = root_url, timeout = timeout)
+
 links = InterLinks(
     "Julia" => "https://docs.julialang.org/en/v1/",
-    "InfrastructureSystems" => "https://sienna-platform.github.io/InfrastructureSystems.jl/stable/",
-    "PowerSystems" => "https://sienna-platform.github.io/PowerSystems.jl/stable/",
-    "PowerSimulations" => "https://sienna-platform.github.io/PowerSimulations.jl/stable/",
-    "PowerSystemCaseBuilder" => "https://sienna-platform.github.io/PowerSystemCaseBuilder.jl/stable/",
-    "StorageSystemsSimulations" => "https://sienna-platform.github.io/StorageSystemsSimulations.jl/stable/",
-    "HydroPowerSimulations" => "https://sienna-platform.github.io/HydroPowerSimulations.jl/dev/",
-    "PowerFlows" => "https://sienna-platform.github.io/PowerFlows.jl/stable/",
+    "InfrastructureSystems" =>
+        remote_inventory(
+            "https://sienna-platform.github.io/InfrastructureSystems.jl/stable/",
+        ),
+    "PowerSystems" =>
+        remote_inventory("https://sienna-platform.github.io/PowerSystems.jl/stable/"),
+    "PowerSimulations" =>
+        remote_inventory("https://sienna-platform.github.io/PowerSimulations.jl/stable/"),
+    "PowerSystemCaseBuilder" =>
+        remote_inventory(
+            "https://sienna-platform.github.io/PowerSystemCaseBuilder.jl/stable/",
+        ),
+    "StorageSystemsSimulations" =>
+        remote_inventory(
+            "https://sienna-platform.github.io/StorageSystemsSimulations.jl/stable/",
+        ),
+    "HydroPowerSimulations" =>
+        remote_inventory("https://sienna-platform.github.io/HydroPowerSimulations.jl/dev/"),
+    "PowerFlows" =>
+        remote_inventory("https://sienna-platform.github.io/PowerFlows.jl/stable/"),
 )
 
 include(joinpath(@__DIR__, "make_tutorials.jl"))
