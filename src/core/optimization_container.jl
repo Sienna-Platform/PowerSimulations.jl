@@ -723,7 +723,7 @@ function build_impl!(
         @debug "Building Arguments for $(get_component_type(device_model)) with $(get_formulation(device_model)) formulation" _group =
             LOG_GROUP_OPTIMIZATION_CONTAINER
         TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "$(get_component_type(device_model))" begin
-            if validate_available_devices(device_model, sys)
+            if !isempty(get_device_cache(device_model))
                 construct_device!(
                     container,
                     sys,
@@ -752,7 +752,7 @@ function build_impl!(
         @debug "Building Arguments for $(get_component_type(branch_model)) with $(get_formulation(branch_model)) formulation" _group =
             LOG_GROUP_OPTIMIZATION_CONTAINER
         TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "$(get_component_type(branch_model))" begin
-            if validate_available_devices(branch_model, sys)
+            if !isempty(get_device_cache(branch_model))
                 construct_device!(
                     container,
                     sys,
@@ -769,7 +769,7 @@ function build_impl!(
         @debug "Building Model for $(get_component_type(device_model)) with $(get_formulation(device_model)) formulation" _group =
             LOG_GROUP_OPTIMIZATION_CONTAINER
         TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "$(get_component_type(device_model))" begin
-            if validate_available_devices(device_model, sys)
+            if !isempty(get_device_cache(device_model))
                 construct_device!(
                     container,
                     sys,
@@ -796,7 +796,7 @@ function build_impl!(
         @debug "Building Model for $(get_component_type(branch_model)) with $(get_formulation(branch_model)) formulation" _group =
             LOG_GROUP_OPTIMIZATION_CONTAINER
         TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "$(get_component_type(branch_model))" begin
-            if validate_available_devices(branch_model, sys)
+            if !isempty(get_device_cache(branch_model))
                 construct_device!(
                     container,
                     sys,

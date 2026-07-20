@@ -709,7 +709,6 @@ include("network_models/power_flow_evaluation.jl")
 include("initial_conditions/initialization.jl")
 
 # Device constructors
-include("devices_models/device_constructors/constructor_validations.jl")
 include("devices_models/device_constructors/thermalgeneration_constructor.jl")
 include("devices_models/device_constructors/hvdcsystems_constructor.jl")
 include("devices_models/device_constructors/branch_constructor.jl")

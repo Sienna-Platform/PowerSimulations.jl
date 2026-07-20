@@ -165,3 +165,15 @@ end
     rebuilt_network = PSI.get_network_model(PSI.get_template(model))
     @test TwoTerminalGenericHVDCLine ∉ rebuilt_network.modeled_ac_branch_types
 end
+
+@testset "Device model with empty device cache is skipped on build" begin
+    sys = PSB.build_system(PSITestSystems, "c_sys5_uc_re")
+    template = get_thermal_dispatch_template_network()
+    set_device_model!(template, RenewableDispatch, RenewableFullDispatch)
+    for d in PSY.get_components(RenewableDispatch, sys)
+        PSY.set_available!(d, false)
+    end
+    model = DecisionModel(template, sys)
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+end

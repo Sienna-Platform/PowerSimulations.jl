@@ -253,6 +253,60 @@ end
     @test isempty(cache.data)
 end
 
+@testset "Emulation store SparseAxisArray write/read" begin
+    key = PSI.VariableKey(ActivePowerVariable, ThermalStandard)
+    cols = [("o1", "br1"), ("o1", "br2"), ("o2", "br1")]
+    n_exec = 5
+    em_reqs = SimulationModelStoreRequirements()
+    em_reqs.variables[key] = Dict(
+        "columns" => (PSI.encode_tuple_to_column.(cols),),
+        "dims" => (n_exec, length(cols)),
+    )
+    params = SimulationStoreParams(
+        Dates.DateTime("2020-01-01T00:00:00"),
+        Dates.Hour(1),
+        1,
+        OrderedDict{Symbol, ModelStoreParams}(),
+        OrderedDict(
+            :Emulator => ModelStoreParams(
+                n_exec,
+                IS.time_period_conversion(Hour(1)),
+                IS.time_period_conversion(Minute(5)),
+                IS.time_period_conversion(Minute(5)),
+                100.0,
+                Base.UUID("4076af6c-e467-56ae-b986-b466b2749572"),
+            ),
+        ),
+    )
+    path = joinpath(mktempdir(), HDF_FILENAME)
+    written = Dict{Int, Vector{Float64}}()
+    open_store(HdfSimulationStore, path, "w") do store
+        initialize_problem_storage!(
+            store,
+            params,
+            Dict{Symbol, SimulationModelStoreRequirements}(),
+            em_reqs,
+            CacheFlushRules(),
+        )
+        t = params.initial_time
+        for ix in 1:n_exec
+            vals = Float64.(ix .* (1:length(cols)))
+            arr = Containers.SparseAxisArray(
+                Dict((cols[i]..., 1) => vals[i] for i in eachindex(cols)),
+            )
+            write_result!(store, :Emulator, key, ix, t, arr)
+            written[ix] = vals
+            t += Minute(5)
+        end
+    end
+    open_store(HdfSimulationStore, path, "r") do store
+        result = PSI.read_results(store, key)
+        for ix in 1:n_exec, i in eachindex(cols)
+            @test result[PSI.encode_tuple_to_column(cols[i]), ix] ≈ written[ix][i]
+        end
+    end
+end
+
 # TODO: test optimizer stats
 # TODO: unit tests of individual functions, size checks
 # TODO: profiling of memory performance and GC
