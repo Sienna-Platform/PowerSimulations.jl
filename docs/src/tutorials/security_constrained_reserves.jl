@@ -1,7 +1,4 @@
-#!nb # ```@meta
-#!nb # EditURL = "security_constrained_reserves.jl"
-#!nb # ```
-#!nb #
+#src # EXECUTE = TRUE
 # # [G-1 Security-Constrained Reserves](@id sc_reserves)
 #
 # ## Introduction
@@ -27,13 +24,6 @@
 #     `SecurityConstrainedStaticBranch` *device* formulation, which models **branch** outages
 #     with line-outage distribution factors (MODF) — see
 #     [Run security-constrained (N-1) branch models](@ref).
-#
-# !!! warning
-#
-#     The code blocks on this page are not executed when the documentation is built. The
-#     numbers quoted under [Reading the results](@ref sc_reserves_results) come from a
-#     verified run of this configuration on `modified_RTS_GMLC_DA_sys` with a 4-hour horizon
-#     and HiGHS.
 
 # ## Worked example: `PTDFPowerModel` with three monitored lines
 #
@@ -46,6 +36,7 @@ using PowerNetworkMatrices
 using HydroPowerSimulations
 using DataFrames
 using HiGHS
+using JuMP
 using Dates
 import InfrastructureSystems as IS
 
@@ -145,17 +136,24 @@ model = DecisionModel(
     store_variable_names = true,
 )
 
-build!(model; output_dir = mktempdir(; cleanup = true))
+build_time = @elapsed build!(model; output_dir = mktempdir(; cleanup = true))
 
-solve!(model)
+solve_time = @elapsed solve!(model)
 
-# On the verified run this model built in 5.4 s and solved in 1.8 s. Adding the
-# security-constrained service to the same PTDF problem grows it as follows:
-#
-# | model | variables | constraints | objective |
-# |---|---|---|---|
-# | PTDF baseline, no reserves | 1416 | 4692 | 193167.71 |
-# | + `SecurityConstrainedContingencyReserve` on `Reg_Up`, 1 outage, 3 monitored lines | 1852 | 5768 | 193167.75 |
+(build_time_s = build_time, solve_time_s = solve_time)
+
+# Adding [`SecurityConstrainedContingencyReserve`](@ref) on `Reg_Up`, with one outage and
+# three monitored lines, is what grows the PTDF problem to the size below. `get_jump_model`
+# reaches the underlying `JuMP.Model`, so the counts come straight off the model that was just
+# built and solved.
+
+jump_model = PowerSimulations.get_jump_model(model)
+
+(
+    variables = JuMP.num_variables(jump_model),
+    constraints = JuMP.num_constraints(jump_model; count_variable_in_set_constraints = true),
+    objective = JuMP.objective_value(jump_model),
+)
 
 # ## What the model builds
 #
@@ -250,6 +248,7 @@ solve!(model)
 
 results = OptimizationProblemResults(model)
 variables = read_variables(results)
+expressions = read_expressions(results)
 
 deployment =
     variables["PostContingencyActivePowerReserveDeploymentVariable__VariableReserve__ReserveUp__Reg_Up"]
@@ -275,17 +274,17 @@ end
 outaged_output =
     device_series(variables["ActivePowerVariable__ThermalStandard"], "216_STEAM_1")
 
-total_deployment(deployment, outage_id)[!, :total] - outaged_output
+deployment_sum = total_deployment(deployment, outage_id)[!, :total]
 
-# On the verified run, `216_STEAM_1` (area 2) dispatches a flat 93 MW over the four steps and
-# the deployment matches it to machine precision:
-#
-# ```text
-# p_out         = [93.0, 93.0, 93.0, 93.0]   # MW
-# Σ deployment  = [93.0, 93.0, 93.0, 93.0]   # MW
-# max |diff|    = 1.4e-14
-# ```
-#
+(pre_contingency_output = outaged_output, total_deployment = deployment_sum)
+
+# `216_STEAM_1` sits in area 2. The block above lists what it actually dispatches over the
+# horizon next to the reserve deployment summed over every contributing device. The balance
+# constraint forces the two to agree, so the gap between them should be zero up to solver
+# tolerance:
+
+maximum(abs.(deployment_sum - outaged_output))
+
 # !!! note
 #
 #     `read_variables` converts to natural units (MW). Values read directly off the JuMP
@@ -301,18 +300,37 @@ list_expression_names(results)
 
 list_variable_names(results)
 
-# On the verified run all 12 monitored rows (1 outage × 3 lines × 4 steps) were inside their
-# post-contingency limits with **zero** slack, and the tightest margin over the horizon was:
-#
-# | monitored line | tightest margin (pu) |
-# |---|---|
-# | `AB2` | 3.2938 |
-# | `AB3` | 2.7388 |
-# | `CB-1` | 0.8162 |
-#
-# A nonzero slack means the post-contingency limit could not be met and was *priced* rather
-# than enforced. Always read the slack values before concluding that a solved model respects
-# its post-contingency limits.
+# Reading the flow and the two slacks off those keys, for every one of the 12 monitored rows
+# (1 outage × 3 lines × 4 steps), is the mechanical version of that check.
+
+flows = expressions["PostContingencyBranchFlow__VariableReserve__ReserveUp__Reg_Up"]
+
+slack_ub =
+    variables["PostContingencyFlowActivePowerSlackUpperBound__VariableReserve__ReserveUp__Reg_Up"]
+slack_lb =
+    variables["PostContingencyFlowActivePowerSlackLowerBound__VariableReserve__ReserveUp__Reg_Up"]
+
+max(maximum(abs, slack_ub[!, :value]), maximum(abs, slack_lb[!, :value]))
+
+# Zero on both means every monitored row respected its post-contingency limit without help
+# from the priced relaxation — a nonzero value would mean the limit was violated and the
+# violation was *priced* rather than enforced, and should be read before trusting a solved
+# model. The tightest margin over the horizon, by line, uses the same emergency-vs-normal
+# rating fallback `PowerNetworkMatrices.get_equivalent_emergency_rating` applies:
+
+function tightest_margin(flows::DataFrame, outage_id::String, line::Line, sys::System)
+    key = string(outage_id, "__", get_name(line))
+    rows = filter(row -> row["name"] == key, flows)
+    rating_mw = something(get_rating_b(line), get_rating(line)) * get_base_power(sys)
+    return minimum(rating_mw .- abs.(rows[!, :value]))
+end
+
+DataFrame(;
+    line = get_name.(monitored_lines),
+    tightest_margin_mw = [
+        tightest_margin(flows, outage_id, line, sys) for line in monitored_lines
+    ],
+)
 
 # ## The zonal variant: `AreaBalancePowerModel` and ``\Delta f``
 #
@@ -347,13 +365,13 @@ list_variable_names(results)
 # `set_device_model!(template, AreaInterchange, StaticBranch)`.
 #
 # The consequence is the useful part: reserve held in one area can serve an outage in
-# another, but only as far as the tie limits allow. A verification case on RTS shows it — a
-# reserve product whose contributing devices all sit in area 1, responding to an outage in
-# area 2. That case had to floor the outaged unit's pre-contingency output at 50 MW to make
-# the requirement nonzero at all (see [Limitations](@ref sc_reserves_limitations)); with the
-# floor in place the response was 50 MW entirely from area 1, the net ``\Delta f`` into area 2
-# was exactly 50 MW, and two of the three monitored ties sat exactly on their
-# post-contingency limits.
+# another, but only as far as the tie limits allow. Take a reserve product whose contributing
+# devices all sit in area 1, responding to an outage in area 2: as long as the outaged unit's
+# pre-contingency output is genuinely nonzero (see [Limitations](@ref sc_reserves_limitations)),
+# the balance in area 2 has no local contributing device to draw on, so it must close entirely
+# through ``\Delta f`` on the ties from area 1 — the net transfer into area 2 equals the
+# outaged unit's output, and whichever monitored ties carry that transfer are exactly the ones
+# whose post-contingency limits are worth checking for a binding case.
 #
 # !!! warning
 #
@@ -419,9 +437,9 @@ list_variable_names(results)
 #     requirement is zero and every post-contingency constraint holds trivially. This is easy
 #     to hit with `ThermalDispatchNoMin`, where same-area units can absorb the unit's output
 #     for free. Before reading anything into a passing case, check that the outaged unit's
-#     pre-contingency output is nonzero. Verification runs force this by setting a lower bound
-#     on the unit's `ActivePowerVariable` between `build!` and `solve!` — a diagnostic lever
-#     for making a test case bite, not a modeling pattern. In a study, get the nonzero
+#     pre-contingency output is nonzero. In a test, you can force this by setting a lower
+#     bound on the unit's `ActivePowerVariable` between `build!` and `solve!` — a diagnostic
+#     lever for making a test case bite, not a modeling pattern. In a study, get the nonzero
 #     pre-contingency output from the data and the formulation (for example a commitment
 #     formulation with a minimum power level), not from a hand-set bound.
 #   - **Size scales multiplicatively.** Deployment variables scale as
