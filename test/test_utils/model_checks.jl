@@ -588,3 +588,74 @@ function check_constraint_count(
         filter_func = x -> x.name in device_name_set,
     )
 end
+
+# Shared skeleton for the SC reserve deliverability test cases: attach a
+# `GeometricDistributionForcedOutage` to `device` and every service in
+# `services` in one shot, instead of repeating the construct-and-attach block
+# per testset. Device-side (line/transformer) callers pass `PSY.Service[]`.
+function attach_geometric_outage!(
+    sys::PSY.System,
+    device::PSY.Device,
+    services::Vector{<:PSY.Service};
+    monitored_components::Vector{<:PSY.Component} = collect(
+        PSY.get_components(PSY.ACTransmission, sys),
+    ),
+    mean_time_to_recovery::Float64 = 10.0,
+    outage_transition_probability::Float64 = 0.9999,
+)
+    transition_data = GeometricDistributionForcedOutage(;
+        mean_time_to_recovery = mean_time_to_recovery,
+        outage_transition_probability = outage_transition_probability,
+        monitored_components = monitored_components,
+    )
+    add_supplemental_attribute!(sys, device, transition_data)
+    for service in services
+        add_supplemental_attribute!(sys, service, transition_data)
+    end
+    return transition_data
+end
+
+# Same as `attach_geometric_outage!` but for the `PSY.FixedForcedOutage`
+# fixture used by the deterministic (non-probabilistic) regression tests.
+function attach_fixed_outage!(
+    sys::PSY.System,
+    device::PSY.Device,
+    services::Vector{<:PSY.Service};
+    monitored_components::Vector{<:PSY.Component},
+)
+    outage = PSY.FixedForcedOutage(;
+        outage_status = 1.0,
+        monitored_components = monitored_components,
+    )
+    add_supplemental_attribute!(sys, device, outage)
+    for service in services
+        add_supplemental_attribute!(sys, service, outage)
+    end
+    return outage
+end
+
+# Callers compare against a SECOND, independent VirtualMODF/VirtualPTDF. Those
+# columns are solved through multithreaded BLAS, whose reduction order is not deterministic,
+# so two instances agree only to machine precision (~1e-16), never bit-for-bit. Exact
+# `JuMP.isequal_canonical` therefore fails or passes depending on the BLAS thread count of
+# the machine. Compare coefficients to `PTDF_ZERO_TOL` instead: a variable absent from one
+# side counts as a zero coefficient, so a term sitting on the sparsity threshold cannot flip
+# the result, while a genuinely wrong term (sign flip, wrong arc) differs by orders of
+# magnitude more and still fails.
+function aff_exprs_approx_equal(
+    actual::JuMP.AffExpr,
+    expected::JuMP.AffExpr;
+    atol::Float64 = PSI.PTDF_ZERO_TOL,
+)
+    if !isapprox(actual.constant, expected.constant; atol = atol)
+        return false
+    end
+    for v in union(keys(actual.terms), keys(expected.terms))
+        a = get(actual.terms, v, 0.0)
+        e = get(expected.terms, v, 0.0)
+        if !isapprox(a, e; atol = atol)
+            return false
+        end
+    end
+    return true
+end

@@ -60,6 +60,7 @@ pages = OrderedDict(
         "Multi-stage Production Cost Simulation" => "tutorials/generated_pcm_simulation.md",
         "Dynamic Line Ratings" => "tutorials/generated_dynamic_line_ratings.md",
         "Running Power Flow In The Loop with Unit Commitment" => "tutorials/generated_uc_power_flow_in_the_loop.md",
+        "G-1 Security-Constrained Reserves" => "tutorials/generated_security_constrained_reserves.md",
     ],
     "How to..." => Any[
         "...register a variable in a custom operation model" => "how_to/register_variable.md",

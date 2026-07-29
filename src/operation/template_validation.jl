@@ -277,10 +277,12 @@ silently build an N-1-everything-by-everything problem that is intractable
 for realistic systems, so monitoring is strictly opt-in per branch.
 
 A monitored component whose type is not a modeled `PSY.ACTransmission` branch
-type (either not in the template, or modeled but not a branch) is reported
-once per type with the offending outage UUIDs and is skipped: no
-post-contingency variables or constraints are built for that monitored
-component under any outage.
+type (either not in the template, or modeled but not an ACTransmission
+subtype — `PSY.AreaInterchange` included, since the device-side
+post-contingency build has no mechanism to bound an AreaInterchange under an
+outage) is reported once per type with the offending outage UUIDs and is
+skipped: no post-contingency variables or constraints are built for that
+monitored component under any outage.
 """
 function _build_device_model_outages!(
     template::ProblemTemplate,
@@ -304,8 +306,9 @@ function _build_device_model_outages!(
             continue
         end
 
-        per_type, uncovered =
-            _monitored_components_by_modeled_type(outage, outage_uuid, sys, modeled_types)
+        per_type, uncovered = _monitored_components_by_modeled_type(
+            outage, outage_uuid, sys, modeled_types, DeviceOutageConsumer(),
+        )
         for comp_type in uncovered
             push!(get!(uncovered_types, comp_type, Set{Base.UUID}()), outage_uuid)
         end
@@ -330,7 +333,7 @@ function _build_device_model_outages!(
         end
     end
 
-    _warn_uncovered_monitored_types(uncovered_types)
+    _warn_uncovered_monitored_types(uncovered_types, DeviceOutageConsumer())
     _warn_unmatched_user_outages(sc_models, selection)
     return
 end
@@ -359,15 +362,37 @@ function _take_outage_selection!(sc_models::Vector{DeviceModelForBranches})
     return selection
 end
 
+# Which consumer is classifying monitored components: the admissible
+# monitored types differ (device: ACTransmission only, since the
+# device-side post-contingency build resolves monitors through a
+# branch-arc map; service: ACTransmission + AreaInterchange, since the
+# AreaBalance service-side builder also resolves AreaInterchange monitors as
+# system components). Dispatch on the consumer keeps that difference out of
+# the shared classifier body.
+abstract type MonitoredOutageConsumer end
+struct DeviceOutageConsumer <: MonitoredOutageConsumer end
+struct ServiceOutageConsumer <: MonitoredOutageConsumer end
+
+_admits_monitored_type(::DeviceOutageConsumer, ::Type{<:PSY.ACTransmission}) = true
+_admits_monitored_type(::DeviceOutageConsumer, ::Type) = false
+_admits_monitored_type(::ServiceOutageConsumer, ::Type{<:PSY.ACTransmission}) = true
+_admits_monitored_type(::ServiceOutageConsumer, ::Type{<:PSY.AreaInterchange}) = true
+_admits_monitored_type(::ServiceOutageConsumer, ::Type) = false
+
+_admitted_types_description(::DeviceOutageConsumer) = "a modeled ACTransmission branch type"
+_admitted_types_description(::ServiceOutageConsumer) =
+    "a modeled ACTransmission branch type or AreaInterchange"
+
 # Monitored-component names grouped by their concrete (modeled) type. Returns
 # `(per_type, uncovered)` where `uncovered` is the set of monitored component
-# types the template does not model — the caller records the offending outage
+# types `consumer` cannot use — the caller records the offending outage
 # against them. Pure except for the not-in-system warning.
 function _monitored_components_by_modeled_type(
     outage::PSY.Outage,
     outage_uuid::Base.UUID,
     sys::PSY.System,
     modeled_types::Set{DataType},
+    consumer::MonitoredOutageConsumer,
 )
     per_type = Dict{DataType, Set{String}}()
     uncovered = Set{DataType}()
@@ -380,15 +405,7 @@ function _monitored_components_by_modeled_type(
             continue
         end
         comp_type = typeof(component)
-        # Post-contingency flow limits only make sense on branch arcs: the
-        # post-contingency builder resolves every `per_type` key through
-        # `name_to_arc_maps`, which is keyed by ACTransmission branch types
-        # only. `PSY.AreaInterchange` is admitted separately so the
-        # AreaBalance service-side builder can pick it up. A monitored
-        # component that is neither would `KeyError` there, so route it to
-        # the skip path.
-        admissible = (comp_type <: PSY.ACTransmission || comp_type <: PSY.AreaInterchange)
-        if admissible && comp_type in modeled_types
+        if _admits_monitored_type(consumer, comp_type) && comp_type in modeled_types
             push!(get!(per_type, comp_type, Set{String}()), PSY.get_name(component))
         else
             push!(uncovered, comp_type)
@@ -396,6 +413,17 @@ function _monitored_components_by_modeled_type(
     end
     return per_type, uncovered
 end
+
+# Whether `model` (a security-constrained `DeviceModel` or `ServiceModel`)
+# has opted in to auto-discovering `PlannedOutage`s via the
+# `"include_planned_outages"` attribute. Anything other than the literal
+# `true` — including a missing key — counts as "not opted in": a
+# `ServiceModel`'s default attributes never set this key (it stays `nothing`
+# unless the user does), while a security-constrained `DeviceModel`'s
+# defaults always set it to `false`; the same null-safe check is correct for
+# both.
+_includes_planned_outages(model::Union{DeviceModel, ServiceModel}) =
+    get_attribute(model, "include_planned_outages") === true
 
 function _attached_component_types(outage::PSY.Outage, sys::PSY.System)
     return Set{DataType}(
@@ -415,7 +443,7 @@ function _sc_model_claims_outage(
 )
     isempty(sel) || return outage_uuid in sel
     if outage isa PSY.PlannedOutage
-        return get_attribute(m, "include_planned_outages")
+        return _includes_planned_outages(m)
     end
     return true
 end
@@ -449,12 +477,13 @@ end
 
 function _warn_uncovered_monitored_types(
     uncovered_types::Dict{DataType, Set{Base.UUID}},
+    consumer::MonitoredOutageConsumer,
 )
     for (comp_type, offending) in uncovered_types
         @warn "Monitored components of type $(comp_type) appear in outages \
-               $(collect(offending)) but $(comp_type) is not a modeled \
-               ACTransmission branch type; their post-contingency variables \
-               will be skipped." _group =
+               $(collect(offending)) but $(comp_type) is not \
+               $(_admitted_types_description(consumer)); their \
+               post-contingency variables will be skipped." _group =
             LOG_GROUP_MODELS_VALIDATION
     end
     return
@@ -504,6 +533,7 @@ function _build_service_model_outages!(
     template::ProblemTemplate,
     sys::PSY.System,
 )
+    network_model = get_network_model(template)
     sc_service_models = _sc_reserve_service_models(template)
     template_sc_service_keys = Set{Tuple{DataType, String}}(
         (get_component_type(m), get_service_name(m)) for m in sc_service_models
@@ -520,11 +550,12 @@ function _build_service_model_outages!(
     uncovered_types = Dict{DataType, Set{Base.UUID}}()
 
     for m in sc_service_models
+        _validate_sc_reserve_direction(m)
         empty!(m.outages)
         D = get_component_type(m)
         service_name = get_service_name(m)
         service = PSY.get_component(D, sys, service_name)
-        if service === nothing
+        if isnothing(service)
             @warn "ServiceModel{$D, $(get_formulation(m))} (service_name=\
                    $(service_name)) is in the template but no matching \
                    service exists in the system; it will not contribute any \
@@ -546,7 +577,7 @@ function _build_service_model_outages!(
             _service_skips_outage(outage, m) && continue
 
             per_type, uncovered = _monitored_components_by_modeled_type(
-                outage, outage_uuid, sys, modeled_types,
+                outage, outage_uuid, sys, modeled_types, ServiceOutageConsumer(),
             )
             for comp_type in uncovered
                 push!(get!(uncovered_types, comp_type, Set{Base.UUID}()), outage_uuid)
@@ -554,9 +585,10 @@ function _build_service_model_outages!(
             isempty(per_type) && continue
             m.outages[outage_uuid] = per_type
         end
+        _check_monitored_area_interchanges(template, network_model, sys, m)
     end
 
-    _warn_uncovered_monitored_types(uncovered_types)
+    _warn_uncovered_monitored_types(uncovered_types, ServiceOutageConsumer())
     return
 end
 
@@ -567,13 +599,139 @@ function _sc_reserve_service_models(template::ProblemTemplate)
     ]
 end
 
+# Security-constrained reserve formulations currently model deployment as a
+# strictly non-negative response to a generation shortfall (an outaged
+# generator's power must be replaced upward). `ReserveDown`/`ReserveSymmetric`
+# would need direction-consistent multipliers that have not been designed yet,
+# so reject them here rather than build a silently wrong-signed model.
+_validate_sc_reserve_direction(
+    ::ServiceModel{
+        <:PSY.Reserve{PSY.ReserveUp},
+        <:AbstractSecurityConstrainedReservesFormulation,
+    },
+) = nothing
+function _validate_sc_reserve_direction(
+    m::ServiceModel{<:PSY.Reserve{D}, <:AbstractSecurityConstrainedReservesFormulation},
+) where {D <: PSY.ReserveDirection}
+    throw(
+        IS.ConflictingInputsError(
+            "ServiceModel{$(get_component_type(m)), $(get_formulation(m))} \
+            (service_name=$(get_service_name(m))): security-constrained \
+            reserve formulations currently support Reserve{ReserveUp} only; \
+            got direction $D.",
+        ),
+    )
+end
+
 # Whether SC service model `m` should skip `outage`. Dispatched on the outage
 # subtype to keep `PlannedOutage`/`UnplannedOutage` branching out of the hot
 # path. Planned outages are skipped unless the SC service model opts in via
 # the `"include_planned_outages"` attribute.
 _service_skips_outage(::PSY.Outage, ::ServiceModel) = false
 _service_skips_outage(::PSY.PlannedOutage, m::ServiceModel) =
-    get_attribute(m, "include_planned_outages") !== true
+    !_includes_planned_outages(m)
+
+# Only the AreaBalance path builds a per-tie flow-deviation term, so only
+# there must a monitored AreaInterchange be available, inside the network
+# model's scope, and inside the template's AreaInterchange DeviceModel set:
+# those are exactly the ties that get a Δf variable.
+_check_monitored_area_interchanges(
+    ::ProblemTemplate,
+    ::NetworkModel,
+    ::PSY.System,
+    ::ServiceModel,
+) = nothing
+
+const _AREA_INTERCHANGE_MODEL_KEY = Symbol(IS.strip_module_name(PSY.AreaInterchange))
+
+_has_area_interchange_device_model(template::ProblemTemplate) =
+    haskey(get_branch_models(template), _AREA_INTERCHANGE_MODEL_KEY)
+
+# Names of the AreaInterchanges the template's AreaInterchange `DeviceModel`
+# actually models — the set the pre-contingency `FlowActivePowerVariable`, and
+# therefore Δf, is built over. Empty when the template registers no such
+# DeviceModel.
+function _template_area_interchange_names(template::ProblemTemplate, sys::PSY.System)
+    _has_area_interchange_device_model(template) || return Set{String}()
+    device_model = get_branch_models(template)[_AREA_INTERCHANGE_MODEL_KEY]
+    return Set{String}(
+        PSY.get_name(x) for x in get_available_components(device_model, sys)
+    )
+end
+
+function _check_monitored_area_interchanges(
+    template::ProblemTemplate,
+    network_model::NetworkModel{<:AreaBalancePowerModel},
+    sys::PSY.System,
+    m::ServiceModel,
+)
+    isempty(get_outages(m)) && return
+    in_scope = Set{String}(
+        PSY.get_name(x) for
+        x in get_available_components(network_model, PSY.AreaInterchange, sys)
+    )
+    modeled = _template_area_interchange_names(template, sys)
+    for (outage_uuid, per_type) in get_outages(m)
+        haskey(per_type, PSY.AreaInterchange) || continue
+        for name in per_type[PSY.AreaInterchange]
+            if !(name in in_scope)
+                throw(
+                    IS.ConflictingInputsError(
+                        "Monitored AreaInterchange \"$(name)\" (outage \
+                        $(outage_uuid), service $(get_service_name(m))) is not among \
+                        the available AreaInterchanges in the network model's scope. \
+                        A monitored tie must be available, in the network model's \
+                        scope, and included in the template's AreaInterchange \
+                        DeviceModel: the post-contingency flow deviation is only \
+                        built for those ties.",
+                    ),
+                )
+            end
+            name in modeled && continue
+            throw(
+                IS.ConflictingInputsError(
+                    "Monitored AreaInterchange \"$(name)\" (outage $(outage_uuid), \
+                    service $(get_service_name(m))) is not modeled by the template's \
+                    AreaInterchange DeviceModel (either no DeviceModel is registered \
+                    for PSY.AreaInterchange, its \"subsystem\" excludes this tie, or \
+                    its \"filter_function\" excludes this tie), so it has no \
+                    pre-contingency flow variable. A monitored tie must be \
+                    available, in the network model's scope, and included in \
+                    the template's AreaInterchange DeviceModel: the post-contingency \
+                    flow deviation is only built for those ties.",
+                ),
+            )
+        end
+    end
+    return
+end
+
+# Under a PTDF-based network model an AreaInterchange monitor never resolves
+# to a post-contingency flow expression (there is no branch-arc entry for it,
+# and the AreaBalance-only Δf mechanism does not apply) — `_resolve_service_
+# monitored_arcs` warns and drops it, but only at build time. Warn here too so
+# the same user error is reported at validation time instead of surfacing only
+# once the model is built; the build-time warning stays as a backstop for
+# direct internal-API callers that skip validation.
+function _check_monitored_area_interchanges(
+    ::ProblemTemplate,
+    ::NetworkModel{<:AbstractPTDFModel},
+    ::PSY.System,
+    m::ServiceModel,
+)
+    isempty(get_outages(m)) && return
+    dropped = Set{String}()
+    for (_, per_type) in get_outages(m)
+        haskey(per_type, PSY.AreaInterchange) || continue
+        union!(dropped, per_type[PSY.AreaInterchange])
+    end
+    isempty(dropped) && return
+    @warn "AreaInterchange monitor(s) $(sort!(collect(dropped))) dropped: no \
+           post-contingency flow expression is built for them under a \
+           PTDF-based network model. Use AreaBalancePowerModel to monitor \
+           AreaInterchange ties." _group = LOG_GROUP_MODELS_VALIDATION
+    return
+end
 
 function _warn_outages_attached_to_unmodeled_services(
     sys::PSY.System,

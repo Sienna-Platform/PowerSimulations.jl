@@ -133,6 +133,13 @@ List of structures and methods for Service models
 ServiceModel
 ```
 
+### Security-Constrained Reserve Formulations
+
+```@docs
+SecurityConstrainedContingencyReserve
+SecurityConstrainedRampReserve
+```
+
 ```@raw html
 &nbsp;
 &nbsp;
@@ -272,6 +279,7 @@ ReserveRequirementSlack
 InterfaceFlowSlackUp
 InterfaceFlowSlackDown
 PostContingencyActivePowerReserveDeploymentVariable
+PostContingencyAreaInterchangeFlowDeviationVariable
 ```
 
 ### Feedforward Variables
@@ -505,7 +513,9 @@ DCCurrentBalance
 PostContingencyGenerationBalanceConstraint
 PostContingencyActivePowerVariableLimitsConstraint
 PostContingencyActivePowerReserveDeploymentVariableLimitsConstraint
+PostContingencyActivePowerGenerationLimitsConstraint
 PostContingencyFlowRateConstraint
+PostContingencyCopperPlateBalanceConstraint
 ```
 
 ### Market Bid Cost Constraints

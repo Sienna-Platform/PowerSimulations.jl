@@ -9,6 +9,9 @@ function get_variable_upper_bound(::PostContingencyActivePowerReserveDeploymentV
 end
 get_variable_lower_bound(::PostContingencyActivePowerReserveDeploymentVariable, ::PSY.Reserve, ::PSY.Device, _) = 0.0
 get_variable_warm_start_value(::PostContingencyActivePowerReserveDeploymentVariable, d::PSY.Reserve, ::AbstractSecurityConstrainedReservesFormulation) = 0.0
+# Unreachable while `_validate_sc_reserve_direction` rejects ReserveDown; kept as the sign
+# convention a future direction-consistent SC design must honor — deleting it would route
+# such a call to the NaN fallback above instead of a sign-correct value.
 get_variable_multiplier(::AbstractContingencyVariableType, ::Type{<:PSY.Reserve{PSY.ReserveDown}}, ::AbstractSecurityConstrainedReservesFormulation) = -1.0
 get_variable_multiplier(::AbstractContingencyVariableType, ::Type{<:PSY.Reserve{PSY.ReserveUp}}, ::AbstractSecurityConstrainedReservesFormulation) = 1.0
 get_variable_multiplier(::VariableType, ::Type{<:PSY.Generator}, ::AbstractSecurityConstrainedReservesFormulation) = -1.0

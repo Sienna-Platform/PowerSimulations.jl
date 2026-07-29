@@ -298,14 +298,26 @@ struct PostContingencyActivePowerGenerationLimitsConstraint <:
 
 """
 Constraint that closes the per-area post-contingency power balance for the
-`AreaBalancePowerModel` network representation, summing the
-`PostContingencyAreaActivePowerDeployment` with the pre-contingency
-`ActivePowerBalance` expression for each area.
+`AreaBalancePowerModel` network representation: the
+`PostContingencyAreaActivePowerDeployment` expression (deployed reserves in
+the area minus the outaged generation sited in the area), adjusted for the
+post-contingency `AreaInterchange` flow deviation on every modeled tie
+touching the area, must sum to zero. Unlike the pre-contingency balance, this
+constraint
+does not reference the pre-contingency `ActivePowerBalance` expression:
+contributing devices may sit in a different area than the outaged generator,
+with `PostContingencyAreaInterchangeFlowDeviationVariable` (``\\Delta f``)
+carrying the response across areas.
 
 ```math
-\\sum_{g \\in \\mathcal{A}}(\\Delta rsv_{c,g,t} + p_{g,t}\\mathbb{1}_{g \\in \\mathcal{G}_c}) +
-\\text{Bal}^{\\text{pre}}_{a,t} = 0,\\quad \\forall a \\in \\mathcal{A},\\ \\forall c,\\ \\forall t
+\\sum_{g \\in \\mathcal{A},\\, g \\notin \\mathcal{G}_c} \\Delta rsv_{c,g,t} -
+p_{g^*,t}\\mathbb{1}_{g^* \\in \\mathcal{A}} -
+\\sum_{\\ell:\\, \\text{from}(\\ell) = a} \\Delta f_{c,\\ell,t} +
+\\sum_{\\ell:\\, \\text{to}(\\ell) = a} \\Delta f_{c,\\ell,t} = 0,
+\\quad \\forall a \\in \\mathcal{A},\\ \\forall c,\\ \\forall t
 ```
+
+where ``g^*`` is the generator outaged under contingency ``c``.
 """
 struct PostContingencyCopperPlateBalanceConstraint <:
        PostContingencyConstraintType end

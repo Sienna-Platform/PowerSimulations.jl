@@ -51,6 +51,20 @@ struct PostContingencyFlowActivePowerSlackLowerBound <:
        AbstractContingencySlackVariableType end
 
 """
+Struct to dispatch the creation of the free post-contingency `AreaInterchange`
+flow-deviation variable used by the `AreaBalancePowerModel` network
+representation to rebalance reserve deployment across areas. Built for every
+`PSY.AreaInterchange` in the template's `AreaInterchange` `DeviceModel` set
+(not only the ones a given outage monitors), since the per-area balance
+constraint needs a deviation term on every modeled tie that could carry a
+rebalancing flow. Unbounded: reserve deployment may flow in either direction
+relative to the pre-contingency flow.
+
+Docs abbreviation: ``\\Delta f_{c,\\ell,t}``
+"""
+struct PostContingencyAreaInterchangeFlowDeviationVariable <: VariableType end
+
+"""
 Struct to dispatch the creation of Active Power Variables above minimum power for Thermal Compact formulations
 
 Docs abbreviation: ``\\Delta p``
@@ -635,6 +649,9 @@ convert_result_to_natural_units(::Type{ReactivePowerVariable}) = true
 convert_result_to_natural_units(::Type{ActivePowerReserveVariable}) = true
 convert_result_to_natural_units(
     ::Type{PostContingencyActivePowerReserveDeploymentVariable},
+) = true
+convert_result_to_natural_units(
+    ::Type{PostContingencyAreaInterchangeFlowDeviationVariable},
 ) = true
 convert_result_to_natural_units(::Type{ServiceRequirementVariable}) = true
 convert_result_to_natural_units(::Type{RateofChangeConstraintSlackUp}) = true
