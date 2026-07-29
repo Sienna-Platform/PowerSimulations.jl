@@ -287,6 +287,36 @@ abstract type AbstractReservesFormulation <: AbstractServiceFormulation end
 
 abstract type AbstractSecurityConstrainedReservesFormulation <: AbstractReservesFormulation end
 
+"""
+Security-constrained contingency reserve formulation: deploys reserves
+under each G-1 outage scoped to the reserve `PSY.Service`. The set of
+contingencies a service responds to is the `PSY.Outage` supplemental
+attributes attached to that service via
+`add_supplemental_attribute!(sys, service, outage)`; template validation
+mirrors those attachments into `service_model.outages`. Post-contingency
+branch-flow constraints are added only for the monitored components
+listed on each outage's `monitored_components`.
+
+A `RequirementTimeSeriesParameter` is optional: if no requirement time
+series is configured on the service, the formulation falls back to the
+per-(outage, generator) post-contingency active power expression.
+
+See also `SecurityConstrainedRampReserve`.
+"""
+struct SecurityConstrainedContingencyReserve <:
+       AbstractSecurityConstrainedReservesFormulation end
+
+"""
+Security-constrained ramp reserve formulation: like `RampReserve` for the
+pre-contingency requirement/ramp/participation constraints, plus the same
+G-1 post-contingency deployment + monitored-branch flow constraints as
+`SecurityConstrainedContingencyReserve`.
+
+See also `SecurityConstrainedContingencyReserve`.
+"""
+struct SecurityConstrainedRampReserve <:
+       AbstractSecurityConstrainedReservesFormulation end
+
 abstract type AbstractAGCFormulation <: AbstractServiceFormulation end
 
 struct PIDSmoothACE <: AbstractAGCFormulation end

@@ -305,16 +305,18 @@ end
 Register an empty `SparseAxisArray` keyed by
 `(outage_id::String, monitored_name::String, t::Int)` for the given constraint
 type and meta tag. Entries are populated by `JuMP.@constraint` assignments
-during the build. `V` here is the outaged component type the DeviceModel owns;
-the container's name axis spans every monitored type associated with those
-outages.
+during the build. `V` is either the outaged component type a DeviceModel
+owns (device side) or a `PSY.AbstractReserve` service type (service side,
+which packs the service name and an lb/ub suffix into `meta`); the
+container's name axis spans every monitored type associated with the
+owner's outages.
 """
 function _add_post_contingency_sparse_constraints!(
     container::OptimizationContainer,
     ::Type{T},
     ::Type{V};
     meta::String,
-) where {T <: ConstraintType, V <: PSY.ACTransmission}
+) where {T <: ConstraintType, V <: PSY.Component}
     cons_container =
         SparseAxisArray(Dict{Tuple{String, String, Int}, JuMP.ConstraintRef}())
     _assign_container!(container.constraints, ConstraintKey(T, V, meta), cons_container)
@@ -323,15 +325,19 @@ end
 
 """
 For each outage in `device_model.outages`, resolve every monitored component
-(across every monitored type) to its arc in the active reduction graph —
-using `component_to_reduction_name_map` as a redirect when the monitored name
-is an individual component that was reduced into a representative. Duplicate
-arcs within an outage are collapsed per-type. Outages sorted by UUID for
-deterministic axes.
+(across every monitored type) to its arc in the active reduction graph.
+Delegates to the shared `_resolve_arc_resolution_core`. Template validation
+(`_build_device_model_outages!`, via `DeviceOutageConsumer`) already rejects
+any monitored type other than `PSY.ACTransmission` — reporting it through
+`_warn_uncovered_monitored_types` and excluding it from
+`device_model.outages` — so `_requires_arc_resolution` never sees a type it
+would otherwise drop here; the no-op `record_dropped!` is a backstop only,
+mirroring the corresponding service-side resolver
+(`_resolve_service_monitored_arcs`), which does warn because AreaInterchange
+monitors do reach it.
 
-Template validation is expected to guarantee that every monitored type has an
-entry in the reduction maps and every monitored name resolves; missing entries
-will raise `KeyError` here.
+Template validation is expected to guarantee that every monitored name
+resolves; missing names raise `error` here.
 
 Returns `Vector{Pair{UUID, Vector{Tuple{Type, String, Tuple{Int, Int}, String}}}}`
 where each inner tuple is `(monitored_type, container_name, arc, reduction_kind)`.
@@ -342,41 +348,11 @@ function _resolve_monitored_arcs(
     device_model::DeviceModel,
     net_reduction_data::PNM.NetworkReductionData,
 )
-    name_to_arc_maps = PNM.get_name_to_arc_maps(net_reduction_data)
-    component_to_reduction_maps =
-        PNM.get_component_to_reduction_name_map(net_reduction_data)
-    resolved =
-        Pair{Base.UUID, Vector{Tuple{DataType, String, Tuple{Int, Int}, String}}}[]
-    for (uuid, per_type) in get_outages(device_model)
-        kept = Tuple{DataType, String, Tuple{Int, Int}, String}[]
-        for (T, names) in per_type
-            name_to_arc = name_to_arc_maps[T]
-            component_to_reduction =
-                get(component_to_reduction_maps, T, Dict{String, String}())
-            seen = Set{Tuple{Int, Int}}()
-            for name in sort!(collect(names))
-                if haskey(name_to_arc, name)
-                    container_name = name
-                elseif haskey(component_to_reduction, name)
-                    container_name = component_to_reduction[name]
-                else
-                    error(
-                        "Monitored component \"$name\" (type $T) for outage $uuid is " *
-                        "absent from both the network-reduction name-to-arc map and the " *
-                        "component-to-reduction map. Verify the component exists in the " *
-                        "system and is modeled with a security-constrained branch formulation.",
-                    )
-                end
-                arc, reduction_kind = name_to_arc[container_name]
-                arc in seen && continue
-                push!(seen, arc)
-                push!(kept, (T, container_name, arc, reduction_kind))
-            end
-        end
-        push!(resolved, uuid => kept)
-    end
-    sort!(resolved; by = first)
-    return resolved
+    return _resolve_arc_resolution_core(
+        get_outages(device_model),
+        net_reduction_data,
+        Returns(nothing),
+    )
 end
 
 # Create a single per-`(outage_id, name, t)` post-contingency flow slack
@@ -419,6 +395,9 @@ function add_constraints!(
     cons_type::Type{T},
     device_model::DeviceModel{V, U},
     network_model::NetworkModel{X},
+    resolved::Vector{
+        Pair{Base.UUID, Vector{Tuple{DataType, String, Tuple{Int, Int}, String}}},
+    },
 ) where {
     T <: PostContingencyFlowRateConstraint,
     V <: PSY.ACTransmission,
@@ -429,8 +408,6 @@ function add_constraints!(
 
     net_reduction_data = network_model.network_reduction
     all_branch_maps_by_type = PNM.get_all_branch_maps_by_type(net_reduction_data)
-
-    resolved = _resolve_monitored_arcs(device_model, net_reduction_data)
 
     con_lb = _add_post_contingency_sparse_constraints!(container, T, V; meta = "lb")
     con_ub = _add_post_contingency_sparse_constraints!(container, T, V; meta = "ub")
@@ -612,6 +589,9 @@ function add_post_contingency_flow_expressions!(
     ::Type{T},
     model::DeviceModel{V, F},
     network_model::NetworkModel{N},
+    resolved::Vector{
+        Pair{Base.UUID, Vector{Tuple{DataType, String, Tuple{Int, Int}, String}}},
+    },
 ) where {
     T <: PostContingencyBranchFlow,
     V <: PSY.ACTransmission,
@@ -621,9 +601,6 @@ function add_post_contingency_flow_expressions!(
     time_steps = get_time_steps(container)
     modf_matrix = get_MODF_matrix(network_model)
     registered_contingencies = PNM.get_registered_contingencies(modf_matrix)
-
-    net_reduction_data = network_model.network_reduction
-    resolved = _resolve_monitored_arcs(model, net_reduction_data)
 
     expression_container = _add_post_contingency_sparse_expression!(
         container, T, V, resolved, time_steps,
@@ -809,11 +786,14 @@ function construct_device!(
     add_feedforward_constraints!(container, device_model, devices)
     objective_function!(container, devices, device_model, X)
 
+    resolved = _resolve_monitored_arcs(device_model, network_model.network_reduction)
+
     add_post_contingency_flow_expressions!(
         container,
         PostContingencyBranchFlow,
         device_model,
         network_model,
+        resolved,
     )
 
     add_constraints!(
@@ -821,6 +801,7 @@ function construct_device!(
         PostContingencyFlowRateConstraint,
         device_model,
         network_model,
+        resolved,
     )
 
     # Must run after the post-contingency constraints are built so their
@@ -905,11 +886,14 @@ function construct_device!(
     add_feedforward_constraints!(container, device_model, devices)
     objective_function!(container, devices, device_model, X)
 
+    resolved = _resolve_monitored_arcs(device_model, network_model.network_reduction)
+
     add_post_contingency_flow_expressions!(
         container,
         PostContingencyBranchFlow,
         device_model,
         network_model,
+        resolved,
     )
 
     add_constraints!(
@@ -917,6 +901,7 @@ function construct_device!(
         PostContingencyFlowRateConstraint,
         device_model,
         network_model,
+        resolved,
     )
 
     # Must run after the post-contingency constraints are built so their
@@ -937,6 +922,9 @@ function add_post_contingency_flow_expressions!(
     ::Type{T},
     model::DeviceModel{V, F},
     network_model::NetworkModel{N},
+    resolved::Vector{
+        Pair{Base.UUID, Vector{Tuple{DataType, String, Tuple{Int, Int}, String}}},
+    },
 ) where {
     T <: PostContingencyBranchFlow,
     V <: PSY.ACTransmission,
@@ -944,7 +932,6 @@ function add_post_contingency_flow_expressions!(
     N <: PM.AbstractACPModel,
 }
     time_steps = get_time_steps(container)
-    resolved = _resolve_monitored_arcs(model, network_model.network_reduction)
 
     expression_container =
         SparseAxisArray(Dict{Tuple{String, String, Int}, JuMP.AffExpr}())

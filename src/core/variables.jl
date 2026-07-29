@@ -26,6 +26,45 @@ struct PostContingencyActivePowerReserveDeploymentVariable <:
        AbstractContingencyVariableType end
 
 """
+Abstract supertype for non-negative slack variables that absorb infeasibility
+in post-contingency branch-flow inequalities of the security-constrained
+reserve formulations.
+"""
+abstract type AbstractContingencySlackVariableType <: VariableType end
+
+"""
+Struct to dispatch the creation of the non-negative slack variable applied to
+the post-contingency upper branch-flow inequality.
+
+Docs abbreviation: ``s^{f,\\text{ub}}_{c,\\ell,t}``
+"""
+struct PostContingencyFlowActivePowerSlackUpperBound <:
+       AbstractContingencySlackVariableType end
+
+"""
+Struct to dispatch the creation of the non-negative slack variable applied to
+the post-contingency lower branch-flow inequality.
+
+Docs abbreviation: ``s^{f,\\text{lb}}_{c,\\ell,t}``
+"""
+struct PostContingencyFlowActivePowerSlackLowerBound <:
+       AbstractContingencySlackVariableType end
+
+"""
+Struct to dispatch the creation of the free post-contingency `AreaInterchange`
+flow-deviation variable used by the `AreaBalancePowerModel` network
+representation to rebalance reserve deployment across areas. Built for every
+`PSY.AreaInterchange` in the template's `AreaInterchange` `DeviceModel` set
+(not only the ones a given outage monitors), since the per-area balance
+constraint needs a deviation term on every modeled tie that could carry a
+rebalancing flow. Unbounded: reserve deployment may flow in either direction
+relative to the pre-contingency flow.
+
+Docs abbreviation: ``\\Delta f_{c,\\ell,t}``
+"""
+struct PostContingencyAreaInterchangeFlowDeviationVariable <: VariableType end
+
+"""
 Struct to dispatch the creation of Active Power Variables above minimum power for Thermal Compact formulations
 
 Docs abbreviation: ``\\Delta p``
@@ -372,24 +411,6 @@ Docs abbreviation: ``f^\\text{sl,lo}``
 struct FlowActivePowerSlackLowerBound <: AbstractACActivePowerFlow end
 
 """
-Struct to dispatch the creation of post-contingency active power flow upper bound
-slack variables. Relaxes the post-contingency emergency-rating upper limit of a
-monitored branch under a specific outage. Indexed per `(outage_id, name, t)`.
-
-Docs abbreviation: ``f^\\text{sl,up}_{c}``
-"""
-struct PostContingencyFlowActivePowerSlackUpperBound <: VariableType end
-
-"""
-Struct to dispatch the creation of post-contingency active power flow lower bound
-slack variables. Relaxes the post-contingency emergency-rating lower limit of a
-monitored branch under a specific outage. Indexed per `(outage_id, name, t)`.
-
-Docs abbreviation: ``f^\\text{sl,lo}_{c}``
-"""
-struct PostContingencyFlowActivePowerSlackLowerBound <: VariableType end
-
-"""
 Struct to dispatch the creation of Phase Shifters Variables
 
 Docs abbreviation: ``\\theta^\\text{shift}``
@@ -628,6 +649,9 @@ convert_result_to_natural_units(::Type{ReactivePowerVariable}) = true
 convert_result_to_natural_units(::Type{ActivePowerReserveVariable}) = true
 convert_result_to_natural_units(
     ::Type{PostContingencyActivePowerReserveDeploymentVariable},
+) = true
+convert_result_to_natural_units(
+    ::Type{PostContingencyAreaInterchangeFlowDeviationVariable},
 ) = true
 convert_result_to_natural_units(::Type{ServiceRequirementVariable}) = true
 convert_result_to_natural_units(::Type{RateofChangeConstraintSlackUp}) = true

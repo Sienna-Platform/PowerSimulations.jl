@@ -283,6 +283,46 @@ each monitored arc m, the post-contingency flow constraint is:
 struct PostContingencyFlowRateConstraint <: PostContingencyConstraintType end
 
 """
+Constraint on the post-contingency active power generation expression
+(`PostContingencyActivePowerGeneration`) of each contributing generator
+under each outage. Outaged generators are pinned to zero; all other
+generators are bounded by their `active_power_limits`.
+
+```math
+P^{\\text{min}}_g \\le p_{g,t} + \\Delta rsv_{c,g,t} \\le P^{\\text{max}}_g,
+\\quad \\forall c \\in \\mathcal{C},\\ \\forall g \\notin \\mathcal{G}_c,\\ \\forall t
+```
+"""
+struct PostContingencyActivePowerGenerationLimitsConstraint <:
+       PostContingencyConstraintType end
+
+"""
+Constraint that closes the per-area post-contingency power balance for the
+`AreaBalancePowerModel` network representation: the
+`PostContingencyAreaActivePowerDeployment` expression (deployed reserves in
+the area minus the outaged generation sited in the area), adjusted for the
+post-contingency `AreaInterchange` flow deviation on every modeled tie
+touching the area, must sum to zero. Unlike the pre-contingency balance, this
+constraint
+does not reference the pre-contingency `ActivePowerBalance` expression:
+contributing devices may sit in a different area than the outaged generator,
+with `PostContingencyAreaInterchangeFlowDeviationVariable` (``\\Delta f``)
+carrying the response across areas.
+
+```math
+\\sum_{g \\in \\mathcal{A},\\, g \\notin \\mathcal{G}_c} \\Delta rsv_{c,g,t} -
+p_{g^*,t}\\mathbb{1}_{g^* \\in \\mathcal{A}} -
+\\sum_{\\ell:\\, \\text{from}(\\ell) = a} \\Delta f_{c,\\ell,t} +
+\\sum_{\\ell:\\, \\text{to}(\\ell) = a} \\Delta f_{c,\\ell,t} = 0,
+\\quad \\forall a \\in \\mathcal{A},\\ \\forall c,\\ \\forall t
+```
+
+where ``g^*`` is the generator outaged under contingency ``c``.
+"""
+struct PostContingencyCopperPlateBalanceConstraint <:
+       PostContingencyConstraintType end
+
+"""
 Struct to create the constraint for branch flow rate limits from the 'from' bus to the 'to' bus.
 For more information check [Branch Formulations](@ref PowerSystems.Branch-Formulations).
 """

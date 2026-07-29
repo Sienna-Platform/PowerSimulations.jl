@@ -41,6 +41,8 @@ export RangeReserve
 export RampReserve
 export StepwiseCostReserve
 export NonSpinningReserve
+export SecurityConstrainedContingencyReserve
+export SecurityConstrainedRampReserve
 export PIDSmoothACE
 export GroupReserve
 export ConstantMaxInterfaceFlow
@@ -246,6 +248,7 @@ export FlowActivePowerSlackUpperBound
 export FlowActivePowerSlackLowerBound
 export PostContingencyFlowActivePowerSlackUpperBound
 export PostContingencyFlowActivePowerSlackLowerBound
+export PostContingencyAreaInterchangeFlowDeviationVariable
 export FlowActivePowerFromToVariable
 export FlowActivePowerToFromVariable
 export FlowReactivePowerFromToVariable
@@ -367,6 +370,8 @@ export PostContingencyActivePowerVariableLimitsConstraint
 export PostContingencyActivePowerReserveDeploymentVariableLimitsConstraint
 export PostContingencyGenerationBalanceConstraint
 export PostContingencyRampConstraint
+export PostContingencyActivePowerGenerationLimitsConstraint
+export PostContingencyCopperPlateBalanceConstraint
 export ImportExportBudgetConstraint
 export PiecewiseLinearBlockIncrementalOfferConstraint
 export PiecewiseLinearBlockDecrementalOfferConstraint
@@ -435,8 +440,11 @@ export FuelConsumptionExpression
 export ActivePowerRangeExpressionLB
 export ActivePowerRangeExpressionUB
 export PostContingencyBranchFlow
+export PostContingencyAreaInterchangeFlow
 export PostContingencyActivePowerGeneration
 export PostContingencyActivePowerBalance
+export PostContingencyNodalActivePowerDeployment
+export PostContingencyAreaActivePowerDeployment
 export NetActivePower
 export DCCurrentBalance
 
@@ -711,6 +719,7 @@ include("devices_models/devices/reactivepower_device.jl")
 
 # Services Models
 include("services_models/reserves.jl")
+include("services_models/static_injection_security_constrained_models.jl")
 include("services_models/reserve_group.jl")
 include("services_models/transmission_interface.jl")
 include("services_models/service_slacks.jl")

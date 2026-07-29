@@ -80,6 +80,27 @@ end
 
 function get_available_components(
     model::NetworkModel,
+    ::Type{PSY.AreaInterchange},
+    sys::PSY.System,
+)
+    subsystem = get_subsystem(model)
+    return PSY.get_components(
+        PSY.get_available,
+        PSY.AreaInterchange,
+        sys;
+        subsystem_name = subsystem,
+    )
+end
+
+"""
+    get_available_components(model::NetworkModel, ::Type{T}, sys::PSY.System) where T
+
+Generic `NetworkModel` fallback scoped by subsystem only; unlike the
+`PSY.ACBus` and `PSY.AreaInterchange` specializations, it does NOT
+availability-filter the returned components.
+"""
+function get_available_components(
+    model::NetworkModel,
     ::Type{T},
     sys::PSY.System,
 ) where {T <: PSY.Component}
@@ -89,6 +110,95 @@ function get_available_components(
         sys;
         subsystem_name = subsystem,
     )
+end
+
+"""
+Whether monitored components of type `T` need resolution against the
+network-reduction's branch-arc maps. `PSY.ACTransmission` types are branches:
+a missing entry means the monitored component is not modeled with a
+security-constrained-compatible branch formulation, which is a template/data
+error. `PSY.AreaInterchange` monitors are never branch-arc entries — they are
+resolved separately (as system components) under the AreaBalance path, or
+(under a PTDF-based network model) have no other resolution path and are
+dropped with a warning; either way they are not an arc-resolution failure.
+"""
+_requires_arc_resolution(::Type{<:PSY.ACTransmission}) = true
+_requires_arc_resolution(::Type{<:PSY.AreaInterchange}) = false
+
+"""
+Shared core for resolving every outage's monitored components (across every
+monitored type) to a container name and arc tuple in `net_reduction_data`'s
+active reduction graph, using `component_to_reduction_name_map` as a
+redirect when the monitored name is an individual component that was
+reduced into a representative. Duplicate arcs within an outage are collapsed
+per-type. Every outage in `outages` is kept in the result, including one
+whose monitored components all dropped out (callers filter as needed).
+
+For a monitored type absent from the reduction's name-to-arc maps,
+`_requires_arc_resolution` decides the outcome: `true` raises `error`
+(missing arc resolution for a branch type is a template/data error); `false`
+calls `record_dropped!(names)` and skips the type instead of raising, so a
+caller can report which components were silently excluded (device-side
+callers pass a no-op).
+
+Returns
+`Vector{Pair{UUID, Vector{Tuple{DataType, String, Tuple{Int,Int}, String}}}}`
+where each inner tuple is `(monitored_type, container_name, arc,
+reduction_kind)`. Outages are sorted by UUID for deterministic axes.
+"""
+function _resolve_arc_resolution_core(
+    outages::Dict{Base.UUID, Dict{DataType, Set{String}}},
+    net_reduction_data::PNM.NetworkReductionData,
+    record_dropped!::Function,
+)
+    name_to_arc_maps = PNM.get_name_to_arc_maps(net_reduction_data)
+    component_to_reduction_maps =
+        PNM.get_component_to_reduction_name_map(net_reduction_data)
+    resolved =
+        Pair{Base.UUID, Vector{Tuple{DataType, String, Tuple{Int, Int}, String}}}[]
+    for (uuid, per_type) in outages
+        kept = Tuple{DataType, String, Tuple{Int, Int}, String}[]
+        for (T, names) in per_type
+            if !haskey(name_to_arc_maps, T)
+                _requires_arc_resolution(T) && error(
+                    "Monitored component type $T (outage $uuid) requires " *
+                    "branch-arc resolution but has no entry in the " *
+                    "network-reduction's name-to-arc maps. Available types: " *
+                    "$(collect(keys(name_to_arc_maps))). Verify $T is modeled " *
+                    "with a branch formulation that produces a PTDFBranchFlow " *
+                    "expression.",
+                )
+                record_dropped!(names)
+                continue
+            end
+            name_to_arc = name_to_arc_maps[T]
+            component_to_reduction =
+                get(component_to_reduction_maps, T, Dict{String, String}())
+            seen = Set{Tuple{Int, Int}}()
+            for name in sort!(collect(names))
+                if haskey(name_to_arc, name)
+                    container_name = name
+                elseif haskey(component_to_reduction, name)
+                    container_name = component_to_reduction[name]
+                else
+                    error(
+                        "Monitored component \"$name\" (type $T) for outage $uuid is " *
+                        "absent from both the network-reduction name-to-arc map and " *
+                        "the component-to-reduction map. Verify the component exists " *
+                        "in the system and is modeled with a branch formulation that " *
+                        "produces a PTDFBranchFlow expression.",
+                    )
+                end
+                arc, reduction_kind = name_to_arc[container_name]
+                arc in seen && continue
+                push!(seen, arc)
+                push!(kept, (T, container_name, arc, reduction_kind))
+            end
+        end
+        push!(resolved, uuid => kept)
+    end
+    sort!(resolved; by = first)
+    return resolved
 end
 
 make_system_filename(sys::PSY.System) = make_system_filename(IS.get_uuid(sys))

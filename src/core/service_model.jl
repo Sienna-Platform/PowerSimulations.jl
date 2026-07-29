@@ -26,6 +26,13 @@ model at simulation time
   - `feedforward::Array{<:AbstractAffectFeedforward}` : use to pass parameters between models
   - `use_service_name::Bool` : use the name as the name for the service
 
+For security-constrained reserve formulations, the set of contingencies a
+service responds to is determined entirely by attaching outage supplemental
+attributes to the `PSY.Service` instance via
+`add_supplemental_attribute!(sys, service, outage)`. Template validation
+then mirrors those attachments into `service_model.outages`. There is no
+constructor-level outage allow-list.
+
 # Example
 
 reserves = ServiceModel(PSY.VariableReserve{PSY.ReserveUp}, RangeReserve)
@@ -39,6 +46,7 @@ mutable struct ServiceModel{D <: PSY.Service, B <: AbstractServiceFormulation}
     attributes::Dict{String, Any}
     contributing_devices_map::Dict{Type{<:PSY.Component}, Vector{<:PSY.Component}}
     subsystem::Union{Nothing, String}
+    outages::Dict{Base.UUID, Dict{DataType, Set{String}}}
     function ServiceModel(
         ::Type{D},
         ::Type{B},
@@ -66,6 +74,7 @@ mutable struct ServiceModel{D <: PSY.Service, B <: AbstractServiceFormulation}
             attributes_for_model,
             contributing_devices_map,
             nothing,
+            Dict{Base.UUID, Dict{DataType, Set{String}}}(),
         )
     end
 end
@@ -89,6 +98,7 @@ get_contributing_devices_map(m::ServiceModel, key) =
 get_contributing_devices(m::ServiceModel) =
     [z for x in values(m.contributing_devices_map) for z in x]
 get_subsystem(m::ServiceModel) = m.subsystem
+get_outages(m::ServiceModel) = m.outages
 
 set_subsystem!(m::ServiceModel, id::String) = m.subsystem = id
 
