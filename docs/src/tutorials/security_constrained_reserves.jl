@@ -151,7 +151,10 @@ jump_model = PowerSimulations.get_jump_model(model)
 
 (
     variables = JuMP.num_variables(jump_model),
-    constraints = JuMP.num_constraints(jump_model; count_variable_in_set_constraints = true),
+    constraints = JuMP.num_constraints(
+        jump_model;
+        count_variable_in_set_constraints = true,
+    ),
     objective = JuMP.objective_value(jump_model),
 )
 
