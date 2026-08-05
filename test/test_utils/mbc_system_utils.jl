@@ -292,6 +292,18 @@ function load_sys_incr()
             ),
         ),
     )[1] *= 0.9
+    # Give Test Unit1 a device base_power != system base_power, so unit-conversion bugs
+    # (e.g. rating-dependent per-unit multipliers) aren't masked by the two coinciding.
+    unit1 = get_component(SEL_INCR, sys)
+    with_units_base(sys, UnitSystem.NATURAL_UNITS) do
+        limits = get_active_power_limits(unit1)
+        rating = get_rating(unit1)
+        active_power = get_active_power(unit1)
+        set_base_power!(unit1, get_base_power(sys) * 1.4)
+        set_active_power_limits!(unit1, limits)
+        set_rating!(unit1, rating)
+        set_active_power!(unit1, active_power)
+    end
     return sys
 end
 
