@@ -84,6 +84,29 @@ function IS.serialize(partitions::SimulationPartitions)
     return IS.serialize_struct(partitions)
 end
 
+"""
+Run one operation of a partitioned simulation from command-line arguments.
+
+# Arguments
+
+  - `build_function`: Function reference that returns a built Simulation.
+  - `execute_function`: Function reference that executes a Simulation.
+  - `args`: Command-line arguments. The first one must be `setup`, `execute`, or `join`.
+    The rest must be options in the format `--name=value` or, for flags, `--name`.
+
+# Options
+
+  - `--output-dir=<path>`: Path for simulation outputs. Required for all operations unless
+    the environment variable `JADE_RUNTIME_OUTPUT` is set.
+  - `--simulation-name=<name>`: Simulation name. Required for all operations.
+  - `--num-steps=<n>`, `--num-period-steps=<n>`, `--num-overlap-steps=<n>`: Definition of
+    the partitions. Required by `setup`, except for `--num-overlap-steps`, which defaults
+    to 0.
+  - `--index=<n>`: Index of the partition to run. Required by `execute`.
+  - `--skip-failures`: Only applies to `join`. Skip the partition jobs that failed and merge
+    the results of the successful jobs. `join` fails if any partition job failed and this is
+    not set. The status of the joined simulation is a failure either way.
+"""
 function process_simulation_partition_cli_args(build_function, execute_function, args...)
     length(args) < 2 && error("Usage: setup|execute|join [options]")
     function config_logging(filename)
@@ -105,13 +128,26 @@ function process_simulation_partition_cli_args(build_function, execute_function,
         !isempty(diff) && error("Missing required options for $label: $diff")
     end
 
+    function get_bool_option(options, name)
+        value = lowercase(get(options, name, "false"))
+        value in ("true", "false") ||
+            error("The option --$name must be set to true or false: $value")
+        return parse(Bool, value)
+    end
+
     operation = args[1]
     options = Dict{String, String}()
     for opt in args[2:end]
         !startswith(opt, "--") && error("All options must start with '--': $opt")
         fields = split(opt[3:end], "=")
-        length(fields) != 2 && error("All options must use the format --name=value: $opt")
-        options[fields[1]] = fields[2]
+        if length(fields) == 1
+            # Flags, such as --skip-failures, don't require a value.
+            options[fields[1]] = "true"
+        elseif length(fields) == 2
+            options[fields[1]] = fields[2]
+        else
+            error("All options must use the format --name=value or --name: $opt")
+        end
     end
 
     if haskey(options, "output-dir")
@@ -162,7 +198,10 @@ function process_simulation_partition_cli_args(build_function, execute_function,
         end
         partitions = IS.deserialize(SimulationPartitions, config)
         config_logging(joinpath(base_dir, "logs", "join_partitioned_simulation.log"))
-        join_simulation(base_dir)
+        join_simulation(
+            base_dir;
+            skip_failures = get_bool_option(options, "skip-failures"),
+        )
     else
         error("Unsupported operation=$operation")
     end
@@ -172,6 +211,10 @@ end
 
 """
 Run a partitioned simulation in parallel on a local computer.
+
+Throw an exception if any partition fails. In that case the results of the successful
+partitions can still be merged by calling
+`PowerSimulations.join_simulation(joinpath(output_dir, name); skip_failures = true)`.
 
 # Arguments
 

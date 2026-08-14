@@ -86,6 +86,22 @@ The final results will be in `./my_simulation_otuput/my_simulation`
 Note the log files and results for each partition are located in
 `./my_simulation_otuput/my_simulation/simulation_partitions`
 
+### Failed partitions
+
+If any partition fails, the join step throws an exception and records a failed status in
+`./my_simulation_output/my_simulation/results/status.json`. Each failed partition, along
+with the simulation steps that it covers, is logged in
+`./my_simulation_output/my_simulation/logs/join_partitioned_simulation.log`.
+
+If you want to inspect the results of the successful partitions, join them by skipping the
+failed partitions, as shown below. The status of the simulation remains a failure and the
+results of the steps that were covered by the failed partitions are invalid.
+
+```
+julia> PowerSimulations.join_simulation("my_simulation_output/my_simulation"; skip_failures=true)
+julia> results = SimulationResults("my_simulation_output/my_simulation"; ignore_status=true)
+```
+
 ## Run a Simulation in Parallel on an HPC
 
 This page describes how to split a simulation into partitions, run each partition in parallel
@@ -282,3 +298,15 @@ julia> results = SimulationResults("<output-dir>/job-outputs/<simulation-name>")
 
 Note the log files and results for each partition are located in
 `<output-dir>/job-outputs/<simulation-name>/simulation_partitions`
+
+If any partition fails, the join command fails and records a failed status in
+`<output-dir>/job-outputs/<simulation-name>/results/status.json`. Each failed partition,
+along with the simulation steps that it covers, is logged in
+`<output-dir>/job-outputs/<simulation-name>/logs/join_partitioned_simulation.log`.
+Re-run the command with the `--skip-failures` option to skip the failed partitions and merge
+the results of the successful ones. The status of the simulation remains a failure, so the
+results must be loaded with `SimulationResults(path; ignore_status=true)`.
+
+```
+$ julia --project=<path> my_simulation.jl join --simulation-name=<simulation-name> --output-dir=<output-dir>/job-outputs --skip-failures
+```

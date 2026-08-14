@@ -29,19 +29,49 @@ function SimulationPartitionResults(path::AbstractString)
 end
 
 """
-Combine all partition simulation files.
+Combine all partition simulation files and return the status of the joined simulation.
+
+Throw an exception if any partition job failed, unless `skip_failures` is `true`.
+
+# Arguments
+
+  - `path::AbstractString`: Directory of the main simulation.
+  - `skip_failures::Bool`: If `true`, log and skip the store files of the partition jobs
+    that failed and merge the results of the successful jobs. The status of the joined
+    simulation is `RunStatus.FAILED` whenever any partition job failed, regardless of this
+    setting.
 """
-function join_simulation(path::AbstractString)
+function join_simulation(path::AbstractString; skip_failures = false)
     results = SimulationPartitionResults(path)
-    join_simulation(results)
-    return
+    return join_simulation(results; skip_failures = skip_failures)
 end
 
-function join_simulation(results::SimulationPartitionResults)
-    status = _check_jobs(results)
-    _merge_store_files!(results)
+function join_simulation(results::SimulationPartitionResults; skip_failures = false)
+    failed_partitions = _check_jobs(results)
+    if !isempty(failed_partitions) && !skip_failures
+        _serialize_failed_status(results)
+        error(
+            "These partition jobs were not successful: $(first.(failed_partitions)). " *
+            "Refer to the log messages above for the affected simulation steps. " *
+            "Pass skip_failures = true (--skip-failures on the command line) to skip the " *
+            "failed jobs and merge the results of the successful jobs.",
+        )
+    end
+
+    not_merged = try
+        _merge_store_files!(results, Set{Int}(first.(failed_partitions)), skip_failures)
+    catch
+        _serialize_failed_status(results)
+        rethrow()
+    end
+
+    status = if isempty(not_merged)
+        RunStatus.SUCCESSFULLY_FINALIZED
+    else
+        RunStatus.FAILED
+    end
     _complete(results, status)
-    return
+    return status
 end
 
 function _partition_path(x::SimulationPartitionResults, i)
@@ -58,39 +88,103 @@ end
 _store_subpath() = joinpath("data_store", "simulation_store.h5")
 _store_path(x::SimulationPartitionResults) = joinpath(x.path, _store_subpath())
 
-function _check_jobs(results::SimulationPartitionResults)
-    overall_status = RunStatus.SUCCESSFULLY_FINALIZED
-    for i in 1:get_num_partitions(results.partitions)
-        job_results_path = joinpath(_partition_path(results, 1), "results")
-        status = deserialize_status(job_results_path)
-        if status != RunStatus.SUCCESSFULLY_FINALIZED
-            @warn "partition job index = $i was not successful: $status"
-            overall_status = status
-        end
-    end
-
-    return overall_status
+"""
+Return the absolute range of simulation steps that the partition with the given index
+contributes to the merged store (excludes overlap steps).
+"""
+function _valid_step_range(x::SimulationPartitionResults, index::Int)
+    step_range = get_absolute_step_range(x.partitions, index)
+    first_step = step_range[get_valid_step_offset(x.partitions, index)]
+    return first_step:(first_step + get_valid_step_length(x.partitions, index) - 1)
 end
 
-function _merge_store_files!(results::SimulationPartitionResults)
-    HDF5.h5open(_store_path(results), "r+") do dst
-        for i in 1:get_num_partitions(results.partitions)
-            HDF5.h5open(joinpath(_partition_path(results, i), _store_subpath()), "r") do src
-                _copy_datasets!(results, i, src, dst)
-            end
+"""
+Return the indexes and statuses of the partition jobs that were not successful. Log an
+error message for each one of them.
+"""
+function _check_jobs(results::SimulationPartitionResults)
+    failed_jobs = Vector{Tuple{Int, RunStatus}}()
+    for i in 1:get_num_partitions(results.partitions)
+        status = try
+            deserialize_status(joinpath(_partition_path(results, i), RESULTS_DIR))
+        catch e
+            @error "Failed to read the status of partition job index = $i" exception =
+                (e, catch_backtrace())
+            RunStatus.FAILED
         end
-
-        for dataset in values(results.datasets)
-            if occursin("decision_models", HDF5.name(dataset))
-                IS.@assert_op HDF5.attrs(dataset)[_TEMP_WRITE_POSITION] ==
-                              size(dataset)[end] + 1
-            else
-                IS.@assert_op HDF5.attrs(dataset)[_TEMP_WRITE_POSITION] ==
-                              size(dataset)[1] + 1
-            end
-            delete!(HDF5.attrs(dataset), _TEMP_WRITE_POSITION)
+        if status != RunStatus.SUCCESSFULLY_FINALIZED
+            @error "Partition job index = $i was not successful: status = $status. " *
+                   "Results for steps = $(_valid_step_range(results, i)) will be invalid " *
+                   "in the merged store."
+            push!(failed_jobs, (i, status))
         end
     end
+
+    return failed_jobs
+end
+
+"""
+Merge the store files of all partitions into the main store file and return the indexes of
+the partitions that were not merged.
+
+Partitions in `skip_indexes` are never merged. If `skip_failures` is `true`, log and skip
+the partitions whose store files cannot be read; otherwise, propagate the exception.
+"""
+function _merge_store_files!(
+    results::SimulationPartitionResults,
+    skip_indexes::Set{Int},
+    skip_failures::Bool,
+)
+    not_merged = Int[]
+    HDF5.h5open(_store_path(results), "r+") do dst
+        try
+            for i in 1:get_num_partitions(results.partitions)
+                if i in skip_indexes
+                    @warn "Skip the store file of the failed partition job index = $i. " *
+                          "Results for steps = $(_valid_step_range(results, i)) will be " *
+                          "invalid in the merged store."
+                    push!(not_merged, i)
+                    continue
+                end
+                try
+                    HDF5.h5open(
+                        joinpath(_partition_path(results, i), _store_subpath()),
+                        "r",
+                    ) do src
+                        _copy_datasets!(results, i, src, dst)
+                    end
+                catch e
+                    (!skip_failures || e isa InterruptException) && rethrow()
+                    push!(not_merged, i)
+                    @error "Failed to merge the store file of partition job index = $i. " *
+                           "The file is missing or corrupted. Results for " *
+                           "steps = $(_valid_step_range(results, i)) will be invalid in " *
+                           "the merged store." exception = (e, catch_backtrace())
+                end
+            end
+
+            if isempty(not_merged)
+                for dataset in values(results.datasets)
+                    if occursin("decision_models", HDF5.name(dataset))
+                        IS.@assert_op HDF5.attrs(dataset)[_TEMP_WRITE_POSITION] ==
+                                      size(dataset)[end] + 1
+                    else
+                        IS.@assert_op HDF5.attrs(dataset)[_TEMP_WRITE_POSITION] ==
+                                      size(dataset)[1] + 1
+                    end
+                end
+            end
+        finally
+            # This runs on the error path as well, where the attribute may not be set for
+            # every cached dataset. Deleting a missing attribute would mask the exception.
+            for dataset in values(results.datasets)
+                if haskey(HDF5.attrs(dataset), _TEMP_WRITE_POSITION)
+                    delete!(HDF5.attrs(dataset), _TEMP_WRITE_POSITION)
+                end
+            end
+        end
+    end
+    return not_merged
 end
 
 function _copy_datasets!(
@@ -140,7 +234,10 @@ function _merge_dataset_columns!(results::SimulationPartitionResults, index, src
     src_end = src_start + len - 1
 
     IS.@assert_op ndims(src) == ndims(dst)
-    dst_start = HDF5.attrs(dst)[_TEMP_WRITE_POSITION]
+    # Compute the destination offset from the partition's absolute step range rather
+    # than from the running write position so that a skipped (corrupted) partition
+    # does not shift the data of subsequent partitions.
+    dst_start = (first(_valid_step_range(results, index)) - 1) * num_columns_per_step + 1
     if ndims(src) == 2
         IS.@assert_op size(src)[2] == size(dst)[2]
         dst_end = dst_start + len - 1
@@ -164,7 +261,8 @@ function _merge_dataset_rows!(results::SimulationPartitionResults, index, src, d
     src_end = src_start + len - 1
 
     IS.@assert_op ndims(src) == ndims(dst)
-    dst_start = HDF5.attrs(dst)[_TEMP_WRITE_POSITION]
+    # See the comment about the destination offset in _merge_dataset_columns!.
+    dst_start = (first(_valid_step_range(results, index)) - 1) * num_rows_per_step + 1
     if ndims(src) == 2
         IS.@assert_op size(src)[1] == size(dst)[1]
         dst_end = dst_start + len - 1
@@ -184,8 +282,17 @@ function _merge_dataset_rows!(results::SimulationPartitionResults, index, src, d
 end
 
 function _complete(results::SimulationPartitionResults, status)
-    serialize_status(status, joinpath(results.path, "results"))
+    serialize_status(status, joinpath(results.path, RESULTS_DIR))
     store_path = _store_path(results)
     IS.compute_file_hash(dirname(store_path), basename(store_path))
+    return
+end
+
+"""
+Record a failure in the status file of the joined simulation. Unlike [`_complete`](@ref),
+this does not compute the hash of the store file because the store was not merged.
+"""
+function _serialize_failed_status(results::SimulationPartitionResults)
+    serialize_status(RunStatus.FAILED, joinpath(results.path, RESULTS_DIR))
     return
 end

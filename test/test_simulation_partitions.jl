@@ -115,4 +115,147 @@ end
     end
 
     # TODO: Can emulation model results be validated?
+
+    # The checks below sabotage the partition outputs and so must be last.
+    base_dir = joinpath(sim_dir, partition_name)
+    partition_results = PSI.SimulationPartitionResults(base_dir)
+    joined_status_path = joinpath(base_dir, PSI.RESULTS_DIR)
+    num_partitions = get_num_partitions(partition_results.partitions)
+    partition_status_path(index) =
+        joinpath(PSI._partition_path(partition_results, index), PSI.RESULTS_DIR)
+    read_realized(results) = Dict(
+        name => read_realized_variables(
+            get_decision_problem_results(results, name);
+            table_format = TableFormat.WIDE,
+        ) for name in ("UC", "ED")
+    )
+
+    pre_join_variables = read_realized(partitioned_results)
+    failed_index = 2
+
+    # Joining a simulation with a failed partition must fail and record the failure.
+    PSI.serialize_status(PSI.RunStatus.FAILED, partition_status_path(failed_index))
+    @test_throws ErrorException PSI.join_simulation(base_dir)
+    @test PSI.deserialize_status(joined_status_path) == PSI.RunStatus.FAILED
+
+    # Fill the merged store with a sentinel value in order to detect the steps that the
+    # next join writes. A skipped partition must not shift the data of the partitions
+    # that follow it.
+    sentinel = -9999.0
+    PSI.HDF5.h5open(joinpath(base_dir, "data_store", "simulation_store.h5"), "r+") do store
+        for group in store["simulation/decision_models"]
+            for output_type in string.(PSI.STORE_CONTAINERS)
+                for dataset in group[output_type]
+                    endswith(PSI.HDF5.name(dataset), "__columns") && continue
+                    if ndims(dataset) == 2
+                        dataset[:, :] = fill(sentinel, size(dataset))
+                    elseif ndims(dataset) == 3
+                        dataset[:, :, :] = fill(sentinel, size(dataset))
+                    else
+                        error("Unsupported dataset ndims: $(ndims(dataset))")
+                    end
+                end
+            end
+        end
+    end
+    # The results are read through the same conversions as any other results, so record
+    # what the sentinel looks like after them instead of assuming that it is unchanged.
+    store_dir = joinpath(base_dir, "data_store")
+    PSI.IS.compute_file_hash(store_dir, "simulation_store.h5")
+    sentinel_variables =
+        read_realized(SimulationResults(sim_dir, partition_name; ignore_status = true))
+
+    @test PSI.join_simulation(base_dir; skip_failures = true) == PSI.RunStatus.FAILED
+    @test PSI.deserialize_status(joined_status_path) == PSI.RunStatus.FAILED
+    # The results of the successful partitions must still be readable.
+    post_join_results = SimulationResults(sim_dir, partition_name; ignore_status = true)
+    post_join_variables = read_realized(post_join_results)
+    for (model_name, pre_variables) in pre_join_variables
+        post_variables = post_join_variables[model_name]
+        @test sort(collect(keys(pre_variables))) == sort(collect(keys(post_variables)))
+        for (key, pre_df) in pre_variables
+            post_df = post_variables[key]
+            @test nrow(post_df) == nrow(pre_df)
+            @test nrow(pre_df) % num_partitions == 0
+            rows_per_step = nrow(pre_df) ÷ num_partitions
+            skipped_rows =
+                (rows_per_step * (failed_index - 1) + 1):(rows_per_step * failed_index)
+            merged_rows = setdiff(1:nrow(pre_df), skipped_rows)
+            # The successful partitions must be merged at their original steps.
+            @test post_df[merged_rows, :] == pre_df[merged_rows, :]
+            # The steps of the skipped partition must not be written. A join that writes
+            # nothing at all cannot pass this because the merged rows would hold the
+            # sentinel too.
+            @test post_df[skipped_rows, :] ==
+                  sentinel_variables[model_name][key][skipped_rows, :]
+        end
+    end
+
+    # The join command must behave the same way, with --skip-failures passed as a flag.
+    cli_args = ("join", "--simulation-name=$partition_name", "--output-dir=$sim_dir")
+    @test_throws ErrorException PSI.process_simulation_partition_cli_args(
+        build_simulation,
+        execute_simulation,
+        cli_args...,
+    )
+    @test PSI.deserialize_status(joined_status_path) == PSI.RunStatus.FAILED
+    PSI.process_simulation_partition_cli_args(
+        build_simulation,
+        execute_simulation,
+        cli_args...,
+        "--skip-failures",
+    )
+    @test PSI.deserialize_status(joined_status_path) == PSI.RunStatus.FAILED
+
+    # Options must be rejected if they are malformed or have an invalid value.
+    for invalid_option in ("--skip-failures=maybe", "--simulation-name=a=b")
+        @test_throws ErrorException PSI.process_simulation_partition_cli_args(
+            build_simulation,
+            execute_simulation,
+            cli_args...,
+            invalid_option,
+        )
+    end
+
+    PSI.serialize_status(
+        PSI.RunStatus.SUCCESSFULLY_FINALIZED,
+        partition_status_path(failed_index),
+    )
+
+    # A store file that cannot be read must be handled like a failed job, even if the job
+    # reported success.
+    corrupted_index = num_partitions
+    store_file = joinpath(
+        PSI._partition_path(partition_results, corrupted_index),
+        "data_store",
+        "simulation_store.h5",
+    )
+    store_backup = store_file * ".backup"
+    cp(store_file, store_backup)
+    try
+        write(store_file, "not an HDF5 file")
+        @test_throws Exception PSI.join_simulation(base_dir)
+        @test PSI.deserialize_status(joined_status_path) == PSI.RunStatus.FAILED
+        @test PSI.join_simulation(base_dir; skip_failures = true) == PSI.RunStatus.FAILED
+        @test PSI.deserialize_status(joined_status_path) == PSI.RunStatus.FAILED
+    finally
+        mv(store_backup, store_file; force = true)
+    end
+
+    # A job whose status cannot be read must be treated as a failure.
+    status_file = joinpath(partition_status_path(corrupted_index), "status.json")
+    status_backup = status_file * ".backup"
+    mv(status_file, status_backup)
+    try
+        @test_throws ErrorException PSI.join_simulation(base_dir)
+        @test PSI.deserialize_status(joined_status_path) == PSI.RunStatus.FAILED
+        @test PSI.join_simulation(base_dir; skip_failures = true) == PSI.RunStatus.FAILED
+    finally
+        mv(status_backup, status_file; force = true)
+    end
+
+    # With every job successful again, the join must succeed.
+    @test PSI.join_simulation(base_dir) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+    @test PSI.deserialize_status(joined_status_path) ==
+          PSI.RunStatus.SUCCESSFULLY_FINALIZED
 end
