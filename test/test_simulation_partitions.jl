@@ -207,8 +207,10 @@ end
     )
     @test PSI.deserialize_status(joined_status_path) == PSI.RunStatus.FAILED
 
-    # Options must be rejected if they are malformed or have an invalid value.
-    for invalid_option in ("--skip-failures=maybe", "--simulation-name=a=b")
+    # Options must be rejected if they are malformed, have an invalid value, or are
+    # missing a required value.
+    for invalid_option in
+        ("--skip-failures=maybe", "--simulation-name=a=b", "--simulation-name")
         @test_throws ErrorException PSI.process_simulation_partition_cli_args(
             build_simulation,
             execute_simulation,

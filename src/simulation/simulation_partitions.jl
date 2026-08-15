@@ -135,13 +135,16 @@ function process_simulation_partition_cli_args(build_function, execute_function,
         return parse(Bool, value)
     end
 
+    flag_options = ("skip-failures",)
     operation = args[1]
     options = Dict{String, String}()
     for opt in args[2:end]
         !startswith(opt, "--") && error("All options must start with '--': $opt")
         fields = split(opt[3:end], "=")
         if length(fields) == 1
-            # Flags, such as --skip-failures, don't require a value.
+            # Only flags, such as --skip-failures, don't require a value.
+            fields[1] in flag_options ||
+                error("The option --$(fields[1]) requires a value: --$(fields[1])=<value>")
             options[fields[1]] = "true"
         elseif length(fields) == 2
             options[fields[1]] = fields[2]
@@ -214,8 +217,9 @@ end
 """
 Run a partitioned simulation in parallel on a local computer.
 
-Throw an exception if any partition fails. In that case the results of the successful
-partitions can still be merged by calling
+Throw an exception if any partition fails. In that case a failed status is recorded in
+`<output_dir>/<name>/results/status.json` and the results of the successful partitions can
+still be merged by calling
 `PowerSimulations.join_simulation(joinpath(output_dir, name); skip_failures = true)`.
 
 # Arguments
@@ -297,14 +301,29 @@ function run_parallel_simulation(
     end
 
     Distributed.@everywhere include($script)
+    worker_exception = nothing
     try
         Distributed.pmap(PowerSimulations._run_parallel_simulation, jobs)
+    catch e
+        # Defer the exception so that the join step below still runs and records a
+        # failed status in the results directory.
+        worker_exception = (e, catch_backtrace())
+        @error "One or more partition jobs failed." exception = worker_exception
     finally
         Distributed.rmprocs(Distributed.workers()...)
     end
 
     args = ["join", "--simulation-name=$name", "--output-dir=$output_dir"]
-    process_simulation_partition_cli_args(build_function, execute_function, args...)
+    try
+        process_simulation_partition_cli_args(build_function, execute_function, args...)
+    catch e
+        isnothing(worker_exception) && rethrow()
+        # The original worker exception is the root cause; log the join error instead
+        # of letting it mask that exception.
+        @error "Failed to join the simulation results." exception = (e, catch_backtrace())
+    end
+    isnothing(worker_exception) || throw(worker_exception[1])
+    return
 end
 
 function _run_parallel_simulation(params)
