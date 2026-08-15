@@ -33,6 +33,18 @@ end
     )
     @test PSI._is_interrupt(InterruptException())
     @test PSI._is_interrupt(remote)
+    interrupt_task = @async throw(InterruptException())
+    try
+        wait(interrupt_task)
+    catch
+    end
+    failed_task = @async error("failed")
+    try
+        wait(failed_task)
+    catch
+    end
+    @test PSI._is_interrupt(TaskFailedException(interrupt_task))
+    @test !PSI._is_interrupt(TaskFailedException(failed_task))
     @test PSI._is_interrupt(CompositeException([ErrorException("failed"), remote]))
     @test !PSI._is_interrupt(ErrorException("failed"))
     @test !PSI._is_interrupt(

@@ -219,14 +219,12 @@ end
 Return `true` if the exception is an InterruptException, including one wrapped in the
 exception types that `Distributed.pmap` uses to propagate worker failures.
 """
-function _is_interrupt(e)
-    e isa InterruptException && return true
-    e isa Distributed.RemoteException && return _is_interrupt(e.captured.ex)
-    e isa CapturedException && return _is_interrupt(e.ex)
-    e isa TaskFailedException && return _is_interrupt(e.task.exception)
-    e isa CompositeException && return any(_is_interrupt, e.exceptions)
-    return false
-end
+_is_interrupt(::InterruptException) = true
+_is_interrupt(e::Distributed.RemoteException) = _is_interrupt(e.captured.ex)
+_is_interrupt(e::CapturedException) = _is_interrupt(e.ex)
+_is_interrupt(e::TaskFailedException) = _is_interrupt(e.task.result)
+_is_interrupt(e::CompositeException) = any(_is_interrupt, e.exceptions)
+_is_interrupt(_) = false
 
 """
 Run a partitioned simulation in parallel on a local computer.
