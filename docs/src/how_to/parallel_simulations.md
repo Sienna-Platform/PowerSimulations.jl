@@ -81,10 +81,10 @@ julia> run_parallel_simulation(
     )
 ```
 
-The final results will be in `./my_simulation_otuput/my_simulation`
+The final results will be in `./my_simulation_output/my_simulation`
 
 Note the log files and results for each partition are located in
-`./my_simulation_otuput/my_simulation/simulation_partitions`
+`./my_simulation_output/my_simulation/simulation_partitions`
 
 ### Failed partitions
 

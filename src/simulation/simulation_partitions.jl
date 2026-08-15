@@ -146,7 +146,9 @@ function process_simulation_partition_cli_args(build_function, execute_function,
         elseif length(fields) == 2
             options[fields[1]] = fields[2]
         else
-            error("All options must use the format --name=value or --name: $opt")
+            error(
+                "Invalid option: $opt. Options must use the format --name=value or --name",
+            )
         end
     end
 
