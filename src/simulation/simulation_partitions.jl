@@ -104,8 +104,9 @@ Run one operation of a partitioned simulation from command-line arguments.
     to 0.
   - `--index=<n>`: Index of the partition to run. Required by `execute`.
   - `--skip-failures`: Only applies to `join`. Skip the partition jobs that failed and merge
-    the results of the successful jobs. `join` fails if any partition job failed and this is
-    not set. The status of the joined simulation is a failure either way.
+    the results of the successful jobs. `join` raises an error if any partition job failed
+    either way; if this is set, the results of the successful jobs are merged first. The
+    status of the joined simulation is a failure either way.
 """
 function process_simulation_partition_cli_args(build_function, execute_function, args...)
     length(args) < 2 && error("Usage: setup|execute|join [options]")
@@ -140,18 +141,16 @@ function process_simulation_partition_cli_args(build_function, execute_function,
     options = Dict{String, String}()
     for opt in args[2:end]
         !startswith(opt, "--") && error("All options must start with '--': $opt")
-        fields = split(opt[3:end], "=")
+        # Only the first '=' separates the name from the value; the value may contain
+        # '=' characters (e.g. in a path).
+        fields = split(opt[3:end], "="; limit = 2)
         if length(fields) == 1
             # Only flags, such as --skip-failures, don't require a value.
             fields[1] in flag_options ||
                 error("The option --$(fields[1]) requires a value: --$(fields[1])=<value>")
             options[fields[1]] = "true"
-        elseif length(fields) == 2
-            options[fields[1]] = fields[2]
         else
-            error(
-                "Invalid option: $opt. Options must use the format --name=value or --name",
-            )
+            options[fields[1]] = fields[2]
         end
     end
 
@@ -197,21 +196,36 @@ function process_simulation_partition_cli_args(build_function, execute_function,
     elseif operation == "join"
         throw_if_missing(keys(options), Set(("simulation-name",)), operation)
         base_dir = joinpath(output_dir, options["simulation-name"])
-        config_file = joinpath(base_dir, "simulation_partitions", "config.json")
-        config = open(config_file, "r") do io
-            JSON3.read(io, Dict)
-        end
-        partitions = IS.deserialize(SimulationPartitions, config)
         config_logging(joinpath(base_dir, "logs", "join_partitioned_simulation.log"))
-        join_simulation(
+        status = join_simulation(
             base_dir;
             skip_failures = get_bool_option(options, "skip-failures"),
         )
+        if status != RunStatus.SUCCESSFULLY_FINALIZED
+            error(
+                "The results of the successful partition jobs were merged, but the " *
+                "status of the joined simulation is $status because one or more " *
+                "partition jobs failed.",
+            )
+        end
     else
         error("Unsupported operation=$operation")
     end
 
     return
+end
+
+"""
+Return `true` if the exception is an InterruptException, including one wrapped in the
+exception types that `Distributed.pmap` uses to propagate worker failures.
+"""
+function _is_interrupt(e)
+    e isa InterruptException && return true
+    e isa Distributed.RemoteException && return _is_interrupt(e.captured.ex)
+    e isa CapturedException && return _is_interrupt(e.ex)
+    e isa TaskFailedException && return _is_interrupt(e.task.exception)
+    e isa CompositeException && return any(_is_interrupt, e.exceptions)
+    return false
 end
 
 """
@@ -301,28 +315,24 @@ function run_parallel_simulation(
     end
 
     Distributed.@everywhere include($script)
-    worker_exception = nothing
     try
         Distributed.pmap(PowerSimulations._run_parallel_simulation, jobs)
     catch e
-        # Defer the exception so that the join step below still runs and records a
-        # failed status in the results directory.
-        worker_exception = (e, catch_backtrace())
-        @error "One or more partition jobs failed." exception = worker_exception
+        # Do not attempt the join; it would fail because at least one partition failed.
+        # Record the failure so that the results directory reports it — unless the user
+        # interrupted the run, which is not a simulation failure. The results of the
+        # successful partitions can still be merged with
+        # join_simulation(path; skip_failures = true).
+        if !_is_interrupt(e)
+            _try_serialize_failed_status(joinpath(output_dir, name, RESULTS_DIR))
+        end
+        rethrow()
     finally
         Distributed.rmprocs(Distributed.workers()...)
     end
 
     args = ["join", "--simulation-name=$name", "--output-dir=$output_dir"]
-    try
-        process_simulation_partition_cli_args(build_function, execute_function, args...)
-    catch e
-        isnothing(worker_exception) && rethrow()
-        # The original worker exception is the root cause; log the join error instead
-        # of letting it mask that exception.
-        @error "Failed to join the simulation results." exception = (e, catch_backtrace())
-    end
-    isnothing(worker_exception) || throw(worker_exception[1])
+    process_simulation_partition_cli_args(build_function, execute_function, args...)
     return
 end
 

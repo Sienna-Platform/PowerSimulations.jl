@@ -26,6 +26,25 @@
     @test_throws ErrorException PSI.get_absolute_step_range(partitions, 54)
 end
 
+@testset "Test interrupt detection" begin
+    remote = PSI.Distributed.RemoteException(
+        1,
+        CapturedException(InterruptException(), Any[]),
+    )
+    @test PSI._is_interrupt(InterruptException())
+    @test PSI._is_interrupt(remote)
+    @test PSI._is_interrupt(CompositeException([ErrorException("failed"), remote]))
+    @test !PSI._is_interrupt(ErrorException("failed"))
+    @test !PSI._is_interrupt(
+        CompositeException([
+            PSI.Distributed.RemoteException(
+                1,
+                CapturedException(ErrorException("failed"), Any[]),
+            ),
+        ]),
+    )
+end
+
 @testset "Test simulation partitions" begin
     sim_dir = mktempdir()
     script = joinpath(BASE_DIR, "test", "run_partitioned_simulation.jl")
@@ -176,10 +195,14 @@ end
         for (key, pre_df) in pre_variables
             post_df = post_variables[key]
             @test nrow(post_df) == nrow(pre_df)
-            @test nrow(pre_df) % num_partitions == 0
-            rows_per_step = nrow(pre_df) ÷ num_partitions
+            num_steps = partition_results.partitions.num_steps
+            @test nrow(pre_df) % num_steps == 0
+            rows_per_step = nrow(pre_df) ÷ num_steps
+            skipped_steps = PSI._valid_step_range(partition_results, failed_index)
             skipped_rows =
-                (rows_per_step * (failed_index - 1) + 1):(rows_per_step * failed_index)
+                (rows_per_step * (first(skipped_steps) - 1) + 1):(rows_per_step * last(
+                    skipped_steps,
+                ))
             merged_rows = setdiff(1:nrow(pre_df), skipped_rows)
             # The successful partitions must be merged at their original steps.
             @test post_df[merged_rows, :] == pre_df[merged_rows, :]
@@ -199,7 +222,9 @@ end
         cli_args...,
     )
     @test PSI.deserialize_status(joined_status_path) == PSI.RunStatus.FAILED
-    PSI.process_simulation_partition_cli_args(
+    # The command must fail even with --skip-failures so that scripts detect the failure,
+    # but only after merging the results of the successful jobs.
+    @test_throws ErrorException PSI.process_simulation_partition_cli_args(
         build_simulation,
         execute_simulation,
         cli_args...,
@@ -207,10 +232,9 @@ end
     )
     @test PSI.deserialize_status(joined_status_path) == PSI.RunStatus.FAILED
 
-    # Options must be rejected if they are malformed, have an invalid value, or are
-    # missing a required value.
-    for invalid_option in
-        ("--skip-failures=maybe", "--simulation-name=a=b", "--simulation-name")
+    # Options must be rejected if they have an invalid value or are missing a required
+    # value.
+    for invalid_option in ("--skip-failures=maybe", "--simulation-name")
         @test_throws ErrorException PSI.process_simulation_partition_cli_args(
             build_simulation,
             execute_simulation,
@@ -218,6 +242,24 @@ end
             invalid_option,
         )
     end
+
+    # Option values may contain '=': only the first '=' separates the name from the
+    # value. The parse succeeds and the failure comes from the nonexistent simulation
+    # named "a=b", not from option parsing.
+    parse_err = try
+        PSI.process_simulation_partition_cli_args(
+            build_simulation,
+            execute_simulation,
+            "join",
+            "--simulation-name=a=b",
+            "--output-dir=$sim_dir",
+        )
+        nothing
+    catch e
+        e
+    end
+    @test parse_err !== nothing
+    @test !occursin("Invalid option", sprint(showerror, parse_err))
 
     PSI.serialize_status(
         PSI.RunStatus.SUCCESSFULLY_FINALIZED,
@@ -244,7 +286,7 @@ end
         mv(store_backup, store_file; force = true)
     end
 
-    # A job whose status cannot be read must be treated as a failure.
+    # A job whose status file is missing must be treated as a failure.
     status_file = joinpath(partition_status_path(corrupted_index), "status.json")
     status_backup = status_file * ".backup"
     mv(status_file, status_backup)
@@ -252,7 +294,14 @@ end
         @test_throws ErrorException PSI.join_simulation(base_dir)
         @test PSI.deserialize_status(joined_status_path) == PSI.RunStatus.FAILED
         @test PSI.join_simulation(base_dir; skip_failures = true) == PSI.RunStatus.FAILED
+        # A status file that exists but cannot be read indicates a problem with the
+        # environment rather than a failed partition job, and must propagate even with
+        # skip_failures = true.
+        write(status_file, "not JSON")
+        @test_throws Exception PSI.join_simulation(base_dir)
+        @test_throws Exception PSI.join_simulation(base_dir; skip_failures = true)
     finally
+        rm(status_file; force = true)
         mv(status_backup, status_file; force = true)
     end
 

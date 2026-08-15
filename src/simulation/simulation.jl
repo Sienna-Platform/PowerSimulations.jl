@@ -1198,13 +1198,33 @@ function serialize_status(sim::Simulation)
     serialize_status(get_simulation_status(sim), get_results_dir(sim))
 end
 
+_status_file_path(results_dir::AbstractString) = joinpath(results_dir, "status.json")
+
 function serialize_status(status::RunStatus, results_dir::AbstractString)
     data = Dict("run_status" => string(status))
-    filename = joinpath(results_dir, "status.json")
-    open(filename, "w") do io
+    open(_status_file_path(results_dir), "w") do io
         JSON3.write(io, data)
     end
 
+    return
+end
+
+"""
+Record RunStatus.FAILED in `results_dir` without throwing. Failure paths call this from
+catch blocks so that an IO error while recording the status cannot mask the exception
+that caused the failure.
+"""
+function _try_serialize_failed_status(results_dir::AbstractString)
+    try
+        # The directory may not exist if the failure occurred before the simulation
+        # created its output directories.
+        mkpath(results_dir)
+        serialize_status(RunStatus.FAILED, results_dir)
+    catch e
+        e isa InterruptException && rethrow()
+        @error "Failed to record RunStatus.FAILED" results_dir exception =
+            (e, catch_backtrace())
+    end
     return
 end
 
@@ -1213,7 +1233,7 @@ function deserialize_status(sim::Simulation)
 end
 
 function deserialize_status(results_path::AbstractString)
-    filename = joinpath(results_path, "status.json")
+    filename = _status_file_path(results_path)
     if !isfile(filename)
         error("run status file $filename does not exist")
     end
