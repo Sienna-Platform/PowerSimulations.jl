@@ -145,13 +145,77 @@ end
         end
     end
 
-    # TODO: Can emulation model results be validated?
-
-    # The checks below sabotage the partition outputs and so must be last.
     base_dir = joinpath(sim_dir, partition_name)
     partition_results = PSI.SimulationPartitionResults(base_dir)
-    joined_status_path = joinpath(base_dir, PSI.RESULTS_DIR)
     num_partitions = get_num_partitions(partition_results.partitions)
+
+    function compare_store_dataset(index, src_dataset, dst_dataset, step_dim)
+        step_range = PSI.get_absolute_step_range(partition_results.partitions, index)
+        per_step = size(src_dataset, step_dim) ÷ length(step_range)
+        valid_range = PSI._valid_step_range(partition_results, index)
+        len = length(valid_range) * per_step
+        src_start = 1 + per_step * (first(valid_range) - first(step_range))
+        dst_start = 1 + per_step * (first(valid_range) - 1)
+        src_range = src_start:(src_start + len - 1)
+        dst_range = dst_start:(dst_start + len - 1)
+        src_indexes = ntuple(d -> d == step_dim ? src_range : Colon(), ndims(src_dataset))
+        dst_indexes = ntuple(d -> d == step_dim ? dst_range : Colon(), ndims(dst_dataset))
+        @test isequal(dst_dataset[dst_indexes...], src_dataset[src_indexes...])
+    end
+
+    function compare_store_group(index, partition_store, merged_store, group_path, step_dim)
+        @test sort(collect(keys(partition_store[group_path]))) ==
+              sort(collect(keys(merged_store[group_path])))
+        for dst_dataset in merged_store[group_path]
+            name = PSI.HDF5.name(dst_dataset)
+            endswith(name, "__columns") && continue
+            compare_store_dataset(index, partition_store[name], dst_dataset, step_dim(dst_dataset))
+        end
+    end
+
+    PSI.HDF5.h5open(PSI._store_path(partition_results), "r") do merged_store
+        for index in 1:num_partitions
+            PSI.HDF5.h5open(
+                joinpath(PSI._partition_path(partition_results, index), PSI._store_subpath()),
+                "r",
+            ) do partition_store
+                @test sort(collect(keys(partition_store["simulation/decision_models"]))) ==
+                      sort(collect(keys(merged_store["simulation/decision_models"])))
+                for merged_group in merged_store["simulation/decision_models"]
+                    group_path = PSI.HDF5.name(merged_group)
+                    for output_type in string.(PSI.STORE_CONTAINERS)
+                        compare_store_group(
+                            index,
+                            partition_store,
+                            merged_store,
+                            "$group_path/$output_type",
+                            ndims,
+                        )
+                    end
+                    compare_store_dataset(
+                        index,
+                        partition_store["$group_path/optimizer_stats"],
+                        merged_store["$group_path/optimizer_stats"],
+                        ndims(merged_store["$group_path/optimizer_stats"]),
+                    )
+                end
+                for output_type in string.(PSI.STORE_CONTAINERS)
+                    compare_store_group(
+                        index,
+                        partition_store,
+                        merged_store,
+                        "simulation/emulation_model/$output_type",
+                        _ -> 1,
+                    )
+                end
+            end
+        end
+    end
+
+    # TODO: Can emulation model results be validated through the public results APIs?
+
+    # The checks below sabotage the partition outputs and so must be last.
+    joined_status_path = joinpath(base_dir, PSI.RESULTS_DIR)
     partition_status_path(index) =
         joinpath(PSI._partition_path(partition_results, index), PSI.RESULTS_DIR)
     read_realized(results) = Dict(
