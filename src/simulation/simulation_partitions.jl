@@ -84,6 +84,30 @@ function IS.serialize(partitions::SimulationPartitions)
     return IS.serialize_struct(partitions)
 end
 
+"""
+Run one operation of a partitioned simulation from command-line arguments.
+
+# Arguments
+
+  - `build_function`: Function reference that returns a built Simulation.
+  - `execute_function`: Function reference that executes a Simulation.
+  - `args`: Command-line arguments. The first one must be `setup`, `execute`, or `join`.
+    The rest must be options in the format `--name=value` or, for flags, `--name`.
+
+# Options
+
+  - `--output-dir=<path>`: Path for simulation outputs. Required for all operations unless
+    the environment variable `JADE_RUNTIME_OUTPUT` is set.
+  - `--simulation-name=<name>`: Simulation name. Required for all operations.
+  - `--num-steps=<n>`, `--num-period-steps=<n>`, `--num-overlap-steps=<n>`: Definition of
+    the partitions. Required by `setup`, except for `--num-overlap-steps`, which defaults
+    to 0.
+  - `--index=<n>`: Index of the partition to run. Required by `execute`.
+  - `--skip-failures`: Only applies to `join`. Skip the partition jobs that failed and merge
+    the results of the successful jobs. `join` raises an error if any partition job failed
+    either way; if this is set, the results of the successful jobs are merged first. The
+    status of the joined simulation is a failure either way.
+"""
 function process_simulation_partition_cli_args(build_function, execute_function, args...)
     length(args) < 2 && error("Usage: setup|execute|join [options]")
     function config_logging(filename)
@@ -105,13 +129,29 @@ function process_simulation_partition_cli_args(build_function, execute_function,
         !isempty(diff) && error("Missing required options for $label: $diff")
     end
 
+    function get_bool_option(options, name)
+        value = lowercase(get(options, name, "false"))
+        value in ("true", "false") ||
+            error("The option --$name must be set to true or false: $value")
+        return parse(Bool, value)
+    end
+
+    flag_options = ("skip-failures",)
     operation = args[1]
     options = Dict{String, String}()
     for opt in args[2:end]
         !startswith(opt, "--") && error("All options must start with '--': $opt")
-        fields = split(opt[3:end], "=")
-        length(fields) != 2 && error("All options must use the format --name=value: $opt")
-        options[fields[1]] = fields[2]
+        # Only the first '=' separates the name from the value; the value may contain
+        # '=' characters (e.g. in a path).
+        fields = split(opt[3:end], "="; limit = 2)
+        if length(fields) == 1
+            # Only flags, such as --skip-failures, don't require a value.
+            fields[1] in flag_options ||
+                error("The option --$(fields[1]) requires a value: --$(fields[1])=<value>")
+            options[fields[1]] = "true"
+        else
+            options[fields[1]] = fields[2]
+        end
     end
 
     if haskey(options, "output-dir")
@@ -156,13 +196,18 @@ function process_simulation_partition_cli_args(build_function, execute_function,
     elseif operation == "join"
         throw_if_missing(keys(options), Set(("simulation-name",)), operation)
         base_dir = joinpath(output_dir, options["simulation-name"])
-        config_file = joinpath(base_dir, "simulation_partitions", "config.json")
-        config = open(config_file, "r") do io
-            JSON3.read(io, Dict)
-        end
-        partitions = IS.deserialize(SimulationPartitions, config)
         config_logging(joinpath(base_dir, "logs", "join_partitioned_simulation.log"))
-        join_simulation(base_dir)
+        status = join_simulation(
+            base_dir;
+            skip_failures = get_bool_option(options, "skip-failures"),
+        )
+        if status != RunStatus.SUCCESSFULLY_FINALIZED
+            error(
+                "The results of the successful partition jobs were merged, but the " *
+                "status of the joined simulation is $status because one or more " *
+                "partition jobs failed.",
+            )
+        end
     else
         error("Unsupported operation=$operation")
     end
@@ -171,7 +216,23 @@ function process_simulation_partition_cli_args(build_function, execute_function,
 end
 
 """
+Return `true` if the exception is an InterruptException, including one wrapped in the
+exception types that `Distributed.pmap` uses to propagate worker failures.
+"""
+_is_interrupt(::InterruptException) = true
+_is_interrupt(e::Distributed.RemoteException) = _is_interrupt(e.captured.ex)
+_is_interrupt(e::CapturedException) = _is_interrupt(e.ex)
+_is_interrupt(e::TaskFailedException) = _is_interrupt(e.task.result)
+_is_interrupt(e::CompositeException) = any(_is_interrupt, e.exceptions)
+_is_interrupt(_) = false
+
+"""
 Run a partitioned simulation in parallel on a local computer.
+
+Throw an exception if any partition fails. In that case a failed status is recorded in
+`<output_dir>/<name>/results/status.json` and the results of the successful partitions can
+still be merged by calling
+`PowerSimulations.join_simulation(joinpath(output_dir, name); skip_failures = true)`.
 
 # Arguments
 
@@ -254,12 +315,23 @@ function run_parallel_simulation(
     Distributed.@everywhere include($script)
     try
         Distributed.pmap(PowerSimulations._run_parallel_simulation, jobs)
+    catch e
+        # Do not attempt the join; it would fail because at least one partition failed.
+        # Record the failure so that the results directory reports it — unless the user
+        # interrupted the run, which is not a simulation failure. The results of the
+        # successful partitions can still be merged with
+        # join_simulation(path; skip_failures = true).
+        if !_is_interrupt(e)
+            _try_serialize_failed_status(joinpath(output_dir, name, RESULTS_DIR))
+        end
+        rethrow()
     finally
         Distributed.rmprocs(Distributed.workers()...)
     end
 
     args = ["join", "--simulation-name=$name", "--output-dir=$output_dir"]
     process_simulation_partition_cli_args(build_function, execute_function, args...)
+    return
 end
 
 function _run_parallel_simulation(params)
