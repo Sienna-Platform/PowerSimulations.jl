@@ -169,14 +169,22 @@ end
         for dst_dataset in merged_store[group_path]
             name = PSI.HDF5.name(dst_dataset)
             endswith(name, "__columns") && continue
-            compare_store_dataset(index, partition_store[name], dst_dataset, step_dim(dst_dataset))
+            compare_store_dataset(
+                index,
+                partition_store[name],
+                dst_dataset,
+                step_dim(dst_dataset),
+            )
         end
     end
 
     PSI.HDF5.h5open(PSI._store_path(partition_results), "r") do merged_store
         for index in 1:num_partitions
             PSI.HDF5.h5open(
-                joinpath(PSI._partition_path(partition_results, index), PSI._store_subpath()),
+                joinpath(
+                    PSI._partition_path(partition_results, index),
+                    PSI._store_subpath(),
+                ),
                 "r",
             ) do partition_store
                 @test sort(collect(keys(partition_store["simulation/decision_models"]))) ==
