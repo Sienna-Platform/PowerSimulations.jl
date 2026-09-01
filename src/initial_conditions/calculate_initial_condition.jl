@@ -1,4 +1,13 @@
-# MIP solver tolerances can leave binary values near their endpoints.
+"""
+    set_ic_quantity!(
+        ic::InitialCondition{DeviceStatus, JuMP.VariableRef},
+        var_value::Float64,
+    )
+
+Set the `DeviceStatus` initial condition by rounding the finite solver value
+`var_value` before fixing `ic`. This removes small deviations from binary
+endpoints caused by MIP solver tolerances.
+"""
 function set_ic_quantity!(
     ic::InitialCondition{DeviceStatus, JuMP.VariableRef},
     var_value::Float64,
@@ -8,6 +17,16 @@ function set_ic_quantity!(
     return
 end
 
+"""
+    set_ic_quantity!(
+        ic::InitialCondition{DeviceStatus, Float64},
+        var_value::Float64,
+    )
+
+Set the `DeviceStatus` initial condition by rounding the finite solver value
+`var_value` before storing it in `ic`. This removes small deviations from
+binary endpoints caused by MIP solver tolerances.
+"""
 function set_ic_quantity!(
     ic::InitialCondition{DeviceStatus, Float64},
     var_value::Float64,
