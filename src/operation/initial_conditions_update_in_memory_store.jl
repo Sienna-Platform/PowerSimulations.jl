@@ -104,10 +104,7 @@ function update_initial_conditions!(
 }
     for ic in ics
         var_val = get_value(store, OnVariable(), get_component_type(ic))
-        set_ic_quantity!(
-            ic,
-            round(get_last_recorded_value(var_val)[get_component_name(ic)]),
-        )
+        set_ic_quantity!(ic, get_last_recorded_value(var_val)[get_component_name(ic)])
     end
     return
 end

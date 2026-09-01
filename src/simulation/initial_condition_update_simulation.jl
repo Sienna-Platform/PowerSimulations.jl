@@ -167,7 +167,7 @@ function update_initial_conditions!(
     for ic in ics
         isnothing(get_value(ic)) && continue
         var_val = get_system_state_value(state, OnVariable(), get_component_type(ic))
-        set_ic_quantity!(ic, round(var_val[get_component_name(ic)]))
+        set_ic_quantity!(ic, var_val[get_component_name(ic)])
     end
     return
 end

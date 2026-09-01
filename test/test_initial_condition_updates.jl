@@ -40,13 +40,29 @@ function _make_initial_condition_update_fixture(source_type::Symbol, value::Floa
     end
 
     PSI.update_initial_conditions!(initial_conditions, source, Dates.Millisecond(0))
-    return PSI.get_condition(initial_conditions[1])
+    return initial_conditions[1], dataset
 end
 
 @testset "DeviceStatus initial condition updates round OnVariable values" begin
     value = 0.9999997
     for source_type in (:simulation_state, :in_memory_store)
-        result = _make_initial_condition_update_fixture(source_type, value)
-        @test result === 1.0
+        initial_condition, dataset =
+            _make_initial_condition_update_fixture(source_type, value)
+        @test PSI.get_condition(initial_condition) === 1.0
+        @test PSI.get_last_recorded_value(dataset)["test-device"] === value
     end
+end
+
+@testset "DeviceStatus initial condition writes round OnVariable values" begin
+    device = DeviceStatusInitialConditionTestDevice("test-device")
+    model = JuMP.Model()
+    variable = JuMP.@variable(model, status)
+    initial_condition = PSI.InitialCondition{PSI.DeviceStatus, JuMP.VariableRef}(
+        device,
+        variable,
+    )
+
+    PSI.set_ic_quantity!(initial_condition, 0.9999997)
+
+    @test JuMP.fix_value(variable) === 1.0
 end
