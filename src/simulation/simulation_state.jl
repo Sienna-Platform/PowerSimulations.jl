@@ -233,6 +233,8 @@ function initialize_simulation_state!(
     return
 end
 
+#= EVENTS-EXCISION: countdown-driven decision-state updates for outage availability
+   parameters; framework not yet in POM.
 function update_decision_state!(
     state::SimulationState,
     key::ParameterKey{AvailableStatusChangeCountdownParameter, T},
@@ -357,6 +359,7 @@ function update_decision_state!(
     end
     return
 end
+=#
 
 function update_decision_state!(
     state::SimulationState,
@@ -400,6 +403,8 @@ function update_decision_state!(
     return
 end
 
+#= EVENTS-EXCISION: MTTR lookup and event-driven decision-state updates (countdown,
+   available-status, aux-variable, and variable outage variants); framework not yet in POM.
 function _get_time_to_recover(
     event::PSY.GeometricDistributionForcedOutage,
     event_model::EventModel,
@@ -608,6 +613,7 @@ function update_decision_state!(
     end
     return
 end
+=#
 
 function update_decision_state!(
     state::SimulationState,
@@ -800,6 +806,9 @@ function update_system_state!(
     return
 end
 
+#= EVENTS-EXCISION: event-driven system-state updates (outage occurrence sampling,
+   available-status, active-power-offset, and aux-variable outage variants); framework
+   not yet in POM.
 function update_system_state!(
     state::SimulationState,
     key::OptimizationContainerKey,
@@ -1031,6 +1040,7 @@ function update_system_state!(
     end
     return
 end
+=#
 
 function update_system_state!(
     state::DatasetContainer{InMemoryDataset},

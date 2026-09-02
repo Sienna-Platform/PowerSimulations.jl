@@ -198,6 +198,7 @@ function _attach_feedforwards(models::SimulationModels, feedforwards)
     return ff_dict
 end
 
+#= EVENTS-EXCISION: event attachment helpers; framework not yet in POM.
 function _add_event_to_model(
     sim_model::OperationModel,
     key::EventKey{T, U},
@@ -314,6 +315,7 @@ function _attach_events!(
 
     return
 end
+=#
 
 """
     SimulationSequence(
@@ -364,7 +366,6 @@ mutable struct SimulationSequence
     horizons::OrderedDict{Symbol, Dates.Millisecond}
     intervals::OrderedDict{Symbol, Dates.Millisecond}
     feedforwards::Dict{Symbol, Vector{<:AbstractAffectFeedforward}}
-    events::Vector{<:EventModel}
     ini_cond_chronology::InitialConditionChronology
     execution_order::Vector{Int}
     executions_by_model::OrderedDict{Symbol, Int}
@@ -374,7 +375,6 @@ mutable struct SimulationSequence
     function SimulationSequence(;
         models::SimulationModels,
         feedforwards = Dict{String, Vector{<:AbstractAffectFeedforward}}(),
-        events = Vector{EventModel}(),
         ini_cond_chronology = InterProblemChronology(),
     )
         # Allow strings or symbols as keys; convert to symbols.
@@ -395,12 +395,10 @@ mutable struct SimulationSequence
         executions_by_model = _get_num_executions_by_model(models, execution_order)
         sequence_uuid = IS.make_uuid()
         initialize_simulation_internals!(models, sequence_uuid)
-        _attach_events!(models, events)
         new(
             horizons,
             intervals,
             _attach_feedforwards(models, feedforwards),
-            events,
             ini_cond_chronology,
             execution_order,
             executions_by_model,
@@ -409,6 +407,15 @@ mutable struct SimulationSequence
         )
     end
 end
+
+#= EVENTS-EXCISION: SimulationSequence originally carried an `events` field, populated via
+   `_attach_events!` in the constructor. Framework not yet in POM; original struct field,
+   constructor kwarg default, attachment call, and `new(...)` positional arg below.
+    events::Vector{<:EventModel}
+    events = Vector{EventModel}(),
+    _attach_events!(models, events)
+    events,
+=#
 
 get_step_resolution(sequence::SimulationSequence) = first(values(sequence.intervals))
 
@@ -420,5 +427,7 @@ function get_interval(sequence::SimulationSequence, model::DecisionModel)
     return sequence.intervals[get_name(model)]
 end
 
+#= EVENTS-EXCISION: SimulationSequence.events field removed; framework not yet in POM.
 get_events(sequence::SimulationSequence) = sequence.events
+=#
 get_execution_order(sequence::SimulationSequence) = sequence.execution_order
