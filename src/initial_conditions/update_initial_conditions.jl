@@ -1,5 +1,5 @@
 function _update_initial_conditions!(
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     key::InitialConditionKey{T, U},
     source, # Store or State are used in simulations by default
 ) where {T <: InitialConditionType, U <: PSY.Component}
@@ -13,7 +13,7 @@ function _update_initial_conditions!(
     previous_values = get_condition.(ini_conditions_vector)
     # The implementation of specific update_initial_conditions! is located in the files
     # update_initial_conditions_in_memory_store.jl and update_initial_conditions_simulation.jl
-    update_initial_conditions!(ini_conditions_vector, source, model_resolution)
+    IOM.update_initial_conditions!(ini_conditions_vector, source, model_resolution)
     for (i, initial_condition) in enumerate(ini_conditions_vector)
         IS.@record :execution InitialConditionUpdateEvent(
             timestamp,
@@ -26,7 +26,7 @@ function _update_initial_conditions!(
 end
 
 # Note to devs: Implemented this way to avoid ambiguities and future proof custom ic updating
-function update_initial_conditions!(
+function IOM.update_initial_conditions!(
     model::DecisionModel,
     key::InitialConditionKey{T, U},
     source, # Store or State are used in simulations by default
@@ -35,7 +35,7 @@ function update_initial_conditions!(
     return
 end
 
-function update_initial_conditions!(
+function IOM.update_initial_conditions!(
     model::EmulationModel,
     key::InitialConditionKey{T, U},
     source, # Store or State are used in simulations by default

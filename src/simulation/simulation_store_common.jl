@@ -1,6 +1,6 @@
 function write_results!(
     store,
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     index::Union{DecisionModelIndexType, EmulationModelIndexType},
     update_timestamp::Dates.DateTime;
     exports = nothing,
@@ -31,7 +31,7 @@ function write_model_dual_results!(
     index::Union{DecisionModelIndexType, EmulationModelIndexType},
     update_timestamp::Dates.DateTime,
     export_params::Union{Dict{Symbol, Any}, Nothing},
-) where {T <: OperationModel}
+) where {T <: IOM.AbstractOptimizationModel}
     container = get_optimization_container(model)
     model_name = get_name(model)
     if !isnothing(export_params)
@@ -64,7 +64,7 @@ function write_model_parameter_results!(
     index::Union{DecisionModelIndexType, EmulationModelIndexType},
     update_timestamp::Dates.DateTime,
     export_params::Union{Dict{Symbol, Any}, Nothing},
-) where {T <: OperationModel}
+) where {T <: IOM.AbstractOptimizationModel}
     container = get_optimization_container(model)
     model_name = get_name(model)
     if !isnothing(export_params)
@@ -106,7 +106,7 @@ function write_model_variable_results!(
     index::Union{DecisionModelIndexType, EmulationModelIndexType},
     update_timestamp::Dates.DateTime,
     export_params::Union{Dict{Symbol, Any}, Nothing},
-) where {T <: OperationModel}
+) where {T <: IOM.AbstractOptimizationModel}
     container = get_optimization_container(model)
     model_name = get_name(model)
     if !isnothing(export_params)
@@ -150,7 +150,7 @@ function write_model_aux_variable_results!(
     index::Union{DecisionModelIndexType, EmulationModelIndexType},
     update_timestamp::Dates.DateTime,
     export_params::Union{Dict{Symbol, Any}, Nothing},
-) where {T <: OperationModel}
+) where {T <: IOM.AbstractOptimizationModel}
     container = get_optimization_container(model)
     model_name = get_name(model)
     if !isnothing(export_params)
@@ -188,7 +188,7 @@ function write_model_expression_results!(
     index::Union{DecisionModelIndexType, EmulationModelIndexType},
     update_timestamp::Dates.DateTime,
     export_params::Union{Dict{Symbol, Any}, Nothing},
-) where {T <: OperationModel}
+) where {T <: IOM.AbstractOptimizationModel}
     container = get_optimization_container(model)
     model_name = get_name(model)
     if !isnothing(export_params)

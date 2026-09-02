@@ -84,15 +84,15 @@ handle_variable_cost_parameter(
     ::PSY.OperationalCost, args...) = nothing
 
 # typically used just with 1 arg, _get_parameter_field(T(), operation_cost).
-_get_parameter_field(::StartupCostParameter, args...; kwargs...) =
+IOM._get_parameter_field(::StartupCostParameter, args...; kwargs...) =
     PSY.get_start_up(args...; kwargs...)
-_get_parameter_field(::ShutdownCostParameter, args...; kwargs...) =
+IOM._get_parameter_field(::ShutdownCostParameter, args...; kwargs...) =
     PSY.get_shut_down(args...; kwargs...)
-_get_parameter_field(::IncrementalCostAtMinParameter, args...; kwargs...) =
+IOM._get_parameter_field(::IncrementalCostAtMinParameter, args...; kwargs...) =
     PSY.get_incremental_initial_input(args...; kwargs...)
-_get_parameter_field(::DecrementalCostAtMinParameter, args...; kwargs...) =
+IOM._get_parameter_field(::DecrementalCostAtMinParameter, args...; kwargs...) =
     PSY.get_decremental_initial_input(args...; kwargs...)
-_get_parameter_field(
+IOM._get_parameter_field(
     ::Union{
         IncrementalPiecewiseLinearSlopeParameter,
         IncrementalPiecewiseLinearBreakpointParameter,
@@ -101,7 +101,7 @@ _get_parameter_field(
     kwargs...,
 ) =
     get_output_offer_curves(args...; kwargs...)
-_get_parameter_field(
+IOM._get_parameter_field(
     ::Union{
         DecrementalPiecewiseLinearSlopeParameter,
         DecrementalPiecewiseLinearBreakpointParameter,
@@ -185,7 +185,7 @@ end
 
 function handle_variable_cost_parameter(
     slope_param::T,
-    component::PSY.ReserveDemandCurve,
+    component::PSY.OnlineReserve,
     name,
     parameter_array,
     parameter_multiplier,

@@ -1,0 +1,44 @@
+OK   src/core/abstract_simulation_store.jl
+OK   src/core/cache_utils.jl
+OK   src/core/definitions.jl
+OK   src/initial_conditions/initial_condition_chronologies.jl
+OK   src/initial_conditions/update_initial_conditions.jl
+OK   src/operation/decision_model.jl
+OK   src/operation/emulation_model.jl
+OK   src/operation/operation_model_simulation_interface.jl
+OK   src/operation/operation_model_types.jl
+OK   src/operation/operation_problem_templates.jl
+FAIL src/parameters/update_container_parameter_values.jl
+  src/parameters/update_container_parameter_values.jl:96  _unwrap_for_param
+FAIL src/parameters/update_cost_parameters.jl
+  src/parameters/update_cost_parameters.jl:170  _unwrap_for_param
+  src/parameters/update_cost_parameters.jl:251  _convert_variable_cost
+OK   src/parameters/update_parameters.jl
+OK   src/simulation/decision_model_simulation_results.jl
+OK   src/simulation/emulation_model_simulation_results.jl
+OK   src/simulation/get_components_interface.jl
+OK   src/simulation/hdf_simulation_store.jl
+OK   src/simulation/in_memory_simulation_store.jl
+OK   src/simulation/initial_condition_update_simulation.jl
+OK   src/simulation/optimization_output_cache.jl
+OK   src/simulation/optimization_output_caches.jl
+OK   src/simulation/realized_meta.jl
+FAIL src/simulation/simulation.jl
+  src/simulation/simulation.jl:203  get_single_time_series_consistency
+OK   src/simulation/simulation_internal.jl
+OK   src/simulation/simulation_models.jl
+OK   src/simulation/simulation_partition_results.jl
+OK   src/simulation/simulation_partitions.jl
+OK   src/simulation/simulation_problem_results.jl
+OK   src/simulation/simulation_results.jl
+OK   src/simulation/simulation_results_export.jl
+FAIL src/simulation/simulation_sequence.jl
+  src/simulation/simulation_sequence.jl:10  interval
+OK   src/simulation/simulation_state.jl
+OK   src/simulation/simulation_store_common.jl
+OK   src/simulation/simulation_store_params.jl
+OK   src/simulation/simulation_store_requirements.jl
+OK   src/utils/file_utils.jl
+OK   src/utils/print_pt_v3.jl
+OK   src/utils/recorder_events.jl
+OK   src/utils/store_dimensions.jl

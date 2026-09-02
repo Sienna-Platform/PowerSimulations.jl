@@ -1,16 +1,16 @@
-function update_initial_conditions!(
-    model::OperationModel,
+function IOM.update_initial_conditions!(
+    model::IOM.AbstractOptimizationModel,
     state::SimulationState,
     ::InterProblemChronology,
 )
     for key in keys(get_initial_conditions(model))
-        update_initial_conditions!(model, key, state)
+        IOM.update_initial_conditions!(model, key, state)
     end
     return
 end
 
-function update_initial_conditions!(
-    ::OperationModel,
+function IOM.update_initial_conditions!(
+    ::IOM.AbstractOptimizationModel,
     ::SimulationState,
     ::IntraProblemChronology,
 )
@@ -21,7 +21,7 @@ function update_initial_conditions!(
     return
 end
 
-function update_initial_conditions!(
+function IOM.update_initial_conditions!(
     ics::T,
     state::SimulationState,
     model_resolution::Dates.Millisecond,
@@ -54,7 +54,7 @@ function update_initial_conditions!(
     return
 end
 
-function update_initial_conditions!(
+function IOM.update_initial_conditions!(
     ics::T,
     state::SimulationState,
     model_resolution::Dates.Millisecond,
@@ -88,7 +88,7 @@ function update_initial_conditions!(
     return
 end
 
-function update_initial_conditions!(
+function IOM.update_initial_conditions!(
     ics::T,
     state::SimulationState,
     ::Dates.Millisecond,
@@ -144,7 +144,7 @@ function update_initial_conditions!(
     return
 end
 
-function update_initial_conditions!(
+function IOM.update_initial_conditions!(
     ics::T,
     state::SimulationState,
     ::Dates.Millisecond,
@@ -172,7 +172,7 @@ function update_initial_conditions!(
     return
 end
 
-function update_initial_conditions!(
+function IOM.update_initial_conditions!(
     ics::T,
     state::SimulationState,
     ::Dates.Millisecond,
@@ -203,7 +203,7 @@ function update_initial_conditions!(
     return
 end
 
-function update_initial_conditions!(
+function IOM.update_initial_conditions!(
     ics::T,
     state::SimulationState,
     ::Dates.Millisecond,

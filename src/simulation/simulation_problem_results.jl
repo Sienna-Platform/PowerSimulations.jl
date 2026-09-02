@@ -12,7 +12,7 @@ abstract type OperationModelSimulationResults end
 Holds the results of a simulation problem for plotting or exporting.
 """
 mutable struct SimulationProblemResults{T} <:
-               IS.Results where {T <: OperationModelSimulationResults}
+               IS.Outputs where {T <: OperationModelSimulationResults}
     problem::String
     base_power::Float64
     execution_path::String
@@ -55,21 +55,21 @@ function SimulationProblemResults{T}(
         vals,
         system,
         problem_params.system_uuid,
-        get_resolution(problem_params),
+        IOM.get_resolution(problem_params),
         store isa HdfSimulationStore ? nothing : store,
     )
 end
 
 get_model_name(res::SimulationProblemResults) = res.problem
-get_system(res::SimulationProblemResults) = res.system
-get_source_data(res::SimulationProblemResults) = get_system(res)  # Needed for compatibility with the IS.Results interface
-get_resolution(res::SimulationProblemResults) = res.resolution
+IOM.get_system(res::SimulationProblemResults) = res.system
+IS.get_source_data(res::SimulationProblemResults) = get_system(res)  # Needed for compatibility with the IS.Results interface
+IOM.get_resolution(res::SimulationProblemResults) = res.resolution
 get_execution_path(res::SimulationProblemResults) = res.execution_path
-get_model_base_power(res::SimulationProblemResults) = res.base_power
+IOM.get_model_base_power(res::SimulationProblemResults) = res.base_power
 get_system_uuid(results::PSI.SimulationProblemResults) = results.system_uuid
 IS.get_timestamp(result::SimulationProblemResults) = result.results_timestamps
-get_interval(res::SimulationProblemResults) = res.timestamps.step
-IS.get_base_power(result::SimulationProblemResults) = result.base_power
+IOM.get_interval(res::SimulationProblemResults) = res.timestamps.step
+IOM.get_base_power(result::SimulationProblemResults) = result.base_power
 get_output_dir(res::SimulationProblemResults) = res.results_output_folder
 
 get_results_timestamps(result::SimulationProblemResults) = result.results_timestamps
@@ -116,37 +116,37 @@ get_cached_results(
 """
 Return an array of variable names (strings) that are available for reads.
 """
-list_variable_names(res::SimulationProblemResults) =
+IOM.list_variable_names(res::SimulationProblemResults) =
     encode_keys_as_strings(list_variable_keys(res))
 
 """
 Return an array of dual names (strings) that are available for reads.
 """
-list_dual_names(res::SimulationProblemResults) =
+IOM.list_dual_names(res::SimulationProblemResults) =
     encode_keys_as_strings(list_dual_keys(res))
 
 """
 Return an array of parmater names (strings) that are available for reads.
 """
-list_parameter_names(res::SimulationProblemResults) =
+IOM.list_parameter_names(res::SimulationProblemResults) =
     encode_keys_as_strings(list_parameter_keys(res))
 
 """
 Return an array of auxillary variable names (strings) that are available for reads.
 """
-list_aux_variable_names(res::SimulationProblemResults) =
+IOM.list_aux_variable_names(res::SimulationProblemResults) =
     encode_keys_as_strings(list_aux_variable_keys(res))
 
 """
 Return an array of expression names (strings) that are available for reads.
 """
-list_expression_names(res::SimulationProblemResults) =
+IOM.list_expression_names(res::SimulationProblemResults) =
     encode_keys_as_strings(list_expression_keys(res))
 
 """
 Return a reference to a StepRange of available timestamps.
 """
-get_timestamps(result::SimulationProblemResults) = result.timestamps
+IOM.get_timestamps(result::SimulationProblemResults) = result.timestamps
 
 """
 Return the system used for the problem. If the system hasn't already been deserialized or
@@ -157,7 +157,7 @@ will include all data. If that was not configured then the returned system will 
 all data except time series data.
 """
 function get_system!(
-    results::Union{OptimizationProblemResults, SimulationProblemResults};
+    results::Union{IOM.OptimizationProblemOutputs, SimulationProblemResults};
     kwargs...,
 )
     !isnothing(get_system(results)) && return get_system(results)
@@ -178,7 +178,8 @@ end
 
 get_system_fallback(results::SimulationProblemResults) =
     _deserialize_system(results, results.store)
-get_system_fallback(results::OptimizationProblemResults) = error("Could not locate system")
+get_system_fallback(results::IOM.OptimizationProblemOutputs) =
+    error("Could not locate system")
 
 locate_system_file(results::SimulationProblemResults) = joinpath(
     get_execution_path(results),
@@ -187,14 +188,14 @@ locate_system_file(results::SimulationProblemResults) = joinpath(
     make_system_filename(results.system_uuid),
 )
 
-locate_system_file(results::OptimizationProblemResults) = joinpath(
+locate_system_file(results::IOM.OptimizationProblemOutputs) = joinpath(
     ISOPT.get_results_dir(results),
     make_system_filename(ISOPT.get_source_data_uuid(results)),
 )
 
-get_system(results::OptimizationProblemResults) = ISOPT.get_source_data(results)
+IOM.get_system(results::IOM.OptimizationProblemOutputs) = ISOPT.get_source_data(results)
 
-set_system!(results::OptimizationProblemResults, system) =
+set_system!(results::IOM.OptimizationProblemOutputs, system) =
     ISOPT.set_source_data!(results, system)
 
 function _deserialize_system(results::SimulationProblemResults, ::Nothing)
@@ -249,7 +250,7 @@ function set_system!(results::SimulationProblemResults, system::PSY.System)
     return
 end
 
-function _deserialize_key(
+function IOM._deserialize_key(
     ::Type{<:OptimizationContainerKey},
     results::SimulationProblemResults,
     name::AbstractString,
@@ -258,7 +259,7 @@ function _deserialize_key(
     return results.values.container_key_lookup[name]
 end
 
-function _deserialize_key(
+function IOM._deserialize_key(
     ::Type{T},
     results::SimulationProblemResults,
     args...,
@@ -700,7 +701,7 @@ Return the optimizer stats for the problem as a DataFrame.
 
   - `store::SimulationStore`: a store that has been opened for reading
 """
-function read_optimizer_stats(res::SimulationProblemResults; store = nothing)
+function IOM.read_optimizer_stats(res::SimulationProblemResults; store = nothing)
     _store = isnothing(store) ? res.store : store
     return _read_optimizer_stats(res, _store)
 end

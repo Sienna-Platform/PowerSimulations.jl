@@ -114,7 +114,7 @@ function write_result!(
     return
 end
 
-function read_optimizer_stats(store::InMemorySimulationStore, model_name)
+function IOM.read_optimizer_stats(store::InMemorySimulationStore, model_name)
     # TODO EmulationModel: this interface is TBD
     return read_optimizer_stats(get_dm_data(store)[model_name])
 end
@@ -242,7 +242,7 @@ function write_optimizer_stats!(
     stats = get_optimizer_stats(model)
     dm_data = get_dm_data(store)
     write_optimizer_stats!(dm_data[get_name(model)], stats, index)
-    read_optimizer_stats(dm_data[get_name(model)])
+    IOM.read_optimizer_stats(dm_data[get_name(model)])
     return
 end
 

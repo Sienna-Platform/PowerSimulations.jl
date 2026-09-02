@@ -110,7 +110,7 @@ end
 get_initial_time(sim::Simulation) = sim.initial_time
 get_sequence(sim::Simulation) = sim.sequence
 get_steps(sim::Simulation) = sim.steps
-get_current_time(sim::Simulation) = get_current_time(get_simulation_state(sim))
+IOM.get_current_time(sim::Simulation) = get_current_time(get_simulation_state(sim))
 get_simulation_model(s::Simulation, name) = get_simulation_model(get_models(s), name)
 get_models(sim::Simulation) = sim.models
 get_simulation_dir(sim::Simulation) = dirname(sim.internal.logs_dir)
@@ -126,7 +126,7 @@ get_simulation_store(sim::Simulation) = sim.internal.store
 get_results_dir(sim::Simulation) = sim.internal.results_dir
 get_models_dir(sim::Simulation) = sim.internal.models_dir
 
-get_interval(sim::Simulation, name::Symbol) = get_interval(sim.sequence, name)
+IOM.get_interval(sim::Simulation, name::Symbol) = get_interval(sim.sequence, name)
 
 function get_simulation_time(sim::Simulation, problem_number::Int)
     return sim.internal.date_ref[problem_number]
@@ -257,7 +257,7 @@ end
 # Compare initial conditions for all `InitialConditionType`s with the
 # `requires_reconciliation` trait across `models`, log @info messages for mismatches
 function _initial_conditions_reconciliation!(
-    models::Vector{<:OperationModel})
+    models::Vector{<:IOM.AbstractOptimizationModel})
     model_names = get_name.(models)
     has_mismatches = false
     @info "Reconciling initial conditions across models $(join(model_names, ", "))"
@@ -323,7 +323,7 @@ function _build_single_model_for_simulation(
         # TODO-PJ: Temporary while are able to switch from PJ to POI
         container = get_optimization_container(model)
         container.built_for_recurrent_solves = true
-        build_impl!(model)
+        POM.build_model!(model)
         sim.internal.date_ref[model_number] = initial_time
         set_status!(model, ModelBuildStatus.BUILT)
         _pre_solve_model_checks(model)
@@ -363,7 +363,7 @@ function _build_emulation_model!(sim::Simulation)
         mkpath(output_dir)
         set_output_dir!(model, output_dir)
         TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "Problem Emulation $(get_name(model))" begin
-            build_impl!(model)
+            POM.build_model!(model)
         end
         sim.internal.date_ref[length(sim.internal.date_ref) + 1] = initial_time
         set_status!(model, ModelBuildStatus.BUILT)
@@ -388,7 +388,7 @@ end
 
 function _get_model_store_requirements!(
     rules::CacheFlushRules,
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     num_rows::Int,
 )
     model_name = get_name(model)
@@ -681,7 +681,7 @@ Build the Simulation, problems and the related folder structure.
   - `console_level = Logging.Error`:
   - `file_level = Logging.Info`:
 """
-function build!(
+function POM.build!(
     sim::Simulation;
     recorders = [],
     console_level = Logging.Error,
@@ -731,7 +731,7 @@ function build!(
     return get_simulation_build_status(sim)
 end
 
-function _apply_warm_start!(model::OperationModel)
+function _apply_warm_start!(model::IOM.AbstractOptimizationModel)
     container = get_optimization_container(model)
     # If the model was used to retrieve duals from an MILP the logic has to be different and
     # the results need to be read from the primal cache
@@ -931,12 +931,12 @@ end
 """
 Default problem update function for most problems with no customization
 """
-function update_model!(model::OperationModel, sim::Simulation)
+function update_model!(model::IOM.AbstractOptimizationModel, sim::Simulation)
     update_model!(model, get_simulation_state(sim), get_ini_cond_chronology(sim))
     if get_rebuild_model(model)
         container = get_optimization_container(model)
         reset_optimization_model!(container)
-        build_impl!(container, get_template(model), get_system(model))
+        POM.build_problem!(container, get_template(model), get_system(model))
     end
 
     return
@@ -993,7 +993,7 @@ function _execute!(
     store = get_simulation_store(sim)
     for step in 1:steps
         IS.@record :simulation_status SimulationStepEvent(
-            get_current_time(sim),
+            IOM.get_current_time(sim),
             step,
             "start",
         )
@@ -1084,7 +1084,7 @@ function _execute!(
                 end
 
                 IS.@record :simulation_status ProblemExecutionEvent(
-                    get_current_time(sim),
+                    IOM.get_current_time(sim),
                     step,
                     model_name,
                     "done",
@@ -1097,7 +1097,7 @@ function _execute!(
         end # execution order for loop
 
         IS.@record :simulation_status SimulationStepEvent(
-            get_current_time(sim),
+            IOM.get_current_time(sim),
             step,
             "done",
         )

@@ -4,7 +4,7 @@ Default solve method for a DecisionModel used inside of a Simulation. Solves pro
 # Arguments
 
   - `step::Int`: Simulation Step
-  - `model::OperationModel`: operation model
+  - `model::IOM.AbstractOptimizationModel`: operation model
   - `start_time::Dates.DateTime`: Initial Time of the simulation step in Simulation time.
   - `store::SimulationStore`: Simulation output store
 

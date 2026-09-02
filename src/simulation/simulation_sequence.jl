@@ -129,7 +129,7 @@ function _get_num_executions_by_model(
 end
 
 function _add_feedforward_to_model(
-    sim_model::OperationModel,
+    sim_model::IOM.AbstractOptimizationModel,
     ff::T,
     ::Type{U},
 ) where {T <: AbstractAffectFeedforward, U <: PSY.Device}
@@ -148,7 +148,7 @@ function _add_feedforward_to_model(
 end
 
 function _add_feedforward_to_model(
-    sim_model::OperationModel,
+    sim_model::IOM.AbstractOptimizationModel,
     ff::T,
     ::Type{U},
 ) where {T <: AbstractAffectFeedforward, U <: PSY.Service}
@@ -419,11 +419,11 @@ end
 
 get_step_resolution(sequence::SimulationSequence) = first(values(sequence.intervals))
 
-function get_interval(sequence::SimulationSequence, problem::Symbol)
+function IOM.get_interval(sequence::SimulationSequence, problem::Symbol)
     return sequence.intervals[problem]
 end
 
-function get_interval(sequence::SimulationSequence, model::DecisionModel)
+function IOM.get_interval(sequence::SimulationSequence, model::DecisionModel)
     return sequence.intervals[get_name(model)]
 end
 

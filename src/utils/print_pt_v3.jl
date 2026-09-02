@@ -1,16 +1,22 @@
 function Base.show(io::IO, ::MIME"text/plain", input::SimulationModels)
-    _show_method(io, input, :auto)
+    IOM._show_method(io, input, :auto)
 end
 
 function Base.show(io::IO, ::MIME"text/html", input::SimulationModels)
     # The tf_html_simple format was eliminated from PrettyTables and it was added to PowerSystems
-    _show_method(io, input, :html; stand_alone = false, table_format = PSY.tf_html_simple)
+    IOM._show_method(
+        io,
+        input,
+        :html;
+        stand_alone = false,
+        table_format = PSY.tf_html_simple,
+    )
 end
 
-_get_model_type(::DecisionModel{T}) where {T <: DecisionProblem} = T
-_get_model_type(::EmulationModel{T}) where {T <: EmulationProblem} = T
+_get_model_type(::DecisionModel{T}) where {T <: POM.AbstractPowerDecisionProblem} = T
+_get_model_type(::EmulationModel{T}) where {T <: POM.AbstractPowerEmulationProblem} = T
 
-function _show_method(io::IO, sim_models::SimulationModels, backend::Symbol; kwargs...)
+function IOM._show_method(io::IO, sim_models::SimulationModels, backend::Symbol; kwargs...)
     println(io)
     header = ["Model Name", "Model Type", "Status", "Output Directory"]
 
@@ -57,15 +63,21 @@ function _show_method(io::IO, sim_models::SimulationModels, backend::Symbol; kwa
 end
 
 function Base.show(io::IO, ::MIME"text/plain", input::SimulationSequence)
-    _show_method(io, input, :auto)
+    IOM._show_method(io, input, :auto)
 end
 
 function Base.show(io::IO, ::MIME"text/html", input::SimulationSequence)
     # The tf_html_simple format was eliminated from PrettyTables and it was added to PowerSystems
-    _show_method(io, input, :html; stand_alone = false, table_format = PSY.tf_html_simple)
+    IOM._show_method(
+        io,
+        input,
+        :html;
+        stand_alone = false,
+        table_format = PSY.tf_html_simple,
+    )
 end
 
-function _show_method(io::IO, sequence::SimulationSequence, backend::Symbol; kwargs...)
+function IOM._show_method(io::IO, sequence::SimulationSequence, backend::Symbol; kwargs...)
     println(io)
     table = [
         "Simulation Step Interval" Dates.Hour(get_step_resolution(sequence))
@@ -123,12 +135,18 @@ function _show_method(io::IO, sequence::SimulationSequence, backend::Symbol; kwa
 end
 
 function Base.show(io::IO, ::MIME"text/plain", input::Simulation)
-    _show_method(io, input, :auto)
+    IOM._show_method(io, input, :auto)
 end
 
 function Base.show(io::IO, ::MIME"text/html", input::Simulation)
     # The tf_html_simple format was eliminated from PrettyTables and it was added to PowerSystems
-    _show_method(io, input, :html; stand_alone = false, table_format = PSY.tf_html_simple)
+    IOM._show_method(
+        io,
+        input,
+        :html;
+        stand_alone = false,
+        table_format = PSY.tf_html_simple,
+    )
 end
 
 function _get_initial_time_for_show(sim::Simulation)
@@ -158,7 +176,7 @@ function _get_run_status_for_show(sim::Simulation)
     end
 end
 
-function _show_method(io::IO, sim::Simulation, backend::Symbol; kwargs...)
+function IOM._show_method(io::IO, sim::Simulation, backend::Symbol; kwargs...)
     table = [
         "Simulation Name" get_name(sim)
         "Build Status" _get_build_status_for_show(sim)
@@ -177,20 +195,26 @@ function _show_method(io::IO, sim::Simulation, backend::Symbol; kwargs...)
         kwargs...,
     )
 
-    _show_method(io, sim.models, backend; kwargs...)
-    _show_method(io, sim.sequence, backend; kwargs...)
+    IOM._show_method(io, sim.models, backend; kwargs...)
+    IOM._show_method(io, sim.sequence, backend; kwargs...)
 end
 
 function Base.show(io::IO, ::MIME"text/plain", input::SimulationResults)
-    _show_method(io, input, :auto)
+    IOM._show_method(io, input, :auto)
 end
 
 function Base.show(io::IO, ::MIME"text/html", input::SimulationResults)
     # The tf_html_simple format was eliminated from PrettyTables and it was added to PowerSystems
-    _show_method(io, input, :html; stand_alone = false, table_format = PSY.tf_html_simple)
+    IOM._show_method(
+        io,
+        input,
+        :html;
+        stand_alone = false,
+        table_format = PSY.tf_html_simple,
+    )
 end
 
-function _show_method(io::IO, results::SimulationResults, backend::Symbol; kwargs...)
+function IOM._show_method(io::IO, results::SimulationResults, backend::Symbol; kwargs...)
     header = ["Problem Name", "Initial Time", "Resolution", "Last Solution Timestamp"]
 
     table = Matrix{Any}(undef, length(results.decision_problem_results), length(header))
@@ -229,15 +253,21 @@ end
 
 ProblemResultsTypes = Union{SimulationProblemResults}
 function Base.show(io::IO, ::MIME"text/plain", input::ProblemResultsTypes)
-    _show_method(io, input, :auto)
+    IOM._show_method(io, input, :auto)
 end
 
 function Base.show(io::IO, ::MIME"text/html", input::ProblemResultsTypes)
     # The tf_html_simple format was eliminated from PrettyTables and it was added to PowerSystems
-    _show_method(io, input, :html; stand_alone = false, table_format = PSY.tf_html_simple)
+    IOM._show_method(
+        io,
+        input,
+        :html;
+        stand_alone = false,
+        table_format = PSY.tf_html_simple,
+    )
 end
 
-function _show_method(
+function IOM._show_method(
     io::IO,
     results::T,
     backend::Symbol;

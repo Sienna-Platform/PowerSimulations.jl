@@ -16,13 +16,13 @@ function update_parameters!(model::EmulationModel, data::DatasetContainer{InMemo
     return
 end
 
-function update_initial_conditions!(
+function IOM.update_initial_conditions!(
     model::EmulationModel,
     source::EmulationModelStore,
     ::InterProblemChronology,
 )
     for key in keys(get_initial_conditions(model))
-        update_initial_conditions!(model, key, source)
+        IOM.update_initial_conditions!(model, key, source)
     end
     return
 end
@@ -36,13 +36,13 @@ function update_model!(
         update_parameters!(model, source)
     end
     TimerOutputs.@timeit RUN_SIMULATION_TIMER "Ini Cond Updates" begin
-        update_initial_conditions!(model, source, ini_cond_chronology)
+        IOM.update_initial_conditions!(model, source, ini_cond_chronology)
     end
     return
 end
 
 """
-Update parameter function an OperationModel
+Update parameter function an IOM.AbstractOptimizationModel
 """
 function update_parameter_values!(
     model::EmulationModel,
@@ -76,7 +76,7 @@ Default solve method for an EmulationModel used inside of a Simulation. Solves p
 # Arguments
 
   - `step::Int`: Simulation Step
-  - `model::OperationModel`: operation model
+  - `model::IOM.AbstractOptimizationModel`: operation model
   - `start_time::Dates.DateTime`: Initial Time of the simulation step in Simulation time.
   - `store::SimulationStore`: Simulation output store
   - `exports = nothing`: realtime export of output. Use wisely, it can have negative impacts in the simulation times

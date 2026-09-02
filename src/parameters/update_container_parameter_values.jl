@@ -679,11 +679,11 @@ end
 =#
 
 """
-Update parameter function an OperationModel
+Update parameter function an IOM.AbstractOptimizationModel
 """
-function update_container_parameter_values!(
+function IOM.update_container_parameter_values!(
     optimization_container::OptimizationContainer,
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     key::ParameterKey{T, U},
     input::DatasetContainer{InMemoryDataset},
 ) where {T <: ParameterType, U <: PSY.Component}
@@ -716,9 +716,9 @@ function update_container_parameter_values!(
 end
 =#
 
-function update_container_parameter_values!(
+function IOM.update_container_parameter_values!(
     optimization_container::OptimizationContainer,
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     key::ParameterKey{T, U},
     input::DatasetContainer{InMemoryDataset},
 ) where {T <: ObjectiveFunctionParameter, U <: PSY.Component}
@@ -740,9 +740,9 @@ function update_container_parameter_values!(
     return
 end
 
-function update_container_parameter_values!(
+function IOM.update_container_parameter_values!(
     optimization_container::OptimizationContainer,
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     key::ParameterKey{T, U},
     input::DatasetContainer{InMemoryDataset},
 ) where {T <: ObjectiveFunctionParameter, U <: PSY.Service}
@@ -765,9 +765,9 @@ function update_container_parameter_values!(
     return
 end
 
-function update_container_parameter_values!(
+function IOM.update_container_parameter_values!(
     optimization_container::OptimizationContainer,
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     key::ParameterKey{FixValueParameter, U},
     input::DatasetContainer{InMemoryDataset},
 ) where {U <: PSY.Component}
@@ -787,9 +787,9 @@ function update_container_parameter_values!(
     return
 end
 
-function update_container_parameter_values!(
+function IOM.update_container_parameter_values!(
     optimization_container::OptimizationContainer,
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     key::ParameterKey{FixValueParameter, U},
     input::DatasetContainer{InMemoryDataset},
 ) where {U <: PSY.Service}
@@ -814,9 +814,9 @@ function update_container_parameter_values!(
     return
 end
 
-function update_container_parameter_values!(
+function IOM.update_container_parameter_values!(
     optimization_container::OptimizationContainer,
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     key::ParameterKey{T, U},
     input::DatasetContainer{InMemoryDataset},
 ) where {T <: ParameterType, U <: PSY.Service}

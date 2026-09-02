@@ -14,7 +14,7 @@ function SimulationState()
     )
 end
 
-get_current_time(s::SimulationState) = s.current_time[]
+IOM.get_current_time(s::SimulationState) = s.current_time[]
 get_last_decision_model(s::SimulationState) = s.last_decision_model[]
 get_decision_states(s::SimulationState) = s.decision_states
 get_system_states(s::SimulationState) = s.system_states
@@ -95,7 +95,7 @@ end
 
 function _initialize_model_states!(
     sim_state::SimulationState,
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     simulation_initial_time::Dates.DateTime,
     simulation_step::Dates.Millisecond,
     params::OrderedDict{OptimizationContainerKey, STATE_TIME_PARAMS},

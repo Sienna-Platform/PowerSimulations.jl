@@ -31,10 +31,25 @@ function bindings!(acc::Set{Symbol}, ex)
     return
 end
 
+function function_name!(acc::Set{Symbol}, sig)
+    sig isa Expr || return
+    if sig.head == :where
+        function_name!(acc, sig.args[1])
+    elseif sig.head == :call
+        sig.args[1] isa Symbol && push!(acc, sig.args[1])
+    elseif sig.head == :(::) && length(sig.args) == 2
+        function_name!(acc, sig.args[1])
+    end
+    return
+end
+
 function collect_locals!(acc::Set{Symbol}, ex)
     ex isa Expr || return
     if ex.head in (:function, :(->), :macro) && length(ex.args) >= 1
         bindings!(acc, ex.args[1])
+        # A nested (non-top-level) function/macro definition binds its own name in the
+        # enclosing scope; the module-level `isdefined(MOD, ...)` check never sees it.
+        ex.head in (:function, :macro) && function_name!(acc, ex.args[1])
     elseif ex.head == :(=) && length(ex.args) == 2
         bindings!(acc, ex.args[1])
     elseif ex.head == :for
@@ -99,8 +114,10 @@ function check_file(path::String)
     for (s, line) in refs
         s in locals && continue
         s in reported && continue
+        s === :end && continue     # `a[end]` indexing placeholder, not a real binding
+        s === :new && continue     # inner-constructor pseudo-function
         str = string(s)
-        (startswith(str, "@") || startswith(str, "#")) && continue
+        (startswith(str, "@") || startswith(str, "#") || startswith(str, ".")) && continue
         isdefined(MOD, s) && continue
         isdefined(Base, s) && continue
         isdefined(Core, s) && continue
