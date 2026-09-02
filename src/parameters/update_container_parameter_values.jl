@@ -94,7 +94,7 @@ function _update_parameter_values!(
             for (t, value) in enumerate(ts_vector)
                 # first two axes of parameter_array are component, time; we care about any additional ones
                 unwrapped_value =
-                    _unwrap_for_param(W(), value, additional_axes)
+                    unwrap_for_param(W(), value, additional_axes)
                 if !all(isfinite.(unwrapped_value))
                     error("The value for the time series $(ts_name) is not finite. \
                           Check that the data in the time series is valid.")
@@ -208,7 +208,7 @@ function _update_parameter_values!(
     i_param = parameter_array.lookup[1][ts_uuid]
     additional_axes = lookup_additional_axes(parameter_array)
     for (t, value) in enumerate(ts_vector)
-        unwrapped_value = _unwrap_for_param(W(), value, additional_axes)
+        unwrapped_value = unwrap_for_param(W(), value, additional_axes)
         if !all(isfinite.(unwrapped_value))
             error("The value for the time series $(ts_name) is not finite. \
                   Check that the data in the time series is valid.")

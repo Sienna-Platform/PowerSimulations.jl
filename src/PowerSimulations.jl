@@ -125,7 +125,7 @@ import InfrastructureOptimizationModels:
     InitialConditionKey, is_time_variant, JuMPFloatArray, JuMPVariableTensor, KiB,
     lookup_additional_axes, MiB, MILLISECONDS_IN_HOUR, ObjectiveFunctionParameter,
     read_json, start_up_cost, TimeSeriesParameter, to_dataframe, UNSET_HORIZON,
-    UNSET_INI_TIME, UNSET_INTERVAL, UNSET_RESOLUTION
+    UNSET_INI_TIME, UNSET_INTERVAL, UNSET_RESOLUTION, unwrap_for_param
 import InfrastructureOptimizationModels:
     add_to_objective_variant_expression!, assign_maybe_broadcast!, fix_maybe_broadcast!,
     set_expression!
@@ -230,6 +230,7 @@ include("operation/operation_problem_templates.jl")
 include("utils/store_dimensions.jl")
 include("utils/print_pt_v3.jl")
 include("utils/file_utils.jl")
+include("utils/time_series_consistency.jl")
 include("utils/recorder_events.jl")
 
 end

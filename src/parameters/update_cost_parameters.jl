@@ -168,7 +168,7 @@ function handle_variable_cost_parameter(
     )
     for (t, value::PSY.PiecewiseStepData) in enumerate(TimeSeries.values(ts_vector))
         unwrapped_value =
-            _unwrap_for_param(T(), value, lookup_additional_axes(parameter_array))
+            unwrap_for_param(T(), value, lookup_additional_axes(parameter_array))
         _set_param_value!(parameter_array, unwrapped_value, name, t)
         update_variable_cost!(
             slope_param,
@@ -206,7 +206,7 @@ function handle_variable_cost_parameter(
         PSY.read_and_convert_ts(ts, component, initial_forecast_time, horizon, nothing)
     for (t, value::PSY.PiecewiseStepData) in enumerate(TimeSeries.values(ts_vector))
         unwrapped_value =
-            _unwrap_for_param(T(), value, lookup_additional_axes(parameter_array))
+            unwrap_for_param(T(), value, lookup_additional_axes(parameter_array))
         _set_param_value!(parameter_array, unwrapped_value, name, t)
         update_variable_cost!(
             slope_param,
@@ -245,11 +245,17 @@ function handle_variable_cost_parameter(
     )
     fuel_cost_forecast_values = TimeSeries.values(ts_vector)
     for (t, value) in enumerate(fuel_cost_forecast_values)
-        # TODO: MBC Is this compact power attribute being used?
-        if attributes.uses_compact_power
-            # TODO implement this
-            value, _ = _convert_variable_cost(value)
-        end
+        # `_convert_variable_cost` split a pre-psy6 `PSY.VariableCost` into no-load and
+        # compact-power components; it was removed when PSY moved to ValueCurve/FunctionData
+        # cost types and never replaced (see `main` history, commit 70e6a3109). No formulation
+        # in IOM/POM sets `uses_compact_power = true` on a `FuelCostParameter`'s
+        # `CostFunctionAttributes` today (`add_param_container!` always defaults it to
+        # `false`), so this branch is unreachable. Error loudly instead of resolving to an
+        # undefined function if that ever changes.
+        attributes.uses_compact_power && error(
+            "Compact-power fuel cost conversion is not implemented for $(name); " *
+            "no current formulation sets uses_compact_power=true for FuelCostParameter.",
+        )
         _set_param_value!(parameter_array, value, name, t)
         update_variable_cost!(
             FuelCostParameter(),

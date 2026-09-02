@@ -8,7 +8,7 @@ function check_simulation_chronology(
     for (model, horizon_time) in horizons
         if horizon_time < intervals[model]
             throw(IS.ConflictingInputsError("horizon ($horizon_time) is
-                                shorter than interval ($interval) for $(model)"))
+                                shorter than interval ($(intervals[model])) for $(model)"))
         end
     end
 
