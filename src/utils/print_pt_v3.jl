@@ -1,3 +1,7 @@
+# list_variable_names/list_dual_names/etc. (simulation_problem_results.jl) call this
+# unqualified; it is missing from the main module's IOM import block.
+import InfrastructureOptimizationModels: encode_keys_as_strings
+
 function Base.show(io::IO, ::MIME"text/plain", input::SimulationModels)
     IOM._show_method(io, input, :auto)
 end
@@ -277,7 +281,7 @@ function IOM._show_method(
 
     # `get_resolution` returns `nothing` when there is a single timestamp (no
     # interval to diff), so guard against `Dates.Minute(nothing)`.
-    resolution = ISOPT.get_resolution(results)
+    resolution = get_resolution(results)
     resolution_str =
         isnothing(resolution) ? "N/A (single period)" :
         string(Dates.Minute(resolution))

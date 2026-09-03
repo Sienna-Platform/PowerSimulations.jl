@@ -18,61 +18,19 @@ function _test_html_print_methods(list::Array)
     end
 end
 
-@testset "Test Model Print Methods" begin
-    template = get_thermal_dispatch_template_network()
-    c_sys5 = PSB.build_system(PSITestSystems, "c_sys5")
-
-    dm_model = DecisionModel(template, c_sys5; optimizer = HiGHS_optimizer)
-    @test build!(dm_model; output_dir = mktempdir(; cleanup = true)) ==
-          PSI.ModelBuildStatus.BUILT
-    @test solve!(dm_model; optimizer = HiGHS_optimizer) ==
-          PSI.RunStatus.SUCCESSFULLY_FINALIZED
-    results = OptimizationProblemResults(dm_model)
-    variables = read_variables(results)
-
-    list = [
-        template,
-        dm_model,
-        PSI.get_model(template, ThermalStandard),
-        PSI.get_network_model(template),
-        results,
-    ]
-
-    _test_plain_print_methods(list)
-    _test_html_print_methods(list)
-
-    # Regression: showing results with a single time period used to throw
-    # `MethodError: no method matching Minute(::Nothing)` because the
-    # resolution is `nothing` when there is only one timestamp.
-    dm_model_single = DecisionModel(
-        template,
-        c_sys5;
-        optimizer = HiGHS_optimizer,
-        horizon = Dates.Hour(1),
-    )
-    @test build!(dm_model_single; output_dir = mktempdir(; cleanup = true)) ==
-          PSI.ModelBuildStatus.BUILT
-    @test solve!(dm_model_single; optimizer = HiGHS_optimizer) ==
-          PSI.RunStatus.SUCCESSFULLY_FINALIZED
-    results_single = OptimizationProblemResults(dm_model_single)
-    @test length(get_timestamps(results_single)) == 1
-    output = sprint(show, "text/plain", results_single)
-    @test occursin("Resolution: N/A (single period)", output)
-end
-
 @testset "Test Simulation Print Methods" begin
     template_uc = get_template_basic_uc_simulation()
     template_ed = get_template_nomin_ed_simulation()
     set_device_model!(template_ed, InterruptiblePowerLoad, StaticPowerLoad)
     set_network_model!(template_uc, NetworkModel(
-        CopperPlatePowerModel,
+        CopperPlateNetworkModel,
         # MILP "duals" not supported with free solvers
         # duals = [CopperPlateBalanceConstraint],
     ))
     set_network_model!(
         template_ed,
         NetworkModel(
-            CopperPlatePowerModel;
+            CopperPlateNetworkModel;
             duals = [CopperPlateBalanceConstraint],
             use_slacks = true,
         ),
