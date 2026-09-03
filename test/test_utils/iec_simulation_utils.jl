@@ -104,11 +104,23 @@ function make_5_bus_with_ie_ts(
     im_key = add_time_series!(sys, source, im_ts)
     ex_key = add_time_series!(sys, source, ex_ts)
 
-    set_import_offer_curves!(oc, im_key)
-    set_export_offer_curves!(oc, ex_key)
+    power_units = PSY.get_power_units(im_oc)
+    ts_cost = ImportExportTimeSeriesCost(;
+        import_offer_curves = make_import_export_ts_curve(im_key, power_units),
+        export_offer_curves = make_import_export_ts_curve(ex_key, power_units),
+        energy_import_weekly_limit = get_energy_import_weekly_limit(oc),
+        energy_export_weekly_limit = get_energy_export_weekly_limit(oc),
+        ancillary_service_offers = get_ancillary_service_offers(oc),
+    )
+    set_operation_cost!(source, ts_cost)
 
     return sys
 end
+
+# `_resolve_variable_cost_window` (dispatching on the static vs. time-series-backed cost
+# type) is defined once in mbc_simulation_utils.jl and reused here for
+# `ImportExportCost`/`ImportExportTimeSeriesCost` via its `_STATIC_OFFER_COST`/
+# `_TS_OFFER_COST` unions.
 
 # Analogous to run_mbc_obj_fun_test in test_utils/mbc_simulation_utils.jl
 function run_iec_obj_fun_test(sys1, sys2, comp_name::String, ::Type{T};
@@ -166,8 +178,8 @@ function run_iec_sim(sys::System, comp_name::String, ::Type{T};
     # time series are always in natural units and the parameter multiplier is 1.0
     # (see the analogous comment in mbc_simulation_utils.jl).
     for (is_decremental, oc_getter) in (
-        (false, PSY.get_import_offer_curves),
-        (true, PSY.get_export_offer_curves),
+        (false, PSY.get_import_variable_cost),
+        (true, PSY.get_export_variable_cost),
     )
         bp_param_type = if is_decremental
             PSI.DecrementalPiecewiseLinearBreakpointParameter
@@ -186,11 +198,22 @@ function run_iec_sim(sys::System, comp_name::String, ::Type{T};
             for gen_name in unique(bp_step_df.name)
                 comp = get_component(T, sys, gen_name)
                 cost = PSY.get_operation_cost(comp)
-                oc_ts = oc_getter(comp, cost; start_time = step_dt)
                 gen_bp = @rsubset(bp_step_df, :name == gen_name)
                 gen_sl = @rsubset(sl_step_df, :name == gen_name)
-                for (ts, psd) in
-                    zip(TimeSeries.timestamp(oc_ts), TimeSeries.values(oc_ts))
+                timestamps = unique(gen_bp.DateTime)
+                psds =
+                    get_function_data.(
+                        get_value_curve.(
+                            _resolve_variable_cost_window(
+                                oc_getter,
+                                comp,
+                                cost,
+                                step_dt,
+                                length(timestamps),
+                            ),
+                        ),
+                    )
+                for (ts, psd) in zip(timestamps, psds)
                     expected_bp = get_x_coords(psd)
                     expected_sl = get_y_coords(psd)
                     actual_bp = sort(@rsubset(gen_bp, :DateTime == ts), :name2).value
@@ -248,29 +271,50 @@ function cost_due_to_time_varying_iec(
         @assert all(power_in_df.DateTime .== power_out_df.DateTime)
 
         @assert any([
-            get_operation_cost(comp) isa ImportExportCost for
+            get_operation_cost(comp) isa _ANY_IEC for
             comp in get_components(T, sys)
         ])
         for gen_name in gen_names
             comp = get_component(T, sys, gen_name)
             cost = PSY.get_operation_cost(comp)
-            (cost isa ImportExportCost) || continue
+            (cost isa _ANY_IEC) || continue
             step_df[!, gen_name] .= 0.0
             # imports = addition of power = power flowing out of the device
             # exports = reduction of power = power flowing into the device
-            for (multiplier, power_df, getter) in (
-                (1.0, power_out_df, PSY.get_import_offer_curves),
-                (-1.0, power_in_df, PSY.get_export_offer_curves),
+            for (multiplier, power_df, raw_getter, variable_getter) in (
+                (
+                    1.0,
+                    power_out_df,
+                    PSY.get_import_offer_curves,
+                    PSY.get_import_variable_cost,
+                ),
+                (
+                    -1.0,
+                    power_in_df,
+                    PSY.get_export_offer_curves,
+                    PSY.get_export_variable_cost,
+                ),
             )
-                offer_curves = getter(cost)
+                offer_curves = raw_getter(cost)
                 if PSI.is_time_variant(offer_curves)
-                    vc_ts = getter(comp, cost; start_time = step_dt)
-                    @assert all(unique(power_df.DateTime) .== TimeSeries.timestamp(vc_ts))
+                    timestamps = unique(power_df.DateTime)
+                    psds =
+                        get_function_data.(
+                            get_value_curve.(
+                                _resolve_variable_cost_window(
+                                    variable_getter,
+                                    comp,
+                                    cost,
+                                    step_dt,
+                                    length(timestamps),
+                                ),
+                            ),
+                        )
                     step_df[!, gen_name] .+=
                         multiplier *
                         _calc_pwi_cost.(
                             @rsubset(power_df, :name == gen_name).value,
-                            TimeSeries.values(vc_ts),
+                            psds,
                         )
                 end
             end
@@ -289,8 +333,13 @@ function cost_due_to_time_varying_iec(
     return result
 end
 
-function iec_obj_fun_test_wrapper(sys_constant, sys_varying; reservation = false)
-    for use_simulation in (false, true)
+function iec_obj_fun_test_wrapper(
+    sys_constant,
+    sys_varying;
+    reservation = false,
+    use_simulation_opts = (false, true),
+)
+    for use_simulation in use_simulation_opts
         for in_memory_store in (use_simulation ? (false, true) : (false,))
             decisions1, decisions2 = run_iec_obj_fun_test(
                 sys_constant,
