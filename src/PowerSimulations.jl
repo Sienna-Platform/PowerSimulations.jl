@@ -27,7 +27,6 @@ export run_parallel_simulation
 export process_simulation_partition_cli_args
 export join_simulation
 export export_results
-export export_realized_results
 export export_optimizer_stats
 export get_decision_problem_results
 export get_emulation_problem_results
@@ -75,6 +74,11 @@ using PowerOperationsModels
 import InfrastructureOptimizationModels as IOM
 import PowerOperationsModels as POM
 
+# IOM and POM each define their own `const COST_EPSILON = 1e-3`; re-exporting both via the
+# `names(m)` loop below leaves the name ambiguous (undefined) in PowerSimulations. Importing it
+# explicitly from one side resolves the ambiguity with a real binding.
+import InfrastructureOptimizationModels: COST_EPSILON
+
 # Unexported IOM surface PSI orchestrates with. The authoritative list is produced by
 # scripts/excision/check_undefined.jl; extend this block, never qualify at call sites.
 import InfrastructureOptimizationModels:
@@ -116,7 +120,7 @@ import InfrastructureOptimizationModels:
     to_matrix, get_column_names_from_axis_array, should_write_resulting_value,
     convert_output_to_natural_units, deserialize_key, get_initial_conditions_data,
     _deepcopy_template, get_deterministic_time_series_type, RUN_OPERATION_MODEL_TIMER,
-    to_outputs_dataframe, _read_outputs, get_time_series_values!
+    to_outputs_dataframe, _read_outputs, get_time_series_values!, export_optimizer_stats
 import InfrastructureOptimizationModels:
     ABSOLUTE_TOLERANCE, AbstractAffectFeedforward, calculate_parameter_values,
     encode_key_as_string, get_aux_variables_values, get_container_keys, get_duals_values,
