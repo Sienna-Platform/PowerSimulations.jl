@@ -481,51 +481,30 @@ for decremental in (false, true)
 
             set_name!(baseline, "baseline")
             set_name!(varying, "varying")
-            # Only the single-decision-model (simulation=false) case runs here: it solves
-            # once, so the frozen-breakpoint bug below never has a second solve to diverge
-            # on and this case is a valid, still-passing check.
-            decisions1, decisions2 =
-                run_mbc_obj_fun_test(
-                    baseline,
-                    varying,
-                    comp_name,
-                    comp_type;
-                    is_decremental = decremental,
-                    has_initial_input = init_input_bool,
-                    simulation = false,
-                    filename = SAVE_FILES ? "breakpoints_" : nothing,
-                    device_to_formulation = device_to_formulation,
-                )
-            if !all(isapprox.(decisions1, decisions2))
-                @error decisions1
-                @error decisions2
-            end
-            @assert all(approx_geq_1.(decisions1))
 
-            #= UPSTREAM-IOM-BUG: time-varying PWL breakpoints are frozen after the first
-            solve because add_pwl_block_offer_constraints! discards its ConstraintRef (IOM
-            objective_function_pwl_delta.jl). Re-enable when IOM stores the ref.
-            for in_memory_store in (false, true)
-                decisions1, decisions2 =
-                    run_mbc_obj_fun_test(
-                        baseline,
-                        varying,
-                        comp_name,
-                        comp_type;
-                        is_decremental = decremental,
-                        has_initial_input = init_input_bool,
-                        simulation = true,
-                        in_memory_store = in_memory_store,
-                        filename = SAVE_FILES ? "breakpoints_" : nothing,
-                        device_to_formulation = device_to_formulation,
-                    )
-                if !all(isapprox.(decisions1, decisions2))
-                    @error decisions1
-                    @error decisions2
+            for use_simulation in (false, true)
+                in_memory_store_opts = use_simulation ? [false, true] : [false]
+                for in_memory_store in in_memory_store_opts
+                    decisions1, decisions2 =
+                        run_mbc_obj_fun_test(
+                            baseline,
+                            varying,
+                            comp_name,
+                            comp_type;
+                            is_decremental = decremental,
+                            has_initial_input = init_input_bool,
+                            simulation = use_simulation,
+                            in_memory_store = in_memory_store,
+                            filename = SAVE_FILES ? "breakpoints_" : nothing,
+                            device_to_formulation = device_to_formulation,
+                        )
+                    if !all(isapprox.(decisions1, decisions2))
+                        @error decisions1
+                        @error decisions2
+                    end
+                    @assert all(approx_geq_1.(decisions1))
                 end
-                @assert all(approx_geq_1.(decisions1))
             end
-            =#
         end
 
         @testset "MarketBidCost $(adj) with time varying everything" begin
@@ -533,48 +512,30 @@ for decremental in (false, true)
             varying = build_func(init_input_bool, true, true)
             set_name!(baseline, "baseline")
             set_name!(varying, "varying")
-            # Only the single-decision-model (simulation=false) case runs here: it solves
-            # once, so the frozen-breakpoint bug below never has a second solve to diverge
-            # on and this case is a valid, still-passing check.
-            decisions1, decisions2 =
-                run_mbc_obj_fun_test(
-                    baseline,
-                    varying,
-                    comp_name,
-                    comp_type;
-                    simulation = false,
-                    has_initial_input = init_input_bool,
-                    is_decremental = decremental,
-                    filename = SAVE_FILES ? "everything_" : nothing,
-                    device_to_formulation = device_to_formulation,
-                )
-            if !all(isapprox.(decisions1, decisions2))
-                @error decisions1
-                @error decisions2
-            end
-            @assert all(approx_geq_1.(decisions1))
 
-            #= UPSTREAM-IOM-BUG: time-varying PWL breakpoints are frozen after the first
-            solve because add_pwl_block_offer_constraints! discards its ConstraintRef (IOM
-            objective_function_pwl_delta.jl). Re-enable when IOM stores the ref.
-            decisions1, decisions2 =
-                run_mbc_obj_fun_test(
-                    baseline,
-                    varying,
-                    comp_name,
-                    comp_type;
-                    simulation = true,
-                    has_initial_input = init_input_bool,
-                    is_decremental = decremental,
-                    filename = SAVE_FILES ? "everything_" : nothing,
-                    device_to_formulation = device_to_formulation,
-                )
-            if !all(isapprox.(decisions1, decisions2))
-                @error decisions1
-                @error decisions2
+            for use_simulation in (false, true)
+                in_memory_store_opts = use_simulation ? [false, true] : [false]
+                for in_memory_store in in_memory_store_opts
+                    decisions1, decisions2 =
+                        run_mbc_obj_fun_test(
+                            baseline,
+                            varying,
+                            comp_name,
+                            comp_type;
+                            simulation = use_simulation,
+                            in_memory_store = in_memory_store,
+                            has_initial_input = init_input_bool,
+                            is_decremental = decremental,
+                            filename = SAVE_FILES ? "everything_" : nothing,
+                            device_to_formulation = device_to_formulation,
+                        )
+                    if !all(isapprox.(decisions1, decisions2))
+                        @error decisions1
+                        @error decisions2
+                    end
+                    @assert all(approx_geq_1.(decisions1))
+                end
             end
-            @assert all(approx_geq_1.(decisions1))
-            =#
         end
 
         @testset "MarketBidCost $(adj) with variable number of tranches" begin
@@ -583,29 +544,68 @@ for decremental in (false, true)
             variable_tranches =
                 build_func(init_input_bool, true, true; create_extra_tranches = true)
             set_name!(variable_tranches, "variable")
-            # UPSTREAM-IOM-BUG: time-varying PWL breakpoints are frozen after the first
-            # solve because add_pwl_block_offer_constraints! discards its ConstraintRef
-            # (IOM objective_function_pwl_delta.jl). Both `baseline` and
-            # `variable_tranches` vary breakpoints over time, so both are equally
-            # distorted under a full Simulation; for the incremental case that distortion
-            # cancels out between the two, but for decremental it does not, so restrict
-            # decremental to the single-decision-model runner here. Re-enable the full
-            # `run_generic_mbc_sim` comparison for decremental when IOM stores the ref.
-            runners = if decremental
-                (run_generic_mbc_prob,)
-            else
-                (run_generic_mbc_prob, run_generic_mbc_sim)
-            end
             test_generic_mbc_equivalence(
                 baseline,
                 variable_tranches;
                 filename = SAVE_FILES ? "tranches_" : nothing,
                 is_decremental = decremental,
                 device_to_formulation = device_to_formulation,
-                runners = runners,
             )
         end
     end
+end
+
+@testset "MarketBidCost block-width update is independent of device base power" begin
+    # `add_pwl_constraint_delta!` (IOM) builds each block-width constraint in system
+    # per-unit; `_update_pwl_width_constraint!` (PSI `update_cost_parameters.jl`) must set
+    # its RHS the same way between solves. The underlying conversion (`NaturalUnit` ->
+    # `SystemBaseUnit`) is defined to depend only on system base power, never on device
+    # base power (`IS.relative_units.jl`: `_cost_coeff_ratio(::NaturalUnit,
+    # ::SystemBaseUnit, sb, _) = sb`), so two systems differing ONLY in "Test Unit1"'s
+    # device base power must land on bit-identical width RHS values after the
+    # between-step update. A real base-mismatch bug in the update path would show up here
+    # as a difference between the two.
+    device_to_formulation = FormulationDict(ThermalStandard => ThermalBasicUnitCommitment)
+
+    # Fixture default: device base power (140) != system base power (100).
+    sys_mismatch = build_sys_incr(false, true, false)
+
+    # Same system, except "Test Unit1"'s device base power is forced equal to the system
+    # base power; limits/rating/active power are rescaled by absolute MW so the physical
+    # dispatch problem is unchanged, mirroring `load_sys_incr`'s own base-power rescale.
+    sys_matched = build_sys_incr(false, true, false)
+    u_matched = get_component(SEL_INCR, sys_matched)
+    limits = get_active_power_limits(u_matched, PSY.NU)
+    rating = get_rating(u_matched, PSY.NU)
+    active_power = get_active_power(u_matched, PSY.NU)
+    set_base_power!(u_matched, get_base_power(sys_matched))
+    set_active_power_limits!(
+        u_matched,
+        (min = limits.min * PSY.MW, max = limits.max * PSY.MW),
+    )
+    set_rating!(u_matched, rating * PSY.MW)
+    set_active_power!(u_matched, active_power * PSY.MW)
+
+    model_mismatch, _ =
+        run_generic_mbc_sim(sys_mismatch; device_to_formulation = device_to_formulation)
+    model_matched, _ =
+        run_generic_mbc_sim(sys_matched; device_to_formulation = device_to_formulation)
+
+    function _width_rhs_at_t2(model)
+        container = PSI.get_optimization_container(model)
+        width_container = get_constraint(
+            container, PiecewiseLinearBlockIncrementalWidthConstraint, ThermalStandard)
+        blocks = sort([
+            k for (name, k, t) in keys(width_container.data)
+            if name == "Test Unit1" && t == 2
+        ])
+        return [JuMP.normalized_rhs(width_container[("Test Unit1", k, 2)]) for k in blocks]
+    end
+
+    rhs_mismatch = _width_rhs_at_t2(model_mismatch)
+    rhs_matched = _width_rhs_at_t2(model_matched)
+    @test !isempty(rhs_mismatch)
+    @test isapprox(rhs_mismatch, rhs_matched; atol = 1e-9)
 end
 
 @testset "MarketBidCost incremental with heterogeneous time series names" begin

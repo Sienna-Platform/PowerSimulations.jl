@@ -113,29 +113,80 @@ handle_variable_cost_parameter(
 
 # Slope and breakpoint parameters share the same raw time series (a `PiecewiseStepData`
 # carries both x- and y-coordinates) and so share the read/unwrap/set-parameter-value path
-# below; only the slope parameter's resolved value additionally contributes an objective
-# term (breakpoints re-parametrize constraint bounds elsewhere, contributing nothing to the
-# objective directly), so `update_variable_cost!` is a no-op for breakpoint parameters.
+# below; the slope parameter's resolved value contributes an objective term, while the
+# breakpoint parameter's resolved value re-parametrizes the block-width constraint's RHS
+# instead (see the two `update_variable_cost!` methods below) — neither is a no-op.
 const _AnyPiecewiseLinearParameter =
     Union{AbstractPiecewiseLinearSlopeParameter, AbstractPiecewiseLinearBreakpointParameter}
 
-# Breakpoints re-parametrize the block-width constraint (`_update_pwl_cost_expression`
-# handles that at build time), not an objective term, so updating one here is a genuine
-# no-op. Fully specified to mirror the actual call convention below (`handle_variable_cost_parameter`
-# always passes the raw `PSY.PiecewiseStepData`, never a `DenseAxisArray`, as the third
-# argument for piecewise-linear parameters) rather than a bare `args...`, which is
-# ambiguous with the general `ObjectiveFunctionParameter` case since
+# Maps a breakpoint parameter type to the block-offer constraint type build time resolves
+# it through: `add_pwl_constraint_delta!` (IOM `objective_function_pwl_delta.jl`) takes the
+# offer-constraint type as its `W` argument and calls `IOM._block_width_constraint(W)` to
+# get the paired width-constraint type used to build the sparse `(name, block, t)`
+# `ConstraintRef` container. Mirrored here so the update path resolves the identical width
+# type from the parameter type alone.
+_linear_block_offer_constraint(::Type{IncrementalPiecewiseLinearBreakpointParameter}) =
+    PiecewiseLinearBlockIncrementalOfferConstraint
+_linear_block_offer_constraint(::Type{DecrementalPiecewiseLinearBreakpointParameter}) =
+    PiecewiseLinearBlockDecrementalOfferConstraint
+
+"""
+Set each per-block width constraint's RHS from updated breakpoints. Mirrors
+`_update_pwl_cost_expression` below (the slope-side counterpart): both read a converted
+`PSY.PiecewiseStepData` and walk its segments, but this one calls `JuMP.set_normalized_rhs`
+on the stored width `ConstraintRef`s (IOM `objective_function_pwl_delta.jl`) rather than
+rebuilding an objective expression.
+"""
+function _update_pwl_width_constraint!(
+    ::P,
+    container::OptimizationContainer,
+    ::Type{T},
+    component_name::String,
+    time_period::Int,
+    cost_data::PSY.PiecewiseStepData,
+) where {P <: AbstractPiecewiseLinearBreakpointParameter, T <: PSY.Component}
+    # IOM._block_width_constraint is not exported; reached directly, as `IOM._get_parameter_field`
+    # and `IOM._check_column_consistency` already are elsewhere in this file.
+    width_type = IOM._block_width_constraint(_linear_block_offer_constraint(P))
+    width_container = get_constraint(container, width_type, T)
+    breakpoints = PSY.get_x_coords(cost_data)
+    for ix in 1:(length(breakpoints) - 1)
+        JuMP.set_normalized_rhs(
+            width_container[(component_name, ix, time_period)],
+            breakpoints[ix + 1] - breakpoints[ix],
+        )
+    end
+    return
+end
+
+# Breakpoints re-parametrize the block-width constraint's RHS: the stored per-block
+# `ConstraintRef`s (IOM's sparse `(name, block, t)` width container, populated at build
+# time by `add_pwl_constraint_delta!`) are updated in place via
+# `JuMP.set_normalized_rhs`, not rebuilt, and no objective term changes. Fully specified to
+# mirror the actual call convention below (`handle_variable_cost_parameter` always passes
+# the raw `PSY.PiecewiseStepData`, never a `DenseAxisArray`, as the third argument for
+# piecewise-linear parameters) rather than a bare `args...`, which is ambiguous with the
+# general `ObjectiveFunctionParameter` case since
 # `AbstractPiecewiseLinearBreakpointParameter <: ObjectiveFunctionParameter`.
 function update_variable_cost!(
-    ::AbstractPiecewiseLinearBreakpointParameter,
-    ::OptimizationContainer,
-    ::PSY.PiecewiseStepData,
+    breakpoint_param::AbstractPiecewiseLinearBreakpointParameter,
+    container::OptimizationContainer,
+    function_data::PSY.PiecewiseStepData,
     ::JuMPFloatArray,
     ::CostFunctionAttributes,
-    ::PSY.Component,
-    ::Int,
-)
-    return nothing
+    component::T,
+    time_period::Int,
+) where {T <: PSY.Component}
+    component_name = PSY.get_name(component)
+    converted_data = get_piecewise_curve_per_system_unit(
+        function_data,
+        IS.NaturalUnit(),  # PSY's cost_function_timeseries.jl says this will always be natural units
+        IOM.get_model_base_power(container),
+        PSY.get_base_power(component),
+    )
+    _update_pwl_width_constraint!(
+        breakpoint_param, container, T, component_name, time_period, converted_data)
+    return
 end
 
 # Mirrors POM's build-time `IOM._get_parameter_field(::Type{<:T}, op_cost)` dispatch table

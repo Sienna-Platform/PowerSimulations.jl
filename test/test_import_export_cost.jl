@@ -68,15 +68,7 @@ end
     sys_varying_import_breakpoints = make_5_bus_with_ie_ts(true, false, false, false;
         import_scalar = import_scalar, export_scalar = export_scalar,
         name = "sys_varying_import_breakpoints")
-    # UPSTREAM-IOM-BUG: time-varying PWL breakpoints are frozen after the first solve
-    # because add_pwl_block_offer_constraints! discards its ConstraintRef (IOM
-    # objective_function_pwl_delta.jl). Restrict to the single-decision-model runner
-    # here; re-enable the full-simulation runner when IOM stores the ref.
-    iec_obj_fun_test_wrapper(
-        sys_constant,
-        sys_varying_import_breakpoints;
-        use_simulation_opts = (false,),
-    )
+    iec_obj_fun_test_wrapper(sys_constant, sys_varying_import_breakpoints)
 end
 
 @testset "ImportExportCost with time varying export slopes, reservation off" begin
@@ -100,15 +92,7 @@ end
     sys_varying_export_breakpoints = make_5_bus_with_ie_ts(false, false, true, false;
         import_scalar = import_scalar, export_scalar = export_scalar,
         name = "sys_varying_export_breakpoints")
-    # UPSTREAM-IOM-BUG: time-varying PWL breakpoints are frozen after the first solve
-    # because add_pwl_block_offer_constraints! discards its ConstraintRef (IOM
-    # objective_function_pwl_delta.jl). Restrict to the single-decision-model runner
-    # here; re-enable the full-simulation runner when IOM stores the ref.
-    iec_obj_fun_test_wrapper(
-        sys_constant,
-        sys_varying_export_breakpoints;
-        use_simulation_opts = (false,),
-    )
+    iec_obj_fun_test_wrapper(sys_constant, sys_varying_export_breakpoints)
 end
 
 @testset "ImportExportCost with time varying everything, reservation off" begin
@@ -120,13 +104,5 @@ end
     sys_varying_everything = make_5_bus_with_ie_ts(true, true, true, true;
         import_scalar = import_scalar, export_scalar = export_scalar,
         name = "sys_varying_everything")
-    # UPSTREAM-IOM-BUG: time-varying PWL breakpoints are frozen after the first solve
-    # because add_pwl_block_offer_constraints! discards its ConstraintRef (IOM
-    # objective_function_pwl_delta.jl). Restrict to the single-decision-model runner
-    # here; re-enable the full-simulation runner when IOM stores the ref.
-    iec_obj_fun_test_wrapper(
-        sys_constant,
-        sys_varying_everything;
-        use_simulation_opts = (false,),
-    )
+    iec_obj_fun_test_wrapper(sys_constant, sys_varying_everything)
 end
