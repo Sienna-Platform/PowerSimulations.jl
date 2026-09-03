@@ -819,6 +819,25 @@ function IOM.update_container_parameter_values!(
     model::IOM.AbstractOptimizationModel,
     key::ParameterKey{T, U},
     input::DatasetContainer{InMemoryDataset},
+) where {T <: TimeSeriesParameter, U <: PSY.Service}
+    # Time-series service parameters (e.g. `RequirementTimeSeriesParameter`) are per-type
+    # containers keyed `(T, ServiceType)` with an empty `key.meta` -- the name axis inside
+    # `parameter_array` holds every service of type `U` (POM
+    # `common_models/add_parameters.jl`). There is no single named component to look up by
+    # `key.meta`, so this routes through the generic per-type `_update_parameter_values!`
+    # used for device time series instead of the per-instance lookup the method below
+    # performs for feedforward-sourced (`VariableValueAttributes`) service parameters.
+    parameter_array = get_parameter_array(optimization_container, key)
+    parameter_attributes = get_parameter_attributes(optimization_container, key)
+    _update_parameter_values!(parameter_array, T(), parameter_attributes, U, model, input)
+    return
+end
+
+function IOM.update_container_parameter_values!(
+    optimization_container::OptimizationContainer,
+    model::IOM.AbstractOptimizationModel,
+    key::ParameterKey{T, U},
+    input::DatasetContainer{InMemoryDataset},
 ) where {T <: ParameterType, U <: PSY.Service}
     # Note: Do not instantite a new key here because it might not match the param keys in the container
     # if the keys have strings in the meta fields

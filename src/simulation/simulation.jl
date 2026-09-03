@@ -897,6 +897,33 @@ function _update_simulation_state_others!(sim::Simulation, model::DecisionModel)
     return
 end
 
+"""
+Extract the single already-written row `last_row` from a range read of the state-flush
+store. `HdfSimulationStore` reads return exactly one row already (row-indexed HDF5 read);
+`InMemorySimulationStore` reads return every column from `last_row` to the end (its
+`read_outputs` is a tail-range read, not a point read), so the target column must be
+sliced out here.
+"""
+function _last_recorded_state_value(::HdfSimulationStore, raw_state_values, ::Int)
+    return raw_state_values
+end
+
+function _last_recorded_state_value(
+    ::InMemorySimulationStore,
+    raw_state_values::DenseAxisArray{T, 2},
+    last_row::Int,
+) where {T}
+    return raw_state_values[:, last_row]
+end
+
+function _last_recorded_state_value(
+    ::InMemorySimulationStore,
+    raw_state_values::DenseAxisArray{T, 3},
+    last_row::Int,
+) where {T}
+    return raw_state_values[:, :, last_row]
+end
+
 function _write_state_to_store!(store::SimulationStore, sim::Simulation)
     sim_state = get_simulation_state(sim)
     system_state = get_system_states(sim_state)
@@ -932,13 +959,11 @@ function _write_state_to_store!(store::SimulationStore, sim::Simulation)
                     # straggling sub-tick could be flushed. The held value hasn't changed
                     # since the last row actually written to the store, so reuse it instead
                     # of `decision_states`, whose window no longer covers `aligned_timestamp`.
-                    state_values = read_result(
-                        DenseAxisArray,
-                        store,
-                        model_name,
-                        key,
-                        get_last_recorded_row(em_store, key),
-                    )
+                    last_row = get_last_recorded_row(em_store, key)
+                    raw_state_values =
+                        read_result(DenseAxisArray, store, model_name, key, last_row)
+                    state_values =
+                        _last_recorded_state_value(store, raw_state_values, last_row)
                 else
                     state_values =
                         get_decision_state_value(sim_state, key, aligned_timestamp)
