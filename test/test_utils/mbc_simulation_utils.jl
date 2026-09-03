@@ -26,6 +26,12 @@ const _STATIC_OFFER_COST = Union{PSY.MarketBidCost, PSY.ImportExportCost}
 const _TS_OFFER_COST = Union{PSY.MarketBidTimeSeriesCost, PSY.ImportExportTimeSeriesCost}
 const _ANY_MBC = Union{PSY.MarketBidCost, PSY.MarketBidTimeSeriesCost}
 const _ANY_IEC = Union{PSY.ImportExportCost, PSY.ImportExportTimeSeriesCost}
+_is_mbc(::_ANY_MBC) = true
+_is_mbc(::PSY.OperationalCost) = false
+_is_iec(::_ANY_IEC) = true
+_is_iec(::PSY.OperationalCost) = false
+_is_ts_pwl_curve(::PSY.CostCurve{<:PSY.TimeSeriesPiecewiseIncrementalCurve}) = true
+_is_ts_pwl_curve(::Any) = false
 _resolve_variable_cost_window(
     getter,
     comp,
@@ -426,7 +432,7 @@ function cost_due_to_time_varying_mbc(
         gen_names = unique(power_df.name)
         @assert !isempty(gen_names)
         @assert any([
-            get_operation_cost(comp) isa _ANY_MBC for
+            _is_mbc(get_operation_cost(comp)) for
             comp in get_components(T, sys)
         ])
         if has_initial_input
@@ -444,7 +450,7 @@ function cost_due_to_time_varying_mbc(
         for gen_name in gen_names
             comp = get_component(T, sys, gen_name)
             cost = PSY.get_operation_cost(comp)
-            (cost isa _ANY_MBC) || continue
+            _is_mbc(cost) || continue
             step_df[!, gen_name] .= 0.0
             offer_curve_getter = if is_decremental
                 get_decremental_offer_curves

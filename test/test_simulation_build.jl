@@ -323,15 +323,10 @@ end
     @test !isempty(c)
 end
 
-# "Test FixValue Feedforwards" removed (excision(4.3)): it attached a FixValueFeedforward to
-# a ServiceModel (OnlineReserve{ReserveUp}). POM's ServiceModel keys reserve variables by
+# No FixValueFeedforward-on-ServiceModel test: POM's ServiceModel keys reserve variables by
 # (service_name, device_name, time), while the feedforward parameter path is keyed
-# (device_name, time), so `attach_feedforward!(::ServiceModel, ff)` is a loud
-# `error("Service feedforwards are not supported yet. ...")` in
-# PowerOperationsModels/src/feedforward/feedforwards.jl. This is POM's job (formulation-level
-# service feedforward support), tracked as a follow-up in
-# .claude/plans/2026-09-02-pom-excision.md and PowerSimulations.jl/.claude/CLAUDE.md
-# ("service feedforwards"). Re-add this testset once POM re-keys that path.
+# (device_name, time), so `attach_feedforward!(::ServiceModel, ff)` errors loudly. Re-add
+# once POM re-keys that path.
 
 @testset "Build with store_systems_in_results option" begin
     models = create_simulation_build_test_problems(get_template_basic_uc_simulation())

@@ -174,24 +174,6 @@ function to_market_bid_ts_cost(
 end
 
 """
-Get a deterministic or DeterministicSingleTimeSeries time series from the system.
-"""
-function get_deterministic_ts(sys::PSY.System)
-    for device in get_components(PSY.Device, sys)
-        if has_time_series(device, Union{DeterministicSingleTimeSeries, Deterministic})
-            for md in IS.list_time_series_metadata(device)
-                ts = get_time_series(device, IS.get_time_series_key(md))
-                if ts isa DeterministicSingleTimeSeries || ts isa Deterministic
-                    return ts
-                end
-            end
-        end
-    end
-    @assert false "No Deterministic or DeterministicSingleTimeSeries found in system"
-    return DeterministicSingleTimeSeries(nothing)
-end
-
-"""
 Extend the MarketBidCost objects attached to the selected components such that they're determined by a time series.
 
 # Arguments:
@@ -305,6 +287,17 @@ function extend_mbc!(
     return
 end
 
+"""`Tuple` broadcasts elementwise against a single increment; `Number` and
+`IS.LinearFunctionData` (which defines scalar `+` but is not a collection, so broadcasting it
+errors) both add a single per-step increment directly."""
+function _stepped_value(ini_val::Tuple, res_incr, interval_incr, j, i)
+    return ini_val .+ (res_incr * j + i * interval_incr)
+end
+
+function _stepped_value(ini_val, res_incr, interval_incr, j, i)
+    return ini_val + res_incr * j + i * interval_incr
+end
+
 """
 Make a deterministic time series from a tuple or a float value. See below function for
 details about the arguments.
@@ -323,17 +316,10 @@ function make_deterministic_ts(
     horizon_count = IS.get_horizon_count(horizon, resolution)
     ts_data = OrderedDict{DateTime, Vector{T}}()
     for i in 0:(window_count - 1)
-        # `Tuple` broadcasts elementwise against a single increment; `Number` and
-        # `IS.LinearFunctionData` (which defines scalar `+` but is not a collection, so
-        # broadcasting it errors) both add a single per-step increment directly.
-        series = if ini_val isa Tuple
-            [
-                ini_val .+ (res_incr * j + i * interval_incr) for
-                j in 0:(horizon_count - 1)
-            ]
-        else
-            [ini_val + res_incr * j + i * interval_incr for j in 0:(horizon_count - 1)]
-        end
+        series = [
+            _stepped_value(ini_val, res_incr, interval_incr, j, i) for
+            j in 0:(horizon_count - 1)
+        ]
         ts_data[init_time + i * interval] = series
     end
     return Deterministic(;

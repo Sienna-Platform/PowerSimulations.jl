@@ -271,13 +271,13 @@ function cost_due_to_time_varying_iec(
         @assert all(power_in_df.DateTime .== power_out_df.DateTime)
 
         @assert any([
-            get_operation_cost(comp) isa _ANY_IEC for
+            _is_iec(get_operation_cost(comp)) for
             comp in get_components(T, sys)
         ])
         for gen_name in gen_names
             comp = get_component(T, sys, gen_name)
             cost = PSY.get_operation_cost(comp)
-            (cost isa _ANY_IEC) || continue
+            _is_iec(cost) || continue
             step_df[!, gen_name] .= 0.0
             # imports = addition of power = power flowing out of the device
             # exports = reduction of power = power flowing into the device

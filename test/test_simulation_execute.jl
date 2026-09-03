@@ -291,12 +291,9 @@ end
         ],
     )
 
-    # POM's per-type `ServiceModel` (POM #206) keys reserve variables by
-    # `(service_name, device_name, time)`, but `attach_feedforward!(::ServiceModel, ...)`
-    # unconditionally errors: the feedforward parameter path is still keyed
-    # `(device_name, time)` and has not been re-keyed for services. Service feedforwards
-    # (e.g. a FixValueFeedforward on OnlineReserve{ReserveUp}) are therefore not supported
-    # yet; this is a documented POM gap (excision spec section 7), not a PSI regression.
+    # `attach_feedforward!(::ServiceModel, ...)` unconditionally errors: the feedforward
+    # parameter path is keyed `(device_name, time)`, not the service-keyed
+    # `(service_name, device_name, time)` POM's `ServiceModel` reserve variables use.
     # Coverage here is narrowed to the ThermalStandard feedforward; re-add the reserve
     # feedforward once POM implements service-keyed feedforward parameters.
     sequence = SimulationSequence(;

@@ -123,24 +123,3 @@ function create_simulation_build_test_problems(
         ],
     )
 end
-
-function setup_ic_model_container!(model::DecisionModel)
-    # This function is only for testing purposes.
-    if !IOM.isempty(model)
-        POM.reset!(model)
-    end
-
-    IOM.init_optimization_container!(
-        IOM.get_optimization_container(model),
-        IOM.get_network_model(IOM.get_template(model)),
-        IOM.get_system(model),
-    )
-
-    IOM.init_model_store_params!(model)
-
-    @info "Make Initial Conditions Model"
-    IOM.set_output_dir!(model, mktempdir(; cleanup = true))
-    POM.build_initial_conditions!(model)
-    POM.solve_and_write_initial_conditions!(model)
-    return
-end

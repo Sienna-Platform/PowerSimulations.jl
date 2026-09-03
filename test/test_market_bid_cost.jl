@@ -158,7 +158,7 @@ function cost_due_to_time_varying_startup_shutdown(
         for gen_name in component_names
             comp = get_component(gentype, sys, gen_name)
             cost = PSY.get_operation_cost(comp)
-            (cost isa _ANY_MBC) || continue
+            _is_mbc(cost) || continue
             PSI.is_time_variant(get_start_up(cost)) || continue
             @assert PSI.is_time_variant(get_shut_down(cost))
             # `get_start_up(device, cost; start_time)` has no `len` and, per
@@ -513,8 +513,19 @@ for decremental in (false, true)
             set_name!(baseline, "baseline")
             set_name!(varying, "varying")
 
+            local filename
+            if SAVE_FILES
+                filename = "everything_"
+            else
+                filename = nothing
+            end
             for use_simulation in (false, true)
-                in_memory_store_opts = use_simulation ? [false, true] : [false]
+                local in_memory_store_opts
+                if use_simulation
+                    in_memory_store_opts = [false, true]
+                else
+                    in_memory_store_opts = [false]
+                end
                 for in_memory_store in in_memory_store_opts
                     decisions1, decisions2 =
                         run_mbc_obj_fun_test(
@@ -526,7 +537,7 @@ for decremental in (false, true)
                             in_memory_store = in_memory_store,
                             has_initial_input = init_input_bool,
                             is_decremental = decremental,
-                            filename = SAVE_FILES ? "everything_" : nothing,
+                            filename = filename,
                             device_to_formulation = device_to_formulation,
                         )
                     if !all(isapprox.(decisions1, decisions2))
@@ -609,11 +620,11 @@ end
 end
 
 @testset "MarketBidCost incremental with heterogeneous time series names" begin
-    # `_ANY_MBC`, not the static `MarketBidCost` alone: `build_sys_incr` (via `extend_mbc!`)
-    # converts every selected component's cost to `MarketBidTimeSeriesCost`, so a selector
-    # re-evaluated against `baseline` below (a `ComponentSelector` predicate is live, not
-    # frozen at construction) must still match the post-conversion type.
-    sel = make_selector(x -> get_operation_cost(x) isa _ANY_MBC, ThermalStandard)
+    # `_is_mbc` matches both MarketBidCost and MarketBidTimeSeriesCost: `build_sys_incr` (via
+    # `extend_mbc!`) converts every selected component's cost to `MarketBidTimeSeriesCost`, so
+    # a selector re-evaluated against `baseline` below (a `ComponentSelector` predicate is
+    # live, not frozen at construction) must still match the post-conversion type.
+    sel = make_selector(x -> _is_mbc(get_operation_cost(x)), ThermalStandard)
     baseline = build_sys_incr(true, true, true; active_components = sel)
     @assert length(get_components(sel, baseline)) == 2
 
@@ -680,16 +691,10 @@ end
     selector = make_selector(PSY.InterruptiblePowerLoad, get_name(load))
     add_mbc!(sys, selector; incremental = false, decremental = true)
     extend_mbc!(sys, selector)
-    op_cost = get_operation_cost(load)
-    # psy6 split MarketBidCost (static) from MarketBidTimeSeriesCost (time-series-backed);
-    # extend_mbc! always produces the latter, since all five of its fields must be
-    # time-series-backed once any one of them is (there is no partial/mixed representation).
-    # `typeof(op_cost) == PSY.MarketBidTimeSeriesCost` would always be false: `typeof`
-    # returns the concrete parameterized type (e.g. `MarketBidTimeSeriesCost{NaturalUnit}`),
-    # never equal to the bare `UnionAll`.
-    @assert op_cost isa PSY.MarketBidTimeSeriesCost
-    @assert get_decremental_offer_curves(op_cost) isa
-            PSY.CostCurve{<:PSY.TimeSeriesPiecewiseIncrementalCurve}
+    # extend_mbc! always produces MarketBidTimeSeriesCost, since all five of its fields must
+    # be time-series-backed once any one of them is (there is no partial/mixed representation).
+    op_cost::PSY.MarketBidTimeSeriesCost = get_operation_cost(load)
+    @assert _is_ts_pwl_curve(get_decremental_offer_curves(op_cost))
     _, res = run_generic_mbc_sim(sys)
 end
 

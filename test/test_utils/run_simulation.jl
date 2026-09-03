@@ -1,10 +1,3 @@
-function load_pf_export(root, export_subdir)
-    raw_path, md_path = get_psse_export_paths(export_subdir)
-    sys = System(joinpath(root, raw_path), JSON3.read(joinpath(root, md_path), Dict))
-    set_units_base_system!(sys, "NATURAL_UNITS")
-    return sys
-end
-
 function run_simulation(
     c_sys5_hy_uc,
     c_sys5_hy_ed,

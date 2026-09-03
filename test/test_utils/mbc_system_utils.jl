@@ -115,33 +115,43 @@ function tweak_system!(sys::System, load_pow_mult, therm_pow_mult, therm_price_m
     # replace with type of component?
     for therm in get_components(ThermalStandard, sys)
         op_cost = get_operation_cost(therm)
-        op_cost isa MarketBidCost && continue
+        _is_market_bid_cost(op_cost) && continue
         old_limits = get_active_power_limits(therm, PSY.DU)
         new_limits =
             (min = old_limits.min * PSY.DU, max = old_limits.max * therm_pow_mult * PSY.DU)
         set_active_power_limits!(therm, new_limits)
-        if get_variable_operation_cost(op_cost) isa CostCurve{LinearCurve} ||
-           get_variable_operation_cost(op_cost) isa CostCurve{QuadraticCurve}
-            prop =
-                get_proportional_term(get_value_curve(get_variable_operation_cost(op_cost)))
-            set_variable_operation_cost!(
-                op_cost,
-                CostCurve(LinearCurve(prop * therm_price_mult)),
-            )
-        elseif get_variable_operation_cost(op_cost) isa CostCurve{PiecewiseIncrementalCurve}
-            pwl = get_value_curve(get_variable_operation_cost(op_cost))
-            new_pwl = PiecewiseIncrementalCurve(
-                therm_price_mult * get_initial_input(pwl),
-                get_x_coords(pwl),
-                therm_price_mult * get_slopes(pwl),
-            )
-            set_variable_operation_cost!(op_cost, CostCurve(new_pwl))
-        else
-            error(
-                "Unhandled operation cost variable type $(typeof(get_variable_operation_cost(op_cost)))",
-            )
-        end
+        set_variable_operation_cost!(
+            op_cost,
+            _scaled_variable_cost(get_variable_operation_cost(op_cost), therm_price_mult),
+        )
     end
+end
+
+_is_market_bid_cost(::MarketBidCost) = true
+_is_market_bid_cost(::PSY.OperationalCost) = false
+
+function _scaled_variable_cost(curve::CostCurve{LinearCurve}, mult)
+    prop = get_proportional_term(get_value_curve(curve))
+    return CostCurve(LinearCurve(prop * mult))
+end
+
+function _scaled_variable_cost(curve::CostCurve{QuadraticCurve}, mult)
+    prop = get_proportional_term(get_value_curve(curve))
+    return CostCurve(LinearCurve(prop * mult))
+end
+
+function _scaled_variable_cost(curve::CostCurve{PiecewiseIncrementalCurve}, mult)
+    pwl = get_value_curve(curve)
+    new_pwl = PiecewiseIncrementalCurve(
+        mult * get_initial_input(pwl),
+        get_x_coords(pwl),
+        mult * get_slopes(pwl),
+    )
+    return CostCurve(new_pwl)
+end
+
+function _scaled_variable_cost(curve, mult)
+    error("Unhandled operation cost variable type $(typeof(curve))")
 end
 
 tweak_for_startup_shutdown!(sys::System) = tweak_system!(sys::System, 0.8, 1.0, 1.0)
@@ -197,7 +207,12 @@ function _rehomed_offer_curve(curve::CostCurve{<:TimeSeriesPiecewiseIncrementalC
     vc = get_value_curve(curve)
     new_pwl_key = rehome_key(IS.get_time_series_key(vc))
     initial_key = IS.get_initial_input(vc)
-    new_initial_key = isnothing(initial_key) ? nothing : rehome_key(initial_key)
+    local new_initial_key
+    if isnothing(initial_key)
+        new_initial_key = nothing
+    else
+        new_initial_key = rehome_key(initial_key)
+    end
     return make_market_bid_ts_curve(new_pwl_key, new_initial_key, get_power_units(curve))
 end
 

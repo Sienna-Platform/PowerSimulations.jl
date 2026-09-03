@@ -1,14 +1,7 @@
-# NOTE: this test used to build a standalone `EmulationModel` and call `run!` on it to
-# generate `ParameterUpdateEvent`/`InitialConditionUpdateEvent` recorder events. Since the
-# POM excision, POM's standalone `execute_emulation!` (PowerOperationsModels.jl
-# src/operation/emulation_model.jl, "Called `run_impl!` in PSI") no longer calls
-# `update_model!` between executions the way pre-excision PSI's `run_impl!` did — see the
-# comment at that call site. A standalone `EmulationModel` run therefore never updates
-# parameters or initial conditions between steps and produces no recorder events at all,
-# regardless of which recorders are registered. That is POM's documented behavior, not a
-# PSI bug, so this test exercises the recorder-event machinery through a `Simulation`
-# instead: PSI still owns the simulation build/execute path and genuinely records both
-# event types there (also covered end-to-end in test_simulation_execute.jl).
+# A standalone `EmulationModel` run never updates parameters or initial conditions between
+# steps, so it produces no recorder events regardless of which recorders are registered.
+# This test exercises the recorder-event machinery through a `Simulation` instead, since PSI
+# genuinely records both event types on that path.
 @testset "Show recorder events in a Simulation" begin
     template_uc = template_unit_commitment(; network = CopperPlateNetworkModel)
     template_ed = template_economic_dispatch(; network = CopperPlateNetworkModel)
