@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Running Power Flow In The Loop with Unit Commitment · PowerSimulations.jl</title><meta name="title" content="Running Power Flow In The Loop with Unit Commitment · PowerSimulations.jl"/><meta property="og:title" content="Running Power Flow In The Loop with Unit Commitment · PowerSimulations.jl"/><meta property="twitter:title" content="Running Power Flow In The Loop with Unit Commitment · PowerSimulations.jl"/><meta name="description" content="Documentation for PowerSimulations.jl."/><meta property="og:description" content="Documentation for PowerSimulations.jl."/><meta property="twitter:description" content="Documentation for PowerSimulations.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="PowerSimulations.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">PowerSimulations.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Welcome Page</a></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../generated_decision_problem/">Single-step Problem</a></li><li><a class="tocitem" href="../generated_pcm_simulation/">Multi-stage Production Cost Simulation</a></li><li><a class="tocitem" href="../generated_dynamic_line_ratings/">Dynamic Line Ratings</a></li><li class="is-active"><a class="tocitem" href>Running Power Flow In The Loop with Unit Commitment</a><ul class="internal"><li><a class="tocitem" href="#Setup"><span>Setup</span></a></li><li><a class="tocitem" href="#Configuring-the-Power-Flow-Solver"><span>Configuring the Power Flow Solver</span></a></li><li><a class="tocitem" href="#Building-the-UC-Problem-Template"><span>Building the UC Problem Template</span></a></li><li><a class="tocitem" href="#Building-and-Executing-the-Simulation"><span>Building and Executing the Simulation</span></a></li><li><a class="tocitem" href="#Loading-Simulation-Results"><span>Loading Simulation Results</span></a></li><li><a class="tocitem" href="#PTDF-UC-Flows-vs.-AC-Power-Flow-In-the-Loop"><span>PTDF UC Flows vs. AC Power Flow In the Loop</span></a></li><li><a class="tocitem" href="#Checking-for-Branch-Overloads"><span>Checking for Branch Overloads</span></a></li><li><a class="tocitem" href="#PSS/e-Export-Files"><span>PSS/e Export Files</span></a></li><li><a class="tocitem" href="#Next-Steps"><span>Next Steps</span></a></li></ul></li><li><a class="tocitem" href="../generated_security_constrained_reserves/">G-1 Security-Constrained Reserves</a></li></ul></li><li><span class="tocitem">How to...</span><ul><li><a class="tocitem" href="../../how_to/register_variable/">...register a variable in a custom operation model</a></li><li><a class="tocitem" href="../../how_to/problem_templates/">...create a problem template</a></li><li><a class="tocitem" href="../../how_to/read_results/">...read the simulation results</a></li><li><a class="tocitem" href="../../how_to/debugging_infeasible_models/">...debug an infeasible model</a></li><li><a class="tocitem" href="../../how_to/security_constrained_models/">...run security-constrained (N-1) models</a></li><li><a class="tocitem" href="../../how_to/logging/">...configure logging</a></li><li><a class="tocitem" href="../../how_to/simulation_recorder/">...inspect simulation events using the recorder</a></li><li><a class="tocitem" href="../../how_to/parallel_simulations/">...run a parallel simulation</a></li></ul></li><li><span class="tocitem">Explanation</span><ul><li><a class="tocitem" href="../../explanation/psi_structure/">PowerSimulations.jl Modeling Structure</a></li><li><a class="tocitem" href="../../explanation/feedforward/">Feedforward</a></li><li><a class="tocitem" href="../../explanation/chronologies/">Chronologies</a></li><li><a class="tocitem" href="../../explanation/sequencing/">Sequencing</a></li><li><a class="tocitem" href="../../explanation/branch_rating_limits/">Branch Rating Limits</a></li></ul></li><li><span class="tocitem">Reference</span><ul><li><a class="tocitem" href="../../api/glossary/">Glossary and Acronyms</a></li><li><a class="tocitem" href="../../api/PowerSimulations/">Public API</a></li><li><input class="collapse-toggle" id="menuitem-5-3" type="checkbox"/><label class="tocitem" for="menuitem-5-3"><span class="docs-label">Developers</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../../api/developer/">Developer Guidelines</a></li><li><a class="tocitem" href="../../api/internal/">Internals</a></li></ul></li></ul></li><li><span class="tocitem">Formulation Library</span><ul><li><a class="tocitem" href="../../formulation_library/Introduction/">Introduction</a></li><li><a class="tocitem" href="../../formulation_library/General/">General</a></li><li><a class="tocitem" href="../../formulation_library/Network/">Network</a></li><li><a class="tocitem" href="../../formulation_library/ThermalGen/">Thermal Generation</a></li><li><a class="tocitem" href="../../formulation_library/RenewableGen/">Renewable Generation</a></li><li><a class="tocitem" href="../../formulation_library/Load/">Load</a></li><li><a class="tocitem" href="../../formulation_library/Branch/">Branch</a></li><li><a class="tocitem" href="../../formulation_library/Source/">Source</a></li><li><a class="tocitem" href="../../formulation_library/Service/">Services</a></li><li><a class="tocitem" href="../../formulation_library/Feedforward/">Feedforwards</a></li><li><a class="tocitem" href="../../formulation_library/Piecewise/">Piecewise Linear Cost</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>Running Power Flow In The Loop with Unit Commitment</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Running Power Flow In The Loop with Unit Commitment</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/Sienna-Platform/PowerSimulations.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/Sienna-Platform/PowerSimulations.jl/blob/main/docs/src/tutorials/uc_power_flow_in_the_loop.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="uc-inloop-pf"><a class="docs-heading-anchor" href="#uc-inloop-pf">Running Power Flow In The Loop with Unit Commitment</a><a id="uc-inloop-pf-1"></a><a class="docs-heading-anchor-permalink" href="#uc-inloop-pf" title="Permalink"></a></h1><p><em>To follow along, you can download this tutorial as a <a href="https://sienna-platform.github.io/PowerSimulations.jl/dev/tutorials/uc_power_flow_in_the_loop.jl">Julia script (.jl)</a> or <a href="https://sienna-platform.github.io/PowerSimulations.jl/dev/tutorials/generated_uc_power_flow_in_the_loop.ipynb">Jupyter notebook (.ipynb)</a>.</em></p><p>In this tutorial, you&#39;ll configure a unit commitment (UC) simulation that automatically calls an AC power flow solver from <a href="https://sienna-platform.github.io/PowerFlows.jl/stable/"><code>PowerFlows.jl</code></a> at every dispatch interval.</p><p>You&#39;ll validate the committed dispatch against the full AC network model at each hour, check for branch overloads, and export the results to PSS/e format if needed for further analysis.</p><p>This tutorial builds on the tutorial for <a href="../generated_pcm_simulation/#Running-a-Multi-Stage-Production-Cost-Simulation">Running a Multi-Stage Production Cost Simulation</a>.</p><h2 id="Setup"><a class="docs-heading-anchor" href="#Setup">Setup</a><a id="Setup-1"></a><a class="docs-heading-anchor-permalink" href="#Setup" title="Permalink"></a></h2><p>Load the needed packages and define basic inputs:</p><pre><code class="language-julia hljs">using PowerSystemCaseBuilder
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Running Power Flow In The Loop with Unit Commitment · PowerSimulations.jl</title><meta name="title" content="Running Power Flow In The Loop with Unit Commitment · PowerSimulations.jl"/><meta property="og:title" content="Running Power Flow In The Loop with Unit Commitment · PowerSimulations.jl"/><meta property="twitter:title" content="Running Power Flow In The Loop with Unit Commitment · PowerSimulations.jl"/><meta name="description" content="Documentation for PowerSimulations.jl."/><meta property="og:description" content="Documentation for PowerSimulations.jl."/><meta property="twitter:description" content="Documentation for PowerSimulations.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.63.2/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="PowerSimulations.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">PowerSimulations.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Welcome Page</a></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../generated_decision_problem/">Single-step Problem</a></li><li><a class="tocitem" href="../generated_pcm_simulation/">Multi-stage Production Cost Simulation</a></li><li><a class="tocitem" href="../generated_dynamic_line_ratings/">Dynamic Line Ratings</a></li><li class="is-active"><a class="tocitem" href>Running Power Flow In The Loop with Unit Commitment</a><ul class="internal"><li><a class="tocitem" href="#Setup"><span>Setup</span></a></li><li><a class="tocitem" href="#Configuring-the-Power-Flow-Solver"><span>Configuring the Power Flow Solver</span></a></li><li><a class="tocitem" href="#Building-the-UC-Problem-Template"><span>Building the UC Problem Template</span></a></li><li><a class="tocitem" href="#Building-and-Executing-the-Simulation"><span>Building and Executing the Simulation</span></a></li><li><a class="tocitem" href="#Loading-Simulation-Results"><span>Loading Simulation Results</span></a></li><li><a class="tocitem" href="#PTDF-UC-Flows-vs.-AC-Power-Flow-In-the-Loop"><span>PTDF UC Flows vs. AC Power Flow In the Loop</span></a></li><li><a class="tocitem" href="#Checking-for-Branch-Overloads"><span>Checking for Branch Overloads</span></a></li><li><a class="tocitem" href="#PSS/e-Export-Files"><span>PSS/e Export Files</span></a></li><li><a class="tocitem" href="#Next-Steps"><span>Next Steps</span></a></li></ul></li><li><a class="tocitem" href="../generated_security_constrained_reserves/">G-1 Security-Constrained Reserves</a></li></ul></li><li><span class="tocitem">How to...</span><ul><li><a class="tocitem" href="../../how_to/register_variable/">...register a variable in a custom operation model</a></li><li><a class="tocitem" href="../../how_to/problem_templates/">...create a problem template</a></li><li><a class="tocitem" href="../../how_to/read_results/">...read the simulation results</a></li><li><a class="tocitem" href="../../how_to/debugging_infeasible_models/">...debug an infeasible model</a></li><li><a class="tocitem" href="../../how_to/security_constrained_models/">...run security-constrained (N-1) models</a></li><li><a class="tocitem" href="../../how_to/logging/">...configure logging</a></li><li><a class="tocitem" href="../../how_to/simulation_recorder/">...inspect simulation events using the recorder</a></li><li><a class="tocitem" href="../../how_to/parallel_simulations/">...run a parallel simulation</a></li></ul></li><li><span class="tocitem">Explanation</span><ul><li><a class="tocitem" href="../../explanation/psi_structure/">PowerSimulations.jl Modeling Structure</a></li><li><a class="tocitem" href="../../explanation/feedforward/">Feedforward</a></li><li><a class="tocitem" href="../../explanation/chronologies/">Chronologies</a></li><li><a class="tocitem" href="../../explanation/sequencing/">Sequencing</a></li><li><a class="tocitem" href="../../explanation/branch_rating_limits/">Branch Rating Limits</a></li></ul></li><li><span class="tocitem">Reference</span><ul><li><a class="tocitem" href="../../api/glossary/">Glossary and Acronyms</a></li><li><a class="tocitem" href="../../api/PowerSimulations/">Public API</a></li><li><input class="collapse-toggle" id="menuitem-5-3" type="checkbox"/><label class="tocitem" for="menuitem-5-3"><span class="docs-label">Developers</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../../api/developer/">Developer Guidelines</a></li><li><a class="tocitem" href="../../api/internal/">Internals</a></li></ul></li></ul></li><li><span class="tocitem">Formulation Library</span><ul><li><a class="tocitem" href="../../formulation_library/Introduction/">Introduction</a></li><li><a class="tocitem" href="../../formulation_library/General/">General</a></li><li><a class="tocitem" href="../../formulation_library/Network/">Network</a></li><li><a class="tocitem" href="../../formulation_library/ThermalGen/">Thermal Generation</a></li><li><a class="tocitem" href="../../formulation_library/RenewableGen/">Renewable Generation</a></li><li><a class="tocitem" href="../../formulation_library/Load/">Load</a></li><li><a class="tocitem" href="../../formulation_library/Branch/">Branch</a></li><li><a class="tocitem" href="../../formulation_library/Source/">Source</a></li><li><a class="tocitem" href="../../formulation_library/Service/">Services</a></li><li><a class="tocitem" href="../../formulation_library/Feedforward/">Feedforwards</a></li><li><a class="tocitem" href="../../formulation_library/Piecewise/">Piecewise Linear Cost</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>Running Power Flow In The Loop with Unit Commitment</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Running Power Flow In The Loop with Unit Commitment</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/Sienna-Platform/PowerSimulations.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/Sienna-Platform/PowerSimulations.jl/blob/main/docs/src/tutorials/uc_power_flow_in_the_loop.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="uc-inloop-pf"><a class="docs-heading-anchor" href="#uc-inloop-pf">Running Power Flow In The Loop with Unit Commitment</a><a id="uc-inloop-pf-1"></a><a class="docs-heading-anchor-permalink" href="#uc-inloop-pf" title="Permalink"></a></h1><p><em>To follow along, you can download this tutorial as a <a href="https://sienna-platform.github.io/PowerSimulations.jl/dev/tutorials/uc_power_flow_in_the_loop.jl">Julia script (.jl)</a> or <a href="https://sienna-platform.github.io/PowerSimulations.jl/dev/tutorials/generated_uc_power_flow_in_the_loop.ipynb">Jupyter notebook (.ipynb)</a>.</em></p><p>In this tutorial, you&#39;ll configure a unit commitment (UC) simulation that automatically calls an AC power flow solver from <a href="https://sienna-platform.github.io/PowerFlows.jl/stable/"><code>PowerFlows.jl</code></a> at every dispatch interval.</p><p>You&#39;ll validate the committed dispatch against the full AC network model at each hour, check for branch overloads, and export the results to PSS/e format if needed for further analysis.</p><p>This tutorial builds on the tutorial for <a href="../generated_pcm_simulation/#Running-a-Multi-Stage-Production-Cost-Simulation">Running a Multi-Stage Production Cost Simulation</a>.</p><h2 id="Setup"><a class="docs-heading-anchor" href="#Setup">Setup</a><a id="Setup-1"></a><a class="docs-heading-anchor-permalink" href="#Setup" title="Permalink"></a></h2><p>Load the needed packages and define basic inputs:</p><pre><code class="language-julia hljs">using PowerSystemCaseBuilder
 using PowerSimulations
 using HydroPowerSimulations
 using PowerFlows
@@ -366,7 +366,7 @@ fd_power_flow_model = ACPowerFlow{FastDecoupledACPowerFlow}(;
         :handoff_solver =&gt; NewtonRaphsonACPowerFlow,  # refine FD result with Newton-Raphson
         :handoff_tol =&gt; 1e-3,                         # FD-stage exit tolerance before handoff
     ),
-)</code></pre><p>Use it in place of <code>power_flow_model</code> below. Omit <code>solver_settings</code> for pure fast decoupled, or use the <code>FastDecoupledFixed</code> alias for the formulation-agnostic frozen-Jacobian variant.</p><h2 id="Building-the-UC-Problem-Template"><a class="docs-heading-anchor" href="#Building-the-UC-Problem-Template">Building the UC Problem Template</a><a id="Building-the-UC-Problem-Template-1"></a><a class="docs-heading-anchor-permalink" href="#Building-the-UC-Problem-Template" title="Permalink"></a></h2><p>Create a <a href="../../api/PowerSimulations/#PowerSimulations.ProblemTemplate"><code>ProblemTemplate</code></a> with a <a href="../../formulation_library/Network/#PowerSimulations.NetworkModel"><code>NetworkModel</code></a> that uses <a href="../../formulation_library/Network/#PTDFPowerModel"><code>PTDFPowerModel</code></a> and <code>power_flow_evaluation</code> set to the solver we just configured. Assign device formulations with <a href="../../api/PowerSimulations/#PowerSimulations.set_device_model!-Tuple{ProblemTemplate, DeviceModel}"><code>set_device_model!</code></a>. This is the key step that enables power flow in the loop:</p><pre><code class="language-julia hljs">template_uc = ProblemTemplate(
+)</code></pre><p>Use it in place of <code>power_flow_model</code> below. Omit <code>solver_settings</code> for pure fast decoupled, or use the <code>FastDecoupledFixed</code> alias for the formulation-agnostic frozen-Jacobian variant.</p><h2 id="Building-the-UC-Problem-Template"><a class="docs-heading-anchor" href="#Building-the-UC-Problem-Template">Building the UC Problem Template</a><a id="Building-the-UC-Problem-Template-1"></a><a class="docs-heading-anchor-permalink" href="#Building-the-UC-Problem-Template" title="Permalink"></a></h2><p>Create a <a href="../../api/PowerSimulations/#PowerSimulations.ProblemTemplate"><code>ProblemTemplate</code></a> with a <a href="../../formulation_library/Network/#PowerSimulations.NetworkModel"><code>NetworkModel</code></a> that uses <a href="../../formulation_library/Network/#PowerSimulations.PTDFPowerModel"><code>PTDFPowerModel</code></a> and <code>power_flow_evaluation</code> set to the solver we just configured. Assign device formulations with <a href="../../api/PowerSimulations/#PowerSimulations.set_device_model!-Tuple{ProblemTemplate, DeviceModel}"><code>set_device_model!</code></a>. This is the key step that enables power flow in the loop:</p><pre><code class="language-julia hljs">template_uc = ProblemTemplate(
     NetworkModel(
         PTDFPowerModel;
         use_slacks = true,
@@ -385,7 +385,7 @@ set_device_model!(template_uc, PowerLoad, StaticPowerLoad)
 set_device_model!(template_uc, HydroDispatch, HydroDispatchRunOfRiver)
 set_device_model!(template_uc, Line, StaticBranchUnbounded)
 set_device_model!(template_uc, Transformer2W, StaticBranchUnbounded)
-set_device_model!(template_uc, MonitoredLine, StaticBranch)</code></pre><p><code>use_slacks = true</code> allows the simulation to remain feasible when there is a small mismatch between the PTDF-based UC network model and the full AC power flow.</p><h2 id="Building-and-Executing-the-Simulation"><a class="docs-heading-anchor" href="#Building-and-Executing-the-Simulation">Building and Executing the Simulation</a><a id="Building-and-Executing-the-Simulation-1"></a><a class="docs-heading-anchor-permalink" href="#Building-and-Executing-the-Simulation" title="Permalink"></a></h2><p>Follow the same pattern as in the tutorial for <a href="../generated_pcm_simulation/#Running-a-Multi-Stage-Production-Cost-Simulation">Running a Multi-Stage Production Cost Simulation</a>: package the UC <a href="../generated_decision_problem/#DecisionModel"><code>DecisionModel</code></a> in <a href="../../api/PowerSimulations/#PowerSimulations.SimulationModels"><code>SimulationModels</code></a>, define a <a href="../generated_pcm_simulation/#SimulationSequence"><code>SimulationSequence</code></a> with <a href="../../api/PowerSimulations/#PowerSimulations.InterProblemChronology"><code>InterProblemChronology</code></a>, construct a <a href="../generated_pcm_simulation/#Simulation"><code>Simulation</code></a>, then <a href="../../api/PowerSimulations/#PowerSimulations.build!-Tuple{DecisionModel}"><code>build!</code></a> and <a href="../../api/PowerSimulations/#PowerSimulations.execute!-Tuple{Simulation}"><code>execute!</code></a> it for one simulation step. The in-step horizon on <code>modified_RTS_GMLC_DA_sys</code> provides 24 hourly realized rows.</p><pre><code class="language-julia hljs">solver = optimizer_with_attributes(
+set_device_model!(template_uc, MonitoredLine, StaticBranch)</code></pre><p><code>use_slacks = true</code> allows the simulation to remain feasible when there is a small mismatch between the PTDF-based UC network model and the full AC power flow.</p><h2 id="Building-and-Executing-the-Simulation"><a class="docs-heading-anchor" href="#Building-and-Executing-the-Simulation">Building and Executing the Simulation</a><a id="Building-and-Executing-the-Simulation-1"></a><a class="docs-heading-anchor-permalink" href="#Building-and-Executing-the-Simulation" title="Permalink"></a></h2><p>Follow the same pattern as in the tutorial for <a href="../generated_pcm_simulation/#Running-a-Multi-Stage-Production-Cost-Simulation">Running a Multi-Stage Production Cost Simulation</a>: package the UC <a href="../../api/PowerSimulations/#PowerSimulations.DecisionModel-Union{Tuple{M}, Tuple{PowerSimulations.AbstractProblemTemplate, System, PowerSimulations.Settings}, Tuple{PowerSimulations.AbstractProblemTemplate, System, PowerSimulations.Settings, Union{Nothing, JuMP.Model}}} where M&lt;:PowerSimulations.DecisionProblem"><code>DecisionModel</code></a> in <a href="../../api/PowerSimulations/#PowerSimulations.SimulationModels"><code>SimulationModels</code></a>, define a <a href="../../api/PowerSimulations/#PowerSimulations.SimulationSequence"><code>SimulationSequence</code></a> with <a href="../../api/PowerSimulations/#PowerSimulations.InterProblemChronology"><code>InterProblemChronology</code></a>, construct a <a href="../../api/PowerSimulations/#PowerSimulations.Simulation"><code>Simulation</code></a>, then <a href="../../api/PowerSimulations/#PowerSimulations.build!-Tuple{DecisionModel}"><code>build!</code></a> and <a href="../../api/PowerSimulations/#PowerSimulations.execute!-Tuple{Simulation}"><code>execute!</code></a> it for one simulation step. The in-step horizon on <code>modified_RTS_GMLC_DA_sys</code> provides 24 hourly realized rows.</p><pre><code class="language-julia hljs">solver = optimizer_with_attributes(
     HiGHS.Optimizer,
     &quot;log_to_console&quot; =&gt; false,
     &quot;mip_rel_gap&quot; =&gt; 0.05,
@@ -431,10 +431,40 @@ uc_results = get_decision_problem_results(sim_results, &quot;UC&quot;)</code></p
   </thead>
   <tbody>
     <tr class = "dataRow">
-      <td style = "text-align: left;">PowerFlowBranchActivePowerFromTo__TwoTerminalGenericHVDCLine</td>
+      <td style = "text-align: left;">PowerFlowHVDCNetPower__ACBus</td>
     </tr>
     <tr class = "dataRow">
-      <td style = "text-align: left;">PowerFlowBranchReactivePowerFromTo__TapTransformer</td>
+      <td style = "text-align: left;">PowerFlowVoltageMagnitude__ACBus</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">PowerFlowBranchActivePowerLoss__Line</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">PowerFlowBranchActivePowerFromTo__Line</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">PowerFlowBranchActivePowerToFrom__Line</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">PowerFlowBranchActivePowerFromTo__TapTransformer</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">PowerFlowBranchActivePowerLoss__TwoTerminalGenericHVDCLine</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">PowerFlowBranchActivePowerToFrom__TwoTerminalGenericHVDCLine</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">PowerFlowBranchReactivePowerFromTo__TwoTerminalGenericHVDCLine</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">PowerFlowVoltageAngle__ACBus</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">TimeDurationOn__ThermalStandard</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">PowerFlowBranchReactivePowerToFrom__TwoTerminalGenericHVDCLine</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: left;">PowerFlowBranchReactivePowerFromTo__Line</td>
@@ -443,55 +473,25 @@ uc_results = get_decision_problem_results(sim_results, &quot;UC&quot;)</code></p
       <td style = "text-align: left;">PowerFlowBranchReactivePowerToFrom__TapTransformer</td>
     </tr>
     <tr class = "dataRow">
-      <td style = "text-align: left;">PowerFlowBranchActivePowerToFrom__Line</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">TimeDurationOn__ThermalStandard</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">PowerFlowBranchActivePowerFromTo__TapTransformer</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">PowerFlowBranchActivePowerToFrom__TwoTerminalGenericHVDCLine</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">PowerFlowVoltageMagnitude__ACBus</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">PowerFlowBranchActivePowerLoss__TwoTerminalGenericHVDCLine</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">PowerFlowBranchActivePowerLoss__TapTransformer</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">PowerFlowVoltageAngle__ACBus</td>
+      <td style = "text-align: left;">PowerFlowBranchReactivePowerFromTo__TapTransformer</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: left;">HydroEnergyOutput__HydroDispatch</td>
     </tr>
     <tr class = "dataRow">
-      <td style = "text-align: left;">PowerFlowBranchReactivePowerToFrom__TwoTerminalGenericHVDCLine</td>
+      <td style = "text-align: left;">PowerFlowBranchActivePowerLoss__TapTransformer</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">PowerFlowBranchActivePowerFromTo__TwoTerminalGenericHVDCLine</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: left;">PowerFlowBranchActivePowerToFrom__TapTransformer</td>
     </tr>
     <tr class = "dataRow">
-      <td style = "text-align: left;">PowerFlowBranchActivePowerLoss__Line</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">PowerFlowHVDCNetPower__ACBus</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">PowerFlowBranchActivePowerFromTo__Line</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">PowerFlowBranchReactivePowerFromTo__TwoTerminalGenericHVDCLine</td>
+      <td style = "text-align: left;">PowerFlowBranchReactivePowerToFrom__Line</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: left;">TimeDurationOff__ThermalStandard</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">PowerFlowBranchReactivePowerToFrom__Line</td>
     </tr>
   </tbody>
 </table>
@@ -504,49 +504,49 @@ uc_results = get_decision_problem_results(sim_results, &quot;UC&quot;)</code></p
   </thead>
   <tbody>
     <tr class = "dataRow">
-      <td style = "text-align: left;">VOMCostExpression__ThermalStandard</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">FuelCostExpression__ThermalStandard</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">ProductionCostExpression__ThermalStandard</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">CurtailmentCostExpression__RenewableDispatch</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">FuelConsumptionExpression__ThermalStandard</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">FixedCostExpression__RenewableDispatch</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">ShutDownCostExpression__ThermalStandard</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">ActivePowerBalance__System</td>
-    </tr>
-    <tr class = "dataRow">
       <td style = "text-align: left;">ProductionCostExpression__RenewableDispatch</td>
     </tr>
     <tr class = "dataRow">
-      <td style = "text-align: left;">ActivePowerBalance__ACBus</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">VOMCostExpression__RenewableDispatch</td>
+      <td style = "text-align: left;">ProductionCostExpression__HydroDispatch</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: left;">FixedCostExpression__ThermalStandard</td>
     </tr>
     <tr class = "dataRow">
-      <td style = "text-align: left;">StartUpCostExpression__ThermalStandard</td>
+      <td style = "text-align: left;">FuelConsumptionExpression__ThermalStandard</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">ActivePowerBalance__System</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">ShutDownCostExpression__ThermalStandard</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">VOMCostExpression__RenewableDispatch</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">FuelCostExpression__ThermalStandard</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: left;">PTDFBranchFlow__Line</td>
     </tr>
     <tr class = "dataRow">
-      <td style = "text-align: left;">ProductionCostExpression__HydroDispatch</td>
+      <td style = "text-align: left;">ActivePowerBalance__ACBus</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">CurtailmentCostExpression__RenewableDispatch</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">VOMCostExpression__ThermalStandard</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">ProductionCostExpression__ThermalStandard</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">StartUpCostExpression__ThermalStandard</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">FixedCostExpression__RenewableDispatch</td>
     </tr>
   </tbody>
 </table>
@@ -562,7 +562,13 @@ uc_results = get_decision_problem_results(sim_results, &quot;UC&quot;)</code></p
       <td style = "text-align: left;">ActivePowerTimeSeriesParameter__RenewableNonDispatch</td>
     </tr>
     <tr class = "dataRow">
-      <td style = "text-align: left;">ReactivePowerTimeSeriesParameter__HydroDispatch</td>
+      <td style = "text-align: left;">ReactivePowerTimeSeriesParameter__RenewableDispatch</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">ActivePowerTimeSeriesParameter__HydroDispatch</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">ActivePowerTimeSeriesParameter__PowerLoad</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: left;">ReactivePowerTimeSeriesParameter__PowerLoad</td>
@@ -571,13 +577,7 @@ uc_results = get_decision_problem_results(sim_results, &quot;UC&quot;)</code></p
       <td style = "text-align: left;">ActivePowerTimeSeriesParameter__RenewableDispatch</td>
     </tr>
     <tr class = "dataRow">
-      <td style = "text-align: left;">ActivePowerTimeSeriesParameter__HydroDispatch</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">ReactivePowerTimeSeriesParameter__RenewableDispatch</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">ActivePowerTimeSeriesParameter__PowerLoad</td>
+      <td style = "text-align: left;">ReactivePowerTimeSeriesParameter__HydroDispatch</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: left;">ReactivePowerTimeSeriesParameter__RenewableNonDispatch</td>
@@ -593,16 +593,10 @@ uc_results = get_decision_problem_results(sim_results, &quot;UC&quot;)</code></p
   </thead>
   <tbody>
     <tr class = "dataRow">
-      <td style = "text-align: left;">ActivePowerVariable__ThermalStandard</td>
-    </tr>
-    <tr class = "dataRow">
       <td style = "text-align: left;">OnVariable__ThermalStandard</td>
     </tr>
     <tr class = "dataRow">
-      <td style = "text-align: left;">StartVariable__ThermalStandard</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">ActivePowerVariable__RenewableDispatch</td>
+      <td style = "text-align: left;">ActivePowerVariable__HydroDispatch</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: left;">SystemBalanceSlackDown__System</td>
@@ -611,10 +605,16 @@ uc_results = get_decision_problem_results(sim_results, &quot;UC&quot;)</code></p
       <td style = "text-align: left;">SystemBalanceSlackUp__System</td>
     </tr>
     <tr class = "dataRow">
+      <td style = "text-align: left;">StartVariable__ThermalStandard</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">ActivePowerVariable__RenewableDispatch</td>
+    </tr>
+    <tr class = "dataRow">
       <td style = "text-align: left;">StopVariable__ThermalStandard</td>
     </tr>
     <tr class = "dataRow">
-      <td style = "text-align: left;">ActivePowerVariable__HydroDispatch</td>
+      <td style = "text-align: left;">ActivePowerVariable__ThermalStandard</td>
     </tr>
   </tbody>
 </table>
@@ -656,52 +656,52 @@ ptdf_line = filter(row -&gt; row.name == example_line, ptdf_flows)</code></pre><
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T00:00:00</td>
       <td style = "text-align: right;">A1</td>
-      <td style = "text-align: right;">20.43627227955367</td>
+      <td style = "text-align: right;">20.442523909445587</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T01:00:00</td>
       <td style = "text-align: right;">A1</td>
-      <td style = "text-align: right;">18.574139009225625</td>
+      <td style = "text-align: right;">18.436223597734696</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T02:00:00</td>
       <td style = "text-align: right;">A1</td>
-      <td style = "text-align: right;">19.694569854537704</td>
+      <td style = "text-align: right;">19.556654443046778</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T03:00:00</td>
       <td style = "text-align: right;">A1</td>
-      <td style = "text-align: right;">20.45342882863579</td>
+      <td style = "text-align: right;">20.315513417144913</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T04:00:00</td>
       <td style = "text-align: right;">A1</td>
-      <td style = "text-align: right;">32.6609073312717</td>
+      <td style = "text-align: right;">-1.2660544294068794</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T05:00:00</td>
       <td style = "text-align: right;">A1</td>
-      <td style = "text-align: right;">32.30824524826182</td>
+      <td style = "text-align: right;">8.43730452787841</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T06:00:00</td>
       <td style = "text-align: right;">A1</td>
-      <td style = "text-align: right;">34.48417353713814</td>
+      <td style = "text-align: right;">17.026497047530224</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T07:00:00</td>
       <td style = "text-align: right;">A1</td>
-      <td style = "text-align: right;">46.501675077927935</td>
+      <td style = "text-align: right;">30.930506309827116</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T08:00:00</td>
       <td style = "text-align: right;">A1</td>
-      <td style = "text-align: right;">55.809810966804626</td>
+      <td style = "text-align: right;">31.901123923924064</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T09:00:00</td>
       <td style = "text-align: right;">A1</td>
-      <td style = "text-align: right;">45.3511868478375</td>
+      <td style = "text-align: right;">32.360305575271866</td>
     </tr>
     <tr>
       <td style = "text-align: right;">&vellip;</td>
@@ -742,53 +742,53 @@ innerjoin(
   <tbody>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T00:00:00</td>
-      <td style = "text-align: right;">20.43627227955367</td>
-      <td style = "text-align: right;">17.927103415926002</td>
+      <td style = "text-align: right;">20.442523909445587</td>
+      <td style = "text-align: right;">17.9321400874094</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T01:00:00</td>
-      <td style = "text-align: right;">18.574139009225625</td>
-      <td style = "text-align: right;">16.347487138647573</td>
+      <td style = "text-align: right;">18.436223597734696</td>
+      <td style = "text-align: right;">16.231776942324103</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T02:00:00</td>
-      <td style = "text-align: right;">19.694569854537704</td>
-      <td style = "text-align: right;">17.404604798696628</td>
+      <td style = "text-align: right;">19.556654443046778</td>
+      <td style = "text-align: right;">17.293036472776294</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T03:00:00</td>
-      <td style = "text-align: right;">20.45342882863579</td>
-      <td style = "text-align: right;">18.049638880209923</td>
+      <td style = "text-align: right;">20.315513417144913</td>
+      <td style = "text-align: right;">17.940092107107464</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T04:00:00</td>
-      <td style = "text-align: right;">32.6609073312717</td>
-      <td style = "text-align: right;">30.667045472906445</td>
+      <td style = "text-align: right;">-1.2660544294068794</td>
+      <td style = "text-align: right;">-3.2624220074681394</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T05:00:00</td>
-      <td style = "text-align: right;">32.30824524826182</td>
-      <td style = "text-align: right;">30.514690261126088</td>
+      <td style = "text-align: right;">8.43730452787841</td>
+      <td style = "text-align: right;">6.710609655436269</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T06:00:00</td>
-      <td style = "text-align: right;">34.48417353713814</td>
-      <td style = "text-align: right;">32.85684668805461</td>
+      <td style = "text-align: right;">17.026497047530224</td>
+      <td style = "text-align: right;">15.428322598705357</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T07:00:00</td>
-      <td style = "text-align: right;">46.501675077927935</td>
-      <td style = "text-align: right;">45.977385821552424</td>
+      <td style = "text-align: right;">30.930506309827116</td>
+      <td style = "text-align: right;">30.519691739188847</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T08:00:00</td>
-      <td style = "text-align: right;">55.809810966804626</td>
-      <td style = "text-align: right;">55.44147098935667</td>
+      <td style = "text-align: right;">31.901123923924064</td>
+      <td style = "text-align: right;">31.547081438581504</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T09:00:00</td>
-      <td style = "text-align: right;">45.3511868478375</td>
-      <td style = "text-align: right;">45.01235092038147</td>
+      <td style = "text-align: right;">32.360305575271866</td>
+      <td style = "text-align: right;">32.06313945663865</td>
     </tr>
     <tr>
       <td style = "text-align: right;">&vellip;</td>
@@ -853,31 +853,43 @@ overloads</code></pre><table>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T00:00:00</td>
       <td style = "text-align: right;">C6</td>
-      <td style = "text-align: right;">189.45338928285364</td>
+      <td style = "text-align: right;">189.45189241951857</td>
       <td style = "text-align: right;">175.0</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T01:00:00</td>
       <td style = "text-align: right;">C6</td>
-      <td style = "text-align: right;">250.85871881413405</td>
+      <td style = "text-align: right;">251.10714163896205</td>
       <td style = "text-align: right;">175.0</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T02:00:00</td>
       <td style = "text-align: right;">C6</td>
-      <td style = "text-align: right;">190.0387582953133</td>
+      <td style = "text-align: right;">190.27604502927522</td>
       <td style = "text-align: right;">175.0</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T05:00:00</td>
       <td style = "text-align: right;">C6</td>
-      <td style = "text-align: right;">186.86092754534494</td>
+      <td style = "text-align: right;">185.1998509145595</td>
+      <td style = "text-align: right;">175.0</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: right;">2020-01-01T16:00:00</td>
+      <td style = "text-align: right;">AB1</td>
+      <td style = "text-align: right;">176.4486674459995</td>
+      <td style = "text-align: right;">175.0</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: right;">2020-01-01T17:00:00</td>
+      <td style = "text-align: right;">AB1</td>
+      <td style = "text-align: right;">193.88676676159142</td>
       <td style = "text-align: right;">175.0</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T18:00:00</td>
       <td style = "text-align: right;">AB1</td>
-      <td style = "text-align: right;">183.91093434314553</td>
+      <td style = "text-align: right;">198.35364390057677</td>
       <td style = "text-align: right;">175.0</td>
     </tr>
   </tbody>
@@ -886,4 +898,4 @@ overloads</code></pre><table>
 length(psse_export_folders)</code></pre><pre><code class="nohighlight hljs">48</code></pre><p>Each folder contains the PSS/e <code>.raw</code> file for that interval, available for further analysis:</p><pre><code class="language-julia hljs">first_subdir = first(sort(psse_export_folders))
 readdir(joinpath(export_dir, first_subdir))</code></pre><pre><code class="nohighlight hljs">2-element Vector{String}:
  &quot;export_1_1.raw&quot;
- &quot;export_1_1_export_metadata.json&quot;</code></pre><h2 id="Next-Steps"><a class="docs-heading-anchor" href="#Next-Steps">Next Steps</a><a id="Next-Steps-1"></a><a class="docs-heading-anchor-permalink" href="#Next-Steps" title="Permalink"></a></h2><ul><li>Tighten the UC network model with transmission constraints if needed until overloads are removed — see the formulation library <a href="../../formulation_library/Network/#network_formulations">Network</a> and <a href="../../formulation_library/Branch/#PowerSystems.Branch-Formulations"><code>PowerSystems.Branch</code> Formulations</a> pages.</li><li>See the <a href="https://sienna-platform.github.io/PowerFlows.jl/stable/tutorials/generated_solving_a_power_flow/#Solving-a-Power-Flow">Solving a Power Flow</a> tutorial in PowerFlows.jl for standalone power flow examples.</li></ul></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../generated_dynamic_line_ratings/">« Dynamic Line Ratings</a><a class="docs-footer-nextpage" href="../generated_security_constrained_reserves/">G-1 Security-Constrained Reserves »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Tuesday 18 August 2026 17:07">Tuesday 18 August 2026</span>. Using Julia version 1.12.7.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+ &quot;export_1_1_export_metadata.json&quot;</code></pre><h2 id="Next-Steps"><a class="docs-heading-anchor" href="#Next-Steps">Next Steps</a><a id="Next-Steps-1"></a><a class="docs-heading-anchor-permalink" href="#Next-Steps" title="Permalink"></a></h2><ul><li>Tighten the UC network model with transmission constraints if needed until overloads are removed — see the formulation library <a href="../../formulation_library/Network/#network_formulations">Network</a> and <a href="../../formulation_library/Branch/#PowerSystems.Branch-Formulations"><code>PowerSystems.Branch</code> Formulations</a> pages.</li><li>See the <a href="https://sienna-platform.github.io/PowerFlows.jl/stable/tutorials/generated_solving_a_power_flow/#Solving-a-Power-Flow">Solving a Power Flow</a> tutorial in PowerFlows.jl for standalone power flow examples.</li></ul></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../generated_dynamic_line_ratings/">« Dynamic Line Ratings</a><a class="docs-footer-nextpage" href="../generated_security_constrained_reserves/">G-1 Security-Constrained Reserves »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Thursday 3 September 2026 21:51">Thursday 3 September 2026</span>. Using Julia version 1.12.7.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
