@@ -4,7 +4,6 @@ const TIME1 = DateTime("2024-01-01T00:00:00")
 test_path = mktempdir()
 const FormulationDict =
     Dict{Type{<:PSY.Device}, Union{DeviceModel, Type{<:PSI.AbstractDeviceFormulation}}}
-# TODO could replace with PSI's defaults, template_unit_commitment
 const DEFAULT_FORMULATIONS =
     FormulationDict(
         ThermalStandard => ThermalBasicUnitCommitment,
