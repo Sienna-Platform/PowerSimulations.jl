@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Energy Target Storage Formulation · PowerSimulations.jl</title><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.044/juliamono.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.13.11/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="PowerSimulations.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">PowerSimulations.jl</a></span></div><form class="docs-search" action="../../search/"><input class="docs-search-query" id="documenter-search-query" name="q" type="text" placeholder="Search docs"/></form><ul class="docs-menu"><li><a class="tocitem" href="../../">Introduction</a></li><li><span class="tocitem">API</span><ul><li><a class="tocitem" href="../../api/PowerSimulations/">PowerSimulations</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Energy Target Storage Formulation</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Energy Target Storage Formulation</a></li></ul></nav><div class="docs-right"><a class="docs-edit-link" href="https://github.com/NREL-SIIP/PowerSimulations.jl/blob/master/docs/src/man/storage_energy_target.md" title="Edit on GitHub"><span class="docs-icon fab"></span><span class="docs-label is-hidden-touch">Edit on GitHub</span></a><a class="docs-settings-button fas fa-cog" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-sidebar-button fa fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a></div></header><article class="content" id="documenter-page"><h1 id="Energy-Target-Storage-Formulation"><a class="docs-heading-anchor" href="#Energy-Target-Storage-Formulation">Energy Target Storage Formulation</a><a id="Energy-Target-Storage-Formulation-1"></a><a class="docs-heading-anchor-permalink" href="#Energy-Target-Storage-Formulation" title="Permalink"></a></h1><p>This formulation provides a way for user to tackle the end of horizon effect in battery operation by adding a constraint on stored energy at the end of period. The target constraint includes a slack variable which is associated with a penalty for any violation of the constraints, this ensure feasibility of the model for scenarios where it is not optimal to excatly meet the target.</p><h1 id="Formulation-Overview"><a class="docs-heading-anchor" href="#Formulation-Overview">Formulation Overview</a><a id="Formulation-Overview-1"></a><a class="docs-heading-anchor-permalink" href="#Formulation-Overview" title="Permalink"></a></h1><p>The features of this model are:</p><ul><li>Standard Battery Operation Constraint<ul><li>Energy balance constraint</li><li>Energy range constraint</li><li>Charging and discharing limit constraint</li></ul></li><li>Power Contribution in eligible services </li><li>Stored Energy Target Constraint </li></ul><h1 id="Formulations"><a class="docs-heading-anchor" href="#Formulations">Formulations</a><a id="Formulations-1"></a><a class="docs-heading-anchor-permalink" href="#Formulations" title="Permalink"></a></h1><h3 id="Indices-and-Sets"><a class="docs-heading-anchor" href="#Indices-and-Sets">Indices and Sets</a><a id="Indices-and-Sets-1"></a><a class="docs-heading-anchor-permalink" href="#Indices-and-Sets" title="Permalink"></a></h3><p class="math-container">\[\begin{itemize}
+	\item[$t \in \cT$] Hourly time steps: $1, \ldots, T$, $T$ = {\tt time\_periods}
+    \item[$b \in \cB$] - Set of battery device.
+    \item[$h \in \cH$]- Set of hydro reservoir device.
+\end{itemize}\]</p><h3 id="Parameters"><a class="docs-heading-anchor" href="#Parameters">Parameters</a><a id="Parameters-1"></a><a class="docs-heading-anchor-permalink" href="#Parameters" title="Permalink"></a></h3><p class="math-container">\[\begin{itemize}
+	\item[$C$]  Value of energy/penalty cost for device $b$ ($/MW).
+    \item[$C^{value}(b)$] or [$C^{value}(h)$]  - Energy/Water value cost for battery/hydro devices at end of period
+    \item[$C^{penalty}(b)$] or  [$C^{penalty}(h)$] - Penalty cost associated with unsatisfied energy target for battery/hydro devices.
+    \item[$C^{var}(b)$] or [$C^{var}(h)$] - Variable cost of generation.
+	\item[$\oP_in(b)$]   Maximum charging power input for device $b$ (MW), {\tt power\_input\_maximum}.
+	\item[$\uP_in(b)$]   Minimum charging power input for device $b$ (MW), {\tt power\_input\_minimum}.
+    \item[$\oP_out(b)$]   Maximum discharging power output for device $b$ (MW), {\tt power\_output\_maximum}.
+	\item[$\uP_out(b)$]   Minimum discharging power output for device $b$ (MW), {\tt power\_output\_minimum}.
+    \item[$\oE(b)$] Maximum state of charge limt for device $b$ (MWh), {\tt energy\_maximum}.
+    \item[$\uE(b)$] Minimum state of charge limt for device $b$ (MWh), {\tt energy\_minimum}.
+	\item[$I(b,t)$)] - Energy/Water inflow in the hydro reservoir at timestep ($t$) for hydro devices
+    \item[$hat{E}(b,t)$)  or $\hat{E}(h,t)$) - Energy target at timestep ($t$) for battery/hydro devices for $t \in \hat{T}$.
+	\item[$E(b)^0$]   Energy stored in device $b$ (MWh) in the time period prior to t=1, {\tt energy\_stored\_t0}.
+\end{itemize}\]</p><h3 id="Variables"><a class="docs-heading-anchor" href="#Variables">Variables</a><a id="Variables-1"></a><a class="docs-heading-anchor-permalink" href="#Variables" title="Permalink"></a></h3><p class="math-container">\[\begin{itemize}
+	\item[$p_in(b,t)$] Active power variable for charging  $b$ at time $t$, $\geq 0$.
+	\item[$p_out(b, t)$]  Active power variable for discharging $b$ at time $t$, $\geq 0$.
+	\item[$e(b, t)$] Stored energy variable for $b$ at time $t$, $\geq 0$.
+	\item[$e_slack(b, t)$] Slack variable for energy target constraint for $b$ at time $t$,  $\geq 0$.
+    \item[$s(h,t)$] - Energy/Water Spilled from a hydro reservoir devices
+    \item[$e^{-}_{slack}(b,t)$]  or  [$e^{-}_{slack}(h,t)$] - Slack variable for energy target constraint for excess
+    \item[$e^{+}_{slack}(b,t)$]  or  [$e^{+}_{slack}(h,t)$] - Slack variable for energy target constraint for shortage
+\end{itemize}\]</p><h3 id="Model-Description"><a class="docs-heading-anchor" href="#Model-Description">Model Description</a><a id="Model-Description-1"></a><a class="docs-heading-anchor-permalink" href="#Model-Description" title="Permalink"></a></h3><p>This first model is for Power Systems Storage devices (e.g. GenericBattery, BatteryEMS) with StorageManagementCost.</p><p><em>Objective Function</em></p><p class="math-container">\[{\allowdisplaybreaks
+\begin{align}
+    &amp; \text{min} \sum_{b, t \in \hat{\cT}} \quad [e^{+}_{slack}(b,t)*C^{penalty}(b) - e^{-}_{slack}(b,t)* C^{value}(b)] \label{eq:obj} %\tag{OBJ} %\\
+\end{align}
+}%\]</p><p>subject to:<br/> <em>Active power constraints</em></p><p class="math-container">\[\begin{align}
+		&amp; p_in(b,t) + r_g(t) \leq  \oP_in(b) &amp; \forall t \in \cT, \, \forall b \in \cB \label{eq:MaxInput} \\
+		&amp; p_in(b,t) + r_g(t) \geq  \uP_in(b) &amp; \forall t \in \cT, \, \forall b \in \cB \label{eq:MinInput} \\
+        &amp; p_out(b,t) + r_g(t) \leq  \oP_out(b)&amp; \forall t \in \cT, \, \forall b \in \cB \label{eq:MaxOutput} \\
+		&amp; p_out(b,t) + r_g(t) \geq  \uP_out(b)&amp; \forall t \in \cT, \, \forall b \in \cB \label{eq:MinOutput} \\
+\end{align}\]</p><p><em>Energy Limit constraints</em></p><p class="math-container">\[\begin{align}
+		&amp; e(b,t) \leq  \oE(b) &amp; \forall t \in \cT, \, \forall b \in \cB \label{eq:MaxEnergyLimit} \\
+		&amp; e(b,t) \geq  \uE(b) &amp; \forall t \in \cT, \, \forall b \in \cB \label{eq:MinEnergyLimit} \\
+\end{align}\]</p><p><em>Energy Balance/State of Charge constraint</em></p><p class="math-container">\[\begin{align}
+		&amp; e(b,1) - E(b)^0 = p_in(b,1) - p_out(b,1) &amp; \forall b \in \cB \label{eq:EnergyBalance0} \\
+		&amp; e(b,t) -e(b,t-1) = p_in(b,t) - p_out(b,t) &amp; \forall t \in \cT\setminus\{1\}, \, \forall b \in \cB \label{eq:EnergyBalance} \\
+\end{align}\]</p><p><em>Energy Target constraint</em></p><p class="math-container">\[\begin{align}
+        &amp; e(b,t) + e^{+}_{slack}(b,t) + e^{-}_{slack}(b,t) = \hat{E}(b,t) \quad \forall b \in \cB, t \in \hat{\cT} \label{eq:EnergyTarget} \\
+\end{align}\]</p><p><em>Energy slacks constraint</em></p><p class="math-container">\[\begin{align}
+		&amp; e^{-}_{slack}(b,t) \leq 0.0 &amp; \forall t \in \cT, \, \forall b \in \cB \label{eq:ShortageSlackBound} \\
+		&amp; e^{+}_{slack}(b,t) \geq 0.0 &amp; \forall t \in \cT, \, \forall b \in \cB \label{eq:SurplusSlackBound} \\
+\end{align}\]</p><h3 id="Hydro-Storage-Target-Model-Description"><a class="docs-heading-anchor" href="#Hydro-Storage-Target-Model-Description">Hydro Storage Target Model Description</a><a id="Hydro-Storage-Target-Model-Description-1"></a><a class="docs-heading-anchor-permalink" href="#Hydro-Storage-Target-Model-Description" title="Permalink"></a></h3><p>This model is for Power Systems HydroEnergyReservoir and HydroPumpedStorage devices with StorageManagementCost.</p><p><em>Objective Function</em></p><p class="math-container">\[{\allowdisplaybreaks
+\begin{align}
+    &amp; \text{min}   \sum_{h,t} p(h,t) \cdot [C^{var}(h) + C^{fixed}(h)] \\
+    + \sum_{h, t \in \hat{\cT}} \quad [e^{+}_{slack}(h,t) * C^{penalty}(h) - e^{-}_{slack}(h,t) * C^{value}(h)]   \label{eq:obj} %\tag{OBJ} %\\
+\end{align}
+}%\]</p><p>subject to:<br/> <em>Active power constraints</em></p><p class="math-container">\[\begin{align}
+		&amp; p(h,t)  \leq  \oP(h) &amp; \forall t \in \cT, \, \forall h \in \cH \label{eq:MinOutput} \\
+		&amp; p(h,t)  \geq  \uP(h) &amp; \forall t \in \cT, \, \forall h \in \cH \label{eq:MinOutput} \\
+        &amp; s(h,t) \leq  \cS^{max}(h)&amp; \forall t \in \cT, \, \forall h \in \cH \label{eq:MaxSpillage} \\
+		&amp; s(h,t) \geq  0 &amp; \forall t \in \cT, \, \forall h \in \cH \label{eq:MinSpillage} \\
+\end{align}\]</p><p><em>Energy Limit constraints</em></p><p class="math-container">\[\begin{align}
+		&amp; e(b,t) \leq  \oE(b) &amp; \forall t \in \cT, \, \forall b \in \cB \label{eq:MaxEnergyLimit} \\
+		&amp; e(b,t) \geq  \uE(b) &amp; \forall t \in \cT, \, \forall b \in \cB \label{eq:MinEnergyLimit} \\
+\end{align}\]</p><p><em>Energy Balance/State of Charge constraint</em></p><p class="math-container">\[\begin{align}
+		&amp; e(h,1) - E(h)^0 = I(h,1) - p(h,1) - s(h,1) &amp; \forall h \in \cH \label{eq:EnergyBalance0} \\
+		&amp; e(h,t) -e(h,t-1) = I(h,t) - p(h,t) - s(h,t) &amp; \forall t \in \cT\setminus\{1\}, \, \forall h \in \cH \label{eq:EnergyBalance} \\
+\end{align}\]</p><p><em>Energy Target constraint</em></p><p class="math-container">\[\begin{align}
+        &amp; e(h,t) + e^{+}_{slack}(h,t) + e^{-}_{slack}(h,t) = \hat{E}(h,t) \quad \forall h \in \cH, t \in \hat{\cT} \label{eq:EnergyTarget} \\
+\end{align}\]</p><p><em>Energy slacks constraint</em></p><p class="math-container">\[\begin{align}
+		&amp; e^{-}_{slack}(h,t) \leq 0.0 &amp; \forall t \in \cT, \, \forall h \in \cH \label{eq:ShortageSlackBound} \\
+		&amp; e^{+}_{slack}(h,t) \geq 0.0 &amp; \forall t \in \cT, \, \forall h \in \cH \label{eq:SurplusSlackBound} \\
+\end{align}\]</p><h3 id="Impact-of-different-cost-configurations"><a class="docs-heading-anchor" href="#Impact-of-different-cost-configurations">Impact of different cost configurations</a><a id="Impact-of-different-cost-configurations-1"></a><a class="docs-heading-anchor-permalink" href="#Impact-of-different-cost-configurations" title="Permalink"></a></h3><p>In the table we describe all possible configuration of the StorageManagementCost with the target constraint in hydro or storage device models. Cases 1(a) &amp; 2(a) will have no impact of the models operations and the target constraint will be rendered useless. In most cases that have no energy target and a non-zero value for <span>$C^{value}$</span>, if this cost is too high (<span>$C^{value} &gt;&gt; 0$</span>) or too low (<span>$C^{value} &lt;&lt;0$</span>) can result in either the model holding on to stored energy till the end or the model not storing any energy in the device. This is caused by the fact that when energy target is zero, we have <span>$e(t) = - e^{-}_{shortage}(t)$</span>, and  <span>$- e^{-}_{shortage} * C^{value}$</span> in the objective function is replaced by <span>$e(t) * C^{value}$</span>, thus resulting in <span>$C^{value}$</span> to be seen as the cost of stored energy.</p><p class="math-container">\[\begin{table}
+% \caption{}
+\begin{tabular}{ |p{1.5cm}||p{1.5cm}|p{2cm}|p{2cm}|p{5cm}| }
+ \hline
+ \multicolumn{5}{|c|}{Scenario List} \\
+ \hline
+Case &amp; Energy Target &amp; Energy Shortage Cost &amp; Energy Value / Energy Surplus cost&amp; Effect \\
+ \hline
+ Case 1(a) &amp; $\hat{E}=0$    &amp; $C^{penalty}=0$   &amp; $C^{value}=0$&amp; no change\\[-1.5ex]
+ \hline\\[-1.5ex]
+ Case 1(b) &amp; $\hat{E}=0$    &amp; $C^{penalty}=0$   &amp; $C^{value}&lt;0$&amp; penalty for storing energy\\
+ Case 1(c) &amp; $\hat{E}=0$    &amp; $C^{penalty}&gt;0$   &amp; $C^{value}=0$&amp; no penalties or incentives applied\\
+ Case 1(d) &amp; $\hat{E}=0$    &amp; $C^{penalty}=0$   &amp; $C^{value}&gt;0$&amp; incentive for storing energy \\
+ Case 1(e) &amp; $\hat{E}=0$    &amp; $C^{penalty}&gt;0$   &amp; $C^{value}&lt;0$&amp; penalty for storing energy \\
+ Case 1(f) &amp; $\hat{E}=0$    &amp; $C^{penalty}&gt;0$   &amp; $C^{value}&gt;0$&amp; incentive for storing energy \\
+ \hline
+ Case 2(a) &amp; $\hat{E}&gt;0$    &amp; $C^{penalty}=0$   &amp; $C^{value}=0$&amp; no change\\[-1.5ex]
+ \hline\\[-1.5ex]
+ Case 2(b) &amp; $\hat{E}&gt;0$    &amp; $C^{penalty}=0$   &amp; $C^{value}&lt;0$&amp; penalty on energy storage in excess of target  \\
+ Case 2(c) &amp; $\hat{E}&gt;0$    &amp; $C^{penalty}&gt;0$   &amp; $C^{value}=0$&amp; penalty on energy storage short of target\\
+ Case 2(d) &amp; $\hat{E}&gt;0$    &amp; $C^{penalty}=0$   &amp; $C^{value}&gt;0$&amp; incentive on excess energy \\
+ Case 2(e) &amp; $\hat{E}&gt;0$    &amp; $C^{penalty}&gt;0$   &amp; $C^{value}&lt;0$&amp; penalty on both  excess/shortage of energy\\
+ Case 2(f) &amp; $\hat{E}&gt;0$    &amp; $C^{penalty}&gt;0$   &amp; $C^{value}&gt;0$&amp; penalty for shortage, incentive for excess energy \\
+ \hline
+\end{tabular}
+\caption{\label{tab:table-name} Table above describes the different effects that can be induced into the model using the target constraint formulation.}
+\end{table}\]</p></article><nav class="docs-footer"><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.16 on <span class="colophon-date" title="Friday 29 April 2022 06:10">Friday 29 April 2022</span>. Using Julia version 1.7.2.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

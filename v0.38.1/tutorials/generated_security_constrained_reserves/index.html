@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>G-1 Security-Constrained Reserves · PowerSimulations.jl</title><meta name="title" content="G-1 Security-Constrained Reserves · PowerSimulations.jl"/><meta property="og:title" content="G-1 Security-Constrained Reserves · PowerSimulations.jl"/><meta property="twitter:title" content="G-1 Security-Constrained Reserves · PowerSimulations.jl"/><meta name="description" content="Documentation for PowerSimulations.jl."/><meta property="og:description" content="Documentation for PowerSimulations.jl."/><meta property="twitter:description" content="Documentation for PowerSimulations.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="PowerSimulations.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">PowerSimulations.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Welcome Page</a></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../generated_decision_problem/">Single-step Problem</a></li><li><a class="tocitem" href="../generated_pcm_simulation/">Multi-stage Production Cost Simulation</a></li><li><a class="tocitem" href="../generated_dynamic_line_ratings/">Dynamic Line Ratings</a></li><li><a class="tocitem" href="../generated_uc_power_flow_in_the_loop/">Running Power Flow In The Loop with Unit Commitment</a></li><li class="is-active"><a class="tocitem" href>G-1 Security-Constrained Reserves</a><ul class="internal"><li><a class="tocitem" href="#Introduction"><span>Introduction</span></a></li><li><a class="tocitem" href="#Worked-example:-PTDFPowerModel-with-three-monitored-lines"><span>Worked example: <code>PTDFPowerModel</code> with three monitored lines</span></a></li><li><a class="tocitem" href="#What-the-model-builds"><span>What the model builds</span></a></li><li><a class="tocitem" href="#sc_reserves_results"><span>Reading the results</span></a></li><li><a class="tocitem" href="#The-zonal-variant:-AreaBalancePowerModel-and-\\Delta-f"><span>The zonal variant: <code>AreaBalancePowerModel</code> and <span>$\Delta f$</span></span></a></li><li><a class="tocitem" href="#Use-cases"><span>Use cases</span></a></li><li><a class="tocitem" href="#sc_reserves_limitations"><span>Limitations</span></a></li></ul></li></ul></li><li><span class="tocitem">How to...</span><ul><li><a class="tocitem" href="../../how_to/register_variable/">...register a variable in a custom operation model</a></li><li><a class="tocitem" href="../../how_to/problem_templates/">...create a problem template</a></li><li><a class="tocitem" href="../../how_to/read_results/">...read the simulation results</a></li><li><a class="tocitem" href="../../how_to/debugging_infeasible_models/">...debug an infeasible model</a></li><li><a class="tocitem" href="../../how_to/security_constrained_models/">...run security-constrained (N-1) models</a></li><li><a class="tocitem" href="../../how_to/logging/">...configure logging</a></li><li><a class="tocitem" href="../../how_to/simulation_recorder/">...inspect simulation events using the recorder</a></li><li><a class="tocitem" href="../../how_to/parallel_simulations/">...run a parallel simulation</a></li></ul></li><li><span class="tocitem">Explanation</span><ul><li><a class="tocitem" href="../../explanation/psi_structure/">PowerSimulations.jl Modeling Structure</a></li><li><a class="tocitem" href="../../explanation/feedforward/">Feedforward</a></li><li><a class="tocitem" href="../../explanation/chronologies/">Chronologies</a></li><li><a class="tocitem" href="../../explanation/sequencing/">Sequencing</a></li><li><a class="tocitem" href="../../explanation/branch_rating_limits/">Branch Rating Limits</a></li></ul></li><li><span class="tocitem">Reference</span><ul><li><a class="tocitem" href="../../api/glossary/">Glossary and Acronyms</a></li><li><a class="tocitem" href="../../api/PowerSimulations/">Public API</a></li><li><input class="collapse-toggle" id="menuitem-5-3" type="checkbox"/><label class="tocitem" for="menuitem-5-3"><span class="docs-label">Developers</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../../api/developer/">Developer Guidelines</a></li><li><a class="tocitem" href="../../api/internal/">Internals</a></li></ul></li></ul></li><li><span class="tocitem">Formulation Library</span><ul><li><a class="tocitem" href="../../formulation_library/Introduction/">Introduction</a></li><li><a class="tocitem" href="../../formulation_library/General/">General</a></li><li><a class="tocitem" href="../../formulation_library/Network/">Network</a></li><li><a class="tocitem" href="../../formulation_library/ThermalGen/">Thermal Generation</a></li><li><a class="tocitem" href="../../formulation_library/RenewableGen/">Renewable Generation</a></li><li><a class="tocitem" href="../../formulation_library/Load/">Load</a></li><li><a class="tocitem" href="../../formulation_library/Branch/">Branch</a></li><li><a class="tocitem" href="../../formulation_library/Source/">Source</a></li><li><a class="tocitem" href="../../formulation_library/Service/">Services</a></li><li><a class="tocitem" href="../../formulation_library/Feedforward/">Feedforwards</a></li><li><a class="tocitem" href="../../formulation_library/Piecewise/">Piecewise Linear Cost</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>G-1 Security-Constrained Reserves</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>G-1 Security-Constrained Reserves</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/Sienna-Platform/PowerSimulations.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/Sienna-Platform/PowerSimulations.jl/blob/main/docs/src/tutorials/security_constrained_reserves.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="sc_reserves"><a class="docs-heading-anchor" href="#sc_reserves">G-1 Security-Constrained Reserves</a><a id="sc_reserves-1"></a><a class="docs-heading-anchor-permalink" href="#sc_reserves" title="Permalink"></a></h1><p><em>To follow along, you can download this tutorial as a <a href="https://sienna-platform.github.io/PowerSimulations.jl/v0.38.1/tutorials/security_constrained_reserves.jl">Julia script (.jl)</a> or <a href="https://sienna-platform.github.io/PowerSimulations.jl/v0.38.1/tutorials/generated_security_constrained_reserves.ipynb">Jupyter notebook (.ipynb)</a>.</em></p><h2 id="Introduction"><a class="docs-heading-anchor" href="#Introduction">Introduction</a><a id="Introduction-1"></a><a class="docs-heading-anchor-permalink" href="#Introduction" title="Permalink"></a></h2><p>A conventional reserve model (<code>RangeReserve</code>, <code>RampReserve</code>) procures a <em>quantity</em> of reserve. It never checks that the reserve can be delivered: nothing in the model says the network can carry the response from the units holding the reserve to the bus that lost its generation. The security-constrained reserve formulations close that gap. They co-optimize the reserve award with the <strong>deliverability</strong> of that reserve after a generator outage (G-1), on a user-chosen subset of <strong>monitored</strong> components.</p><p>For each contingency the model adds a post-contingency world: every contributing unit gets a deployment variable, the deployment must exactly replace the lost generation, and the resulting flow on each monitored component must respect its emergency rating. Because both worlds share the pre-contingency dispatch variables, the post-contingency limits push back on the base-case schedule.</p><div class="admonition is-info" id="Note-9d164dcbeea494aa"><header class="admonition-header">Note<a class="admonition-anchor" href="#Note-9d164dcbeea494aa" title="Permalink"></a></header><div class="admonition-body"><p>This tutorial covers the <em>service</em> formulations <a href="../../api/PowerSimulations/#PowerSimulations.SecurityConstrainedContingencyReserve"><code>SecurityConstrainedContingencyReserve</code></a> and <a href="../../api/PowerSimulations/#PowerSimulations.SecurityConstrainedRampReserve"><code>SecurityConstrainedRampReserve</code></a>, which model <strong>generator</strong> outages and use the base-topology PTDF to redistribute the response. They are distinct from the <code>SecurityConstrainedStaticBranch</code> <em>device</em> formulation, which models <strong>branch</strong> outages with line-outage distribution factors (MODF) — see <a href="../../how_to/security_constrained_models/#Run-security-constrained-(N-1)-branch-models">Run security-constrained (N-1) branch models</a>.</p></div></div><h2 id="Worked-example:-PTDFPowerModel-with-three-monitored-lines"><a class="docs-heading-anchor" href="#Worked-example:-PTDFPowerModel-with-three-monitored-lines">Worked example: <code>PTDFPowerModel</code> with three monitored lines</a><a id="Worked-example:-PTDFPowerModel-with-three-monitored-lines-1"></a><a class="docs-heading-anchor-permalink" href="#Worked-example:-PTDFPowerModel-with-three-monitored-lines" title="Permalink"></a></h2><h3 id="Load-packages"><a class="docs-heading-anchor" href="#Load-packages">Load packages</a><a id="Load-packages-1"></a><a class="docs-heading-anchor-permalink" href="#Load-packages" title="Permalink"></a></h3><pre><code class="language-julia hljs">using PowerSimulations
+using PowerSystems
+using PowerSystemCaseBuilder
+using PowerNetworkMatrices
+using HydroPowerSimulations
+using DataFrames
+using HiGHS
+using JuMP
+using Dates
+import InfrastructureSystems as IS</code></pre><h3 id="Data"><a class="docs-heading-anchor" href="#Data">Data</a><a id="Data-1"></a><a class="docs-heading-anchor-permalink" href="#Data" title="Permalink"></a></h3><div class="admonition is-info" id="Note-cd904d3e0fb4bef3"><header class="admonition-header">Note<a class="admonition-anchor" href="#Note-cd904d3e0fb4bef3" title="Permalink"></a></header><div class="admonition-body"><p><a href="https://github.com/Sienna-Platform/PowerSystemCaseBuilder.jl">PowerSystemCaseBuilder.jl</a> is a helper library that makes it easier to reproduce examples in the documentation and tutorials. Normally you would pass your local files to create the system data instead of calling <code>build_system</code>. For more details visit <a href="https://sienna-platform.github.io/PowerSystems.jl/stable/how_to/powersystembuilder/">PowerSystemCaseBuilder Documentation</a></p></div></div><p>The only data preparation this page needs is a system and a forecast window. The <code>transform_single_time_series!</code> call sets the horizon of the problem to four hours.</p><pre><code class="language-julia hljs">sys = build_system(PSISystems, &quot;modified_RTS_GMLC_DA_sys&quot;)
+transform_single_time_series!(sys, Hour(4), Hour(1))</code></pre><pre><code class="nohighlight hljs">┌ Info: Building new system modified_RTS_GMLC_DA_sys from raw data
+└   sys_descriptor.raw_data = &quot;/home/runner/.julia/artifacts/c257b2c37b981f261fdc328b0fb9b96436a96537/RTS-GMLC-0.2.3&quot;
+[ Info: Parsing csv data in branch.csv ...
+[ Info: Successfully parsed branch.csv
+[ Info: Parsing csv data in bus.csv ...
+[ Info: Successfully parsed bus.csv
+[ Info: Parsing csv data in dc_branch.csv ...
+[ Info: Successfully parsed dc_branch.csv
+[ Info: Parsing csv data in gen.csv ...
+[ Info: Successfully parsed gen.csv
+[ Info: Parsing csv data in reserves.csv ...
+[ Info: Successfully parsed reserves.csv
+[ Info: Parsing csv data in simulation_objects.csv ...
+[ Info: Successfully parsed simulation_objects.csv
+[ Info: Parsing csv data in storage.csv ...
+[ Info: Successfully parsed storage.csv
+[ Info: Parsing csv data in timeseries_pointers.csv ...
+[ Info: Successfully parsed timeseries_pointers.csv
+[ Info: Unit System changed to UnitSystem.DEVICE_BASE = 1
+┌ Warning: Missing PowerSystems.InputCategoryModule.InputCategory.LOAD = 5 data.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:300
+┌ Warning: User-defined column name Startup Ramp Rate MW/min is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Shutdown Ramp Rate MW/min is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Status at Start is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Time at Status is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Start Cost Cold is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Start Cost Warm is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Start Cost Hot is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Must Run is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: Rating calculation returned 0.0. Changing to 1.0 in the p.u. of the device.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/common.jl:120
+┌ Warning: Generator SynchronousCondenser: 114_SYNC_COND_1 has base power of zero: changing device base power to match system base power, 100.0
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:938
+┌ Warning: Rating calculation returned 0.0. Changing to 1.0 in the p.u. of the device.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/common.jl:120
+┌ Warning: Generator SynchronousCondenser: 214_SYNC_COND_1 has base power of zero: changing device base power to match system base power, 100.0
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:938
+┌ Warning: Rating calculation returned 0.0. Changing to 1.0 in the p.u. of the device.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/common.jl:120
+┌ Warning: Generator SynchronousCondenser: 314_SYNC_COND_1 has base power of zero: changing device base power to match system base power, 100.0
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:938
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+┌ Warning: Heat rate parsing not valid for RenewableGen replacing with zero cost
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1039
+[ Info: Adding contributing generators for Spin_Up_R1 by category
+┌ Warning: User-defined column name Startup Ramp Rate MW/min is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Shutdown Ramp Rate MW/min is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Status at Start is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Time at Status is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Start Cost Cold is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Start Cost Warm is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Start Cost Hot is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Must Run is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+[ Info: Adding contributing generators for Spin_Up_R2 by category
+┌ Warning: User-defined column name Startup Ramp Rate MW/min is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Shutdown Ramp Rate MW/min is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Status at Start is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Time at Status is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Start Cost Cold is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Start Cost Warm is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Start Cost Hot is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Must Run is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+[ Info: Adding contributing generators for Spin_Up_R3 by category
+┌ Warning: User-defined column name Startup Ramp Rate MW/min is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Shutdown Ramp Rate MW/min is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Status at Start is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Time at Status is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Start Cost Cold is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Start Cost Warm is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Start Cost Hot is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Must Run is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+[ Info: Adding contributing generators for Flex_Up by category
+┌ Warning: User-defined column name Startup Ramp Rate MW/min is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Shutdown Ramp Rate MW/min is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Status at Start is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Time at Status is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Start Cost Cold is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Start Cost Warm is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Start Cost Hot is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Must Run is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+[ Info: Adding contributing generators for Flex_Down by category
+┌ Warning: User-defined column name Startup Ramp Rate MW/min is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Shutdown Ramp Rate MW/min is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Status at Start is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Time at Status is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Start Cost Cold is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Start Cost Warm is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Start Cost Hot is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Must Run is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+[ Info: Adding contributing generators for Reg_Up by category
+┌ Warning: User-defined column name Startup Ramp Rate MW/min is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Shutdown Ramp Rate MW/min is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Status at Start is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Time at Status is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Start Cost Cold is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Start Cost Warm is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Start Cost Hot is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Must Run is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+[ Info: Adding contributing generators for Reg_Down by category
+┌ Warning: User-defined column name Startup Ramp Rate MW/min is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Shutdown Ramp Rate MW/min is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Status at Start is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Time at Status is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Start Cost Cold is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Start Cost Warm is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Start Cost Hot is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: User-defined column name Must Run is not in dataframe.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/zOISI/src/parsers/power_system_table_data.jl:1778
+┌ Warning: no component category=Component name=201_HYDRO_4_RESERVOIR_head
+└ @ InfrastructureSystems ~/.julia/packages/InfrastructureSystems/IqQJt/src/system_data.jl:913
+[ Info: Unit System changed to UnitSystem.SYSTEM_BASE = 0
+[ Info: Serialized time series data to /home/runner/.julia/packages/PowerSystemCaseBuilder/VwffJ/data/serialized_system/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/modified_RTS_GMLC_DA_sys_time_series_storage.h5.
+[ Info: Serialized System to /home/runner/.julia/packages/PowerSystemCaseBuilder/VwffJ/data/serialized_system/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/modified_RTS_GMLC_DA_sys.json
+[ Info: Serialized System metadata to /home/runner/.julia/packages/PowerSystemCaseBuilder/VwffJ/data/serialized_system/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/modified_RTS_GMLC_DA_sys_metadata.json
+</code></pre><h3 id="Declare-the-contingency"><a class="docs-heading-anchor" href="#Declare-the-contingency">Declare the contingency</a><a id="Declare-the-contingency-1"></a><a class="docs-heading-anchor-permalink" href="#Declare-the-contingency" title="Permalink"></a></h3><p>A contingency is a <code>PSY.Outage</code> supplemental attribute, and it carries two pieces of information:</p><ul><li><strong>what is lost</strong> — the attribute is attached to the generator that goes out;</li><li><strong>what is watched</strong> — the attribute&#39;s <code>monitored_components</code> list the components whose post-contingency flow is constrained.</li></ul><p>The same attribute is then attached to the reserve <code>Service</code>. That second attachment is the <em>only</em> mechanism that opts a service into responding to the contingency: a service responds to exactly the outages attached to it.</p><pre><code class="language-julia hljs">outaged_unit = get_component(ThermalStandard, sys, &quot;216_STEAM_1&quot;)
+reserve = get_component(VariableReserve{ReserveUp}, sys, &quot;Reg_Up&quot;)
+monitored_lines = [get_component(Line, sys, name) for name in (&quot;AB2&quot;, &quot;AB3&quot;, &quot;CB-1&quot;)]
+
+outage = FixedForcedOutage(;
+    outage_status = 1.0,
+    monitored_components = monitored_lines,
+)
+
+add_supplemental_attribute!(sys, outaged_unit, outage)   # what is lost
+add_supplemental_attribute!(sys, reserve, outage)        # who responds</code></pre><div class="admonition is-success" id="Tip-dc3ec218427585ad"><header class="admonition-header">Tip<a class="admonition-anchor" href="#Tip-dc3ec218427585ad" title="Permalink"></a></header><div class="admonition-body"><p>PowerSimulations keys off the <em>presence</em> of the attribute on the generator and on the service, not off the numeric <code>outage_status</code>. A <code>FixedForcedOutage</code> with <code>outage_status = 1.0</code> is the least ceremony needed to declare that a contingency exists; use <code>GeometricDistributionForcedOutage</code> only when you actually have the stochastic parameters and something else consumes them.</p></div></div><h3 id="Problem-template"><a class="docs-heading-anchor" href="#Problem-template">Problem template</a><a id="Problem-template-1"></a><a class="docs-heading-anchor-permalink" href="#Problem-template" title="Permalink"></a></h3><p>Two entries do the work. To constrain monitored <em>branches</em> the network model must be an <code>AbstractPTDFModel</code> (<code>PTDFPowerModel</code> or <code>AreaPTDFPowerModel</code>), because the post-contingency flow expression is built from PTDF columns. And every monitored component type must have its own <code>DeviceModel</code> in the template — a monitored <code>Line</code> with no <code>Line</code> device model is dropped with a warning, and no post-contingency flow constraint is built for it.</p><pre><code class="language-julia hljs">template = ProblemTemplate(NetworkModel(PTDFPowerModel; PTDF_matrix = PTDF(sys)))
+
+set_device_model!(template, ThermalStandard, ThermalDispatchNoMin)
+set_device_model!(template, RenewableDispatch, RenewableFullDispatch)
+set_device_model!(template, RenewableNonDispatch, FixedOutput)
+set_device_model!(template, PowerLoad, StaticPowerLoad)
+set_device_model!(template, HydroDispatch, HydroDispatchRunOfRiver)
+set_device_model!(template, Line, StaticBranch)
+set_device_model!(template, Transformer2W, StaticBranch)
+set_device_model!(template, TapTransformer, StaticBranch)</code></pre><pre><code class="nohighlight hljs">[ Info: Finding subnetworks via iterative union find
+</code></pre><p>The service model names the service explicitly, so only <code>Reg_Up</code> is modeled as security-constrained. <code>use_slacks = true</code> adds priced slacks on the post-contingency flow limits (and on the pre-contingency reserve requirement), which keeps an over-constrained case solvable and reports the violation instead of hiding it in an infeasibility.</p><pre><code class="language-julia hljs">set_service_model!(
+    template,
+    ServiceModel(
+        VariableReserve{ReserveUp},
+        SecurityConstrainedContingencyReserve,
+        &quot;Reg_Up&quot;;
+        use_slacks = true,
+    ),
+)</code></pre><h3 id="Build-and-solve-one-DecisionModel"><a class="docs-heading-anchor" href="#Build-and-solve-one-DecisionModel">Build and solve one <code>DecisionModel</code></a><a id="Build-and-solve-one-DecisionModel-1"></a><a class="docs-heading-anchor-permalink" href="#Build-and-solve-one-DecisionModel" title="Permalink"></a></h3><pre><code class="language-julia hljs">solver = optimizer_with_attributes(HiGHS.Optimizer, &quot;log_to_console&quot; =&gt; false)
+
+model = DecisionModel(
+    template,
+    sys;
+    resolution = Hour(1),
+    optimizer = solver,
+    store_variable_names = true,
+)
+
+build_time = @elapsed build!(model; output_dir = mktempdir(; cleanup = true))
+
+solve_time = @elapsed solve!(model)
+
+(build_time_s = build_time, solve_time_s = solve_time)</code></pre><pre><code class="nohighlight hljs">(build_time_s = 81.975357306, solve_time_s = 30.613478278)</code></pre><p>Adding <a href="../../api/PowerSimulations/#PowerSimulations.SecurityConstrainedContingencyReserve"><code>SecurityConstrainedContingencyReserve</code></a> on <code>Reg_Up</code>, with one outage and three monitored lines, is what grows the PTDF problem to the size below. <code>get_jump_model</code> reaches the underlying <code>JuMP.Model</code>, so the counts come straight off the model that was just built and solved.</p><pre><code class="language-julia hljs">jump_model = PowerSimulations.get_jump_model(model)
+
+(
+    variables = JuMP.num_variables(jump_model),
+    constraints = JuMP.num_constraints(
+        jump_model;
+        count_variable_in_set_constraints = true,
+    ),
+    objective = JuMP.objective_value(jump_model),
+)</code></pre><pre><code class="nohighlight hljs">(variables = 1852, constraints = 5768, objective = 193167.75020585844)</code></pre><h2 id="What-the-model-builds"><a class="docs-heading-anchor" href="#What-the-model-builds">What the model builds</a><a id="What-the-model-builds-1"></a><a class="docs-heading-anchor-permalink" href="#What-the-model-builds" title="Permalink"></a></h2><p>Everything below is indexed by contingency first. Throughout, <span>$c$</span> is a contingency (identified by the outage&#39;s UUID), <span>$g$</span> a contributing generator, <span>$g^*$</span> the generator outaged by <span>$c$</span>, <span>$\ell$</span> a monitored component, <span>$a$</span> an area, <span>$b$</span> a bus and <span>$t$</span> a time step.</p><h3 id="Variables"><a class="docs-heading-anchor" href="#Variables">Variables</a><a id="Variables-1"></a><a class="docs-heading-anchor-permalink" href="#Variables" title="Permalink"></a></h3><table><tr><th style="text-align: right">Type</th><th style="text-align: right">Meaning</th><th style="text-align: right">Indexed by</th></tr><tr><td style="text-align: right"><code>PostContingencyActivePowerReserveDeploymentVariable</code> (<span>$\Delta rsv_{c,g,t}$</span>)</td><td style="text-align: right">Reserve the unit actually deploys after the outage. Non-negative, upper bound <code>get_max_active_power(device)</code>, and pinned to zero for the outaged unit itself</td><td style="text-align: right">(outage, contributing device, <span>$t$</span>)</td></tr><tr><td style="text-align: right"><code>PostContingencyFlowActivePowerSlackUpperBound</code> / <code>...LowerBound</code> (<span>$s^{f,\text{ub}}$</span>, <span>$s^{f,\text{lb}}$</span>)</td><td style="text-align: right">Non-negative relaxations of the two post-contingency flow inequalities, priced at <code>CONSTRAINT_VIOLATION_SLACK_COST</code>. Only with <code>use_slacks = true</code></td><td style="text-align: right">(outage, monitored component, <span>$t$</span>) — sparse</td></tr><tr><td style="text-align: right"><code>PostContingencyAreaInterchangeFlowDeviationVariable</code> (<span>$\Delta f_{c,\ell,t}$</span>)</td><td style="text-align: right">Change in an <code>AreaInterchange</code> flow that carries the response between areas. Free (either direction). <code>AreaBalancePowerModel</code> only</td><td style="text-align: right">(outage, <strong>modeled</strong> tie, <span>$t$</span>)</td></tr></table><p>The pre-contingency <code>ActivePowerReserveVariable</code> (<span>$rsv_{g,t}$</span>) is the ordinary reserve award. It is built when the service model maps a <code>RequirementTimeSeriesParameter</code> to a requirement series the service actually carries — the default mapping is the series named <code>&quot;requirement&quot;</code>.</p><h3 id="Expressions"><a class="docs-heading-anchor" href="#Expressions">Expressions</a><a id="Expressions-1"></a><a class="docs-heading-anchor-permalink" href="#Expressions" title="Permalink"></a></h3><table><tr><th style="text-align: right">Type</th><th style="text-align: right">Meaning</th><th style="text-align: right">Indexed by</th><th style="text-align: right">Network model</th></tr><tr><td style="text-align: right"><code>PostContingencyActivePowerBalance</code></td><td style="text-align: right">Deployed reserve minus the outaged unit&#39;s output, system-wide</td><td style="text-align: right">(outage, <span>$t$</span>)</td><td style="text-align: right">PTDF, CopperPlate</td></tr><tr><td style="text-align: right"><code>PostContingencyNodalActivePowerDeployment</code></td><td style="text-align: right">The same net injection change, per bus. Restricted to buses hosting a contributing device or an outaged unit; every other bus&#39;s entry is identically zero</td><td style="text-align: right">(outage, bus, <span>$t$</span>)</td><td style="text-align: right">PTDF</td></tr><tr><td style="text-align: right"><code>PostContingencyAreaActivePowerDeployment</code></td><td style="text-align: right">The same net injection change, per area</td><td style="text-align: right">(outage, area, <span>$t$</span>)</td><td style="text-align: right">AreaBalance</td></tr><tr><td style="text-align: right"><code>PostContingencyBranchFlow</code></td><td style="text-align: right">Post-contingency flow on a monitored branch</td><td style="text-align: right">(outage, branch, <span>$t$</span>) — sparse</td><td style="text-align: right">PTDF</td></tr><tr><td style="text-align: right"><code>PostContingencyAreaInterchangeFlow</code></td><td style="text-align: right">Post-contingency flow on a monitored tie</td><td style="text-align: right">(outage, tie, <span>$t$</span>) — sparse</td><td style="text-align: right">AreaBalance</td></tr><tr><td style="text-align: right"><code>PostContingencyActivePowerGeneration</code></td><td style="text-align: right"><span>$p_{g,t} + \Delta rsv_{c,g,t}$</span>, used only when the service has no requirement series</td><td style="text-align: right">(outage, device, <span>$t$</span>)</td><td style="text-align: right">PTDF, CopperPlate, AreaBalance</td></tr></table><p>The nodal deployment expression is the net injection change the contingency causes:</p><p class="math-container">\[\text{dep}_{c,b,t} = \sum_{g \in b,\, g \neq g^*} \Delta rsv_{c,g,t} - p_{g^*,t} \mathbb{1}_{b = b(g^*)}\]</p><p>and the monitored flow is the pre-contingency flow displaced by that injection change, through the base-topology PTDF:</p><p class="math-container">\[f^\text{post}_{c,\ell,t} = f_{\ell,t} + \sum_{b} \text{PTDF}_{\ell,b}\, \text{dep}_{c,b,t}\]</p><h3 id="Constraints"><a class="docs-heading-anchor" href="#Constraints">Constraints</a><a id="Constraints-1"></a><a class="docs-heading-anchor-permalink" href="#Constraints" title="Permalink"></a></h3><table><tr><th style="text-align: right">Type</th><th style="text-align: right">Meaning</th><th style="text-align: right">Indexed by</th></tr><tr><td style="text-align: right"><code>PostContingencyGenerationBalanceConstraint</code></td><td style="text-align: right">The post-contingency balance closes: deployment exactly replaces the lost generation</td><td style="text-align: right">(outage, <span>$t$</span>)</td></tr><tr><td style="text-align: right"><code>PostContingencyActivePowerReserveDeploymentVariableLimitsConstraint</code></td><td style="text-align: right"><span>$\Delta rsv_{c,g,t} \le rsv_{g,t}$</span>: a unit can only deploy what it was awarded</td><td style="text-align: right">(outage, device, <span>$t$</span>) — sparse</td></tr><tr><td style="text-align: right"><code>PostContingencyActivePowerGenerationLimitsConstraint</code></td><td style="text-align: right"><span>$p_{g,t} + \Delta rsv_{c,g,t} \le P^\text{max}_g$</span> (and <span>$= 0$</span> for the outaged unit). Used instead of the row above when there is no requirement series</td><td style="text-align: right">(outage, device, <span>$t$</span>)</td></tr><tr><td style="text-align: right"><code>PostContingencyFlowRateConstraint</code></td><td style="text-align: right">Monitored flow inside the component&#39;s emergency rating; two containers, meta <code>&quot;&lt;service&gt;_ub&quot;</code> and <code>&quot;&lt;service&gt;_lb&quot;</code></td><td style="text-align: right">(outage, monitored component, <span>$t$</span>) — sparse</td></tr><tr><td style="text-align: right"><code>PostContingencyCopperPlateBalanceConstraint</code></td><td style="text-align: right">Per-area post-contingency balance, closed through <span>$\Delta f$</span> on every modeled tie touching the area. <code>AreaBalancePowerModel</code> only</td><td style="text-align: right">(outage, area, <span>$t$</span>)</td></tr></table><p>The balance is what makes the requirement bite: the deployment must sum to the outaged unit&#39;s pre-contingency output.</p><p class="math-container">\[\sum_{g \neq g^*} \Delta rsv_{c,g,t} - p_{g^*,t} = 0, \quad \forall c,\ \forall t\]</p><p>The monitored-flow limits use the <strong>emergency</strong> rating of the monitored component, symmetric around zero, with the optional slacks:</p><p class="math-container">\[\begin{align*}
+&amp; f^\text{post}_{c,\ell,t} - s^{f,\text{ub}}_{c,\ell,t} \le R^\text{emg}_\ell \\
+&amp; f^\text{post}_{c,\ell,t} + s^{f,\text{lb}}_{c,\ell,t} \ge -R^\text{emg}_\ell
+\end{align*}\]</p><h3 id="The-two-formulations"><a class="docs-heading-anchor" href="#The-two-formulations">The two formulations</a><a id="The-two-formulations-1"></a><a class="docs-heading-anchor-permalink" href="#The-two-formulations" title="Permalink"></a></h3><p>Both build the identical post-contingency stack above. They differ only in the pre-contingency reserve model they wrap, and in whether the reserve requirement time series is optional:</p><table><tr><th style="text-align: right"></th><th style="text-align: right"><a href="../../api/PowerSimulations/#PowerSimulations.SecurityConstrainedContingencyReserve"><code>SecurityConstrainedContingencyReserve</code></a></th><th style="text-align: right"><a href="../../api/PowerSimulations/#PowerSimulations.SecurityConstrainedRampReserve"><code>SecurityConstrainedRampReserve</code></a></th></tr><tr><td style="text-align: right">Pre-contingency constraints</td><td style="text-align: right"><code>RequirementConstraint</code>, <code>ParticipationFractionConstraint</code>, reserve objective term — the <code>RangeReserve</code> stack</td><td style="text-align: right">The same, plus <code>RampConstraint</code> — the <code>RampReserve</code> stack</td></tr><tr><td style="text-align: right">Requirement time series</td><td style="text-align: right">Optional. Without one, no pre-contingency reserve variable is built and deployment is bounded by generator capacity through <code>PostContingencyActivePowerGeneration</code></td><td style="text-align: right">Always required</td></tr></table><p>See <a href="../../formulation_library/Service/#service_formulations">Service Formulations</a> for the pre-contingency math of <code>RangeReserve</code> and <code>RampReserve</code>.</p><h2 id="sc_reserves_results"><a class="docs-heading-anchor" href="#sc_reserves_results">Reading the results</a><a id="sc_reserves_results-1"></a><a class="docs-heading-anchor-permalink" href="#sc_reserves_results" title="Permalink"></a></h2><p>The deployment variable is three-dimensional, so its long-format table has a <code>name</code> column holding the <strong>outage UUID as a string</strong> and a <code>name2</code> column holding the contributing device.</p><pre><code class="language-julia hljs">results = OptimizationProblemResults(model)
+variables = read_variables(results)
+expressions = read_expressions(results)
+
+deployment =
+    variables[&quot;PostContingencyActivePowerReserveDeploymentVariable__VariableReserve__ReserveUp__Reg_Up&quot;]
+
+outage_id = string(IS.get_uuid(outage))</code></pre><pre><code class="nohighlight hljs">&quot;5b730eff-4b09-4fd3-aa84-66e358915a29&quot;</code></pre><p>The defining identity of a G-1 requirement is that the total deployment equals the outaged unit&#39;s pre-contingency output, time step by time step. Summing the deployment over contributing devices and comparing against the outaged unit&#39;s <code>ActivePowerVariable</code> is the first thing to check on any new case.</p><pre><code class="language-julia hljs">function total_deployment(deployment::DataFrame, outage_id::String)
+    rows = filter(row -&gt; row[&quot;name&quot;] == outage_id, deployment)
+    totals = combine(groupby(rows, :DateTime), :value =&gt; sum =&gt; :total)
+    return sort!(totals, :DateTime)
+end
+
+function device_series(df::DataFrame, device_name::String)
+    rows = filter(row -&gt; row[&quot;name&quot;] == device_name, df)
+    return sort(rows, :DateTime)[!, &quot;value&quot;]
+end
+
+outaged_output =
+    device_series(variables[&quot;ActivePowerVariable__ThermalStandard&quot;], &quot;216_STEAM_1&quot;)
+
+deployment_sum = total_deployment(deployment, outage_id)[!, :total]
+
+(pre_contingency_output = outaged_output, total_deployment = deployment_sum)</code></pre><pre><code class="nohighlight hljs">(pre_contingency_output = [93.0, 93.0, 93.0, 93.0], total_deployment = [93.0, 93.0, 93.0, 93.00000000000003])</code></pre><p><code>216_STEAM_1</code> sits in area 2. The block above lists what it actually dispatches over the horizon next to the reserve deployment summed over every contributing device. The balance constraint forces the two to agree, so the gap between them should be zero up to solver tolerance:</p><pre><code class="language-julia hljs">maximum(abs.(deployment_sum - outaged_output))</code></pre><pre><code class="nohighlight hljs">2.842170943040401e-14</code></pre><div class="admonition is-info" id="Note-971a65ea1d072106"><header class="admonition-header">Note<a class="admonition-anchor" href="#Note-971a65ea1d072106" title="Permalink"></a></header><div class="admonition-body"><p><code>read_variables</code> converts to natural units (MW). Values read directly off the JuMP model or the optimization container are in the system per-unit base. Do not mix the two in one comparison.</p></div></div><p>The monitored flows and the slacks are the second thing to check. Both are sparse containers keyed by <code>(outage, monitored component, t)</code>; in the results tables the outage and the component are flattened into one column name, <code>&quot;&lt;outage_uuid&gt;__&lt;component&gt;&quot;</code>. Use the list helpers to discover the exact keys rather than guessing them:</p><pre><code class="language-julia hljs">list_expression_names(results)
+
+list_variable_names(results)</code></pre><pre><code class="nohighlight hljs">8-element Vector{String}:
+ &quot;ActivePowerVariable__RenewableDispatch&quot;
+ &quot;PostContingencyFlowActivePowerSlackUpperBound__VariableReserve__ReserveUp__Reg_Up&quot;
+ &quot;ActivePowerVariable__ThermalStandard&quot;
+ &quot;PostContingencyActivePowerReserveDeploymentVariable__VariableReserve__ReserveUp__Reg_Up&quot;
+ &quot;ActivePowerVariable__HydroDispatch&quot;
+ &quot;PostContingencyFlowActivePowerSlackLowerBound__VariableReserve__ReserveUp__Reg_Up&quot;
+ &quot;ReserveRequirementSlack__VariableReserve__ReserveUp__Reg_Up&quot;
+ &quot;ActivePowerReserveVariable__VariableReserve__ReserveUp__Reg_Up&quot;</code></pre><p>Reading the flow and the two slacks off those keys, for every one of the 12 monitored rows (1 outage × 3 lines × 4 steps), is the mechanical version of that check.</p><pre><code class="language-julia hljs">flows = expressions[&quot;PostContingencyBranchFlow__VariableReserve__ReserveUp__Reg_Up&quot;]
+
+slack_ub =
+    variables[&quot;PostContingencyFlowActivePowerSlackUpperBound__VariableReserve__ReserveUp__Reg_Up&quot;]
+slack_lb =
+    variables[&quot;PostContingencyFlowActivePowerSlackLowerBound__VariableReserve__ReserveUp__Reg_Up&quot;]
+
+max(maximum(abs, slack_ub[!, :value]), maximum(abs, slack_lb[!, :value]))</code></pre><pre><code class="nohighlight hljs">0.0</code></pre><p>Zero on both means every monitored row respected its post-contingency limit without help from the priced relaxation — a nonzero value would mean the limit was violated and the violation was <em>priced</em> rather than enforced, and should be read before trusting a solved model. The tightest margin over the horizon, by line, uses the same emergency-vs-normal rating fallback <code>PowerNetworkMatrices.get_equivalent_emergency_rating</code> applies:</p><pre><code class="language-julia hljs">function tightest_margin(flows::DataFrame, outage_id::String, line::Line, sys::System)
+    key = string(outage_id, &quot;__&quot;, get_name(line))
+    rows = filter(row -&gt; row[&quot;name&quot;] == key, flows)
+    rating_mw = something(get_rating_b(line), get_rating(line)) * get_base_power(sys)
+    return minimum(rating_mw .- abs.(rows[!, :value]))
+end
+
+DataFrame(;
+    line = get_name.(monitored_lines),
+    tightest_margin_mw = [
+        tightest_margin(flows, outage_id, line, sys) for line in monitored_lines
+    ],
+)</code></pre><table>
+  <thead>
+    <tr class = "columnLabelRow">
+      <th style = "font-weight: bold; text-align: right;">line</th>
+      <th style = "font-weight: bold; text-align: right;">tightest_margin_mw</th>
+    </tr>
+    <tr class = "columnLabelRow">
+      <th style = "text-align: right;">String</th>
+      <th style = "text-align: right;">Float64</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr class = "dataRow">
+      <td style = "text-align: right;">AB2</td>
+      <td style = "text-align: right;">329.52112408511834</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: right;">AB3</td>
+      <td style = "text-align: right;">279.3385682672442</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: right;">CB-1</td>
+      <td style = "text-align: right;">81.82385411583431</td>
+    </tr>
+  </tbody>
+</table>
+<h2 id="The-zonal-variant:-AreaBalancePowerModel-and-\\Delta-f"><a class="docs-heading-anchor" href="#The-zonal-variant:-AreaBalancePowerModel-and-\\Delta-f">The zonal variant: <code>AreaBalancePowerModel</code> and <span>$\Delta f$</span></a><a id="The-zonal-variant:-AreaBalancePowerModel-and-\\Delta-f-1"></a><a class="docs-heading-anchor-permalink" href="#The-zonal-variant:-AreaBalancePowerModel-and-\\Delta-f" title="Permalink"></a></h2><p>Under <code>AreaBalancePowerModel</code> there is no nodal network, so post-contingency deliverability is expressed between <strong>areas</strong> instead of across branches. The formulation:</p><ol><li>builds a free flow-deviation variable <span>$\Delta f_{c,\ell,t}$</span> (<code>PostContingencyAreaInterchangeFlowDeviationVariable</code>) on every tie in the template&#39;s <code>AreaInterchange</code> <code>DeviceModel</code> set — not only the monitored ones, because any modeled tie could carry part of the response. That set is exactly the one the pre-contingency <code>FlowActivePowerVariable</code> is built over, so a tie the <code>DeviceModel</code> excludes (through its <code>filter_function</code>, its subsystem, or availability) has no pre-contingency flow for <span>$\Delta f$</span> to deviate from and gets no <span>$\Delta f$</span> term at all;</li><li>closes the balance per area rather than system-wide (<code>PostContingencyCopperPlateBalanceConstraint</code>):</li></ol><p class="math-container">\[\sum_{g \in a,\, g \neq g^*} \Delta rsv_{c,g,t} - p_{g^*,t}\mathbb{1}_{g^* \in a}
+- \sum_{\ell:\, \text{from}(\ell) = a} \Delta f_{c,\ell,t}
++ \sum_{\ell:\, \text{to}(\ell) = a} \Delta f_{c,\ell,t} = 0 ;\]</p><pre><code class="nohighlight hljs">where both sums run over the modeled ties only;</code></pre><ol><li>bounds the monitored ties&#39; post-contingency flow, <span>$f^\text{post}_{c,\ell,t} = f_{\ell,t} + \Delta f_{c,\ell,t}$</span>, against <code>get_flow_limits(tie)</code>.</li></ol><p>If the template registers no <code>AreaInterchange</code> <code>DeviceModel</code> at all, no <span>$\Delta f$</span> is created, a warning fires once per service, and the balance above loses its tie terms entirely: each area must then cover its own outages from its own contributing devices. That is the correct physics for a template that models no inter-area transfer, but it also means <strong>no cross-area deliverability is being tested</strong> — if that is not what you intended, add <code>set_device_model!(template, AreaInterchange, StaticBranch)</code>.</p><p>The consequence is the useful part: reserve held in one area can serve an outage in another, but only as far as the tie limits allow. Take a reserve product whose contributing devices all sit in area 1, responding to an outage in area 2: as long as the outaged unit&#39;s pre-contingency output is genuinely nonzero (see <a href="#sc_reserves_limitations">Limitations</a>), the balance in area 2 has no local contributing device to draw on, so it must close entirely through <span>$\Delta f$</span> on the ties from area 1 — the net transfer into area 2 equals the outaged unit&#39;s output, and whichever monitored ties carry that transfer are exactly the ones whose post-contingency limits are worth checking for a binding case.</p><div class="admonition is-warning" id="Warning-2cb1c16684ec5e01"><header class="admonition-header">Warning<a class="admonition-anchor" href="#Warning-2cb1c16684ec5e01" title="Permalink"></a></header><div class="admonition-body"><p>This path requires <code>AreaInterchange</code> components in the system, plus an <code>AreaInterchange</code> <code>DeviceModel</code> in the template. RTS-GMLC ships none, which is why the worked example above uses the PTDF path. A <strong>monitored</strong> tie must be available, inside the network model&#39;s scope, <em>and</em> inside that <code>DeviceModel</code>&#39;s set; a monitored tie that fails any of the three is rejected at template validation with a <code>ConflictingInputsError</code> (reported as <code>ModelBuildStatus.FAILED</code> by <code>build!</code>), naming which condition it failed.</p></div></div><h2 id="Use-cases"><a class="docs-heading-anchor" href="#Use-cases">Use cases</a><a id="Use-cases-1"></a><a class="docs-heading-anchor-permalink" href="#Use-cases" title="Permalink"></a></h2><ul><li><strong>G-1 reserve deliverability screening.</strong> Confirm that the reserve a market or study procures can actually reach the loss, given the network. The base-case schedule adjusts to leave the needed headroom on the monitored paths.</li><li><strong>Locational reserve questions.</strong> Ask whether reserve held in a particular zone or area is deliverable to an outage elsewhere. Under <code>AreaBalancePowerModel</code> the <span>$\Delta f$</span> terms report how much of the response crossed each tie.</li><li><strong>Tractability control.</strong> The monitored set is the tuning knob. Start from the handful of paths that historically bind post-contingency, and grow it only where the flow margins or the slacks say you need to.</li></ul><h2 id="sc_reserves_limitations"><a class="docs-heading-anchor" href="#sc_reserves_limitations">Limitations</a><a id="sc_reserves_limitations-1"></a><a class="docs-heading-anchor-permalink" href="#sc_reserves_limitations" title="Permalink"></a></h2><ul><li><strong>Up-reserves only.</strong> Template validation rejects a security-constrained <code>ServiceModel</code> for any <code>Reserve</code> direction other than <code>ReserveUp</code> with a <code>ConflictingInputsError</code>; <code>build!</code> reports it as <code>ModelBuildStatus.FAILED</code>. Deployment is modeled as a strictly non-negative response to a generation shortfall.</li><li><strong>Generator outages only.</strong> The lost component set is derived from <code>PSY.Generator</code> components carrying the outage attribute, and the post-contingency flow uses the base-topology PTDF. No line-outage sensitivity is involved; branch contingencies are the separate <code>SecurityConstrainedStaticBranch</code> device formulation.</li><li><strong>This is targeted screening, not full N-1.</strong> The contingency set is exactly the outages you attach to the service, and the monitored set is exactly each outage&#39;s <code>monitored_components</code>. There is no implicit &quot;monitor everything&quot;: an outage with an empty <code>monitored_components</code> is skipped entirely, with a warning.</li><li><strong>Monitored types must be modeled.</strong> For a service outage only <code>ACTransmission</code> and <code>AreaInterchange</code> components are admissible monitors, and the concrete type needs a <code>DeviceModel</code> in the template. Anything else is warned about and skipped.</li><li><strong>A monitored <code>AreaInterchange</code> needs <code>AreaBalancePowerModel</code>.</strong> Under a PTDF network model it is dropped with a warning, because no post-contingency flow expression exists for it there. Under <code>AreaBalancePowerModel</code> it must also be in the template&#39;s <code>AreaInterchange</code> <code>DeviceModel</code> set, or template validation rejects it with a <code>ConflictingInputsError</code>.</li><li><strong><span>$\Delta f$</span> follows the <code>AreaInterchange</code> <code>DeviceModel</code>, not the network model.</strong> A tie excluded by that <code>DeviceModel</code> (<code>filter_function</code>, subsystem, or availability) has no pre-contingency flow variable, so it gets no <span>$\Delta f$</span> term and cannot carry any post-contingency transfer. With no <code>AreaInterchange</code> <code>DeviceModel</code> at all, no <span>$\Delta f$</span> is built (one warning per service) and the per-area balance reduces to in-area coverage — correct for a template with no inter-area transfer, but it tests no cross-area deliverability whatsoever.</li><li><strong>Under <code>CopperPlatePowerModel</code> the monitors are inert.</strong> Only the per-outage balance and the deployment limits are built; there is no flow representation to constrain, so the model checks that the response <em>exists</em>, never that it is deliverable.</li><li><strong>Slacks price violations, they do not forbid them.</strong> With <code>use_slacks = true</code> a violated post-contingency limit costs <code>CONSTRAINT_VIOLATION_SLACK_COST</code> and the model still solves. Read the slack variables.</li><li><strong><code>SecurityConstrainedRampReserve</code> always needs a requirement time series.</strong> Only the contingency variant tolerates a service without one.</li><li><strong>The outaged unit must actually be dispatched.</strong> The G-1 requirement is <span>$\sum \Delta rsv = p_{g^*,t}$</span>, so if the optimizer leaves the outaged unit at zero the requirement is zero and every post-contingency constraint holds trivially. This is easy to hit with <code>ThermalDispatchNoMin</code>, where same-area units can absorb the unit&#39;s output for free. Before reading anything into a passing case, check that the outaged unit&#39;s pre-contingency output is nonzero. In a test, you can force this by setting a lower bound on the unit&#39;s <code>ActivePowerVariable</code> between <code>build!</code> and <code>solve!</code> — a diagnostic lever for making a test case bite, not a modeling pattern. In a study, get the nonzero pre-contingency output from the data and the formulation (for example a commitment formulation with a minimum power level), not from a hand-set bound.</li><li><strong>Size scales multiplicatively.</strong> Deployment variables scale as outages × contributing devices × time steps (and <span>$\Delta f$</span> as outages × <code>DeviceModel</code>-set ties × time steps), while the monitored flow rows scale as outages × monitored components × time steps, each contributing two constraints plus two slacks. Reserve products with many contributing devices, and long horizons, dominate.</li></ul></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../generated_uc_power_flow_in_the_loop/">« Running Power Flow In The Loop with Unit Commitment</a><a class="docs-footer-nextpage" href="../../how_to/register_variable/">...register a variable in a custom operation model »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Thursday 30 July 2026 23:56">Thursday 30 July 2026</span>. Using Julia version 1.12.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

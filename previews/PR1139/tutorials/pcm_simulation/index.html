@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Multi-stage Production Cost Simulation · PowerSimulations.jl</title><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.045/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.13.24/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="PowerSimulations.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">PowerSimulations.jl</a></span></div><form class="docs-search" action="../../search/"><input class="docs-search-query" id="documenter-search-query" name="q" type="text" placeholder="Search docs"/></form><ul class="docs-menu"><li><a class="tocitem" href="../../">Welcome Page</a></li><li><a class="tocitem" href="../../quick_start_guide/">Quick Start Guide</a></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../decision_problem/">Single-step Problem</a></li><li class="is-active"><a class="tocitem" href>Multi-stage Production Cost Simulation</a><ul class="internal"><li><a class="tocitem" href="#Introduction"><span>Introduction</span></a></li><li><a class="tocitem" href="#ProblemTemplates-define-stages"><span><code>ProblemTemplate</code>s define stages</span></a></li><li><a class="tocitem" href="#Simulation"><span><code>Simulation</code></span></a></li><li><a class="tocitem" href="#Results"><span>Results</span></a></li><li><a class="tocitem" href="#Plotting"><span>Plotting</span></a></li></ul></li></ul></li><li><span class="tocitem">Modeler Guide</span><ul><li><a class="tocitem" href="../../modeler_guide/definitions/">Definitions</a></li><li><a class="tocitem" href="../../modeler_guide/psi_structure/">PowerSimulations.jl Modeling Structure</a></li><li><a class="tocitem" href="../../modeler_guide/problem_templates/">Operations <code>ProblemTemplate</code>s</a></li><li><a class="tocitem" href="../../modeler_guide/running_a_simulation/">Simulation</a></li><li><a class="tocitem" href="../../modeler_guide/read_results/">Read results</a></li><li><a class="tocitem" href="../../modeler_guide/simulation_recorder/">Simulation Recorder</a></li><li><a class="tocitem" href="../../modeler_guide/logging/">Logging</a></li><li><a class="tocitem" href="../../modeler_guide/debugging_infeasible_models/">Debugging infeasible models</a></li><li><a class="tocitem" href="../../modeler_guide/parallel_simulations/">Parallel Simulations</a></li><li><a class="tocitem" href="../../modeler_guide/modeling_faq/">Modeling FAQ</a></li></ul></li><li><span class="tocitem">Model Developer Guide</span><ul><li><a class="tocitem" href="../../model_developer_guide/structure_of_operation_problem/">Operation Problem Structure</a></li><li><a class="tocitem" href="../../model_developer_guide/troubleshooting/">Troubleshooting</a></li></ul></li><li><span class="tocitem">Code Base Developer Guide</span><ul><li><a class="tocitem" href="../../code_base_developer_guide/developer/">Developer Guide</a></li><li><a class="tocitem" href="../../code_base_developer_guide/troubleshooting/">Troubleshooting</a></li></ul></li><li><span class="tocitem">Formulation Library</span><ul><li><a class="tocitem" href="../../formulation_library/Introduction/">Introduction</a></li><li><a class="tocitem" href="../../formulation_library/General/">General</a></li><li><a class="tocitem" href="../../formulation_library/Network/">Network</a></li><li><a class="tocitem" href="../../formulation_library/ThermalGen/">Thermal Generation</a></li><li><a class="tocitem" href="../../formulation_library/RenewableGen/">Renewable Generation</a></li><li><a class="tocitem" href="../../formulation_library/Load/">Load</a></li><li><a class="tocitem" href="../../formulation_library/Branch/">Branch</a></li><li><a class="tocitem" href="../../formulation_library/Service/">Services</a></li><li><a class="tocitem" href="../../formulation_library/Feedforward/">Feedforwards</a></li><li><a class="tocitem" href="../../formulation_library/Piecewise/">Piecewise Linear Cost</a></li></ul></li><li><a class="tocitem" href="../../api/PowerSimulations/">API Reference</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>Multi-stage Production Cost Simulation</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Multi-stage Production Cost Simulation</a></li></ul></nav><div class="docs-right"><a class="docs-edit-link" href="https://github.com/NREL-Sienna/PowerSimulations.jl/blob/main/docs/src/tutorials/pcm_simulation.md" title="Edit on GitHub"><span class="docs-icon fab"></span><span class="docs-label is-hidden-touch">Edit on GitHub</span></a><a class="docs-settings-button fas fa-cog" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-sidebar-button fa fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a></div></header><article class="content" id="documenter-page"><h1 id="pcm_tutorial"><a class="docs-heading-anchor" href="#pcm_tutorial">Sequential Simulations with <a href="https://github.com/NREL-SIIP/PowerSimulations.jl">PowerSimulations.jl</a></a><a id="pcm_tutorial-1"></a><a class="docs-heading-anchor-permalink" href="#pcm_tutorial" title="Permalink"></a></h1><p><strong>Originally Contributed by</strong>: Clayton Barrows</p><h2 id="Introduction"><a class="docs-heading-anchor" href="#Introduction">Introduction</a><a id="Introduction-1"></a><a class="docs-heading-anchor-permalink" href="#Introduction" title="Permalink"></a></h2><p>PowerSimulations.jl supports simulations that consist of sequential optimization problems where results from previous problems inform subsequent problems in a variety of ways. This example demonstrates some of these capabilities to represent electricity market clearing. This example is intended to be an extension of the <a href="../decision_problem/#op_problem_tutorial">OperationsProblem tutorial.</a></p><h3 id="Load-Packages"><a class="docs-heading-anchor" href="#Load-Packages">Load Packages</a><a id="Load-Packages-1"></a><a class="docs-heading-anchor-permalink" href="#Load-Packages" title="Permalink"></a></h3><pre><code class="language-julia hljs">using PowerSystems
+using PowerSimulations
+using HydroPowerSimulations
+const PSI = PowerSimulations
+using PowerSystemCaseBuilder
+using Dates
+using HiGHS #solver</code></pre><h3 id="Optimizer"><a class="docs-heading-anchor" href="#Optimizer">Optimizer</a><a id="Optimizer-1"></a><a class="docs-heading-anchor-permalink" href="#Optimizer" title="Permalink"></a></h3><p>It&#39;s most convenient to define an optimizer instance upfront and pass it into the <code>DecisionModel</code> constructor. For this example, we can use the free HiGHS solver with a relatively relaxed MIP gap (<code>ratioGap</code>) setting to improve speed.</p><pre><code class="language-julia hljs">solver = optimizer_with_attributes(HiGHS.Optimizer, &quot;mip_rel_gap&quot; =&gt; 0.5)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">MathOptInterface.OptimizerWithAttributes(HiGHS.Optimizer, Pair{MathOptInterface.AbstractOptimizerAttribute, Any}[MathOptInterface.RawOptimizerAttribute(&quot;mip_rel_gap&quot;) =&gt; 0.5])</code></pre><h3 id="Hourly-day-ahead-system"><a class="docs-heading-anchor" href="#Hourly-day-ahead-system">Hourly day-ahead system</a><a id="Hourly-day-ahead-system-1"></a><a class="docs-heading-anchor-permalink" href="#Hourly-day-ahead-system" title="Permalink"></a></h3><p>First, we&#39;ll create a <code>System</code> with hourly data to represent day-ahead forecasted wind, solar, and load profiles:</p><pre><code class="language-julia hljs">sys_DA = build_system(PSISystems, &quot;modified_RTS_GMLC_DA_sys&quot;; skip_serialization = true)</code></pre><table>
+  <caption style = "text-align: left;">System</caption>
+  <thead>
+    <tr class = "header headerLastRow">
+      <th style = "text-align: left;">Property</th>
+      <th style = "text-align: left;">Value</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">Name</td>
+      <td style = "text-align: left;"></td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Description</td>
+      <td style = "text-align: left;"></td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">System Units Base</td>
+      <td style = "text-align: left;">SYSTEM_BASE</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Base Power</td>
+      <td style = "text-align: left;">100.0</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Base Frequency</td>
+      <td style = "text-align: left;">60.0</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Num Components</td>
+      <td style = "text-align: left;">501</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">Static Components</caption>
+  <thead>
+    <tr class = "header headerLastRow">
+      <th style = "text-align: left;">Type</th>
+      <th style = "text-align: left;">Count</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">ACBus</td>
+      <td style = "text-align: left;">73</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Arc</td>
+      <td style = "text-align: left;">109</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Area</td>
+      <td style = "text-align: left;">3</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">FixedAdmittance</td>
+      <td style = "text-align: left;">3</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">HydroDispatch</td>
+      <td style = "text-align: left;">1</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Line</td>
+      <td style = "text-align: left;">105</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">LoadZone</td>
+      <td style = "text-align: left;">21</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">PowerLoad</td>
+      <td style = "text-align: left;">51</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableDispatch</td>
+      <td style = "text-align: left;">29</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableNonDispatch</td>
+      <td style = "text-align: left;">31</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">TapTransformer</td>
+      <td style = "text-align: left;">15</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ThermalStandard</td>
+      <td style = "text-align: left;">54</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">TwoTerminalHVDCLine</td>
+      <td style = "text-align: left;">1</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">VariableReserve{ReserveDown}</td>
+      <td style = "text-align: left;">1</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">VariableReserve{ReserveUp}</td>
+      <td style = "text-align: left;">4</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">Time Series Summary</caption>
+  <thead>
+    <tr class = "header">
+      <th style = "text-align: left;">owner_type</th>
+      <th style = "text-align: left;">owner_category</th>
+      <th style = "text-align: left;">time_series_type</th>
+      <th style = "text-align: left;">time_series_category</th>
+      <th style = "text-align: left;">initial_timestamp</th>
+      <th style = "text-align: left;">resolution_ms</th>
+      <th style = "text-align: left;">count</th>
+    </tr>
+    <tr class = "subheader headerLastRow">
+      <th style = "text-align: left;">String</th>
+      <th style = "text-align: left;">String</th>
+      <th style = "text-align: left;">String</th>
+      <th style = "text-align: left;">String</th>
+      <th style = "text-align: left;">String</th>
+      <th style = "text-align: left;">Int64</th>
+      <th style = "text-align: left;">Int64</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">Area</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">DeterministicSingleTimeSeries</td>
+      <td style = "text-align: left;">Forecast</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">3</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Area</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">SingleTimeSeries</td>
+      <td style = "text-align: left;">StaticTimeSeries</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">3</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">FixedAdmittance</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">DeterministicSingleTimeSeries</td>
+      <td style = "text-align: left;">Forecast</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">3</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">FixedAdmittance</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">SingleTimeSeries</td>
+      <td style = "text-align: left;">StaticTimeSeries</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">3</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">HydroDispatch</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">DeterministicSingleTimeSeries</td>
+      <td style = "text-align: left;">Forecast</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">2</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">HydroDispatch</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">SingleTimeSeries</td>
+      <td style = "text-align: left;">StaticTimeSeries</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">2</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">PowerLoad</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">DeterministicSingleTimeSeries</td>
+      <td style = "text-align: left;">Forecast</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">51</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">PowerLoad</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">SingleTimeSeries</td>
+      <td style = "text-align: left;">StaticTimeSeries</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">51</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableDispatch</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">DeterministicSingleTimeSeries</td>
+      <td style = "text-align: left;">Forecast</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">29</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableDispatch</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">SingleTimeSeries</td>
+      <td style = "text-align: left;">StaticTimeSeries</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">29</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableNonDispatch</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">DeterministicSingleTimeSeries</td>
+      <td style = "text-align: left;">Forecast</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">31</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableNonDispatch</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">SingleTimeSeries</td>
+      <td style = "text-align: left;">StaticTimeSeries</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">31</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">VariableReserve</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">DeterministicSingleTimeSeries</td>
+      <td style = "text-align: left;">Forecast</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">5</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">VariableReserve</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">SingleTimeSeries</td>
+      <td style = "text-align: left;">StaticTimeSeries</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">5</td>
+    </tr>
+  </tbody>
+</table>
+<h3 id="Minute-system"><a class="docs-heading-anchor" href="#Minute-system">5-Minute system</a><a id="Minute-system-1"></a><a class="docs-heading-anchor-permalink" href="#Minute-system" title="Permalink"></a></h3><p>The RTS data also includes 5-minute resolution time series data. So, we can create another <code>System</code> to represent 15 minute ahead forecasted data for a &quot;real-time&quot; market:</p><pre><code class="language-julia hljs">sys_RT = build_system(PSISystems, &quot;modified_RTS_GMLC_RT_sys&quot;; skip_serialization = true)</code></pre><table>
+  <caption style = "text-align: left;">System</caption>
+  <thead>
+    <tr class = "header headerLastRow">
+      <th style = "text-align: left;">Property</th>
+      <th style = "text-align: left;">Value</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">Name</td>
+      <td style = "text-align: left;"></td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Description</td>
+      <td style = "text-align: left;"></td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">System Units Base</td>
+      <td style = "text-align: left;">SYSTEM_BASE</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Base Power</td>
+      <td style = "text-align: left;">100.0</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Base Frequency</td>
+      <td style = "text-align: left;">60.0</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Num Components</td>
+      <td style = "text-align: left;">499</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">Static Components</caption>
+  <thead>
+    <tr class = "header headerLastRow">
+      <th style = "text-align: left;">Type</th>
+      <th style = "text-align: left;">Count</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">ACBus</td>
+      <td style = "text-align: left;">73</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Arc</td>
+      <td style = "text-align: left;">109</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Area</td>
+      <td style = "text-align: left;">1</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">FixedAdmittance</td>
+      <td style = "text-align: left;">3</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">HydroDispatch</td>
+      <td style = "text-align: left;">1</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Line</td>
+      <td style = "text-align: left;">105</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">LoadZone</td>
+      <td style = "text-align: left;">21</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">PowerLoad</td>
+      <td style = "text-align: left;">51</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableDispatch</td>
+      <td style = "text-align: left;">29</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableNonDispatch</td>
+      <td style = "text-align: left;">31</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">TapTransformer</td>
+      <td style = "text-align: left;">15</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ThermalStandard</td>
+      <td style = "text-align: left;">54</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">TwoTerminalHVDCLine</td>
+      <td style = "text-align: left;">1</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">VariableReserve{ReserveDown}</td>
+      <td style = "text-align: left;">1</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">VariableReserve{ReserveUp}</td>
+      <td style = "text-align: left;">4</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">Time Series Summary</caption>
+  <thead>
+    <tr class = "header">
+      <th style = "text-align: left;">owner_type</th>
+      <th style = "text-align: left;">owner_category</th>
+      <th style = "text-align: left;">time_series_type</th>
+      <th style = "text-align: left;">time_series_category</th>
+      <th style = "text-align: left;">initial_timestamp</th>
+      <th style = "text-align: left;">resolution_ms</th>
+      <th style = "text-align: left;">count</th>
+    </tr>
+    <tr class = "subheader headerLastRow">
+      <th style = "text-align: left;">String</th>
+      <th style = "text-align: left;">String</th>
+      <th style = "text-align: left;">String</th>
+      <th style = "text-align: left;">String</th>
+      <th style = "text-align: left;">String</th>
+      <th style = "text-align: left;">Int64</th>
+      <th style = "text-align: left;">Int64</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">Area</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">DeterministicSingleTimeSeries</td>
+      <td style = "text-align: left;">Forecast</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">300000</td>
+      <td style = "text-align: left;">1</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Area</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">SingleTimeSeries</td>
+      <td style = "text-align: left;">StaticTimeSeries</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">300000</td>
+      <td style = "text-align: left;">1</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">FixedAdmittance</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">DeterministicSingleTimeSeries</td>
+      <td style = "text-align: left;">Forecast</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">300000</td>
+      <td style = "text-align: left;">3</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">FixedAdmittance</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">SingleTimeSeries</td>
+      <td style = "text-align: left;">StaticTimeSeries</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">300000</td>
+      <td style = "text-align: left;">3</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">HydroDispatch</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">DeterministicSingleTimeSeries</td>
+      <td style = "text-align: left;">Forecast</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">300000</td>
+      <td style = "text-align: left;">2</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">HydroDispatch</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">SingleTimeSeries</td>
+      <td style = "text-align: left;">StaticTimeSeries</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">300000</td>
+      <td style = "text-align: left;">2</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">PowerLoad</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">DeterministicSingleTimeSeries</td>
+      <td style = "text-align: left;">Forecast</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">300000</td>
+      <td style = "text-align: left;">51</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">PowerLoad</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">SingleTimeSeries</td>
+      <td style = "text-align: left;">StaticTimeSeries</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">300000</td>
+      <td style = "text-align: left;">51</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableDispatch</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">DeterministicSingleTimeSeries</td>
+      <td style = "text-align: left;">Forecast</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">300000</td>
+      <td style = "text-align: left;">29</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableDispatch</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">SingleTimeSeries</td>
+      <td style = "text-align: left;">StaticTimeSeries</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">300000</td>
+      <td style = "text-align: left;">29</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableNonDispatch</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">DeterministicSingleTimeSeries</td>
+      <td style = "text-align: left;">Forecast</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">300000</td>
+      <td style = "text-align: left;">31</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableNonDispatch</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">SingleTimeSeries</td>
+      <td style = "text-align: left;">StaticTimeSeries</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">300000</td>
+      <td style = "text-align: left;">31</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">VariableReserve</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">DeterministicSingleTimeSeries</td>
+      <td style = "text-align: left;">Forecast</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">300000</td>
+      <td style = "text-align: left;">5</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">VariableReserve</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">SingleTimeSeries</td>
+      <td style = "text-align: left;">StaticTimeSeries</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">300000</td>
+      <td style = "text-align: left;">5</td>
+    </tr>
+  </tbody>
+</table>
+<h2 id="ProblemTemplates-define-stages"><a class="docs-heading-anchor" href="#ProblemTemplates-define-stages"><code>ProblemTemplate</code>s define stages</a><a id="ProblemTemplates-define-stages-1"></a><a class="docs-heading-anchor-permalink" href="#ProblemTemplates-define-stages" title="Permalink"></a></h2><p>Sequential simulations in PowerSimulations are created by defining <code>OperationsProblems</code> that represent stages, and how information flows between executions of a stage and between different stages.</p><p>Let&#39;s start by defining a two stage simulation that might look like a typical day-Ahead and real-time electricity market clearing process.</p><h3 id="Day-ahead-unit-commitment-stage"><a class="docs-heading-anchor" href="#Day-ahead-unit-commitment-stage">Day-ahead unit commitment stage</a><a id="Day-ahead-unit-commitment-stage-1"></a><a class="docs-heading-anchor-permalink" href="#Day-ahead-unit-commitment-stage" title="Permalink"></a></h3><p>First, we can define a unit commitment template for the day ahead problem. We can use the included UC template, but in this example, we&#39;ll replace the <code>ThermalBasicUnitCommitment</code> with the slightly more complex <code>ThermalStandardUnitCommitment</code> for the thermal generators.</p><pre><code class="language-julia hljs">template_uc = template_unit_commitment()
+set_device_model!(template_uc, ThermalStandard, ThermalStandardUnitCommitment)
+set_device_model!(template_uc, HydroDispatch, HydroDispatchRunOfRiver)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">┌ Warning: Overwriting ThermalStandard existing model
+└ @ PowerSimulations ~/work/PowerSimulations.jl/PowerSimulations.jl/src/core/device_model.jl:116</code></pre><h3 id="Define-the-reference-model-for-the-real-time-economic-dispatch"><a class="docs-heading-anchor" href="#Define-the-reference-model-for-the-real-time-economic-dispatch">Define the reference model for the real-time economic dispatch</a><a id="Define-the-reference-model-for-the-real-time-economic-dispatch-1"></a><a class="docs-heading-anchor-permalink" href="#Define-the-reference-model-for-the-real-time-economic-dispatch" title="Permalink"></a></h3><p>In addition to the manual specification process demonstrated in the OperationsProblem example, PSI also provides pre-specified templates for some standard problems:</p><pre><code class="language-julia hljs">template_ed = template_economic_dispatch(
+    network = NetworkModel(PTDFPowerModel, use_slacks = true),
+)</code></pre><table>
+  <caption style = "text-align: left;">Network Model</caption>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">Network Model</td>
+      <td style = "text-align: left;">PTDFPowerModel</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Slacks</td>
+      <td style = "text-align: left;">true</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">PTDF</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Duals</td>
+      <td style = "text-align: left;">None</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">Device Models</caption>
+  <thead>
+    <tr class = "header headerLastRow">
+      <th style = "text-align: left;">Device Type</th>
+      <th style = "text-align: left;">Formulation</th>
+      <th style = "text-align: left;">Slacks</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">RenewableNonDispatch</td>
+      <td style = "text-align: left;">FixedOutput</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ThermalStandard</td>
+      <td style = "text-align: left;">ThermalBasicDispatch</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">PowerLoad</td>
+      <td style = "text-align: left;">StaticPowerLoad</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">InterruptiblePowerLoad</td>
+      <td style = "text-align: left;">PowerLoadInterruption</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableDispatch</td>
+      <td style = "text-align: left;">RenewableFullDispatch</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">Branch Models</caption>
+  <thead>
+    <tr class = "header headerLastRow">
+      <th style = "text-align: left;">Branch Type</th>
+      <th style = "text-align: left;">Formulation</th>
+      <th style = "text-align: left;">Slacks</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">Line</td>
+      <td style = "text-align: left;">StaticBranch</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">TapTransformer</td>
+      <td style = "text-align: left;">StaticBranch</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Transformer2W</td>
+      <td style = "text-align: left;">StaticBranch</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">TwoTerminalHVDCLine</td>
+      <td style = "text-align: left;">HVDCTwoTerminalDispatch</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">Service Models</caption>
+  <thead>
+    <tr class = "header headerLastRow">
+      <th style = "text-align: left;">Service Type</th>
+      <th style = "text-align: left;">Formulation</th>
+      <th style = "text-align: left;">Slacks</th>
+      <th style = "text-align: left;">Aggregated Model</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">VariableReserve{ReserveUp}</td>
+      <td style = "text-align: left;">RangeReserve</td>
+      <td style = "text-align: left;">false</td>
+      <td style = "text-align: left;">true</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">VariableReserve{ReserveDown}</td>
+      <td style = "text-align: left;">RangeReserve</td>
+      <td style = "text-align: left;">false</td>
+      <td style = "text-align: left;">true</td>
+    </tr>
+  </tbody>
+</table>
+<h3 id="Define-the-SimulationModels"><a class="docs-heading-anchor" href="#Define-the-SimulationModels">Define the <code>SimulationModels</code></a><a id="Define-the-SimulationModels-1"></a><a class="docs-heading-anchor-permalink" href="#Define-the-SimulationModels" title="Permalink"></a></h3><p><code>DecisionModel</code>s define the problems that are executed in the simulation. The actual problem will change as the stage gets updated to represent different time periods, but the formulations applied to the components is constant within a stage. In this case, we want to define two stages with the <code>ProblemTemplate</code>s and the <code>System</code>s that we&#39;ve already created.</p><pre><code class="language-julia hljs">models = SimulationModels(
+    decision_models = [
+        DecisionModel(template_uc, sys_DA, optimizer = solver, name = &quot;UC&quot;),
+        DecisionModel(template_ed, sys_RT, optimizer = solver, name = &quot;ED&quot;),
+    ],
+)</code></pre>
+<table>
+  <caption style = "text-align: left;">Decision Models</caption>
+  <thead>
+    <tr class = "header headerLastRow">
+      <th style = "text-align: left;">Model Name</th>
+      <th style = "text-align: left;">Model Type</th>
+      <th style = "text-align: left;">Status</th>
+      <th style = "text-align: left;">Output Directory</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">UC</td>
+      <td style = "text-align: left;">GenericOpProblem</td>
+      <td style = "text-align: left;">EMPTY</td>
+      <td style = "text-align: left;">nothing</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ED</td>
+      <td style = "text-align: left;">GenericOpProblem</td>
+      <td style = "text-align: left;">EMPTY</td>
+      <td style = "text-align: left;">nothing</td>
+    </tr>
+  </tbody>
+</table>
+
+No Emulator Model Specified
+<h3 id="SimulationSequence"><a class="docs-heading-anchor" href="#SimulationSequence"><code>SimulationSequence</code></a><a id="SimulationSequence-1"></a><a class="docs-heading-anchor-permalink" href="#SimulationSequence" title="Permalink"></a></h3><p>Similar to an <code>ProblemTemplate</code>, the <code>SimulationSequence</code> provides a template of how to execute a sequential set of operations problems.</p><p>Let&#39;s review some of the <code>SimulationSequence</code> arguments.</p><h3 id="Chronologies"><a class="docs-heading-anchor" href="#Chronologies">Chronologies</a><a id="Chronologies-1"></a><a class="docs-heading-anchor-permalink" href="#Chronologies" title="Permalink"></a></h3><p>In PowerSimulations, chronologies define where information is flowing. There are two types of chronologies.</p><ul><li>inter-stage chronologies: Define how information flows between stages. e.g. day-ahead solutions are used to inform economic dispatch problems</li><li>intra-stage chronologies: Define how information flows between multiple executions of a single stage. e.g. the dispatch setpoints of the first period of an economic dispatch problem are constrained by the ramping limits from setpoints in the final period of the previous problem.</li></ul><h3 id="FeedForward"><a class="docs-heading-anchor" href="#FeedForward"><code>FeedForward</code></a><a id="FeedForward-1"></a><a class="docs-heading-anchor-permalink" href="#FeedForward" title="Permalink"></a></h3><p>The definition of exactly what information is passed using the defined chronologies is accomplished with <code>FeedForward</code>. Specifically, <code>FeedForward</code> is used to define what to do with information being passed with an inter-stage chronology. Let&#39;s define a <code>FeedForward</code> that affects the semi-continuous range constraints of thermal generators in the economic dispatch problems based on the value of the unit-commitment variables.</p><pre><code class="language-julia hljs">feedforward = Dict(
+    &quot;ED&quot; =&gt; [
+        SemiContinuousFeedforward(
+            component_type = ThermalStandard,
+            source = OnVariable,
+            affected_values = [ActivePowerVariable],
+        ),
+    ],
+)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Dict{String, Vector{SemiContinuousFeedforward}} with 1 entry:
+  &quot;ED&quot; =&gt; [SemiContinuousFeedforward(VariableKey{OnVariable, ThermalStandard}(&quot;…</code></pre><h3 id="Sequencing"><a class="docs-heading-anchor" href="#Sequencing">Sequencing</a><a id="Sequencing-1"></a><a class="docs-heading-anchor-permalink" href="#Sequencing" title="Permalink"></a></h3><p>The stage problem length, look-ahead, and other details surrounding the temporal Sequencing of stages are controlled using the structure of the time series data in the <code>System</code>s. So, to define a typical day-ahead - real-time sequence:</p><ul><li>Day ahead problems should represent 48 hours, advancing 24 hours after each execution (24-hour look-ahead)</li><li>Real time problems should represent 1 hour (12 5-minute periods), advancing 15 min after each execution (15 min look-ahead)</li></ul><p>We can adjust the time series data to reflect this structure in each <code>System</code>:</p><ul><li><code>transform_single_time_series!(sys_DA, 48, Hour(1))</code></li><li><code>transform_single_time_series!(sys_RT, 12, Minute(15))</code></li></ul><p>Now we can put it all together to define a <code>SimulationSequence</code></p><pre><code class="language-julia hljs">DA_RT_sequence = SimulationSequence(
+    models = models,
+    ini_cond_chronology = InterProblemChronology(),
+    feedforwards = feedforward,
+)</code></pre>
+<table>
+  <caption style = "text-align: left;">Simulation Sequence</caption>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">Simulation Step Interval</td>
+      <td style = "text-align: left;">24 hours</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Number of Problems</td>
+      <td style = "text-align: left;">2</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">Simulation Problems</caption>
+  <thead>
+    <tr class = "header headerLastRow">
+      <th style = "text-align: left;">Model Name</th>
+      <th style = "text-align: left;">Horizon</th>
+      <th style = "text-align: left;">Interval</th>
+      <th style = "text-align: left;">Executions Per Step</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">UC</td>
+      <td style = "text-align: left;">2 days</td>
+      <td style = "text-align: left;">1 day</td>
+      <td style = "text-align: left;">1</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ED</td>
+      <td style = "text-align: left;">1 hour</td>
+      <td style = "text-align: left;">15 minutes</td>
+      <td style = "text-align: left;">96</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">Feedforwards</caption>
+  <thead>
+    <tr class = "header headerLastRow">
+      <th style = "text-align: left;">Model Name</th>
+      <th style = "text-align: left;">Feed Forward Type</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">ED</td>
+      <td style = "text-align: left;">SemiContinuousFeedforward</td>
+    </tr>
+  </tbody>
+</table>
+<h2 id="Simulation"><a class="docs-heading-anchor" href="#Simulation"><code>Simulation</code></a><a id="Simulation-1"></a><a class="docs-heading-anchor-permalink" href="#Simulation" title="Permalink"></a></h2><p>Now, we can build and execute a simulation using the <code>SimulationSequence</code> and <code>Stage</code>s that we&#39;ve defined.</p><pre><code class="language-julia hljs">sim = Simulation(
+    name = &quot;rts-test&quot;,
+    steps = 2,
+    models = models,
+    sequence = DA_RT_sequence,
+    simulation_folder = joinpath(&quot;.&quot;, &quot;rts-store&quot;),
+)</code></pre><table>
+  <caption style = "text-align: left;">Simulation</caption>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">Simulation Name</td>
+      <td style = "text-align: left;">rts-test</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Build Status</td>
+      <td style = "text-align: left;">EMPTY</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Run Status</td>
+      <td style = "text-align: left;">NOT_READY</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Initial Time</td>
+      <td style = "text-align: left;">Unset Initial Time</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Steps</td>
+      <td style = "text-align: left;">2</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">Decision Models</caption>
+  <thead>
+    <tr class = "header headerLastRow">
+      <th style = "text-align: left;">Model Name</th>
+      <th style = "text-align: left;">Model Type</th>
+      <th style = "text-align: left;">Status</th>
+      <th style = "text-align: left;">Output Directory</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">UC</td>
+      <td style = "text-align: left;">GenericOpProblem</td>
+      <td style = "text-align: left;">EMPTY</td>
+      <td style = "text-align: left;">nothing</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ED</td>
+      <td style = "text-align: left;">GenericOpProblem</td>
+      <td style = "text-align: left;">EMPTY</td>
+      <td style = "text-align: left;">nothing</td>
+    </tr>
+  </tbody>
+</table>
+
+No Emulator Model Specified
+
+<table>
+  <caption style = "text-align: left;">Simulation Sequence</caption>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">Simulation Step Interval</td>
+      <td style = "text-align: left;">24 hours</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Number of Problems</td>
+      <td style = "text-align: left;">2</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">Simulation Problems</caption>
+  <thead>
+    <tr class = "header headerLastRow">
+      <th style = "text-align: left;">Model Name</th>
+      <th style = "text-align: left;">Horizon</th>
+      <th style = "text-align: left;">Interval</th>
+      <th style = "text-align: left;">Executions Per Step</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">UC</td>
+      <td style = "text-align: left;">2 days</td>
+      <td style = "text-align: left;">1 day</td>
+      <td style = "text-align: left;">1</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ED</td>
+      <td style = "text-align: left;">1 hour</td>
+      <td style = "text-align: left;">15 minutes</td>
+      <td style = "text-align: left;">96</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">Feedforwards</caption>
+  <thead>
+    <tr class = "header headerLastRow">
+      <th style = "text-align: left;">Model Name</th>
+      <th style = "text-align: left;">Feed Forward Type</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">ED</td>
+      <td style = "text-align: left;">SemiContinuousFeedforward</td>
+    </tr>
+  </tbody>
+</table>
+<h3 id="Build-simulation"><a class="docs-heading-anchor" href="#Build-simulation">Build simulation</a><a id="Build-simulation-1"></a><a class="docs-heading-anchor-permalink" href="#Build-simulation" title="Permalink"></a></h3><pre><code class="language-julia hljs">build!(sim)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">InfrastructureSystems.Simulation.SimulationBuildStatusModule.SimulationBuildStatus.BUILT = 0</code></pre><h3 id="Execute-simulation"><a class="docs-heading-anchor" href="#Execute-simulation">Execute simulation</a><a id="Execute-simulation-1"></a><a class="docs-heading-anchor-permalink" href="#Execute-simulation" title="Permalink"></a></h3><p>the following command returns the status of the simulation (0: is proper execution) and stores the results in a set of HDF5 files on disk.</p><pre><code class="language-julia hljs">execute!(sim, enable_progress_bar = false)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">InfrastructureSystems.Simulation.RunStatusModule.RunStatus.SUCCESSFULLY_FINALIZED = 0</code></pre><h2 id="Results"><a class="docs-heading-anchor" href="#Results">Results</a><a id="Results-1"></a><a class="docs-heading-anchor-permalink" href="#Results" title="Permalink"></a></h2><p>To access the results, we need to load the simulation result metadata and then make requests to the specific data of interest. This allows you to efficiently access the results of interest without overloading resources.</p><pre><code class="language-julia hljs">results = SimulationResults(sim);
+uc_results = get_decision_problem_results(results, &quot;UC&quot;); # UC stage result metadata
+ed_results = get_decision_problem_results(results, &quot;ED&quot;); # ED stage result metadata</code></pre><p> Start: 2020-01-01T00:00:00</p>
+<p> End: 2020-01-02T23:45:00</p>
+<p> Resolution: 15 minutes</p>
+
+<table>
+  <caption style = "text-align: left;">ED Problem Expressions Results</caption>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">ProductionCostExpression__ThermalStandard</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ActivePowerBalance__System</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ActivePowerBalance__ACBus</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ProductionCostExpression__RenewableDispatch</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">ED Problem Parameters Results</caption>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R1</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RequirementTimeSeriesParameter__VariableReserve__ReserveDown__Reg_Down</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ActivePowerTimeSeriesParameter__RenewableNonDispatch</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R2</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ActivePowerTimeSeriesParameter__PowerLoad</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R3</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">OnStatusParameter__ThermalStandard</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ActivePowerTimeSeriesParameter__RenewableDispatch</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Reg_Up</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">ED Problem Variables Results</caption>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">ActivePowerVariable__ThermalStandard</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ActivePowerReserveVariable__VariableReserve__ReserveUp__Reg_Up</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">FlowActivePowerFromToVariable__TwoTerminalHVDCLine</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ActivePowerVariable__RenewableDispatch</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R3</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ActivePowerReserveVariable__VariableReserve__ReserveDown__Reg_Down</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">FlowActivePowerVariable__TapTransformer</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">FlowActivePowerToFromVariable__TwoTerminalHVDCLine</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">SystemBalanceSlackDown__System</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">FlowActivePowerVariable__Line</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R1</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R2</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">HVDCLosses__TwoTerminalHVDCLine</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">SystemBalanceSlackUp__System</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">HVDCFlowDirectionVariable__TwoTerminalHVDCLine</td>
+    </tr>
+  </tbody>
+</table>
+<p>We can read all the result variables</p><pre><code class="language-julia hljs">read_variables(uc_results)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Dict{String, SortedDict{Any, Any, Base.Order.ForwardOrdering}} with 14 entries:
+  &quot;ActivePowerReserveVaria… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×5…
+  &quot;FlowActivePowerToFromVa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×2…
+  &quot;ActivePowerReserveVaria… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×5…
+  &quot;StopVariable__ThermalSt… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×5…
+  &quot;OnVariable__ThermalStan… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×5…
+  &quot;ActivePowerVariable__Hy… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×2…
+  &quot;ActivePowerReserveVaria… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×1…
+  &quot;StartVariable__ThermalS… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×5…
+  &quot;ActivePowerVariable__Th… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×5…
+  &quot;FlowActivePowerFromToVa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×2…
+  &quot;ActivePowerVariable__Re… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×3…
+  &quot;ActivePowerReserveVaria… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×1…
+  &quot;ActivePowerReserveVaria… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×1…
+  &quot;HVDCFlowDirectionVariab… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×2…</code></pre><p>or all the parameters</p><pre><code class="language-julia hljs">read_parameters(uc_results)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Dict{String, SortedDict{Any, Any, Base.Order.ForwardOrdering}} with 9 entries:
+  &quot;RequirementTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×2…
+  &quot;ActivePowerTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×5…
+  &quot;ActivePowerTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×3…
+  &quot;ActivePowerTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×3…
+  &quot;RequirementTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×2…
+  &quot;ActivePowerTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×2…
+  &quot;RequirementTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×2…
+  &quot;RequirementTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×2…
+  &quot;RequirementTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×2…</code></pre><p>We can just list the variable names contained in <code>uc_results</code>:</p><pre><code class="language-julia hljs">list_variable_names(uc_results)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">14-element Vector{String}:
+ &quot;ActivePowerVariable__ThermalStandard&quot;
+ &quot;ActivePowerReserveVariable__VariableReserve__ReserveUp__Reg_Up&quot;
+ &quot;FlowActivePowerFromToVariable__TwoTerminalHVDCLine&quot;
+ &quot;ActivePowerVariable__RenewableDispatch&quot;
+ &quot;ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R3&quot;
+ &quot;ActivePowerReserveVariable__VariableReserve__ReserveDown__Reg_Down&quot;
+ &quot;OnVariable__ThermalStandard&quot;
+ &quot;FlowActivePowerToFromVariable__TwoTerminalHVDCLine&quot;
+ &quot;StopVariable__ThermalStandard&quot;
+ &quot;ActivePowerVariable__HydroDispatch&quot;
+ &quot;ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R1&quot;
+ &quot;StartVariable__ThermalStandard&quot;
+ &quot;ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R2&quot;
+ &quot;HVDCFlowDirectionVariable__TwoTerminalHVDCLine&quot;</code></pre><p>and a number of parameters (this pattern also works for aux_variables, expressions, and duals)</p><pre><code class="language-julia hljs">list_parameter_names(uc_results)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">9-element Vector{String}:
+ &quot;RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R1&quot;
+ &quot;RequirementTimeSeriesParameter__VariableReserve__ReserveDown__Reg_Down&quot;
+ &quot;ActivePowerTimeSeriesParameter__RenewableNonDispatch&quot;
+ &quot;RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R2&quot;
+ &quot;ActivePowerTimeSeriesParameter__PowerLoad&quot;
+ &quot;RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R3&quot;
+ &quot;ActivePowerTimeSeriesParameter__HydroDispatch&quot;
+ &quot;ActivePowerTimeSeriesParameter__RenewableDispatch&quot;
+ &quot;RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Reg_Up&quot;</code></pre><p>Now we can read the specific results of interest for a specific problem, time window (optional), and set of variables, duals, or parameters (optional)</p><pre><code class="language-julia hljs">Dict([
+    v =&gt; read_variable(uc_results, v) for v in [
+        &quot;ActivePowerVariable__RenewableDispatch&quot;,
+        &quot;ActivePowerVariable__HydroDispatch&quot;,
+        &quot;StopVariable__ThermalStandard&quot;,
+    ]
+])</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Dict{String, SortedDict{Any, Any, Base.Order.ForwardOrdering}} with 3 entries:
+  &quot;StopVariable__ThermalSt… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×5…
+  &quot;ActivePowerVariable__Re… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×3…
+  &quot;ActivePowerVariable__Hy… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;48×2…</code></pre><p>Or if we want the result of just one variable, parameter, or dual (must be defined in the problem definition), we can use:</p><pre><code class="language-julia hljs">read_parameter(
+    ed_results,
+    &quot;ActivePowerTimeSeriesParameter__RenewableNonDispatch&quot;,
+    initial_time = DateTime(&quot;2020-01-01T06:00:00&quot;),
+    count = 5,
+)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">SortedDict{Any, Any, Base.Order.ForwardOrdering} with 5 entries:
+  DateTime(&quot;2020-01-01T06:00:00&quot;) =&gt; 12×32 DataFrame…
+  DateTime(&quot;2020-01-01T06:15:00&quot;) =&gt; 12×32 DataFrame…
+  DateTime(&quot;2020-01-01T06:30:00&quot;) =&gt; 12×32 DataFrame…
+  DateTime(&quot;2020-01-01T06:45:00&quot;) =&gt; 12×32 DataFrame…
+  DateTime(&quot;2020-01-01T07:00:00&quot;) =&gt; 12×32 DataFrame…</code></pre><div class="admonition is-info"><header class="admonition-header">Info</header><div class="admonition-body"></div></div><p>note that this returns the results of each execution step in a separate dataframe If you want the realized results (without lookahead periods), you can call <code>read_realized_*</code>:</p><pre><code class="language-julia hljs">read_realized_variables(
+    uc_results,
+    [&quot;ActivePowerVariable__ThermalStandard&quot;, &quot;ActivePowerVariable__RenewableDispatch&quot;],
+)</code></pre><h2 id="Plotting"><a class="docs-heading-anchor" href="#Plotting">Plotting</a><a id="Plotting-1"></a><a class="docs-heading-anchor-permalink" href="#Plotting" title="Permalink"></a></h2><p>Take a look at the plotting capabilities in <a href="https://github.com/nrel-siip/powergraphics.jl">PowerGraphics.jl</a></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../decision_problem/">« Single-step Problem</a><a class="docs-footer-nextpage" href="../../modeler_guide/definitions/">Definitions »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.25 on <span class="colophon-date" title="Monday 23 September 2024 19:18">Monday 23 September 2024</span>. Using Julia version 1.10.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

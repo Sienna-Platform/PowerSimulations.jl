@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Read results · PowerSimulations.jl</title><meta name="title" content="Read results · PowerSimulations.jl"/><meta property="og:title" content="Read results · PowerSimulations.jl"/><meta property="twitter:title" content="Read results · PowerSimulations.jl"/><meta name="description" content="Documentation for PowerSimulations.jl."/><meta property="og:description" content="Documentation for PowerSimulations.jl."/><meta property="twitter:description" content="Documentation for PowerSimulations.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="PowerSimulations.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">PowerSimulations.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Welcome Page</a></li><li><a class="tocitem" href="../../quick_start_guide/">Quick Start Guide</a></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../../tutorials/decision_problem/">Single-step Problem</a></li><li><a class="tocitem" href="../../tutorials/pcm_simulation/">Multi-stage Production Cost Simulation</a></li></ul></li><li><span class="tocitem">Modeler Guide</span><ul><li><a class="tocitem" href="../definitions/">Definitions</a></li><li><a class="tocitem" href="../psi_structure/">PowerSimulations.jl Modeling Structure</a></li><li><a class="tocitem" href="../problem_templates/">Operations <code>ProblemTemplate</code>s</a></li><li><a class="tocitem" href="../running_a_simulation/">Simulation</a></li><li class="is-active"><a class="tocitem" href>Read results</a><ul class="internal"><li><a class="tocitem" href="#Read-results-of-a-Decision-Problem"><span>Read results of a Decision Problem</span></a></li><li><a class="tocitem" href="#Read-results-of-a-Simulation"><span>Read results of a Simulation</span></a></li></ul></li><li><a class="tocitem" href="../simulation_recorder/">Simulation Recorder</a></li><li><a class="tocitem" href="../logging/">Logging</a></li><li><a class="tocitem" href="../debugging_infeasible_models/">Debugging infeasible models</a></li><li><a class="tocitem" href="../parallel_simulations/">Parallel Simulations</a></li><li><a class="tocitem" href="../modeling_faq/">Modeling FAQ</a></li></ul></li><li><span class="tocitem">Model Developer Guide</span><ul><li><a class="tocitem" href="../../model_developer_guide/structure_of_operation_problem/">Operation Problem Structure</a></li><li><a class="tocitem" href="../../model_developer_guide/troubleshooting/">Troubleshooting</a></li></ul></li><li><span class="tocitem">Code Base Developer Guide</span><ul><li><a class="tocitem" href="../../code_base_developer_guide/developer/">Developer Guide</a></li><li><a class="tocitem" href="../../code_base_developer_guide/troubleshooting/">Troubleshooting</a></li><li><a class="tocitem" href="../../code_base_developer_guide/internal/">Internals</a></li></ul></li><li><span class="tocitem">Formulation Library</span><ul><li><a class="tocitem" href="../../formulation_library/Introduction/">Introduction</a></li><li><a class="tocitem" href="../../formulation_library/General/">General</a></li><li><a class="tocitem" href="../../formulation_library/Network/">Network</a></li><li><a class="tocitem" href="../../formulation_library/ThermalGen/">Thermal Generation</a></li><li><a class="tocitem" href="../../formulation_library/RenewableGen/">Renewable Generation</a></li><li><a class="tocitem" href="../../formulation_library/Load/">Load</a></li><li><a class="tocitem" href="../../formulation_library/Branch/">Branch</a></li><li><a class="tocitem" href="../../formulation_library/Service/">Services</a></li><li><a class="tocitem" href="../../formulation_library/Feedforward/">Feedforwards</a></li><li><a class="tocitem" href="../../formulation_library/Piecewise/">Piecewise Linear Cost</a></li></ul></li><li><a class="tocitem" href="../../api/PowerSimulations/">API Reference</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Modeler Guide</a></li><li class="is-active"><a href>Read results</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Read results</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/NREL-Sienna/PowerSimulations.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/NREL-Sienna/PowerSimulations.jl/blob/main/docs/src/modeler_guide/read_results.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="read_results"><a class="docs-heading-anchor" href="#read_results">Read results</a><a id="read_results-1"></a><a class="docs-heading-anchor-permalink" href="#read_results" title="Permalink"></a></h1><p>Once a <code>DecisionModel</code> is solved via <code>solve!(model)</code> or a Simulation is executed (and solved) via <code>execute!(simulation)</code>, the results are stored and can be accessed directly in the REPL for result exploration and plotting.</p><h2 id="Read-results-of-a-Decision-Problem"><a class="docs-heading-anchor" href="#Read-results-of-a-Decision-Problem">Read results of a Decision Problem</a><a id="Read-results-of-a-Decision-Problem-1"></a><a class="docs-heading-anchor-permalink" href="#Read-results-of-a-Decision-Problem" title="Permalink"></a></h2><p>Once a <code>DecisionModel</code> is solved, results are accessed using <code>OptimizationProblemResults(model)</code> as follows:</p><pre><code class="language-julia hljs"># The DecisionModel is already constructed
+build!(model; output_dir = mktempdir())
+solve!(model)
+
+results = OptimizationProblemResults(model)</code></pre><p>The output will showcase the available expressions, parameters and variables to read. For example it will look like:</p><pre><code class="language-raw hljs">Start: 2020-01-01T00:00:00
+End: 2020-01-03T23:00:00
+Resolution: 60 minutes
+
+PowerSimulations Problem Auxiliary variables Results
+┌──────────────────────────────────────────┐
+│ CumulativeCyclingCharge__HybridSystem    │
+│ CumulativeCyclingDischarge__HybridSystem │
+└──────────────────────────────────────────┘
+
+PowerSimulations Problem Expressions Results
+┌─────────────────────────────────────────────┐
+│ ProductionCostExpression__RenewableDispatch │
+│ ProductionCostExpression__ThermalStandard   │
+└─────────────────────────────────────────────┘
+
+PowerSimulations Problem Duals Results
+┌──────────────────────────────────────┐
+│ CopperPlateBalanceConstraint__System │
+└──────────────────────────────────────┘
+
+PowerSimulations Problem Parameters Results
+┌────────────────────────────────────────────────────────────────────────┐
+│ ActivePowerTimeSeriesParameter__RenewableNonDispatch                           │
+│ RenewablePowerTimeSeries__HybridSystem                                 │
+│ RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R3 │
+│ RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Reg_Up     │
+│ ActivePowerTimeSeriesParameter__PowerLoad                              │
+│ ActivePowerTimeSeriesParameter__RenewableDispatch                      │
+│ RequirementTimeSeriesParameter__VariableReserve__ReserveDown__Reg_Down │
+│ ActivePowerTimeSeriesParameter__HydroDispatch                          │
+│ RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R1 │
+│ RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R2 │
+└────────────────────────────────────────────────────────────────────────┘
+
+PowerSimulations Problem Variables Results
+┌────────────────────────────────────────────────────────────────────┐
+│ ActivePowerOutVariable__HybridSystem                               │
+│ ReservationVariable__HybridSystem                                  │
+│ RenewablePower__HybridSystem                                       │
+│ ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R1 │
+│ SystemBalanceSlackUp__System                                       │
+│ BatteryEnergyShortageVariable__HybridSystem                        │
+│ ActivePowerReserveVariable__VariableReserve__ReserveUp__Reg_Up     │
+│ StopVariable__ThermalStandard                                      │
+│ BatteryStatus__HybridSystem                                        │
+│ BatteryDischarge__HybridSystem                                     │
+│ ActivePowerInVariable__HybridSystem                                │
+│ DischargeRegularizationVariable__HybridSystem                      │
+│ BatteryCharge__HybridSystem                                        │
+│ ActivePowerVariable__RenewableDispatch                             │
+│ ActivePowerReserveVariable__VariableReserve__ReserveDown__Reg_Down │
+│ EnergyVariable__HybridSystem                                       │
+│ OnVariable__HybridSystem                                           │
+│ BatteryEnergySurplusVariable__HybridSystem                         │
+│ SystemBalanceSlackDown__System                                     │
+│ ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R2 │
+│ ThermalPower__HybridSystem                                         │
+│ ActivePowerVariable__ThermalStandard                               │
+│ StartVariable__ThermalStandard                                     │
+│ ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R3 │
+│ OnVariable__ThermalStandard                                        │
+│ ChargeRegularizationVariable__HybridSystem                         │
+└────────────────────────────────────────────────────────────────────┘</code></pre><p>Then the following code can be used to read results:</p><pre><code class="language-julia hljs"># Read active power of Thermal Standard
+thermal_active_power = read_variable(results, &quot;ActivePowerVariable__ThermalStandard&quot;)
+
+# Read max active power parameter of RenewableDispatch
+renewable_param =
+    read_parameter(results, &quot;ActivePowerTimeSeriesParameter__RenewableDispatch&quot;)
+
+# Read cost expressions of ThermalStandard units
+cost_thermal = read_expression(results, &quot;ProductionCostExpression__ThermalStandard&quot;)
+
+# Read dual variables
+dual_balance_constraint = read_dual(results, &quot;CopperPlateBalanceConstraint__System&quot;)
+
+# Read auxiliary variables
+aux_var_result = read_aux_variable(results, &quot;CumulativeCyclingCharge__HybridSystem&quot;)</code></pre><p>Results will be in the form of DataFrames that can be easily explored.</p><h2 id="Read-results-of-a-Simulation"><a class="docs-heading-anchor" href="#Read-results-of-a-Simulation">Read results of a Simulation</a><a id="Read-results-of-a-Simulation-1"></a><a class="docs-heading-anchor-permalink" href="#Read-results-of-a-Simulation" title="Permalink"></a></h2><pre><code class="language-julia hljs"># The Simulation is already constructed
+build!(sim)
+execute!(sim; enable_progress_bar = true)
+
+results_sim = SimulationResults(sim)</code></pre><p>As an example, the <code>SimulationResults</code> printing will look like:</p><pre><code class="language-raw hljs">Decision Problem Results
+┌──────────────┬─────────────────────┬──────────────┬─────────────────────────┐
+│ Problem Name │ Initial Time        │ Resolution   │ Last Solution Timestamp │
+├──────────────┼─────────────────────┼──────────────┼─────────────────────────┤
+│ ED           │ 2020-10-02T00:00:00 │ 60 minutes   │ 2020-10-09T23:00:00     │
+│ UC           │ 2020-10-02T00:00:00 │ 1440 minutes │ 2020-10-09T00:00:00     │
+└──────────────┴─────────────────────┴──────────────┴─────────────────────────┘
+
+Emulator Results
+┌─────────────────┬───────────┐
+│ Name            │ Emulator  │
+│ Resolution      │ 5 minutes │
+│ Number of steps │ 2304      │
+└─────────────────┴───────────┘</code></pre><p>With this, it is possible to obtain results of each <code>DecisionModel</code> and <code>EmulationModel</code> as follows:</p><pre><code class="language-julia hljs"># Use the Problem Name for Decision Problems
+results_uc = get_decision_problem_results(results_sim, &quot;UC&quot;)
+results_ed = get_decision_problem_results(results_sim, &quot;ED&quot;)
+results_emulator = get_emulation_problem_results(results_sim)</code></pre><p>Once we have each decision (or emulation) problem results, we can explore directly using the approach for Decision Models, mentioned in the previous section.</p><h3 id="Reading-solutions-for-all-simulation-steps"><a class="docs-heading-anchor" href="#Reading-solutions-for-all-simulation-steps">Reading solutions for all simulation steps</a><a id="Reading-solutions-for-all-simulation-steps-1"></a><a class="docs-heading-anchor-permalink" href="#Reading-solutions-for-all-simulation-steps" title="Permalink"></a></h3><p>In this case, using <code>read_variable</code> (or read expression, parameter or dual), will return a dictionary of all steps (of that Decision Problem). For example, the following code:</p><pre><code class="language-julia hljs">thermal_active_power = read_variable(results_uc, &quot;ActivePowerVariable__ThermalStandard&quot;)</code></pre><p>will return:</p><pre><code class="nohighlight hljs">DataStructures.SortedDict{Any, Any, Base.Order.ForwardOrdering} with 8 entries:
+  DateTime(&quot;2020-10-02T00:00:00&quot;) =&gt; 72×54 DataFrame…
+  DateTime(&quot;2020-10-03T00:00:00&quot;) =&gt; 72×54 DataFrame…
+  DateTime(&quot;2020-10-04T00:00:00&quot;) =&gt; 72×54 DataFrame…
+  DateTime(&quot;2020-10-05T00:00:00&quot;) =&gt; 72×54 DataFrame…
+  DateTime(&quot;2020-10-06T00:00:00&quot;) =&gt; 72×54 DataFrame…
+  DateTime(&quot;2020-10-07T00:00:00&quot;) =&gt; 72×54 DataFrame…
+  DateTime(&quot;2020-10-08T00:00:00&quot;) =&gt; 72×54 DataFrame…
+  DateTime(&quot;2020-10-09T00:00:00&quot;) =&gt; 72×54 DataFrame…</code></pre><p>That is, a sorted dictionary for each simulation step, using as a key the initial timestamp for that specific simulation step.</p><p>Note that in this case, each DataFrame, has a dimension of <span>$72 \times 54$</span>, since the horizon is 72 hours (number of rows), but the interval is only 24 hours. Indeed, note the initial timestamp of each simulation step is the beginning of each day, i.e. 24 hours. Finally, there 54 columns, since this example system has 53 <code>ThermalStandard</code> units (plus 1 column for the timestamps). The user is free to explore the solution of any simulation step as needed.</p><h3 id="Reading-the-&quot;realized&quot;-solution-(i.e.-the-interval)"><a class="docs-heading-anchor" href="#Reading-the-&quot;realized&quot;-solution-(i.e.-the-interval)">Reading the &quot;realized&quot; solution (i.e. the interval)</a><a id="Reading-the-&quot;realized&quot;-solution-(i.e.-the-interval)-1"></a><a class="docs-heading-anchor-permalink" href="#Reading-the-&quot;realized&quot;-solution-(i.e.-the-interval)" title="Permalink"></a></h3><p>Using <code>read_realized_variable</code> (or read realized expression, parameter or dual), will return the DataFrame of the realized solution of any specific variable. That is, it will concatenate the corresponding simulation step with the specified interval of that step, to construct a single DataFrame with the &quot;realized solution&quot; of the entire simulation.</p><p>For example, the code:</p><pre><code class="language-julia hljs">th_realized_power =
+    read_realized_variable(results_uc, &quot;ActivePowerVariable__ThermalStandard&quot;)</code></pre><p>will return:</p><pre><code class="language-raw hljs">92×54 DataFrame
+ Row │ DateTime             322_CT_6      321_CC_1  202_STEAM_3   223_CT_4  123_STEAM_2    213_CT_1  223_CT_6  313_CC_1  101_STEAM_3  123_C ⋯
+     │ DateTime             Float64       Float64   Float64       Float64   Float64        Float64   Float64   Float64   Float64      Float ⋯
+─────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   1 │ 2020-10-02T00:00:00   0.0           293.333   0.0               0.0    0.0               0.0       0.0   231.667      76.0     0.0   ⋯
+   2 │ 2020-10-02T01:00:00   0.0           267.552   0.0               0.0    0.0               0.0       0.0   231.667      76.0     0.0
+   3 │ 2020-10-02T02:00:00   0.0           234.255   0.0               0.0   -4.97544e-11       0.0       0.0   231.667      76.0     0.0
+   4 │ 2020-10-02T03:00:00   0.0           249.099   0.0               0.0   -4.97544e-11       0.0       0.0   231.667      76.0     0.0
+   5 │ 2020-10-02T04:00:00   0.0           293.333   0.0               0.0   -4.97544e-11       0.0       0.0   231.667      76.0     0.0   ⋯
+   6 │ 2020-10-02T05:00:00   0.0           293.333   1.27578e-11       0.0   -4.97544e-11       0.0       0.0   293.333      76.0     0.0
+  ⋮  │          ⋮                ⋮           ⋮           ⋮           ⋮            ⋮           ⋮         ⋮         ⋮           ⋮             ⋱
+ 187 │ 2020-10-09T18:00:00   0.0           293.333  76.0               0.0  155.0               0.0       0.0   318.843      76.0     0.0
+ 188 │ 2020-10-09T19:00:00   0.0           293.333  76.0               0.0  124.0               0.0       0.0   293.333      76.0     0.0
+ 189 │ 2020-10-09T20:00:00   0.0           293.333  60.6667            0.0  124.0               0.0       0.0     0.0        76.0     0.0   ⋯
+ 190 │ 2020-10-09T21:00:00  -7.65965e-12   293.333  60.6667            0.0  124.0               0.0       0.0     0.0        76.0     0.0
+ 191 │ 2020-10-09T22:00:00   0.0             0.0    60.6667            0.0  124.0               0.0       0.0     0.0        76.0     7.156
+ 192 │ 2020-10-09T23:00:00   0.0             0.0    60.6667            0.0  117.81              0.0       0.0     0.0        76.0     0.0
+                                                                                                              44 columns and 180 rows omitted</code></pre><p>In this case, the 8 simulation steps of 24 hours (192 hours), in a single DataFrame, to enable easy exploration of the realized results for the user.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../running_a_simulation/">« Simulation</a><a class="docs-footer-nextpage" href="../simulation_recorder/">Simulation Recorder »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.8.0 on <span class="colophon-date" title="Wednesday 8 January 2025 17:54">Wednesday 8 January 2025</span>. Using Julia version 1.11.2.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
