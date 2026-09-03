@@ -1074,34 +1074,34 @@ ed_results = get_decision_problem_results(results, &quot;ED&quot;); # ED stage r
   &quot;ActivePowerTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">1488</span>…
   &quot;ActivePowerTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">1392</span>…
   &quot;RequirementTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">48×3</span>…
-  &quot;RequirementTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">48×3</span>…
   &quot;ActivePowerTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">48×3</span>…
   &quot;RequirementTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">48×3</span>…
+  &quot;RequirementTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">48×3</span>…
   &quot;RequirementTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">48×3</span>…</code></pre><p>We can just list the variable names contained in <code>uc_results</code>:</p><pre><code class="language-julia hljs">list_variable_names(uc_results)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">15-element Vector{String}:
- &quot;ActivePowerReserveVariable__VariableReserve__ReserveDown__Reg_Down&quot;
- &quot;StartVariable__ThermalStandard&quot;
- &quot;StopVariable__ThermalStandard&quot;
- &quot;HVDCFlowDirectionVariable__TwoTerminalGenericHVDCLine&quot;
- &quot;ActivePowerVariable__ThermalStandard&quot;
- &quot;FlowActivePowerFromToVariable__TwoTerminalGenericHVDCLine&quot;
- &quot;HVDCLosses__TwoTerminalGenericHVDCLine&quot;
- &quot;ActivePowerReserveVariable__VariableReserve__ReserveUp__Reg_Up&quot;
- &quot;ActivePowerVariable__RenewableDispatch&quot;
  &quot;FlowActivePowerToFromVariable__TwoTerminalGenericHVDCLine&quot;
+ &quot;ActivePowerReserveVariable__VariableReserve__ReserveUp__Reg_Up&quot;
  &quot;ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R1&quot;
+ &quot;HVDCFlowDirectionVariable__TwoTerminalGenericHVDCLine&quot;
+ &quot;HVDCLosses__TwoTerminalGenericHVDCLine&quot;
+ &quot;OnVariable__ThermalStandard&quot;
+ &quot;StartVariable__ThermalStandard&quot;
+ &quot;ActivePowerReserveVariable__VariableReserve__ReserveDown__Reg_Down&quot;
+ &quot;ActivePowerVariable__RenewableDispatch&quot;
  &quot;ActivePowerVariable__HydroDispatch&quot;
+ &quot;FlowActivePowerFromToVariable__TwoTerminalGenericHVDCLine&quot;
  &quot;ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R2&quot;
- &quot;ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R3&quot;
- &quot;OnVariable__ThermalStandard&quot;</code></pre><p>and a number of parameters (this pattern also works for aux_variables, expressions, and duals)</p><pre><code class="language-julia hljs">list_parameter_names(uc_results)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">9-element Vector{String}:
- &quot;ActivePowerTimeSeriesParameter__RenewableNonDispatch&quot;
- &quot;RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Reg_Up&quot;
- &quot;ActivePowerTimeSeriesParameter__HydroDispatch&quot;
- &quot;ActivePowerTimeSeriesParameter__PowerLoad&quot;
- &quot;RequirementTimeSeriesParameter__VariableReserve__ReserveDown__Reg_Down&quot;
- &quot;ActivePowerTimeSeriesParameter__RenewableDispatch&quot;
+ &quot;ActivePowerVariable__ThermalStandard&quot;
+ &quot;StopVariable__ThermalStandard&quot;
+ &quot;ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R3&quot;</code></pre><p>and a number of parameters (this pattern also works for aux_variables, expressions, and duals)</p><pre><code class="language-julia hljs">list_parameter_names(uc_results)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">9-element Vector{String}:
  &quot;RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R1&quot;
  &quot;RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R2&quot;
- &quot;RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R3&quot;</code></pre><p>Now we can read the specific results of interest for a specific problem, time window (optional), and set of variables, duals, or parameters (optional)</p><pre><code class="language-julia hljs">Dict([
+ &quot;ActivePowerTimeSeriesParameter__HydroDispatch&quot;
+ &quot;ActivePowerTimeSeriesParameter__RenewableNonDispatch&quot;
+ &quot;RequirementTimeSeriesParameter__VariableReserve__ReserveDown__Reg_Down&quot;
+ &quot;RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R3&quot;
+ &quot;RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Reg_Up&quot;
+ &quot;ActivePowerTimeSeriesParameter__RenewableDispatch&quot;
+ &quot;ActivePowerTimeSeriesParameter__PowerLoad&quot;</code></pre><p>Now we can read the specific results of interest for a specific problem, time window (optional), and set of variables, duals, or parameters (optional)</p><pre><code class="language-julia hljs">Dict([
     v =&gt; read_variable(uc_results, v) for v in [
         &quot;ActivePowerVariable__RenewableDispatch&quot;,
         &quot;ActivePowerVariable__HydroDispatch&quot;,
@@ -1123,4 +1123,4 @@ ed_results = get_decision_problem_results(results, &quot;ED&quot;); # ED stage r
   DateTime(&quot;2020-01-01T07:00:00&quot;) =&gt; <span class="sgr1">372×3 DataFrame</span>…</code></pre><div class="admonition is-info" id="Info-f780c4b3a2e3124"><header class="admonition-header">Info<a class="admonition-anchor" href="#Info-f780c4b3a2e3124" title="Permalink"></a></header><div class="admonition-body"></div></div><p>note that this returns the results of each execution step in a separate dataframe If you want the realized results (without lookahead periods), you can call <code>read_realized_*</code>:</p><pre><code class="language-julia hljs">read_realized_variables(
     uc_results,
     [&quot;ActivePowerVariable__ThermalStandard&quot;, &quot;ActivePowerVariable__RenewableDispatch&quot;],
-)</code></pre><h2 id="Plotting"><a class="docs-heading-anchor" href="#Plotting">Plotting</a><a id="Plotting-1"></a><a class="docs-heading-anchor-permalink" href="#Plotting" title="Permalink"></a></h2><p>Take a look at the plotting capabilities in <a href="https://sienna-platform.github.io/PowerGraphics.jl/stable/">PowerGraphics.jl</a></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../generated_decision_problem/">« Single-step Problem</a><a class="docs-footer-nextpage" href="../generated_dynamic_line_ratings/">Dynamic Line Ratings »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Thursday 3 September 2026 21:51">Thursday 3 September 2026</span>. Using Julia version 1.12.7.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+)</code></pre><h2 id="Plotting"><a class="docs-heading-anchor" href="#Plotting">Plotting</a><a id="Plotting-1"></a><a class="docs-heading-anchor-permalink" href="#Plotting" title="Permalink"></a></h2><p>Take a look at the plotting capabilities in <a href="https://sienna-platform.github.io/PowerGraphics.jl/stable/">PowerGraphics.jl</a></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../generated_decision_problem/">« Single-step Problem</a><a class="docs-footer-nextpage" href="../generated_dynamic_line_ratings/">Dynamic Line Ratings »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Thursday 3 September 2026 22:55">Thursday 3 September 2026</span>. Using Julia version 1.12.7.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
