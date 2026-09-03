@@ -1,12 +1,5 @@
-# IOM's `OutputsByTime` inner constructor validates `column_names` against the stored
-# `DenseAxisArray` via `_check_column_consistency`, but only has methods for 2-D arrays
-# (component, time); the 3-D tranche-axis arrays this file's Incremental/Decremental
-# PiecewiseLinear{Slope,Breakpoint}Parameter values are stored in (component, tranche, time)
-# have no matching method, so reading a time-varying PWL cost parameter back out of a
-# `Simulation`'s store errors in `src/simulation/decision_model_simulation_results.jl`'s
-# `_get_store_value`. That file is out of this task's scope; teach IOM's generic function
-# about the 3-D case here instead — mirrors its own 2-D method (`outputs_by_time.jl`), which
-# already loops `cols` generically over however many axes it is given.
+# Teaches IOM's `_check_column_consistency` the 3-D (component, tranche, time) case used by
+# time-varying PWL cost parameters; IOM only ships a 2-D (component, time) method.
 function IOM._check_column_consistency(
     data::SortedDict{Dates.DateTime, <:DenseAxisArray{Float64, 3}},
     cols::NTuple{2, Vector{String}},
@@ -43,6 +36,7 @@ function _update_parameter_values!(
     template = get_template(model)
     device_model = get_model(template, V)
     components = IOM.get_available_components(device_model, get_system(model))
+    ts_type = get_deterministic_time_series_type(get_system(model))
     for component in components
         name = PSY.get_name(component)
         op_cost = PSY.get_operation_cost(component)
@@ -59,6 +53,7 @@ function _update_parameter_values!(
             model,
             initial_forecast_time,
             horizon,
+            ts_type,
         )
     end
     return
@@ -83,6 +78,7 @@ function _update_service_cost_parameter_values!(
         "be re-augmented and double-counted",
     )
     service = PSY.get_component(V, get_system(model), service_name)
+    ts_type = get_deterministic_time_series_type(get_system(model))
     handle_variable_cost_parameter(
         T(),
         service,
@@ -93,6 +89,7 @@ function _update_service_cost_parameter_values!(
         model,
         initial_forecast_time,
         horizon,
+        ts_type,
     )
     return
 end
@@ -111,20 +108,13 @@ handle_variable_cost_parameter(
     },
     ::PSY.OperationalCost, args...) = nothing
 
-# Slope and breakpoint parameters share the same raw time series (a `PiecewiseStepData`
-# carries both x- and y-coordinates) and so share the read/unwrap/set-parameter-value path
-# below; the slope parameter's resolved value contributes an objective term, while the
-# breakpoint parameter's resolved value re-parametrizes the block-width constraint's RHS
-# instead (see the two `update_variable_cost!` methods below) — neither is a no-op.
+# Slope and breakpoint parameters share the same raw time series; the slope's resolved value
+# is an objective term, the breakpoint's re-parametrizes the block-width constraint's RHS.
 const _AnyPiecewiseLinearParameter =
     Union{AbstractPiecewiseLinearSlopeParameter, AbstractPiecewiseLinearBreakpointParameter}
 
-# Maps a breakpoint parameter type to the block-offer constraint type build time resolves
-# it through: `add_pwl_constraint_delta!` (IOM `objective_function_pwl_delta.jl`) takes the
-# offer-constraint type as its `W` argument and calls `IOM._block_width_constraint(W)` to
-# get the paired width-constraint type used to build the sparse `(name, block, t)`
-# `ConstraintRef` container. Mirrored here so the update path resolves the identical width
-# type from the parameter type alone.
+# Maps a breakpoint parameter type to its paired block-width constraint type (mirrors
+# `IOM._block_width_constraint` applied to the offer-constraint type at build time).
 _linear_block_offer_constraint(::Type{IncrementalPiecewiseLinearBreakpointParameter}) =
     PiecewiseLinearBlockIncrementalOfferConstraint
 _linear_block_offer_constraint(::Type{DecrementalPiecewiseLinearBreakpointParameter}) =
@@ -159,15 +149,7 @@ function _update_pwl_width_constraint!(
     return
 end
 
-# Breakpoints re-parametrize the block-width constraint's RHS: the stored per-block
-# `ConstraintRef`s (IOM's sparse `(name, block, t)` width container, populated at build
-# time by `add_pwl_constraint_delta!`) are updated in place via
-# `JuMP.set_normalized_rhs`, not rebuilt, and no objective term changes. Fully specified to
-# mirror the actual call convention below (`handle_variable_cost_parameter` always passes
-# the raw `PSY.PiecewiseStepData`, never a `DenseAxisArray`, as the third argument for
-# piecewise-linear parameters) rather than a bare `args...`, which is ambiguous with the
-# general `ObjectiveFunctionParameter` case since
-# `AbstractPiecewiseLinearBreakpointParameter <: ObjectiveFunctionParameter`.
+# Breakpoints re-parametrize the block-width constraint's RHS in place; no objective term changes.
 function update_variable_cost!(
     breakpoint_param::AbstractPiecewiseLinearBreakpointParameter,
     container::OptimizationContainer,
@@ -189,65 +171,35 @@ function update_variable_cost!(
     return
 end
 
-# Mirrors POM's build-time `IOM._get_parameter_field(::Type{<:T}, op_cost)` dispatch table
-# (PowerOperationsModels.jl/src/common_models/market_bid_plumbing.jl) one-for-one, but keyed
-# on a parameter INSTANCE rather than a Type: update time always has a live parameter object
-# in hand (never just its Type), so this is a genuinely different call convention from
-# build time's, not a redundant copy of it. Only the 1-arg (raw field, no time resolution)
-# form is needed here; per-step values are read from the underlying time series directly
-# (see `_cost_ts_key`/`_cost_ts_name` below) rather than through PSY's curve-object-resolving
-# convenience accessors, matching how POM's build-time parameter population reads them.
-IOM._get_parameter_field(::StartupCostParameter, op_cost::PSY.OfferCurveCost) =
-    PSY.get_start_up(op_cost)
-IOM._get_parameter_field(::ShutdownCostParameter, op_cost::PSY.OfferCurveCost) =
-    PSY.get_shut_down(op_cost)
-IOM._get_parameter_field(::IncrementalCostAtMinParameter, op_cost::PSY.OfferCurveCost) =
-    IS.get_initial_input(PSY.get_value_curve(get_output_offer_curves(op_cost)))
-IOM._get_parameter_field(::DecrementalCostAtMinParameter, op_cost::PSY.OfferCurveCost) =
-    IS.get_initial_input(PSY.get_value_curve(get_input_offer_curves(op_cost)))
-IOM._get_parameter_field(
-    ::Union{
-        IncrementalPiecewiseLinearSlopeParameter,
-        IncrementalPiecewiseLinearBreakpointParameter,
-    },
-    op_cost::PSY.OfferCurveCost,
-) = get_output_offer_curves(op_cost)
-IOM._get_parameter_field(
-    ::Union{
-        DecrementalPiecewiseLinearSlopeParameter,
-        DecrementalPiecewiseLinearBreakpointParameter,
-    },
-    op_cost::PSY.OfferCurveCost,
-) = get_input_offer_curves(op_cost)
-
 # `PSY.StartUpStages` (a plain `NamedTuple`) is the static, non-time-varying `start_up`
-# field of `MarketBidCost`; it carries no time-series backing of its own (the time-varying
-# counterpart is a bare `StartUpStagesKey`, already covered by `IS.is_time_series_backed`).
-# IOM's generic `is_time_variant` doesn't know about PSY types, so teach it here — mirrors
-# how POM teaches `is_time_variant_proportional` about PSY cost types
-# (market_bid_plumbing.jl).
+# field of `MarketBidCost`; teach IOM's generic `is_time_variant` about it (mirrors how POM
+# teaches `is_time_variant_proportional` about PSY cost types).
 IOM.is_time_variant(::PSY.StartUpStages) = false
 
 _maybe_tuple(::StartupCostParameter, value) = Tuple(value)
 _maybe_tuple(::ShutdownCostParameter, value) = value
 _maybe_tuple(::AbstractCostAtMinParameter, value) = value
 
-# Time-series key backing a parameter's raw cost-object field, and the time-series NAME
+# Time-series key backing a parameter's raw cost-object field, and the time-series name
 # resolved from it. Mirrors POM's build-time `_get_time_series_name` /
-# `_device_offer_curve_ts_key` (PowerOperationsModels.jl/src/common_models/add_parameters.jl)
-# exactly, reusing its private `_ts_name_from_key` rather than re-deriving it, so a name
-# resolves identically whether the parameter is being built or refreshed between steps.
+# `_device_offer_curve_ts_key` (PowerOperationsModels.jl/src/common_models/add_parameters.jl).
 _cost_ts_key(
     param::Union{StartupCostParameter, AbstractCostAtMinParameter},
     op_cost::PSY.OfferCurveCost,
-) = IOM._get_parameter_field(param, op_cost)
+) = IOM._get_parameter_field(typeof(param), op_cost)
 _cost_ts_key(param::ShutdownCostParameter, op_cost::PSY.OfferCurveCost) =
-    IS.get_time_series_key(IOM._get_parameter_field(param, op_cost))
+    IS.get_time_series_key(IOM._get_parameter_field(typeof(param), op_cost))
 _cost_ts_key(param::_AnyPiecewiseLinearParameter, op_cost::PSY.OfferCurveCost) =
-    IS.get_time_series_key(PSY.get_value_curve(IOM._get_parameter_field(param, op_cost)))
+    IS.get_time_series_key(
+        PSY.get_value_curve(IOM._get_parameter_field(typeof(param), op_cost)),
+    )
+
+# A key carries only its store-minted association id; the name lives in the catalog.
+_ts_name_from_key(owner::PSY.Component, key::IS.TimeSeriesKey) =
+    IS.get_name(IS.get_time_series_metadata(owner, key))
 
 _cost_ts_name(param, owner, op_cost::PSY.OfferCurveCost) =
-    POM._ts_name_from_key(owner, _cost_ts_key(param, op_cost))
+    _ts_name_from_key(owner, _cost_ts_key(param, op_cost))
 
 function handle_variable_cost_parameter(
     param::Union{StartupCostParameter, ShutdownCostParameter, AbstractCostAtMinParameter},
@@ -260,10 +212,10 @@ function handle_variable_cost_parameter(
     model::DecisionModel,
     initial_forecast_time,
     horizon,
+    ts_type,
 )
-    is_time_variant(IOM._get_parameter_field(param, op_cost)) || return
+    is_time_variant(IOM._get_parameter_field(typeof(param), op_cost)) || return
     container = get_optimization_container(model)
-    ts_type = get_deterministic_time_series_type(get_system(model))
     ts_name = _cost_ts_name(param, component, op_cost)
     raw_values = IOM.get_time_series_values!(
         ts_type,
@@ -273,8 +225,9 @@ function handle_variable_cost_parameter(
         initial_forecast_time,
         horizon,
     )
+    additional_axes = lookup_additional_axes(parameter_array)
     for (t, raw_value) in enumerate(raw_values)
-        value = unwrap_for_param(param, raw_value, lookup_additional_axes(parameter_array))
+        value = unwrap_for_param(param, raw_value, additional_axes)
         # startup needs Tuple(value), rest just value. (slight type instability)
         _set_param_value!(parameter_array, _maybe_tuple(param, value), name, t)
         update_variable_cost!(
@@ -301,10 +254,10 @@ function handle_variable_cost_parameter(
     model::DecisionModel,
     initial_forecast_time,
     horizon,
+    ts_type,
 ) where {T <: _AnyPiecewiseLinearParameter}
-    is_time_variant(IOM._get_parameter_field(param, op_cost)) || return
+    is_time_variant(IOM._get_parameter_field(typeof(param), op_cost)) || return
     container = get_optimization_container(model)
-    ts_type = get_deterministic_time_series_type(get_system(model))
     ts_name = _cost_ts_name(param, component, op_cost)
     raw_values = IOM.get_time_series_values!(
         ts_type,
@@ -314,9 +267,9 @@ function handle_variable_cost_parameter(
         initial_forecast_time,
         horizon,
     )
+    additional_axes = lookup_additional_axes(parameter_array)
     for (t, value::PSY.PiecewiseStepData) in enumerate(raw_values)
-        unwrapped_value =
-            unwrap_for_param(T(), value, lookup_additional_axes(parameter_array))
+        unwrapped_value = unwrap_for_param(T(), value, additional_axes)
         _set_param_value!(parameter_array, unwrapped_value, name, t)
         update_variable_cost!(
             param,
@@ -341,13 +294,13 @@ function handle_variable_cost_parameter(
     model::DecisionModel,
     initial_forecast_time,
     horizon,
+    ts_type,
 ) where {T <: _AnyPiecewiseLinearParameter}
     offer_curve = PSY.get_variable(component)
     is_time_variant(offer_curve) || return
     container = get_optimization_container(model)
-    ts_type = get_deterministic_time_series_type(get_system(model))
     ts_key = IS.get_time_series_key(PSY.get_value_curve(offer_curve))
-    ts_name = POM._ts_name_from_key(component, ts_key)
+    ts_name = _ts_name_from_key(component, ts_key)
     raw_values = IOM.get_time_series_values!(
         ts_type,
         model,
@@ -356,9 +309,9 @@ function handle_variable_cost_parameter(
         initial_forecast_time,
         horizon,
     )
+    additional_axes = lookup_additional_axes(parameter_array)
     for (t, value::PSY.PiecewiseStepData) in enumerate(raw_values)
-        unwrapped_value =
-            unwrap_for_param(T(), value, lookup_additional_axes(parameter_array))
+        unwrapped_value = unwrap_for_param(T(), value, additional_axes)
         _set_param_value!(parameter_array, unwrapped_value, name, t)
         update_variable_cost!(
             param,
@@ -373,6 +326,12 @@ function handle_variable_cost_parameter(
     return
 end
 
+# A `FuelCurve`'s time-varying fuel cost lives in `fuel_cost_time_series` (mutually
+# exclusive with the fixed `fuel_cost` field); a plain `CostCurve` has no fuel cost at all.
+_has_time_variant_fuel_cost(fuel_curve::PSY.FuelCurve) =
+    is_time_variant(PSY.get_fuel_cost_time_series(fuel_curve))
+_has_time_variant_fuel_cost(::PSY.CostCurve) = false
+
 function handle_variable_cost_parameter(
     ::FuelCostParameter,
     op_cost::PSY.ThermalGenerationCost,
@@ -381,33 +340,31 @@ function handle_variable_cost_parameter(
     parameter_array,
     parameter_multiplier,
     attributes,
-    container,
+    model::DecisionModel,
     initial_forecast_time,
     horizon,
+    ts_type,
 )
-    fuel_curve = PSY.get_variable(op_cost)
-    # Nothing to update for this component if we don't have a fuel cost time series
-    (fuel_curve isa PSY.FuelCurve && is_time_variant(PSY.get_fuel_cost(fuel_curve))) ||
-        return
-
-    ts_vector = PSY.get_fuel_cost(
-        component;
-        start_time = initial_forecast_time,
-        len = horizon,
+    fuel_curve = PSY.get_variable_operation_cost(op_cost)
+    _has_time_variant_fuel_cost(fuel_curve) || return
+    # No formulation sets uses_compact_power=true on a FuelCostParameter's attributes today;
+    # error loudly rather than silently resolving to an undefined conversion if that changes.
+    IOM.get_uses_compact_power(attributes) && error(
+        "Compact-power fuel cost conversion is not implemented for $(name); " *
+        "no current formulation sets uses_compact_power=true for FuelCostParameter.",
     )
-    fuel_cost_forecast_values = TimeSeries.values(ts_vector)
-    for (t, value) in enumerate(fuel_cost_forecast_values)
-        # `_convert_variable_cost` split a pre-psy6 `PSY.VariableCost` into no-load and
-        # compact-power components; it was removed when PSY moved to ValueCurve/FunctionData
-        # cost types and never replaced (see `main` history, commit 70e6a3109). No formulation
-        # in IOM/POM sets `uses_compact_power = true` on a `FuelCostParameter`'s
-        # `CostFunctionAttributes` today (`add_param_container!` always defaults it to
-        # `false`), so this branch is unreachable. Error loudly instead of resolving to an
-        # undefined function if that ever changes.
-        attributes.uses_compact_power && error(
-            "Compact-power fuel cost conversion is not implemented for $(name); " *
-            "no current formulation sets uses_compact_power=true for FuelCostParameter.",
-        )
+    container = get_optimization_container(model)
+    device_model = get_model(get_template(model), typeof(component))
+    ts_name = IOM.get_time_series_names(device_model)[FuelCostParameter]
+    raw_values = IOM.get_time_series_values!(
+        ts_type,
+        model,
+        component,
+        ts_name,
+        initial_forecast_time,
+        horizon,
+    )
+    for (t, value) in enumerate(raw_values)
         _set_param_value!(parameter_array, value, name, t)
         update_variable_cost!(
             FuelCostParameter(),
@@ -550,9 +507,7 @@ function update_variable_cost!(
 ) where {T <: PSY.Component}
     component_name = PSY.get_name(component)
     fuel_cost = parameter_array[component_name, time_period]
-    if all(iszero.(last.(fuel_cost)))
-        return
-    end
+    iszero(fuel_cost) && return
     mult_ = parameter_multiplier[component_name, time_period]
     expression = get_expression(container, FuelConsumptionExpression, T)
     cost_expr = expression[component_name, time_period] * fuel_cost * mult_
