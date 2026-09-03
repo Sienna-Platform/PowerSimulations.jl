@@ -11,41 +11,10 @@ Aqua.test_unbound_args(PowerSimulations)
 
 const LOG_FILE = "power-simulations-test.log"
 
-const DISABLED_TEST_FILES = [  # Can generate with ls -1 test | grep "test_.*.jl"
-# "test_basic_model_structs.jl",
-# "test_device_branch_constructors.jl",
-# "test_device_hvdc.jl",
-# "test_device_lcc.jl",
-# "test_device_load_constructors.jl",
-# "test_device_renewable_generation_constructors.jl",
-# "test_device_source_constructors.jl",
-# "test_device_thermal_generation_constructors.jl",
-# "test_events.jl",
-# "test_formulation_combinations.jl",
-# "test_import_export_cost.jl",
-# "test_initialization_problem.jl",
-# "test_jump_utils.jl",
-# "test_market_bid_cost.jl",
-# "test_mbc_sanity_check.jl",
-# "test_model_decision.jl",
-# "test_model_emulation.jl",
-# "test_network_constructors.jl",
-# "test_network_constructors_with_branch_rating_time_series.jl",
-# "test_power_flow_in_the_loop.jl",
-# "test_print.jl",
-# "test_problem_template.jl",
-# "test_recorder_events.jl",
-# "test_services_constructor.jl",
-# "test_simulation_build.jl",
-# "test_simulation_execute.jl",
-# "test_simulation_models.jl",
-# "test_simulation_partitions.jl",
-# "test_simulation_results_export.jl",
-# "test_simulation_results.jl",
-# "test_simulation_sequence.jl",
-# "test_simulation_store.jl",
-# "test_utils.jl",
-]
+const DISABLED_TEST_FILES = [
+    "test_events.jl",
+    "test_postcontingency_mixed_outage_axes.jl",
+]  # EVENTS-EXCISION
 
 LOG_LEVELS = Dict(
     "Debug" => Logging.Debug,

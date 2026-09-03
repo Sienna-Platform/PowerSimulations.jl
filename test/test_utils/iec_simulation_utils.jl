@@ -230,7 +230,7 @@ end
 # TODO deduplicate after initial time-sensitive merge
 function cost_due_to_time_varying_iec(
     sys::System,
-    res::IS.Results,
+    res::IS.Outputs,
     ::Type{T},
 ) where {T <: PSY.Component}
     power_in_vars = read_variable_dict(res, PSI.ActivePowerInVariable, T)

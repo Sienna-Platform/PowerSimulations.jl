@@ -54,7 +54,7 @@ function save_constraints(model::DecisionModel, filepath::String)
 end
 # end debugging code
 
-function set_formulations!(template::ProblemTemplate,
+function set_formulations!(template::PowerOperationsProblemTemplate,
     sys::PSY.System,
     device_to_formulation::FormulationDict,
 )
@@ -71,12 +71,16 @@ function set_formulations!(template::ProblemTemplate,
 end
 
 _set_formulations_helper(
-    template::ProblemTemplate,
+    template::PowerOperationsProblemTemplate,
     device::Type{<:PSY.Device},
     formulation::Type{<:PSI.AbstractDeviceFormulation},
 ) =
     set_device_model!(template, device, formulation)
-_set_formulations_helper(template::ProblemTemplate, _, device_model::DeviceModel) =
+_set_formulations_helper(
+    template::PowerOperationsProblemTemplate,
+    _,
+    device_model::DeviceModel,
+) =
     set_device_model!(template, device_model)
 
 # Layer of indirection to upgrade problem results to look like simulation results
@@ -85,13 +89,13 @@ _maybe_upgrade_to_dict(input::DataFrame) =
     SortedDict{DateTime, DataFrame}(first(input[!, :DateTime]) => input)
 
 read_variable_dict(
-    res::IS.Results,
+    res::IS.Outputs,
     var_name::Type{<:PSI.VariableType},
     comp_type::Type{<:PSY.Component},
 ) =
     _maybe_upgrade_to_dict(read_variable(res, var_name, comp_type))
 read_parameter_dict(
-    res::IS.Results,
+    res::IS.Outputs,
     par_name::Type{<:PSI.ParameterType},
     comp_type::Type{<:PSY.Component},
 ) =
@@ -111,9 +115,9 @@ function build_generic_mbc_model(sys::System;
     standard::Bool = false,
     device_to_formulation = FormulationDict(),
 )
-    template = ProblemTemplate(
+    template = PowerOperationsProblemTemplate(
         NetworkModel(
-            CopperPlatePowerModel;
+            CopperPlateNetworkModel;
             duals = [CopperPlateBalanceConstraint],
         ),
     )
@@ -160,7 +164,7 @@ function run_generic_mbc_prob(
     test_success && @test build_result == PSI.ModelBuildStatus.BUILT
     solve_result = solve!(model)
     test_success && @test solve_result == PSI.RunStatus.SUCCESSFULLY_FINALIZED
-    res = OptimizationProblemResults(model)
+    res = OptimizationProblemOutputs(model)
     if !isnothing(filename)
         adj = is_decremental ? "decr" : "incr"
         save_objective_function(
@@ -366,7 +370,7 @@ end
 
 function cost_due_to_time_varying_mbc(
     sys::System,
-    res::IS.Results,
+    res::IS.Outputs,
     ::Type{T};
     is_decremental = false,
     has_initial_input = true,

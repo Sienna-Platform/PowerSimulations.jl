@@ -19,12 +19,12 @@ function run_simulation(
     template_ed = get_template_nomin_ed_simulation()
     isnothing(uc_network_model) && (
         uc_network_model =
-            NetworkModel(CopperPlatePowerModel; duals = [CopperPlateBalanceConstraint])
+            NetworkModel(CopperPlateNetworkModel; duals = [CopperPlateBalanceConstraint])
     )
     isnothing(ed_network_model) && (
         ed_network_model =
             NetworkModel(
-                CopperPlatePowerModel;
+                CopperPlateNetworkModel;
                 duals = [CopperPlateBalanceConstraint],
                 use_slacks = true,
             )
@@ -50,7 +50,7 @@ function run_simulation(
                 template_ed,
                 c_sys5_hy_ed;
                 name = "ED",
-                optimizer = ipopt_optimizer,
+                optimizer = HiGHS_optimizer,
             ),
         ],
     )
