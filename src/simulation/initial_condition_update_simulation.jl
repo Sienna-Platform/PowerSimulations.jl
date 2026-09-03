@@ -229,3 +229,34 @@ function IOM.update_initial_conditions!(
     end
     return
 end
+
+function IOM.update_initial_conditions!(
+    ics::T,
+    state::SimulationState,
+    ::Dates.Millisecond,
+) where {
+    T <: Union{
+        Vector{
+            Union{
+                InitialCondition{InitialReservoirVolume, Nothing},
+                InitialCondition{InitialReservoirVolume, Float64},
+            },
+        },
+        Vector{
+            Union{
+                InitialCondition{InitialReservoirVolume, Nothing},
+                InitialCondition{InitialReservoirVolume, JuMP.VariableRef},
+            },
+        },
+    },
+}
+    for ic in ics
+        var_val = get_system_state_value(
+            state,
+            HydroReservoirVolumeVariable(),
+            get_component_type(ic),
+        )
+        set_ic_quantity!(ic, var_val[get_component_name(ic)])
+    end
+    return
+end
