@@ -5,9 +5,14 @@ import Aqua
 Aqua.test_undefined_exports(PowerSimulations)
 Aqua.test_ambiguities(PowerSimulations)
 Aqua.test_stale_deps(PowerSimulations)
-Aqua.find_persistent_tasks_deps(PowerSimulations)
-Aqua.test_persistent_tasks(PowerSimulations)
 Aqua.test_unbound_args(PowerSimulations)
+# Aqua.find_persistent_tasks_deps / Aqua.test_persistent_tasks resolve a fresh, throwaway
+# environment per dependency from the registry. On the psy6 line, PowerSystems' dependency
+# closure includes unregistered OpenAPI packages (e.g. InfrastructureCoreOpenAPIModels) that
+# only resolve through this repo's [sources] path/git pins, so that throwaway resolve always
+# fails. Re-enable once those packages are registered. Same exclusion as
+# PowerOperationsModels.jl/test/test_aqua.jl and
+# InfrastructureOptimizationModels.jl/test/runtests.jl (persistent_tasks = false).
 
 const LOG_FILE = "power-simulations-test.log"
 

@@ -140,7 +140,7 @@ Whether a parameter type has a uniform multiplier across all `(device, time)` ce
 `populate_system=true` can return a `System` with 0 time series. `TimeSeriesAttributes.component_name_to_ts_uuid` (now IOM `core/parameter_container.jl`) is populated at build time in POM but not serialized — relevant when touching `_serialize_systems_to_json` in `simulation.jl`.
 
 ## Follow-ups tracked outside this file
-Events framework to POM then unfence; AGC (`AGCReserveDeployment` dropped; POM's `agc.jl` is not compiled); service feedforwards (POM errors on `attach_feedforward!(::ServiceModel, …)`); path pins → git pins before PR; PowerAnalytics/PowerGraphics re-validation.
+Events framework to POM then unfence; AGC (`AGCReserveDeployment` dropped; POM's `agc.jl` is not compiled); service feedforwards (POM errors on `attach_feedforward!(::ServiceModel, …)`); path pins → git pins before PR; PowerAnalytics/PowerGraphics re-validation; `test/runtests.jl` drops `Aqua.find_persistent_tasks_deps`/`Aqua.test_persistent_tasks` (they resolve a throwaway env from the registry, which can't satisfy PowerSystems' unregistered OpenAPI deps on the psy6 line) — re-enable once those packages are registered, matching the same exclusion already in POM's and IOM's test suites.
 
 ### Upstream bugs found during the excision (not PSI's to fix)
 
