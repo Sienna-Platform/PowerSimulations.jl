@@ -135,10 +135,10 @@ end
 @testset "Test SemiContinuous Feedforward with Active and Reactive Power variables" begin
     template_uc = get_template_basic_uc_simulation()
     set_device_model!(template_uc, Line, StaticBranchUnbounded)
-    set_network_model!(template_uc, NetworkModel(DCPPowerModel; use_slacks = true))
+    set_network_model!(template_uc, NetworkModel(DCPNetworkModel; use_slacks = true))
     # network slacks added because of data issues
     template_ed =
-        get_template_nomin_ed_simulation(NetworkModel(ACPPowerModel; use_slacks = true))
+        get_template_nomin_ed_simulation(NetworkModel(ACPNetworkModel; use_slacks = true))
     set_device_model!(template_ed, Line, StaticBranchUnbounded)
     c_sys5_hy_uc = PSB.build_system(PSITestSystems, "c_sys5_hy_uc")
     c_sys5_hy_ed = PSB.build_system(PSITestSystems, "c_sys5_hy_ed")
@@ -155,7 +155,7 @@ end
                 template_ed,
                 c_sys5_hy_ed;
                 name = "ED",
-                optimizer = ipopt_optimizer,
+                optimizer = HiGHS_optimizer,
                 initialize_model = false,
             ),
         ],
@@ -217,10 +217,10 @@ end
 
 @testset "Test Upper/Lower Bound Feedforwards" begin
     template_uc = get_template_basic_uc_simulation()
-    set_network_model!(template_uc, NetworkModel(PTDFPowerModel; use_slacks = true))
+    set_network_model!(template_uc, NetworkModel(PTDFNetworkModel; use_slacks = true))
     set_device_model!(template_uc, DeviceModel(Line, StaticBranchBounds))
     template_ed =
-        get_template_nomin_ed_simulation(NetworkModel(PTDFPowerModel; use_slacks = true))
+        get_template_nomin_ed_simulation(NetworkModel(PTDFNetworkModel; use_slacks = true))
     set_device_model!(template_ed, DeviceModel(Line, StaticBranchBounds))
     c_sys5_hy_uc = PSB.build_system(PSITestSystems, "c_sys5_hy_uc")
     c_sys5_hy_ed = PSB.build_system(PSITestSystems, "c_sys5_hy_ed")
@@ -237,7 +237,7 @@ end
                 template_ed,
                 c_sys5_hy_ed;
                 name = "ED",
-                optimizer = ipopt_optimizer,
+                optimizer = HiGHS_optimizer,
                 initialize_model = false,
             ),
         ],
@@ -309,96 +309,29 @@ end
     @test !isempty(c)
     c = PSI.get_variable(
         PSI.get_optimization_container(ed_power_model),
-        UpperBoundFeedForwardSlack(),
+        UpperBoundFeedForwardSlack,
         Line,
         "FlowActivePowerVariable",
     )
     @test !isempty(c)
     c = PSI.get_variable(
         PSI.get_optimization_container(ed_power_model),
-        LowerBoundFeedForwardSlack(),
+        LowerBoundFeedForwardSlack,
         Line,
         "FlowActivePowerVariable",
     )
     @test !isempty(c)
 end
 
-@testset "Test FixValue Feedforwards" begin
-    template_uc = get_template_basic_uc_simulation()
-    set_network_model!(template_uc, NetworkModel(PTDFPowerModel; use_slacks = true))
-    set_device_model!(template_uc, DeviceModel(Line, StaticBranchUnbounded))
-    set_service_model!(template_uc, ServiceModel(VariableReserve{ReserveUp}, RangeReserve))
-    template_ed =
-        get_template_nomin_ed_simulation(NetworkModel(PTDFPowerModel; use_slacks = true))
-    set_device_model!(template_ed, DeviceModel(Line, StaticBranchUnbounded))
-    set_service_model!(template_ed, ServiceModel(VariableReserve{ReserveUp}, RangeReserve))
-    c_sys5_hy_uc = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_reserves = true)
-    c_sys5_hy_ed = PSB.build_system(PSITestSystems, "c_sys5_ed"; add_reserves = true)
-    models = SimulationModels(;
-        decision_models = [
-            DecisionModel(
-                template_uc,
-                c_sys5_hy_uc;
-                name = "UC",
-                optimizer = HiGHS_optimizer,
-                initialize_model = false,
-            ),
-            DecisionModel(
-                template_ed,
-                c_sys5_hy_ed;
-                name = "ED",
-                optimizer = ipopt_optimizer,
-                initialize_model = false,
-            ),
-        ],
-    )
-
-    sequence = SimulationSequence(;
-        models = models,
-        feedforwards = Dict(
-            "ED" => [
-                SemiContinuousFeedforward(;
-                    component_type = ThermalStandard,
-                    source = OnVariable,
-                    affected_values = [ActivePowerVariable],
-                ),
-                FixValueFeedforward(;
-                    component_type = VariableReserve{ReserveUp},
-                    source = ActivePowerReserveVariable,
-                    affected_values = [ActivePowerReserveVariable],
-                ),
-            ],
-        ),
-        ini_cond_chronology = InterProblemChronology(),
-    )
-
-    sim = Simulation(;
-        name = "reserve_feedforward",
-        steps = 2,
-        models = models,
-        sequence = sequence,
-        simulation_folder = mktempdir(; cleanup = true),
-    )
-    build_out = build!(sim)
-    @test build_out == PSI.SimulationBuildStatus.BUILT
-    ed_power_model = PSI.get_simulation_model(PSI.get_models(sim), :ED)
-    c = PSI.get_parameter(
-        PSI.get_optimization_container(ed_power_model),
-        FixValueParameter(),
-        VariableReserve{ReserveUp},
-        "Reserve1",
-    )
-    @test !isempty(c.multiplier_array)
-    @test !isempty(c.parameter_array)
-    c = PSI.get_parameter(
-        PSI.get_optimization_container(ed_power_model),
-        FixValueParameter(),
-        VariableReserve{ReserveUp},
-        "Reserve11",
-    )
-    @test !isempty(c.multiplier_array)
-    @test !isempty(c.parameter_array)
-end
+# "Test FixValue Feedforwards" removed (excision(4.3)): it attached a FixValueFeedforward to
+# a ServiceModel (OnlineReserve{ReserveUp}). POM's ServiceModel keys reserve variables by
+# (service_name, device_name, time), while the feedforward parameter path is keyed
+# (device_name, time), so `attach_feedforward!(::ServiceModel, ff)` is a loud
+# `error("Service feedforwards are not supported yet. ...")` in
+# PowerOperationsModels/src/feedforward/feedforwards.jl. This is POM's job (formulation-level
+# service feedforward support), tracked as a follow-up in
+# .claude/plans/2026-09-02-pom-excision.md and PowerSimulations.jl/.claude/CLAUDE.md
+# ("service feedforwards"). Re-add this testset once POM re-keys that path.
 
 @testset "Build with store_systems_in_results option" begin
     models = create_simulation_build_test_problems(get_template_basic_uc_simulation())

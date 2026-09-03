@@ -170,7 +170,7 @@ function _add_feedforward_to_model(
     else
         service_found = false
         for (key, model) in get_service_models(get_template(sim_model))
-            if key[2] == Symbol(get_component_type(ff))
+            if key == Symbol(get_component_type(ff))
                 service_found = true
                 @debug "attaching $T to $(get_component_type(ff))"
                 attach_feedforward!(model, ff)
