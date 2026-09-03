@@ -254,6 +254,27 @@ function _check_folder(sim::Simulation)
     end
 end
 
+# `Nothing` initial condition values encode a device-level trait (e.g. a must-run unit has
+# no meaningful `InitialTimeDurationOn`), not a per-model computation, so every model must
+# agree on whether the value is present. Dispatch on `Nothing` instead of an `isa` check.
+_ic_value_is_missing(::Nothing) = true
+_ic_value_is_missing(::Any) = false
+
+# Determine whether a set of per-model values for one initial condition are reconciled:
+# all missing is consistent by definition, all present compares numerically, and a mix of
+# missing/present is a real mismatch that must be reported like any other disagreement.
+function _ic_values_reconciled(all_values::Vector)
+    missing_flags = _ic_value_is_missing.(all_values)
+    if all(missing_flags)
+        return true
+    end
+    if any(missing_flags)
+        return false
+    end
+    ref_value = first(all_values)
+    return allequal(isapprox.(all_values, ref_value; atol = ABSOLUTE_TOLERANCE))
+end
+
 # Compare initial conditions for all `InitialConditionType`s with the
 # `requires_reconciliation` trait across `models`, log @info messages for mismatches
 function _initial_conditions_reconciliation!(
@@ -291,8 +312,7 @@ function _initial_conditions_reconciliation!(
         component_names = keys(first(values(ic_vals_per_model)))
         for component_name in component_names
             all_values = [result[component_name] for result in values(ic_vals_per_model)]
-            ref_value = first(all_values)
-            if !allequal(isapprox.(all_values, ref_value; atol = ABSOLUTE_TOLERANCE))
+            if !_ic_values_reconciled(all_values)
                 has_mismatches = true
                 mismatch_msg = "For IC key $ic_key, mismatch on component $component_name:"
                 for (model_i, result) in sort(pairs(ic_vals_per_model); by = first)
