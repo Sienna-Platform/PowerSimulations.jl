@@ -1,7 +1,46 @@
 # [Feedforward](@id feedforward)
 
-The definition of exactly what information is passed using the defined chronologies is accomplished using FeedForwards.
+Chronologies define where information flows between models in a `Simulation`; FeedForwards
+define what to do with it. A FeedForward is used to define what to do with information being
+passed with an inter-stage chronology. The most common FeedForward is the
+`SemiContinuousFeedforward` that affects the semi-continuous range constraints of thermal
+generators in an economic dispatch problem based on the value of the (already solved)
+unit-commitment variables.
 
-Specifically, a FeedForward is used to define what to do with information being passed with an inter-stage chronology in a Simulation. The most common FeedForward is the `SemiContinuousFeedForward` that affects the semi-continuous range constraints of thermal generators in the economic dispatch problems based on the value of the (already solved) unit-commitment variables.
+Creating a FeedForward requires at least the `component_type` it applies to. The `source`
+specifies which variable is read from the model that already solved (for example, the
+commitment variable from the unit commitment problem). The `affected_values` specify which
+variables are affected in the model still to be solved (for example, the next economic
+dispatch problem).
 
-The creation of a FeedForward requires at least to specify the `component_type` on which the FeedForward will be applied. The `source` variable specify which variable will be taken from the problem solved, for example the commitment variable of the thermal unit in the unit commitment problem. Finally, the `affected_values` specify which variables will be affected in the problem to be solved, for example the next economic dispatch problem.
+```julia
+SemiContinuousFeedforward(;
+    component_type = ThermalStandard,
+    source = OnVariable,
+    affected_values = [ActivePowerVariable],
+)
+```
+
+A `Simulation`'s `SimulationSequence` attaches FeedForwards to the models they affect, keyed
+by model name:
+
+```julia
+sequence = SimulationSequence(;
+    models = models,
+    feedforwards = Dict(
+        "ED" => [
+            SemiContinuousFeedforward(;
+                component_type = ThermalStandard,
+                source = OnVariable,
+                affected_values = [ActivePowerVariable],
+            ),
+        ],
+    ),
+    ini_cond_chronology = InterProblemChronology(),
+)
+```
+
+PSI owns this wiring. The FeedForward types themselves, and the constraints they add to a
+model, are `PowerOperationsModels.jl`'s — see its
+[documentation](https://github.com/Sienna-Platform/PowerOperationsModels.jl) for the
+constraint math.

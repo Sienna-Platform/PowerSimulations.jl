@@ -2,13 +2,13 @@
 
 ## A
 
-  - *Attributes*: Certain device formulations can be customized by specifying attributes that will include/remove certain variables, expressions and/or constraints. For example, in `StorageSystemsSimulations.jl`, the device formulation of `StorageDispatchWithReserves` can be specified with the following dictionary of attributes:
+  - *Attributes*: Certain device formulations can be customized by specifying attributes that will include/remove certain variables, expressions and/or constraints. For example, `PowerOperationsModels.jl`'s `StorageDispatchWithReserves` formulation can be specified with the following dictionary of attributes:
 
 ```julia
 set_device_model!(
     template,
     DeviceModel(
-        GenericBattery,
+        EnergyReservoirStorage,
         StorageDispatchWithReserves;
         attributes = Dict{String, Any}(
             "reservation" => false,
@@ -29,9 +29,9 @@ Changing the attributes between `true` or `false` can enable/disable multiple as
 
 ## D
 
-  - *Decision Problem*: A decision problem calculates the desired system operation based on forecasts of uncertain inputs and information about the state of the system. The output of a decision problem represents the policies used to drive the set-points of the system's devices, like generators or switches, and depends on the purpose of the problem. See the tutorial on [Running a Single-Step Problem](@ref) to learn more about solving individual problems.
+  - *Decision Problem*: A decision problem calculates the desired system operation based on forecasts of uncertain inputs and information about the state of the system. The output of a decision problem represents the policies used to drive the set-points of the system's devices, like generators or switches, and depends on the purpose of the problem. `DecisionModel`s that build and solve individual decision problems are `PowerOperationsModels.jl`'s responsibility; see the [`PowerOperationsModels.jl`](https://sienna-platform.github.io/PowerOperationsModels.jl/dev/) documentation.
 
-  - *Device Formulation*: The model of a device that is incorporated into a large system optimization models. For instance, the storage device model used inside of a Unit Commitment (UC) problem. A device model needs to follow some requirements to be integrated into operation problems. For more information about valid `DeviceModel`s and their mathematical representations, check out the [Formulation Library](@ref formulation_intro).
+  - *Device Formulation*: The model of a device that is incorporated into a large system optimization models. For instance, the storage device model used inside of a Unit Commitment (UC) problem. A device model needs to follow some requirements to be integrated into operation problems. Valid `DeviceModel`s and their mathematical representations are documented in `PowerOperationsModels.jl`, not here.
 
 ## E
 
@@ -39,7 +39,7 @@ Changing the attributes between `true` or `false` can enable/disable multiple as
 
 ## F
 
-  - *FeedForward*: The definition of exactly what information is passed using the defined chronologies is accomplished using FeedForwards. Specifically, a FeedForward is used to define what to do with information being passed with an inter-stage chronology in a Simulation. The most common FeedForward is the `SemiContinuousFeedForward` that affects the semi-continuous range constraints of thermal generators in the economic dispatch problems based on the value of the (already solved) unit-commitment variables.
+  - *FeedForward*: The definition of exactly what information is passed using the defined chronologies is accomplished using FeedForwards. Specifically, a FeedForward is used to define what to do with information being passed with an inter-stage chronology in a Simulation. The most common FeedForward is the `SemiContinuousFeedforward` that affects the semi-continuous range constraints of thermal generators in the economic dispatch problems based on the value of the (already solved) unit-commitment variables.
 
 ## H
 
@@ -57,11 +57,11 @@ Changing the attributes between `true` or `false` can enable/disable multiple as
 
 ## S
 
-  - *Service Formulation*: The model of a service that is incorporated into a large system optimization models. `Services` (or ancillary services) are models used to ensure that there is necessary support to the power grid from generators to consumers, in order to ensure reliable operation of the system. The most common application for ancillary services are reserves, i.e., generation (or load) that is not currently being used, but can be quickly made available in case of unexpected changes of grid conditions, for example a sudden loss of load or generation. A service model needs to follow some requirements to be integrated into operation problems. For more information about valid `ServiceModel`s and their mathematical representations, check out the [Formulation Library](@ref service_formulations).
+  - *Service Formulation*: The model of a service that is incorporated into a large system optimization models. `Services` (or ancillary services) are models used to ensure that there is necessary support to the power grid from generators to consumers, in order to ensure reliable operation of the system. The most common application for ancillary services are reserves, i.e., generation (or load) that is not currently being used, but can be quickly made available in case of unexpected changes of grid conditions, for example a sudden loss of load or generation. A service model needs to follow some requirements to be integrated into operation problems. Valid `ServiceModel`s and their mathematical representations are documented in `PowerOperationsModels.jl`, not here.
 
   - *Simulation*: A simulation is a pre-determined sequence of decision problems in a way that solving it, resembles the solution procedures commonly used by operators. The most common simulation model is the solution of a Unit Commitment and Economic Dispatch sequence of problems.
   - *Solver*: A solver is a software package that incorporates algorithms for finding solutions to one or more classes of optimization problem. For example, FICO Xpress is a commercial optimization solver for linear programming (LP), convex quadratic programming (QP) problems, convex quadratically constrained quadratic programming (QCQP), second-order cone programming (SOCP) and their mixed integer counterparts. **A solver is required to be specified** in order to solve any computer optimization problem.
 
 ## T
 
-  - *Template*: A `ProblemTemplate` is just a collection of `DeviceModel`s that allows the user to specify the formulations of each set of devices (by device type) independently so that the modeler can adjust the level of detail according to the question of interest and the available data. For more information about valid `DeviceModel`s and their mathematical representations, check out the [Formulation Library](@ref formulation_intro).
+  - *Template*: A `PowerOperationsProblemTemplate` is just a collection of `DeviceModel`s that allows the user to specify the formulations of each set of devices (by device type) independently so that the modeler can adjust the level of detail according to the question of interest and the available data. Valid `DeviceModel`s and their mathematical representations are documented in `PowerOperationsModels.jl`, not here.

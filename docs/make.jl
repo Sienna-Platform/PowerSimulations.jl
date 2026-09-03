@@ -40,14 +40,11 @@ links = InterLinks(
         inventory_source(
             "https://sienna-platform.github.io/PowerSystemCaseBuilder.jl/stable/",
         ),
-    "StorageSystemsSimulations" =>
-        inventory_source(
-            "https://sienna-platform.github.io/StorageSystemsSimulations.jl/stable/",
-        ),
-    "HydroPowerSimulations" =>
-        inventory_source("https://sienna-platform.github.io/HydroPowerSimulations.jl/dev/"),
-    "PowerFlows" =>
-        inventory_source("https://sienna-platform.github.io/PowerFlows.jl/stable/"),
+    # InfrastructureOptimizationModels has no published doc inventory yet (stable and dev
+    # both 404 as of this excision); omit rather than break the build. PowerOperationsModels
+    # publishes only a dev inventory so far.
+    "PowerOperationsModels" =>
+        inventory_source("https://sienna-platform.github.io/PowerOperationsModels.jl/dev/"),
 )
 
 include(joinpath(@__DIR__, "make_tutorials.jl"))
@@ -56,18 +53,10 @@ make_tutorials()
 pages = OrderedDict(
     "Welcome Page" => "index.md",
     "Tutorials" => Any[
-        "Single-step Problem" => "tutorials/generated_decision_problem.md",
         "Multi-stage Production Cost Simulation" => "tutorials/generated_pcm_simulation.md",
-        "Dynamic Line Ratings" => "tutorials/generated_dynamic_line_ratings.md",
-        "Running Power Flow In The Loop with Unit Commitment" => "tutorials/generated_uc_power_flow_in_the_loop.md",
-        "G-1 Security-Constrained Reserves" => "tutorials/generated_security_constrained_reserves.md",
     ],
     "How to..." => Any[
-        "...register a variable in a custom operation model" => "how_to/register_variable.md",
-        "...create a problem template" => "how_to/problem_templates.md",
         "...read the simulation results" => "how_to/read_results.md",
-        "...debug an infeasible model" => "how_to/debugging_infeasible_models.md",
-        "...run security-constrained (N-1) models" => "how_to/security_constrained_models.md",
         "...configure logging" => "how_to/logging.md",
         "...inspect simulation events using the recorder" => "how_to/simulation_recorder.md",
         "...run a parallel simulation" => "how_to/parallel_simulations.md",
@@ -77,26 +66,12 @@ pages = OrderedDict(
         "explanation/feedforward.md",
         "explanation/chronologies.md",
         "explanation/sequencing.md",
-        "explanation/branch_rating_limits.md",
     ],
     "Reference" => Any[
         "Glossary and Acronyms" => "api/glossary.md",
         "Public API" => "api/PowerSimulations.md",
         "Developers" => ["Developer Guidelines" => "api/developer.md",
             "Internals" => "api/internal.md"],
-    ],
-    "Formulation Library" => Any[
-        "Introduction" => "formulation_library/Introduction.md",
-        "General" => "formulation_library/General.md",
-        "Network" => "formulation_library/Network.md",
-        "Thermal Generation" => "formulation_library/ThermalGen.md",
-        "Renewable Generation" => "formulation_library/RenewableGen.md",
-        "Load" => "formulation_library/Load.md",
-        "Branch" => "formulation_library/Branch.md",
-        "Source" => "formulation_library/Source.md",
-        "Services" => "formulation_library/Service.md",
-        "Feedforwards" => "formulation_library/Feedforward.md",
-        "Piecewise Linear Cost" => "formulation_library/Piecewise.md",
     ],
 )
 
