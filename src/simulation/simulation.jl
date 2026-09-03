@@ -277,7 +277,10 @@ function _initial_conditions_reconciliation!(
             haskey(ics, ic_key) || continue
             # ic_vals_per_component: Dict{component_name, ic_value}
             ic_vals_per_component =
-                Dict(get_name(get_component(ic)) => get_condition(ic) for ic in ics[ic_key])
+                Dict(
+                    get_name(IOM.get_component(ic)) => get_condition(ic) for
+                    ic in ics[ic_key]
+                )
             ic_vals_per_model[i] = ic_vals_per_component
         end
 
@@ -908,10 +911,38 @@ function _write_state_to_store!(store::SimulationStore, sim::Simulation)
         # If the store is outdated w.r.t to the state
         @assert store_update_time <= simulation_time
         if store_update_time < state_update_time
+            # A key's own decision-state resolution can be coarser than the simulation-wide
+            # `state_resolution` (the finest resolution across all models) whenever the key
+            # is unique to a coarser-resolution model. `_update_timestamp` walks the
+            # simulation-wide grid, so it must be floored onto the key's own grid (a
+            # zero-order hold) before reading `decision_states`, whose dataset only has
+            # entries at its native resolution.
+            decision_dataset = get_dataset(get_decision_states(sim_state), key)
+            decision_resolution = get_data_resolution(decision_dataset)
+            window_start = first(decision_dataset.timestamps)
             _update_timestamp = max(store_update_time + state_resolution, sim_ini_time)
             while _update_timestamp <= state_update_time
-                state_values =
-                    get_decision_state_value(sim_state, key, _update_timestamp)
+                aligned_timestamp =
+                    sim_ini_time +
+                    ((_update_timestamp - sim_ini_time) ÷ decision_resolution) *
+                    decision_resolution
+                if aligned_timestamp < window_start
+                    # The owning model has already rebuilt for its next window (single-shot
+                    # models with no rolling overlap between executions) before this
+                    # straggling sub-tick could be flushed. The held value hasn't changed
+                    # since the last row actually written to the store, so reuse it instead
+                    # of `decision_states`, whose window no longer covers `aligned_timestamp`.
+                    state_values = read_result(
+                        DenseAxisArray,
+                        store,
+                        model_name,
+                        key,
+                        get_last_recorded_row(em_store, key),
+                    )
+                else
+                    state_values =
+                        get_decision_state_value(sim_state, key, aligned_timestamp)
+                end
                 ix = get_last_recorded_row(em_store, key) + 1
                 write_result!(
                     store,
@@ -1188,7 +1219,7 @@ function _serialize_systems_to_json(sim::Simulation)
     @debug Threads.threadid() "Serializing systems to JSON in parallel with model building"
     for dm in get_decision_models(simulation_models)
         sys = get_system(dm)
-        uuid = string(IS.get_uuid(sys))
+        uuid = string(get_system_uuid(sys))
         if !haskey(results, uuid)
             results[uuid] = PSY.to_json(sys)
         end
@@ -1196,7 +1227,7 @@ function _serialize_systems_to_json(sim::Simulation)
     em = get_emulation_model(simulation_models)
     if !isnothing(em)
         sys = get_system(em)
-        uuid = string(IS.get_uuid(sys))
+        uuid = string(get_system_uuid(sys))
         if !haskey(results, uuid)
             results[uuid] = PSY.to_json(sys)
         end

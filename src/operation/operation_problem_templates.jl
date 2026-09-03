@@ -6,8 +6,7 @@ function _default_devices_uc()
         DeviceModel(PSY.PowerLoad, StaticPowerLoad),
         DeviceModel(PSY.InterruptiblePowerLoad, PowerLoadInterruption),
         DeviceModel(PSY.Line, StaticBranch),
-        DeviceModel(PSY.Transformer2W, StaticBranch),
-        DeviceModel(PSY.TapTransformer, StaticBranch),
+        DeviceModel(PSY.TwoWindingTransformer, StaticBranch),
         DeviceModel(PSY.TwoTerminalGenericHVDCLine, HVDCTwoTerminalDispatch),
     ]
 end
@@ -20,8 +19,8 @@ end
 
 function _default_services()
     return [
-        ServiceModel(PSY.VariableReserve{PSY.ReserveUp}, RangeReserve),
-        ServiceModel(PSY.VariableReserve{PSY.ReserveDown}, RangeReserve),
+        ServiceModel(PSY.OnlineReserve{PSY.ReserveUp}, RangeReserve),
+        ServiceModel(PSY.OnlineReserve{PSY.ReserveDown}, RangeReserve),
     ]
 end
 

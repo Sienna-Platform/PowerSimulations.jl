@@ -67,7 +67,7 @@ function _update_parameter_values!(
     else
         device_model = get_model(template, V, subsystem)
     end
-    components = get_available_components(device_model, get_system(model))
+    components = IOM.get_available_components(device_model, get_system(model))
     # Hoist the underlying dense storage and per-component name lookup once so each
     # write skips DenseAxisArray's String-keyed axis lookup. `additional_axes` is
     # invariant for the lifetime of this update call.
@@ -228,7 +228,7 @@ function _update_parameter_values!(
     initial_forecast_time = get_current_time(model)
     template = get_template(model)
     device_model = get_model(template, V)
-    components = get_available_components(device_model, get_system(model))
+    components = IOM.get_available_components(device_model, get_system(model))
     ts_name = get_time_series_name(attributes)
     ts_resolution = get_resolution(get_settings(model))
     # Hoist the underlying dense storage and per-component name lookup once.

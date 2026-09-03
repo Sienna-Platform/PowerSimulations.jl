@@ -49,7 +49,7 @@ function SimulationProblemResults(
 end
 
 function _list_containers(res::SimulationProblemResults{DecisionModelSimulationResults})
-    return (getfield(res.values, x).cached_results for x in get_container_fields(res))
+    return (getfield(res.values, x).cached_outputs for x in get_container_fields(res))
 end
 
 function Base.empty!(res::SimulationProblemResults{DecisionModelSimulationResults})
@@ -67,26 +67,26 @@ function Base.length(res::SimulationProblemResults{DecisionModelSimulationResult
 end
 
 IOM.list_aux_variable_keys(res::SimulationProblemResults{DecisionModelSimulationResults}) =
-    res.values.aux_variables.result_keys[:]
+    res.values.aux_variables.output_keys[:]
 IOM.list_dual_keys(res::SimulationProblemResults{DecisionModelSimulationResults}) =
-    res.values.duals.result_keys[:]
+    res.values.duals.output_keys[:]
 IOM.list_expression_keys(res::SimulationProblemResults{DecisionModelSimulationResults}) =
-    res.values.expressions.result_keys[:]
+    res.values.expressions.output_keys[:]
 IOM.list_parameter_keys(res::SimulationProblemResults{DecisionModelSimulationResults}) =
-    res.values.parameters.result_keys[:]
+    res.values.parameters.output_keys[:]
 IOM.list_variable_keys(res::SimulationProblemResults{DecisionModelSimulationResults}) =
-    res.values.variables.result_keys[:]
+    res.values.variables.output_keys[:]
 
 get_cached_aux_variables(res::SimulationProblemResults{DecisionModelSimulationResults}) =
-    res.values.aux_variables.cached_results
+    res.values.aux_variables.cached_outputs
 get_cached_duals(res::SimulationProblemResults{DecisionModelSimulationResults}) =
-    res.values.duals.cached_results
+    res.values.duals.cached_outputs
 get_cached_expressions(res::SimulationProblemResults{DecisionModelSimulationResults}) =
-    res.values.expressions.cached_results
+    res.values.expressions.cached_outputs
 get_cached_parameters(res::SimulationProblemResults{DecisionModelSimulationResults}) =
-    res.values.parameters.cached_results
+    res.values.parameters.cached_outputs
 get_cached_variables(res::SimulationProblemResults{DecisionModelSimulationResults}) =
-    res.values.variables.cached_results
+    res.values.variables.cached_outputs
 
 get_cached_results(
     res::SimulationProblemResults{DecisionModelSimulationResults},
@@ -273,9 +273,12 @@ function _read_results(
             inner_converted[date_key] =
                 to_outputs_dataframe(inner_data[cols, extra...], nothing, Val(table_format))
         end
-        _cols = (cols isa Vector) ? (cols,) : result_data.column_names
-        num_dims = length(_cols)
-        converted_vals[result_key] = OutputsByTime{DataFrame, num_dims}(
+        # `to_outputs_dataframe` reshapes the raw component axis into either a fixed
+        # 3-column long table or a wide table with one column per component plus
+        # `:DateTime`; `IOM.OutputsByTime` validates against the actual resulting
+        # DataFrame's columns, not the pre-reshape component axis.
+        _cols = (String.(names(first(values(inner_converted)))),)
+        converted_vals[result_key] = OutputsByTime(
             result_data.key,
             inner_converted,
             result_data.resolution,
@@ -295,7 +298,7 @@ function _read_results(
 
     _store = try_resolve_store(store, res.store)
     existing_keys = list_result_keys(res, first(result_keys))
-    ISOPT._validate_keys(existing_keys, result_keys)
+    IOM._validate_keys(existing_keys, result_keys)
     cached_results = get_cached_results(res, eltype(result_keys))
     if _are_results_cached(res, result_keys, timestamps, keys(cached_results))
         @debug "reading results from SimulationsResults cache"  # NOTE tests match on this
@@ -305,7 +308,7 @@ function _read_results(
         filtered_vals = Dict{keytype(vals), valtype(vals)}()
         for (result_key, result_data) in vals
             inner_converted = filter((((k, v),) -> k in timestamps), result_data.data)
-            filtered_vals[result_key] = OutputsByTime{valtype(inner_converted), 1}(
+            filtered_vals[result_key] = OutputsByTime(
                 result_data.key,
                 inner_converted,
                 result_data.resolution,
