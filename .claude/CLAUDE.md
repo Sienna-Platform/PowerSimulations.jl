@@ -13,7 +13,7 @@ Rule of thumb for where a change goes: **if it needs `SimulationState`, a `Simul
 
 `using PowerSimulations` re-exports the full IOM and POM public API, so user scripts need only one `using`.
 
-PSI was cut down to this scope by the excision plan in `.claude/plans/2026-09-02-pom-excision.md`, with its spec and file classification in `2026-09-02-pom-excision-spec.md`. Commit-by-commit progress and the final counts are in `.claude/plans/excision-progress.md`.
+PSI was cut down to this scope by the excision plan in `.claude/plans/2026-09-02-pom-excision.md`, with its spec and file classification in `2026-09-02-pom-excision-spec.md`. Commit-by-commit progress and the final counts are in `.claude/plans/excision-progress.md`. These are local, gitignored working notes — not tracked in git, not on other clones.
 
 ### Where PSI sits
 
@@ -26,7 +26,7 @@ IS ──▶ IOM ──▶ POM ──▶ PSI ──▶ PowerAnalytics / PowerGra
 - **Upstream deps:** IOM, POM, PSY, IS, PNM (reduced-network branch time-series routing in parameter updates), HDF5, JuMP, DataFrames, Distributed.
 - **Not deps anymore:** PowerModels (POM network models are native), PowerFlows (PF-in-the-loop is POM's extension; PSI only needs PF in tests), Distributions (events only, fenced).
 - **Downstream:** PowerAnalytics / PowerGraphics consume `SimulationResults`. Results storage, key encoding (`"VariableType__ComponentType"`), and serialization changes have downstream blast radius.
-- **Co-dev wiring:** `Project.toml` `[sources]` carries temporary path pins to the sibling checkouts in `/home/jdlara/Sienna_work/psy6/` (IS `IS4`, IOM `main`, PSY `psy6`, PNM `psy6`, POM `main`) plus the OpenAPI git pins PSY needs. Switch to git rev pins before a PR to `main`. No version bumps: PSI stays `0.38.3` until release.
+- **Co-dev wiring:** `Project.toml` `[sources]` carries temporary path pins to the sibling checkouts in `/home/jdlara/Sienna_work/psy6/` (IS `IS4`, IOM `jd/market_model`, PSY `psy6`, PNM `psy6`, POM `jd/ruc-integration`) plus the OpenAPI git pins PSY needs. PSI HEAD requires IOM commit `f127bc5` (stored PWL width constraint refs), which is not on IOM `main` yet, so git rev pins must wait until that lands there. Switch to git rev pins before a PR to `main`. No version bumps: PSI stays `0.38.3` until release.
 
 ## What PSI owns
 
@@ -144,16 +144,12 @@ Events framework to POM then unfence; AGC (`AGCReserveDeployment` dropped; POM's
 
 ### Upstream bugs found during the excision (not PSI's to fix)
 
-- **IOM: frozen PWL breakpoints — correctness bug, confirmed twice independently.**
-  `../InfrastructureOptimizationModels.jl/src/objective_function/objective_function_pwl_delta.jl`,
-  `add_pwl_block_offer_constraints!` (~line 146) builds
-  `JuMP.@constraint(jump_model, var <= breakpoints[ix+1] - breakpoints[ix])` and discards the
-  returned `ConstraintRef`. Breakpoints are plain `Float64`, so the bound can never be updated on
-  a later solve. Measured: solved objective delta frozen at `[-220.68, -220.68]` against a
-  ground-truth delta of `[-220.68, -229.08]`. Time-varying market-bid BREAKPOINTS are silently
-  wrong across steps of a multi-step simulation; slopes are unaffected. Affected test branches are
-  marked `UPSTREAM-IOM-BUG` in `test/test_market_bid_cost.jl` and `test/test_import_export_cost.jl`
-  — do not "fix" the test expectations to match the frozen value; fix belongs in IOM.
+- **IOM: frozen PWL breakpoints — fixed.** Was a correctness bug in
+  `../InfrastructureOptimizationModels.jl/src/objective_function/objective_function_pwl_delta.jl`:
+  `add_pwl_block_offer_constraints!` discarded the width constraint's `ConstraintRef`, so
+  time-varying market-bid breakpoints were frozen across a multi-step simulation. Fixed by IOM
+  `f127bc5` (stores the width constraint refs) plus PSI `a2f9c7ec5`
+  (`_update_pwl_width_constraint!` sets the width RHS between solves).
 - **POM: standalone emulation does not update between executions.**
   `../PowerOperationsModels.jl/src/operation/emulation_model.jl` (~line 177) documents that its
   own run loop never calls the update hook, so a standalone `EmulationModel` run outside a

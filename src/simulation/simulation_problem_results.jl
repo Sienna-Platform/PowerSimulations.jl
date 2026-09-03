@@ -62,7 +62,7 @@ end
 
 get_model_name(res::SimulationProblemResults) = res.problem
 IOM.get_system(res::SimulationProblemResults) = res.system
-IS.get_source_data(res::SimulationProblemResults) = get_system(res)  # Needed for compatibility with the IS.Results interface
+IS.get_source_data(res::SimulationProblemResults) = get_system(res)  # Needed for compatibility with the IS.Outputs interface
 IOM.get_resolution(res::SimulationProblemResults) = res.resolution
 get_execution_path(res::SimulationProblemResults) = res.execution_path
 IOM.get_model_base_power(res::SimulationProblemResults) = res.base_power

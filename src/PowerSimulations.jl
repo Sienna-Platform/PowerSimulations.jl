@@ -80,48 +80,46 @@ import PowerOperationsModels as POM
 # explicitly from one side resolves the ambiguity with a real binding.
 import InfrastructureOptimizationModels: COST_EPSILON
 
-# Unexported IOM surface PSI orchestrates with. The authoritative list is produced by
-# scripts/excision/check_undefined.jl; extend this block, never qualify at call sites.
+# Unexported IOM surface PSI orchestrates with. Extend this block; never qualify at call sites.
 import InfrastructureOptimizationModels:
     get_store, get_status, set_status!, get_output_dir, set_output_dir!,
-    get_simulation_info, set_simulation_info!, get_run_status, set_run_status!,
-    is_synchronized, set_synchronized_status!, get_store_params, set_store_params!,
+    get_run_status,
+    is_synchronized, set_synchronized_status!, get_store_params,
     advance_execution_count!, get_execution_count, get_executions, set_executions!,
-    set_execution_count!, get_initial_time, is_built, warm_start_enabled,
-    _pre_solve_model_checks, solve_model!, get_time_series_cache, empty_time_series_cache!,
-    get_log_file, get_recorder_dir, get_initial_conditions_file, add_recorders!,
+    get_initial_time, is_built, warm_start_enabled,
+    _pre_solve_model_checks, solve_model!, empty_time_series_cache!,
+    get_log_file, get_initial_conditions_file,
     register_recorders!, unregister_recorders!, configure_logging, get_current_timestamp,
-    get_simulation_number, set_simulation_number!, get_sequence_uuid, set_sequence_uuid!,
+    set_simulation_number!, get_sequence_uuid, set_sequence_uuid!,
     cost_function_unsynch, update_objective_function!, reset_optimization_model!
 import InfrastructureOptimizationModels:
-    ModelStoreParams, OptimizationContainerMetadata, get_num_executions, get_horizon_count,
+    ModelStoreParams, OptimizationContainerMetadata, get_horizon_count,
     get_base_power,
     get_system_uuid, get_source_data_uuid, make_key,
-    DecisionModelStore, initialize_storage!, write_output!, read_outputs,
+    DecisionModelStore, write_output!, read_outputs,
     write_optimizer_stats!, DecisionModelIndexType, EmulationModelIndexType,
     STORE_CONTAINERS, STORE_CONTAINER_DUALS, STORE_CONTAINER_PARAMETERS,
     STORE_CONTAINER_VARIABLES, STORE_CONTAINER_AUX_VARIABLES, STORE_CONTAINER_EXPRESSIONS,
-    get_data_field, list_fields, list_keys
+    get_data_field
 import InfrastructureOptimizationModels:
-    AbstractDataset, InMemoryDataset, HDF5Dataset, DatasetContainer, make_system_state,
+    InMemoryDataset, HDF5Dataset, DatasetContainer, make_system_state,
     get_dataset, set_dataset!, has_dataset, get_dataset_keys, get_dataset_values,
     set_dataset_values!, get_dataset_value, get_last_recorded_row, set_last_recorded_row!,
     get_update_timestamp, set_update_timestamp!, get_last_updated_timestamp,
-    get_last_recorded_value, get_last_update_value, get_num_rows, get_data_resolution,
+    get_last_recorded_value, get_num_rows, get_data_resolution,
     get_end_of_step_timestamp, get_value_timestamp, set_value!, get_dataset_size,
     get_column_names, OutputsByTime, OutputsByKeyAndTime, make_dataframes
 import InfrastructureOptimizationModels:
     get_parameter_attributes, get_parameter_array, get_parameter_multiplier_array,
     get_attribute_key, get_time_series_name, _get_ts_uuid, _set_param_value_at!,
-    set_parameter!, ValidDataParamEltypes, TimeSeriesAttributes, VariableValueAttributes,
+    ValidDataParamEltypes, TimeSeriesAttributes, VariableValueAttributes,
     CostFunctionAttributes, EventParametersAttributes, NoAttributes
 import InfrastructureOptimizationModels:
-    LOG_GROUP_SIMULATION_STORE, LOG_GROUP_OUTPUTS, LOG_GROUP_MODEL_STORE,
-    LOG_GROUP_BUILD_INITIAL_CONDITIONS, set_interval!, get_variables, get_parameters,
+    LOG_GROUP_SIMULATION_STORE, get_variables, get_parameters,
     get_duals, get_expressions, get_aux_variables, get_time_steps, find_timestamp_index,
     to_matrix, get_column_names_from_axis_array, should_write_resulting_value,
-    convert_output_to_natural_units, deserialize_key, get_initial_conditions_data,
-    _deepcopy_template, get_deterministic_time_series_type, RUN_OPERATION_MODEL_TIMER,
+    convert_output_to_natural_units, deserialize_key,
+    get_deterministic_time_series_type,
     to_outputs_dataframe, _read_outputs, get_time_series_values!, export_optimizer_stats,
     export_output, export_realized_outputs
 import InfrastructureOptimizationModels:

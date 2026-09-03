@@ -1,5 +1,4 @@
 # File Names definitions
-const PROBLEM_LOG_FILENAME = "operation_problem.log"
 const SIMULATION_LOG_FILENAME = "simulation.log"
 const REQUIRED_RECORDERS = (:simulation_status, :execution)
 const KNOWN_SIMULATION_PATHS = [
