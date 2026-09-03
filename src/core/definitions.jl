@@ -20,6 +20,5 @@ const IGNORABLE_FILES = [
     r"^[Dd]esktop.ini$",
 ]
 const RESULTS_DIR = "results"
-const NO_SERVICE_NAME_PROVIDED = ""
 
 const RUN_SIMULATION_TIMER = TimerOutputs.TimerOutput()

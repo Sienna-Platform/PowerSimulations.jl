@@ -152,7 +152,7 @@ function _add_feedforward_to_model(
     ff::T,
     ::Type{U},
 ) where {T <: AbstractAffectFeedforward, U <: PSY.Service}
-    if get_feedforward_meta(ff) != NO_SERVICE_NAME_PROVIDED
+    if get_feedforward_meta(ff) != CONTAINER_KEY_EMPTY_META
         service_model = get_model(
             get_template(sim_model),
             get_component_type(ff),

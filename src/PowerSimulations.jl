@@ -13,9 +13,6 @@ export SimulationResultsExport
 export SimulationProblemResults
 export InterProblemChronology
 export IntraProblemChronology
-export GenericOpProblem
-export UnitCommitmentProblem
-export EconomicDispatchProblem
 export template_economic_dispatch
 export template_unit_commitment
 export build!
@@ -91,7 +88,8 @@ import InfrastructureOptimizationModels:
     get_log_file, get_initial_conditions_file,
     register_recorders!, unregister_recorders!, configure_logging, get_current_timestamp,
     set_simulation_number!, get_sequence_uuid, set_sequence_uuid!,
-    cost_function_unsynch, update_objective_function!, reset_optimization_model!
+    cost_function_unsynch, update_objective_function!, reset_optimization_model!,
+    CONTAINER_KEY_EMPTY_META
 import InfrastructureOptimizationModels:
     ModelStoreParams, OptimizationContainerMetadata, get_horizon_count,
     get_base_power,
@@ -194,7 +192,6 @@ include("core/cache_utils.jl")
 
 include("initial_conditions/initial_condition_chronologies.jl")
 include("simulation/simulation_store_requirements.jl")
-include("operation/operation_model_types.jl")
 include("operation/decision_model.jl")
 include("operation/emulation_model.jl")
 
