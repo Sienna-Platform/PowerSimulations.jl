@@ -13,8 +13,6 @@ export SimulationResultsExport
 export SimulationProblemResults
 export InterProblemChronology
 export IntraProblemChronology
-export template_economic_dispatch
-export template_unit_commitment
 export build!
 export execute!
 export solve!
@@ -228,8 +226,6 @@ include("operation/operation_model_simulation_interface.jl")
 include("parameters/update_container_parameter_values.jl")
 include("parameters/update_cost_parameters.jl")
 include("parameters/update_parameters.jl")
-
-include("operation/operation_problem_templates.jl")
 
 include("utils/store_dimensions.jl")
 include("utils/print_pt_v3.jl")

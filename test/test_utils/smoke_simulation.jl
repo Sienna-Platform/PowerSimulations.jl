@@ -20,8 +20,10 @@ solver = optimizer_with_attributes(
     "output_flag" => false,
 )
 
-template_uc = template_unit_commitment(; network = CopperPlateNetworkModel)
-template_ed = template_economic_dispatch(; network = CopperPlateNetworkModel)
+include(joinpath(@__DIR__, "operations_problem_templates.jl"))
+
+template_uc = test_template_unit_commitment(CopperPlateNetworkModel)
+template_ed = test_template_economic_dispatch(CopperPlateNetworkModel)
 
 models = SimulationModels(;
     decision_models = [

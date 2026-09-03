@@ -40,7 +40,7 @@
         ),
     )
 
-    template = template_unit_commitment(; network = CopperPlateNetworkModel)
+    template = test_template_unit_commitment(CopperPlateNetworkModel)
     model = DecisionModel(
         template,
         sys;

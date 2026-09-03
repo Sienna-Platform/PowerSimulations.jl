@@ -117,7 +117,7 @@ function build_simulation(
         force = true,
     )
 
-    template_uc = template_unit_commitment()
+    template_uc = test_template_unit_commitment()
     set_network_model!(
         template_uc,
         NetworkModel(

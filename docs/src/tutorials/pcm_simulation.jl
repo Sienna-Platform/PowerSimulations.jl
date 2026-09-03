@@ -70,20 +70,39 @@ sys_RT = build_system(PSITestSystems, "c_sys5_ed")
 #
 # ### Day-ahead unit commitment stage
 #
-# First, we can define a unit commitment template for the day ahead problem. We can use the
-# included UC template, but in this example, we'll replace the `ThermalBasicUnitCommitment`
-# with the slightly more complex `ThermalStandardUnitCommitment` for the thermal generators.
+# First, we define a unit commitment template for the day ahead problem, using
+# `ThermalStandardUnitCommitment` for the thermal generators.
 
-template_uc = template_unit_commitment()
+template_uc = PowerOperationsProblemTemplate(CopperPlateNetworkModel)
 set_device_model!(template_uc, ThermalStandard, ThermalStandardUnitCommitment)
+set_device_model!(template_uc, RenewableDispatch, RenewableFullDispatch)
+set_device_model!(template_uc, RenewableNonDispatch, FixedOutput)
+set_device_model!(template_uc, PowerLoad, StaticPowerLoad)
+set_device_model!(template_uc, InterruptiblePowerLoad, PowerLoadInterruption)
+set_device_model!(template_uc, Line, StaticBranch)
+set_device_model!(template_uc, TwoWindingTransformer, StaticBranch)
+set_device_model!(template_uc, TwoTerminalGenericHVDCLine, HVDCTwoTerminalDispatch)
+set_service_model!(template_uc, OnlineReserve{ReserveUp}, RangeReserve)
+set_service_model!(template_uc, OnlineReserve{ReserveDown}, RangeReserve)
 
 # ### Define the reference model for the real-time economic dispatch
 #
-# PSI also provides pre-specified templates for some standard problems:
+# We define a second template for the real-time problem, using
+# `ThermalBasicDispatch` for the thermal generators and a PTDF network model with slacks:
 
-template_ed = template_economic_dispatch(;
-    network = NetworkModel(PTDFNetworkModel; use_slacks = true),
+template_ed = PowerOperationsProblemTemplate(
+    NetworkModel(PTDFNetworkModel; use_slacks = true),
 )
+set_device_model!(template_ed, ThermalStandard, ThermalBasicDispatch)
+set_device_model!(template_ed, RenewableDispatch, RenewableFullDispatch)
+set_device_model!(template_ed, RenewableNonDispatch, FixedOutput)
+set_device_model!(template_ed, PowerLoad, StaticPowerLoad)
+set_device_model!(template_ed, InterruptiblePowerLoad, PowerLoadInterruption)
+set_device_model!(template_ed, Line, StaticBranch)
+set_device_model!(template_ed, TwoWindingTransformer, StaticBranch)
+set_device_model!(template_ed, TwoTerminalGenericHVDCLine, HVDCTwoTerminalDispatch)
+set_service_model!(template_ed, OnlineReserve{ReserveUp}, RangeReserve)
+set_service_model!(template_ed, OnlineReserve{ReserveDown}, RangeReserve)
 
 # ### Define the `SimulationModels`
 #

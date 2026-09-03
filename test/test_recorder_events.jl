@@ -3,8 +3,8 @@
 # This test exercises the recorder-event machinery through a `Simulation` instead, since PSI
 # genuinely records both event types on that path.
 @testset "Show recorder events in a Simulation" begin
-    template_uc = template_unit_commitment(; network = CopperPlateNetworkModel)
-    template_ed = template_economic_dispatch(; network = CopperPlateNetworkModel)
+    template_uc = test_template_unit_commitment(CopperPlateNetworkModel)
+    template_ed = test_template_economic_dispatch(CopperPlateNetworkModel)
     c_sys5_uc = PSB.build_system(PSITestSystems, "c_sys5_uc")
     c_sys5_ed = PSB.build_system(PSITestSystems, "c_sys5_ed")
 

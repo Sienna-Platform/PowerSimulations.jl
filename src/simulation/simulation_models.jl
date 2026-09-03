@@ -17,8 +17,10 @@ the simulation is executed.
 # Example
 
 ```julia
-template_uc = template_unit_commitment()
-template_ed = template_economic_dispatch()
+template_uc = PowerOperationsProblemTemplate(NetworkModel(CopperPlateNetworkModel))
+set_device_model!(template_uc, ThermalStandard, ThermalBasicUnitCommitment)
+template_ed = PowerOperationsProblemTemplate(NetworkModel(CopperPlateNetworkModel))
+set_device_model!(template_ed, ThermalStandard, ThermalBasicDispatch)
 my_decision_model_uc = DecisionModel(template_1, sys_uc, optimizer, name = "UC")
 my_decision_model_ed = DecisionModel(template_ed, sys_ed, optimizer, name = "ED")
 models = SimulationModels(
