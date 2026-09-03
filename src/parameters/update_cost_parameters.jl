@@ -118,7 +118,25 @@ handle_variable_cost_parameter(
 # objective directly), so `update_variable_cost!` is a no-op for breakpoint parameters.
 const _AnyPiecewiseLinearParameter =
     Union{AbstractPiecewiseLinearSlopeParameter, AbstractPiecewiseLinearBreakpointParameter}
-update_variable_cost!(::AbstractPiecewiseLinearBreakpointParameter, args...) = nothing
+
+# Breakpoints re-parametrize the block-width constraint (`_update_pwl_cost_expression`
+# handles that at build time), not an objective term, so updating one here is a genuine
+# no-op. Fully specified to mirror the actual call convention below (`handle_variable_cost_parameter`
+# always passes the raw `PSY.PiecewiseStepData`, never a `DenseAxisArray`, as the third
+# argument for piecewise-linear parameters) rather than a bare `args...`, which is
+# ambiguous with the general `ObjectiveFunctionParameter` case since
+# `AbstractPiecewiseLinearBreakpointParameter <: ObjectiveFunctionParameter`.
+function update_variable_cost!(
+    ::AbstractPiecewiseLinearBreakpointParameter,
+    ::OptimizationContainer,
+    ::PSY.PiecewiseStepData,
+    ::JuMPFloatArray,
+    ::CostFunctionAttributes,
+    ::PSY.Component,
+    ::Int,
+)
+    return nothing
+end
 
 # Mirrors POM's build-time `IOM._get_parameter_field(::Type{<:T}, op_cost)` dispatch table
 # (PowerOperationsModels.jl/src/common_models/market_bid_plumbing.jl) one-for-one, but keyed
