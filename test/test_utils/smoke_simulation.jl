@@ -1,4 +1,7 @@
-# scripts/excision/smoke_simulation.jl — run with: julia --project=test scripts/excision/smoke_simulation.jl
+# test/test_utils/smoke_simulation.jl — the fastest end-to-end check that a simulation builds,
+# executes, and reads results back. Not part of the test suite (no @includetests glob picks up
+# files under test_utils/); run standalone with:
+#   julia --project=test test/test_utils/smoke_simulation.jl
 using PowerSimulations
 using PowerSystems
 using PowerSystemCaseBuilder
@@ -11,7 +14,11 @@ const PSI = PowerSimulations
 c_sys5_uc = build_system(PSITestSystems, "c_sys5_uc")
 c_sys5_ed = build_system(PSITestSystems, "c_sys5_ed")
 
-solver = optimizer_with_attributes(HiGHS.Optimizer, "mip_rel_gap" => 0.01, "output_flag" => false)
+solver = optimizer_with_attributes(
+    HiGHS.Optimizer,
+    "mip_rel_gap" => 0.01,
+    "output_flag" => false,
+)
 
 template_uc = template_unit_commitment(; network = CopperPlateNetworkModel)
 template_ed = template_economic_dispatch(; network = CopperPlateNetworkModel)
@@ -26,11 +33,13 @@ models = SimulationModels(;
 sequence = SimulationSequence(;
     models = models,
     feedforwards = Dict(
-        "ED" => [SemiContinuousFeedforward(;
-            component_type = ThermalStandard,
-            source = OnVariable,
-            affected_values = [ActivePowerVariable],
-        )],
+        "ED" => [
+            SemiContinuousFeedforward(;
+                component_type = ThermalStandard,
+                source = OnVariable,
+                affected_values = [ActivePowerVariable],
+            ),
+        ],
     ),
     ini_cond_chronology = InterProblemChronology(),
 )
