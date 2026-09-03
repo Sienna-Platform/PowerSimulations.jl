@@ -172,5 +172,5 @@ function IOM._should_export(
     end
 
     problem_exports = get_problem_exports(exports, model)
-    return ISOPT._should_export(problem_exports, field_name, name)
+    return _should_export(problem_exports, field_name, name)
 end

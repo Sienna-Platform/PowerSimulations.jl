@@ -773,7 +773,7 @@ end
 function serialize_system!(store::HdfSimulationStore, sys::PSY.System)
     root = store.file[HDF_SIMULATION_ROOT_PATH]
     systems_group = _get_group_or_create(root, "systems")
-    uuid = string(IS.get_uuid(sys))
+    uuid = string(PSY.get_system_uuid(sys))
     if haskey(systems_group, uuid)
         @debug "System with UUID = $uuid is already stored" _group =
             LOG_GROUP_SIMULATION_STORE

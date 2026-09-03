@@ -8,7 +8,6 @@ import PowerSimulations:
     CacheFlushRules,
     KiB,
     MiB,
-    GiB,
     STORE_CONTAINER_VARIABLES,
     initialize_problem_storage!,
     add_rule!,

@@ -152,7 +152,7 @@ end
 
 function make_export_all(problems)
     return [
-        OptimizationProblemResultsExport(
+        OptimizationProblemOutputsExport(
             x;
             store_all_duals = true,
             store_all_variables = true,
@@ -196,7 +196,7 @@ function test_simulation_results(
         @test isempty(results)
 
         verify_export_results(results, export_path)
-        exported = readdir(export_realized_results(results_ed))
+        exported = readdir(export_realized_outputs(results_ed))
         @test length(exported) >= 22
         @test any(contains.(exported, "ProductionCostExpression"))
         @test any(contains.(exported, "FuelCostExpression"))
@@ -234,8 +234,8 @@ function test_decision_problem_results_values(
     c_sys5_hy_ed,
     c_sys5_hy_uc,
 )
-    @test IS.get_uuid(get_system(results_uc)) === IS.get_uuid(c_sys5_hy_uc)
-    @test IS.get_uuid(get_system(results_ed)) === IS.get_uuid(c_sys5_hy_ed)
+    @test PSY.get_system_uuid(get_system(results_uc)) === PSY.get_system_uuid(c_sys5_hy_uc)
+    @test PSY.get_system_uuid(get_system(results_ed)) === PSY.get_system_uuid(c_sys5_hy_ed)
 
     # Temporarily mark some stuff unavailable
     unav_uc = first(PSY.get_available_components(ThermalStandard, get_system(results_uc)))
@@ -244,9 +244,9 @@ function test_decision_problem_results_values(
     PSY.set_available!(unav_ed, false)
     sel = PSY.make_selector(ThermalStandard; groupby = :each)
     @test collect(get_components(ThermalStandard, results_uc)) ==
-          collect(get_available_components(ThermalStandard, get_system(results_uc)))
+          collect(PSY.get_available_components(ThermalStandard, get_system(results_uc)))
     @test collect(get_components(ThermalStandard, results_ed)) ==
-          collect(get_available_components(ThermalStandard, get_system(results_ed)))
+          collect(PSY.get_available_components(ThermalStandard, get_system(results_ed)))
     @test collect(get_groups(sel, results_uc)) ==
           collect(get_available_groups(sel, get_system(results_uc)))
     @test collect(get_groups(sel, results_ed)) ==
@@ -910,14 +910,16 @@ function test_emulation_problem_results(results::SimulationResults, in_memory)
     @test isempty(results_em)
 
     export_path = mktempdir(; cleanup = true)
-    export_realized_results(results_em, export_path)
+    export_realized_outputs(results_em, export_path)
 
     var_name = "ActivePowerVariable__ThermalStandard"
     df = read_realized_variable(results_em, var_name)
     export_active_power_file = joinpath(export_path, "$(var_name).csv")
     export_df = PSI.read_dataframe(export_active_power_file)
     # TODO: results A bug in the code produces NaN after index 48.
-    @test isapprox(df[48, :], export_df[48, :])
+    # DataFrames.jl defines no `isapprox` for DataFrameRow (mixed DateTime/String/Float64
+    # columns); compare the numeric `:value` column, which is what this check exercises.
+    @test isapprox(df[48, :value], export_df[48, :value])
 end
 
 function test_simulation_results_from_file(path::AbstractString, c_sys5_hy_ed, c_sys5_hy_uc)
@@ -951,21 +953,21 @@ function test_decision_problem_results_kwargs_handling(
 
     results_ed = get_decision_problem_results(results, "ED"; populate_system = true)
     @test !isnothing(get_system(results_ed))
-    @test PSY.get_units_base(get_system(results_ed)) == "NATURAL_UNITS"
 
     @test_throws IS.InvalidValue set_system!(results_uc, c_sys5_hy_ed)
 
     set_system!(results_ed, c_sys5_hy_ed)
     set_system!(results_uc, c_sys5_hy_uc)
 
-    results_ed = get_decision_problem_results(
+    # PowerSystems (psy6) has no system-wide unit base (`set_units_base_system!`/
+    # `get_units_base` are gone; getters take an explicit unit system per call), so
+    # `populate_units` is unsupported and errors regardless of `populate_system`.
+    @test_throws ErrorException get_decision_problem_results(
         results,
         "ED";
         populate_system = true,
         populate_units = IS.UnitSystem.DEVICE_BASE,
     )
-    @test !isnothing(PSI.get_system(results_ed))
-    @test PSY.get_units_base(get_system(results_ed)) == "DEVICE_BASE"
 
     @test_throws ArgumentError get_decision_problem_results(
         results,
@@ -1061,8 +1063,8 @@ end
     @test !isnothing(sys_ed)
     @test !isnothing(sys_em)
 
-    @test IS.get_uuid(sys_uc) == IS.get_uuid(c_sys5_hy_uc)
-    @test IS.get_uuid(sys_ed) == IS.get_uuid(c_sys5_hy_ed)
+    @test PSY.get_system_uuid(sys_uc) == PSY.get_system_uuid(c_sys5_hy_uc)
+    @test PSY.get_system_uuid(sys_ed) == PSY.get_system_uuid(c_sys5_hy_ed)
 
     # Note: the system is serialized as a JSON string into the HDF5 store and does not include time series data
     ts_counts = PSY.get_time_series_counts(sys_uc)

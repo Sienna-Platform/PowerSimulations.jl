@@ -28,6 +28,7 @@ export process_simulation_partition_cli_args
 export join_simulation
 export export_results
 export export_optimizer_stats
+export export_realized_outputs
 export get_decision_problem_results
 export get_emulation_problem_results
 export get_system!
@@ -93,8 +94,9 @@ import InfrastructureOptimizationModels:
     get_simulation_number, set_simulation_number!, get_sequence_uuid, set_sequence_uuid!,
     cost_function_unsynch, update_objective_function!, reset_optimization_model!
 import InfrastructureOptimizationModels:
-    ModelStoreParams, get_num_executions, get_horizon_count, get_base_power,
-    get_system_uuid,
+    ModelStoreParams, OptimizationContainerMetadata, get_num_executions, get_horizon_count,
+    get_base_power,
+    get_system_uuid, get_source_data_uuid, make_key,
     DecisionModelStore, initialize_storage!, write_output!, read_outputs,
     write_optimizer_stats!, DecisionModelIndexType, EmulationModelIndexType,
     STORE_CONTAINERS, STORE_CONTAINER_DUALS, STORE_CONTAINER_PARAMETERS,
@@ -120,7 +122,8 @@ import InfrastructureOptimizationModels:
     to_matrix, get_column_names_from_axis_array, should_write_resulting_value,
     convert_output_to_natural_units, deserialize_key, get_initial_conditions_data,
     _deepcopy_template, get_deterministic_time_series_type, RUN_OPERATION_MODEL_TIMER,
-    to_outputs_dataframe, _read_outputs, get_time_series_values!, export_optimizer_stats
+    to_outputs_dataframe, _read_outputs, get_time_series_values!, export_optimizer_stats,
+    export_output, export_realized_outputs
 import InfrastructureOptimizationModels:
     ABSOLUTE_TOLERANCE, AbstractAffectFeedforward, calculate_parameter_values,
     encode_key_as_string, get_aux_variables_values, get_container_keys, get_duals_values,
@@ -137,7 +140,7 @@ import InfrastructureOptimizationModels:
     _deserialize_key, _get_parameter_field, _process_timestamps, _should_export,
     get_current_time, get_forecast_horizon, should_export_aux_variable,
     should_export_dual, should_export_expression, should_export_parameter,
-    should_export_variable
+    should_export_variable, check_file_integrity
 import PowerOperationsModels:
     DeviceAboveMinPower, get_feedforward_meta, get_input_offer_curves,
     get_output_offer_curves, MultiStartVariable, requires_reconciliation,

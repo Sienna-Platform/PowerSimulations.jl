@@ -207,7 +207,9 @@ function _read_results(
     isempty(result_keys) && return Dict{OptimizationContainerKey, DataFrames.DataFrame}()
     _store = try_resolve_store(store, res.store)
     existing_keys = list_result_keys(res, first(result_keys))
-    ISOPT._validate_keys(existing_keys, result_keys)
+    # IOM._validate_keys is unexported; mirrors the call in
+    # IOM.optimization_problem_outputs.jl's `_read_outputs`.
+    IOM._validate_keys(existing_keys, result_keys)
     cached_results = Dict(
         k => v for
         (k, v) in get_cached_results(res, eltype(result_keys)) if !isempty(v)

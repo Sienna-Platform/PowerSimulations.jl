@@ -72,6 +72,17 @@ IOM.get_interval(res::SimulationProblemResults) = res.timestamps.step
 IOM.get_base_power(result::SimulationProblemResults) = result.base_power
 get_output_dir(res::SimulationProblemResults) = res.results_output_folder
 
+# IOM.export_realized_outputs(::IS.Outputs) calls IOM.read_outputs_with_keys, which IOM only
+# defines for its own OptimizationProblemOutputs. Bridge to PSI's equivalent, already-tested
+# read_results_with_keys so SimulationProblemResults satisfies the same export path.
+function IOM.read_outputs_with_keys(
+    res::SimulationProblemResults,
+    result_keys::Vector{<:OptimizationContainerKey};
+    kwargs...,
+)
+    return read_results_with_keys(res, result_keys; kwargs...)
+end
+
 get_results_timestamps(result::SimulationProblemResults) = result.results_timestamps
 function set_results_timestamps!(
     result::SimulationProblemResults,
@@ -189,14 +200,14 @@ locate_system_file(results::SimulationProblemResults) = joinpath(
 )
 
 locate_system_file(results::IOM.OptimizationProblemOutputs) = joinpath(
-    ISOPT.get_results_dir(results),
-    make_system_filename(ISOPT.get_source_data_uuid(results)),
+    get_output_dir(results),
+    make_system_filename(get_source_data_uuid(results)),
 )
 
-IOM.get_system(results::IOM.OptimizationProblemOutputs) = ISOPT.get_source_data(results)
+IOM.get_system(results::IOM.OptimizationProblemOutputs) = get_source_data(results)
 
 set_system!(results::IOM.OptimizationProblemOutputs, system) =
-    ISOPT.set_source_data!(results, system)
+    set_source_data!(results, system)
 
 function _deserialize_system(results::SimulationProblemResults, ::Nothing)
     open_store(
@@ -237,7 +248,7 @@ function set_system!(results::SimulationProblemResults, system::AbstractString)
 end
 
 function set_system!(results::SimulationProblemResults, system::PSY.System)
-    sys_uuid = IS.get_uuid(system)
+    sys_uuid = PSY.get_system_uuid(system)
     if sys_uuid != results.system_uuid
         throw(
             IS.InvalidValue(
@@ -264,7 +275,7 @@ function IOM._deserialize_key(
     results::SimulationProblemResults,
     args...,
 ) where {T <: OptimizationContainerKey}
-    return ISOPT.make_key(T, args...)
+    return make_key(T, args...)
 end
 
 get_container_fields(x::SimulationProblemResults) =
