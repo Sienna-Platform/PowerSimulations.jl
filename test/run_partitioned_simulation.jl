@@ -1,4 +1,6 @@
 using PowerSimulations
+using PowerOperationsModels
+using InfrastructureOptimizationModels
 using PowerSystems
 using PowerSystemCaseBuilder
 using InfrastructureSystems
@@ -6,7 +8,6 @@ using PowerNetworkMatrices
 using Logging
 using Test
 
-import PowerModels as PM
 using DataFrames
 using Dates
 using JuMP
@@ -20,6 +21,8 @@ import Serialization
 
 import PowerSystems as PSY
 import PowerSimulations as PSI
+import PowerOperationsModels as POM
+import InfrastructureOptimizationModels as IOM
 import InfrastructureSystems as IS
 
 const PSB = PowerSystemCaseBuilder
@@ -59,9 +62,9 @@ function build_simulation(
 
     for sys in [c_sys5_pjm_da, c_sys5_pjm_rt]
         th = get_component(ThermalStandard, sys, "Park City")
-        set_active_power_limits!(th, (min = 0.1, max = 1.7))
+        set_active_power_limits!(th, (min = 0.1 * PSY.SU, max = 1.7 * PSY.SU))
         set_status!(th, false)
-        set_active_power!(th, 0.0)
+        set_active_power!(th, 0.0 * PSY.SU)
         c = get_operation_cost(th)
         PSY.set_start_up!(c, 1500.0)
         PSY.set_shut_down!(c, 75.0)
@@ -69,33 +72,33 @@ function build_simulation(
 
         th = get_component(ThermalStandard, sys, "Alta")
         set_time_limits!(th, (up = 5, down = 1))
-        set_active_power_limits!(th, (min = 0.05, max = 0.4))
-        set_active_power!(th, 0.05)
+        set_active_power_limits!(th, (min = 0.05 * PSY.SU, max = 0.4 * PSY.SU))
+        set_active_power!(th, 0.05 * PSY.SU)
         c = get_operation_cost(th)
         PSY.set_start_up!(c, 400.0)
         PSY.set_shut_down!(c, 200.0)
         set_time_at_status!(th, 2)
 
         th = get_component(ThermalStandard, sys, "Brighton")
-        set_active_power_limits!(th, (min = 2.0, max = 6.0))
+        set_active_power_limits!(th, (min = 2.0 * PSY.SU, max = 6.0 * PSY.SU))
         c = get_operation_cost(th)
-        set_active_power!(th, 4.88041)
+        set_active_power!(th, 4.88041 * PSY.SU)
         PSY.set_start_up!(c, 5000.0)
         PSY.set_shut_down!(c, 3000.0)
 
         th = get_component(ThermalStandard, sys, "Sundance")
-        set_active_power_limits!(th, (min = 1.0, max = 2.0))
+        set_active_power_limits!(th, (min = 1.0 * PSY.SU, max = 2.0 * PSY.SU))
         set_time_limits!(th, (up = 5, down = 1))
-        set_active_power!(th, 2.0)
+        set_active_power!(th, 2.0 * PSY.SU)
         c = get_operation_cost(th)
         PSY.set_start_up!(c, 4000.0)
         PSY.set_shut_down!(c, 2000.0)
         set_time_at_status!(th, 1)
 
         th = get_component(ThermalStandard, sys, "Solitude")
-        set_active_power_limits!(th, (min = 1.0, max = 5.2))
-        set_ramp_limits!(th, (up = 0.0052, down = 0.0052))
-        set_active_power!(th, 2.0)
+        set_active_power_limits!(th, (min = 1.0 * PSY.SU, max = 5.2 * PSY.SU))
+        set_ramp_limits!(th, (up = 0.0052 * PSY.SU, down = 0.0052 * PSY.SU))
+        set_active_power!(th, 2.0 * PSY.SU)
         c = get_operation_cost(th)
         PSY.set_start_up!(c, 3000.0)
         PSY.set_shut_down!(c, 1500.0)
@@ -118,7 +121,7 @@ function build_simulation(
     set_network_model!(
         template_uc,
         NetworkModel(
-            PTDFPowerModel;
+            PTDFNetworkModel;
         ),
     )
 
