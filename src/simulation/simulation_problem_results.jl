@@ -204,8 +204,6 @@ locate_system_file(results::IOM.OptimizationProblemOutputs) = joinpath(
     make_system_filename(get_source_data_uuid(results)),
 )
 
-IOM.get_system(results::IOM.OptimizationProblemOutputs) = get_source_data(results)
-
 set_system!(results::IOM.OptimizationProblemOutputs, system) =
     set_source_data!(results, system)
 

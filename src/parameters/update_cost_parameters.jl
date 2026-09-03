@@ -1,21 +1,3 @@
-# Teaches IOM's `_check_column_consistency` the 3-D (component, tranche, time) case used by
-# time-varying PWL cost parameters; IOM only ships a 2-D (component, time) method.
-function IOM._check_column_consistency(
-    data::SortedDict{Dates.DateTime, <:DenseAxisArray{Float64, 3}},
-    cols::NTuple{2, Vector{String}},
-)
-    for val in values(data)
-        for (i, col) in enumerate(cols)
-            if axes(val)[i] != col
-                error(
-                    "Mismatch in DenseAxisArray axis $i column names: $(axes(val)[i]) $col",
-                )
-            end
-        end
-    end
-    return
-end
-
 function _update_parameter_values!(
     parameter_array::DenseAxisArray,
     ::T,
@@ -135,8 +117,7 @@ function _update_pwl_width_constraint!(
     time_period::Int,
     cost_data::PSY.PiecewiseStepData,
 ) where {P <: AbstractPiecewiseLinearBreakpointParameter, T <: PSY.Component}
-    # IOM._block_width_constraint is not exported; reached directly, as `IOM._get_parameter_field`
-    # and `IOM._check_column_consistency` already are elsewhere in this file.
+    # IOM._block_width_constraint is not exported; reached directly.
     width_type = IOM._block_width_constraint(_linear_block_offer_constraint(P))
     width_container = get_constraint(container, width_type, T)
     breakpoints = PSY.get_x_coords(cost_data)
@@ -170,11 +151,6 @@ function update_variable_cost!(
         breakpoint_param, container, T, component_name, time_period, converted_data)
     return
 end
-
-# `PSY.StartUpStages` (a plain `NamedTuple`) is the static, non-time-varying `start_up`
-# field of `MarketBidCost`; teach IOM's generic `is_time_variant` about it (mirrors how POM
-# teaches `is_time_variant_proportional` about PSY cost types).
-IOM.is_time_variant(::PSY.StartUpStages) = false
 
 _maybe_tuple(::StartupCostParameter, value) = Tuple(value)
 _maybe_tuple(::ShutdownCostParameter, value) = value
