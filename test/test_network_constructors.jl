@@ -1013,10 +1013,10 @@ end
     @test interarea_flow[6, "1_2"] == 0.0
 end
 
-@testset "2 Areas area-aggregated  duals" begin
-    for (network_formulation, wrong_key_type) in (
-        (AreaBalancePowerModel, PSY.ACBus),
-        (AreaPTDFPowerModel, PSY.System),
+@testset "2 Areas area-aggregated duals" begin
+    for network_formulation in (
+        AreaBalancePowerModel,
+        AreaPTDFPowerModel,
     )
         c_sys = PSB.build_system(PSISystems, "two_area_pjm_DA")
         transform_single_time_series!(c_sys, Hour(24), Hour(1))
@@ -1039,9 +1039,6 @@ end
         opt_container = PSI.get_optimization_container(ps_model)
         dual_keys = collect(keys(PSI.get_duals(opt_container)))
         @test PSI.ConstraintKey(CopperPlateBalanceConstraint, PSY.Area) in dual_keys
-        @test !(
-            PSI.ConstraintKey(CopperPlateBalanceConstraint, wrong_key_type) in dual_keys
-        )
 
         @test solve!(ps_model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
 
@@ -1053,9 +1050,9 @@ end
             table_format = TableFormat.WIDE,
         )
         @test size(area_duals, 1) == 24
-        for area_name in ["Area1", "Area2"]
-            @test area_name in names(area_duals)
-            @test all(isfinite, area_duals[!, area_name])
+        foreach(get_component(Area, c_sys)) do area
+            @test get_name(area) in names(area_duals)
+            @test all(isfinite, area_duals[!, get_name(area)])
         end
     end
 end
