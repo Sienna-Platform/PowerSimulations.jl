@@ -134,12 +134,12 @@ models = SimulationModels(;
 #   - inter-stage chronologies: Define how information flows between stages. e.g. day-ahead solutions are used to inform economic dispatch problems
 #   - intra-stage chronologies: Define how information flows between multiple executions of a single stage. e.g. the dispatch setpoints of the first period of an economic dispatch problem are constrained by the ramping limits from setpoints in the final period of the previous problem.
 #
-# ### `FeedForward`
+# ### Feedforwards
 #
 # The definition of exactly what information is passed using the defined chronologies is
-# accomplished with `FeedForward`. Specifically, `FeedForward` is used
+# accomplished with feedforwards. Specifically, a feedforward is used
 # to define what to do with information being passed with an inter-stage chronology. Let's
-# define a `FeedForward` that affects the semi-continuous range constraints of thermal generators
+# define a `SemiContinuousFeedforward` that affects the semi-continuous range constraints of thermal generators
 # in the economic dispatch problems based on the value of the unit-commitment variables.
 
 feedforward = Dict(

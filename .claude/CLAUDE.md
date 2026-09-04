@@ -18,15 +18,17 @@ PSI was cut down to this scope by the excision plan in `.claude/plans/2026-09-02
 ### Where PSI sits
 
 ```
-IS ──▶ IOM ──▶ POM ──▶ PSI ──▶ PowerAnalytics / PowerGraphics
-        ▲       ▲
-       PSY ──▶ PNM, PF, PSB
+IS  ──▶ IOM ──▶ POM ──▶ PSI ──▶ PowerAnalytics / PowerGraphics
+IS  ──▶ PSY ──▶ POM
+PSY ──▶ PNM ──▶ POM
+PSY ──▶ PF  ──▶ POM
+PSY ──▶ PSB
 ```
 
 - **Upstream deps:** IOM, POM, PSY, IS, PNM (reduced-network branch time-series routing in parameter updates), HDF5, JuMP, DataFrames, Distributed.
 - **Not deps anymore:** PowerModels (POM network models are native), PowerFlows (PF-in-the-loop is POM's extension; PSI only needs PF in tests), Distributions (events only, fenced).
 - **Downstream:** PowerAnalytics / PowerGraphics consume `SimulationResults`. Results storage, key encoding (`"VariableType__ComponentType"`), and serialization changes have downstream blast radius.
-- **Co-dev wiring:** `Project.toml` and `test/Project.toml` `[sources]` carry git rev pins (IS `IS4`, IOM `jd/market_model`, PSY `psy6`, PNM `psy6`, POM `jd/ruc-integration`; test env also pins PSB `psy6`, PF `psy6`, PowerFlowFileParser `psy6`, PowerTableDataParser `psy6`) plus the OpenAPI git pins PSY needs — this is what CI (`julia-buildpkg`/`julia-runtest`) resolves from. PSI needs IOM commit `f127bc5` (stored PWL width constraint refs), unmerged, hence the `jd/market_model` pin instead of `main`. To co-dev locally against an in-progress sibling checkout without touching these tracked pins, `Pkg.develop(path="../<Sibling>.jl")` from `--project=.` or `--project=test`; that writes only to the gitignored `Manifest.toml`. Switch the tracked pins to `main`/released revs before a PR to `main`. No version bumps: PSI stays `0.38.3` until release.
+- **Co-dev wiring:** `Project.toml` and `test/Project.toml` `[sources]` carry git rev pins (IS `IS4`, IOM `jd/pwl_width_refs`, PSY `psy6`, PNM `psy6`, POM `jd/mbc_testing`; test env also pins PSB `psy6`, PF `psy6`, PowerFlowFileParser `psy6`, PowerTableDataParser `psy6`) plus the OpenAPI git pins PSY needs — this is what CI (`julia-buildpkg`/`julia-runtest`) resolves from. PSI needs IOM commit `f127bc5` (stored PWL width constraint refs), unmerged, hence the `jd/pwl_width_refs` pin instead of `main`. To co-dev locally against an in-progress sibling checkout without touching these tracked pins, `Pkg.develop(path="../<Sibling>.jl")` from `--project=.` or `--project=test`; that writes only to the gitignored `Manifest.toml`. Switch the tracked pins to `main`/released revs before a PR to `main`. No version bumps: PSI stays `0.38.3` until release.
 
 ## What PSI owns
 

@@ -1,13 +1,13 @@
 # [Feedforward](@id feedforward)
 
-Chronologies define where information flows between models in a `Simulation`; FeedForwards
-define what to do with it. A FeedForward is used to define what to do with information being
-passed with an inter-stage chronology. The most common FeedForward is the
+Chronologies define where information flows between models in a `Simulation`; feedforwards
+define what to do with it. A feedforward is used to define what to do with information being
+passed with an inter-stage chronology. The most common feedforward is the
 `SemiContinuousFeedforward` that affects the semi-continuous range constraints of thermal
 generators in an economic dispatch problem based on the value of the (already solved)
 unit-commitment variables.
 
-Creating a FeedForward requires at least the `component_type` it applies to. The `source`
+Creating a feedforward requires at least the `component_type` it applies to. The `source`
 specifies which variable is read from the model that already solved (for example, the
 commitment variable from the unit commitment problem). The `affected_values` specify which
 variables are affected in the model still to be solved (for example, the next economic
@@ -21,7 +21,7 @@ SemiContinuousFeedforward(;
 )
 ```
 
-A `Simulation`'s `SimulationSequence` attaches FeedForwards to the models they affect, keyed
+A `Simulation`'s `SimulationSequence` attaches feedforwards to the models they affect, keyed
 by model name:
 
 ```julia
@@ -40,7 +40,7 @@ sequence = SimulationSequence(;
 )
 ```
 
-PSI owns this wiring. The FeedForward types themselves, and the constraints they add to a
+PSI owns this wiring. The feedforward types themselves, and the constraints they add to a
 model, are `PowerOperationsModels.jl`'s — see its
 [documentation](https://github.com/Sienna-Platform/PowerOperationsModels.jl) for the
 constraint math.

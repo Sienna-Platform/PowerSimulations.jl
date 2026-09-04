@@ -139,11 +139,12 @@ function update_variable_cost!(
     ::CostFunctionAttributes,
     component::T,
     time_period::Int,
+    power_units::IS.AbstractUnitSystem,
 ) where {T <: PSY.Component}
     component_name = PSY.get_name(component)
     converted_data = get_piecewise_curve_per_system_unit(
         function_data,
-        IS.NaturalUnit(),  # PSY's cost_function_timeseries.jl says this will always be natural units
+        power_units,
         IOM.get_model_base_power(container),
         PSY.get_base_power(component),
     )
@@ -235,6 +236,7 @@ function handle_variable_cost_parameter(
     is_time_variant(IOM._get_parameter_field(typeof(param), op_cost)) || return
     container = get_optimization_container(model)
     ts_name = _cost_ts_name(param, component, op_cost)
+    power_units = IS.get_power_units(IOM._get_parameter_field(typeof(param), op_cost))
     raw_values = IOM.get_time_series_values!(
         ts_type,
         model,
@@ -255,6 +257,7 @@ function handle_variable_cost_parameter(
             attributes,
             component,
             t,
+            power_units,
         )
     end
     return
@@ -277,6 +280,7 @@ function handle_variable_cost_parameter(
     container = get_optimization_container(model)
     ts_key = IS.get_time_series_key(PSY.get_value_curve(offer_curve))
     ts_name = _ts_name_from_key(component, ts_key)
+    power_units = IS.get_power_units(offer_curve)
     raw_values = IOM.get_time_series_values!(
         ts_type,
         model,
@@ -297,6 +301,7 @@ function handle_variable_cost_parameter(
             attributes,
             component,
             t,
+            power_units,
         )
     end
     return
@@ -444,6 +449,7 @@ function update_variable_cost!(
     ::CostFunctionAttributes,
     component::T,
     time_period::Int,
+    power_units::IS.AbstractUnitSystem,
 ) where {T <: PSY.Component}
     component_name = PSY.get_name(component)
     # TODO handle per-tranche multiplier if necessary
@@ -451,7 +457,7 @@ function update_variable_cost!(
     mult2 = get_update_multiplier(slope_param)
     converted_data = get_piecewise_curve_per_system_unit(
         function_data,
-        IS.NaturalUnit(),  # PSY's cost_function_timeseries.jl says this will always be natural units
+        power_units,
         IOM.get_model_base_power(container),
         PSY.get_base_power(component),
     )

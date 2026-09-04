@@ -6,10 +6,10 @@ function _calc_dimensions(
 )
     ax = axes(array)
     columns = get_column_names_from_axis_array(key, array)
-    # Two use cases for read:
-    # 1. Read data for one execution for one device.
-    # 2. Read data for one execution for all devices.
-    # This will ensure that data on disk is contiguous in both cases.
+    # Stored time-major as (horizon, columns..., num_executions) in every branch. HDF5's
+    # fastest-varying dimension is Julia's first, so keeping the execution index last makes
+    # one execution contiguous on disk: reading one device is `[:, col, row]` and all
+    # devices is `[:, :, row]`. Time is the container's LAST axis, hence the rotation.
     if length(ax) == 1
         if length(ax[1]) != horizon
             @debug "$(encode_key_as_string(key)) has length $(length(ax[1])). Different than horizon $horizon."
@@ -17,12 +17,12 @@ function _calc_dimensions(
         dims = (length(ax[1]), 1, num_rows)
     elseif length(ax) == 2
         if length(ax[2]) != horizon
-            @debug "$(encode_key_as_string(key)) has length $(length(ax[1])). Different than horizon $horizon."
+            @debug "$(encode_key_as_string(key)) has length $(length(ax[2])). Different than horizon $horizon."
         end
         dims = (length(ax[2]), length(columns[1]), num_rows)
     elseif length(ax) == 3
         if length(ax[3]) != horizon
-            @debug "$(encode_key_as_string(key)) has length $(length(ax[1])). Different than horizon $horizon."
+            @debug "$(encode_key_as_string(key)) has length $(length(ax[3])). Different than horizon $horizon."
         end
         dims = (length(ax[3]), length(columns[1]), length(columns[2]), num_rows)
     else

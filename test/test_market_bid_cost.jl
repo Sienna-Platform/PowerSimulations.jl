@@ -636,6 +636,79 @@ end
     @test isapprox(rhs_mismatch, rhs_matched; atol = 1e-9)
 end
 
+@testset "MarketBidCost block-width update forwards the offer curve's declared power units" begin
+    # The update path must convert refreshed breakpoints with the units DECLARED on the offer
+    # curve, the way the build path does, not a hardcoded `IS.NaturalUnit()`. "Test Unit1" has a
+    # device base power != the system base, so a `DeviceBaseUnit` curve converts differently
+    # from a natural-units one and the build-time and updated width RHS diverge under the bug.
+    # (`IS.SystemBaseUnit()` cannot be used here: PSY's OpenAPI export rejects it, and `solve!`
+    # serializes the system.)
+    device_to_formulation = FormulationDict(ThermalStandard => ThermalBasicUnitCommitment)
+
+    sys = load_sys_incr()
+    unit1 = get_component(SEL_INCR, sys)
+    op_cost = get_operation_cost(unit1)::MarketBidCost
+    baseline = get_value_curve(get_incremental_offer_curves(op_cost))
+    baseline_fd = get_function_data(baseline)
+    db = get_base_power(unit1)
+
+    # Both offer curves share one unit-system type parameter and `MarketBidCost` rejects a
+    # mismatch, so the rebased curves must go through the constructor. Rescaling x by 1/db and y
+    # by db keeps the dispatch problem physically identical (the decremental curve is all zeros).
+    du_x_coords = get_x_coords(baseline_fd) ./ db
+    # `extend_mbc!`'s `do_override_min_x` pins the first breakpoint to the device's min power but
+    # reads it in natural units, so pin it here on the device base instead.
+    du_x_coords[1] = get_active_power_limits(unit1, PSY.NU).min / db
+    du_incr_curve = make_market_bid_curve(
+        du_x_coords,
+        get_y_coords(baseline_fd) .* db,
+        get_initial_input(baseline);
+        power_units = IS.DeviceBaseUnit(),
+    )
+    du_decr_curve = CostCurve(
+        get_value_curve(get_decremental_offer_curves(op_cost)),
+        IS.DeviceBaseUnit(),
+    )
+    du_op_cost = MarketBidCost(;
+        minimum_energy_offer = get_minimum_energy_offer(op_cost),
+        start_up = get_start_up(op_cost),
+        shut_down = get_shut_down(op_cost),
+        incremental_offer_curves = du_incr_curve,
+        decremental_offer_curves = du_decr_curve,
+        ancillary_service_offers = get_ancillary_service_offers(op_cost),
+        incremental_slope = get_incremental_slope(op_cost),
+        decremental_slope = get_decremental_slope(op_cost),
+        curve_style = get_curve_style(op_cost),
+    )
+    set_operation_cost!(unit1, du_op_cost)
+    extend_mbc!(sys, SEL_INCR)
+
+    ts_op_cost = get_operation_cost(unit1)::MarketBidTimeSeriesCost
+    @test IS.get_power_units(get_incremental_offer_curves(ts_op_cost)) ==
+          IS.DeviceBaseUnit()
+
+    model_build, _ =
+        run_generic_mbc_prob(sys; device_to_formulation = device_to_formulation)
+    model_updated, _ =
+        run_generic_mbc_sim(sys; device_to_formulation = device_to_formulation)
+
+    function _width_rhs_at_t(model, t)
+        container = PSI.get_optimization_container(model)
+        width_container = get_constraint(
+            container, PiecewiseLinearBlockIncrementalWidthConstraint, ThermalStandard)
+        blocks = sort([
+            k for (name, k, tt) in keys(width_container.data)
+            if name == "Test Unit1" && tt == t
+        ])
+        return [JuMP.normalized_rhs(width_container[("Test Unit1", k, t)]) for k in blocks]
+    end
+
+    rhs_build = _width_rhs_at_t(model_build, 1)
+    rhs_updated = _width_rhs_at_t(model_updated, 2)
+    @test !isempty(rhs_build)
+    @test isapprox(rhs_build, rhs_updated; atol = 1e-9)
+end
+
 @testset "MarketBidCost incremental with heterogeneous time series names" begin
     # `_is_mbc` matches both MarketBidCost and MarketBidTimeSeriesCost: `build_sys_incr` (via
     # `extend_mbc!`) converts every selected component's cost to `MarketBidTimeSeriesCost`, so

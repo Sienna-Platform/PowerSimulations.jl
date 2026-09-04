@@ -452,9 +452,6 @@ function export_results(results::SimulationResults, exports, store::SimulationSt
                 end
             end
 
-            # Was dedented outside this `timestamp` loop, referencing a then-undefined
-            # `timestamp`; moved in to mirror the variables/aux_variables/parameters/duals
-            # blocks above.
             export_path = mkpath(joinpath(path, problem_results.problem, "expression"))
             for name in list_expression_names(problem_results)
                 if should_export_expression(problem_exports, name)

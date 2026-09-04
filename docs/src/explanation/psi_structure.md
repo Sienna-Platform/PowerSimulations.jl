@@ -4,9 +4,11 @@ PowerSimulations orchestrates a sequence of power-system optimization problems a
 how they connect. It does not build the problems themselves.
 
 ```
-IS ──▶ IOM ──▶ POM ──▶ PSI ──▶ PowerAnalytics / PowerGraphics
-        ▲       ▲
-       PSY ──▶ PNM, PF, PSB
+IS  ──▶ IOM ──▶ POM ──▶ PSI ──▶ PowerAnalytics / PowerGraphics
+IS  ──▶ PSY ──▶ POM
+PSY ──▶ PNM ──▶ POM
+PSY ──▶ PF  ──▶ POM
+PSY ──▶ PSB
 ```
 
   - **`InfrastructureOptimizationModels.jl`** (IOM) defines the domain-neutral optimization

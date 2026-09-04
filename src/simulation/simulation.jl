@@ -924,7 +924,7 @@ Extract the single already-written row `last_row` from a range read of the state
 store. `HdfSimulationStore` reads return exactly one row already (row-indexed HDF5 read);
 `InMemorySimulationStore` reads return every column from `last_row` to the end (its
 `read_outputs` is a tail-range read, not a point read), so the target column must be
-sliced out here.
+sliced out here. The slice drops the trailing time axis for any rank.
 """
 function _last_recorded_state_value(::HdfSimulationStore, raw_state_values, ::Int)
     return raw_state_values
@@ -932,18 +932,10 @@ end
 
 function _last_recorded_state_value(
     ::InMemorySimulationStore,
-    raw_state_values::DenseAxisArray{T, 2},
+    raw_state_values::DenseAxisArray{T, N},
     last_row::Int,
-) where {T}
-    return raw_state_values[:, last_row]
-end
-
-function _last_recorded_state_value(
-    ::InMemorySimulationStore,
-    raw_state_values::DenseAxisArray{T, 3},
-    last_row::Int,
-) where {T}
-    return raw_state_values[:, :, last_row]
+) where {T, N}
+    return raw_state_values[ntuple(_ -> Colon(), Val(N - 1))..., last_row]
 end
 
 function _write_state_to_store!(store::SimulationStore, sim::Simulation)

@@ -39,7 +39,7 @@ Changing the attributes between `true` or `false` can enable/disable multiple as
 
 ## F
 
-  - *FeedForward*: The definition of exactly what information is passed using the defined chronologies is accomplished using FeedForwards. Specifically, a FeedForward is used to define what to do with information being passed with an inter-stage chronology in a Simulation. The most common FeedForward is the `SemiContinuousFeedforward` that affects the semi-continuous range constraints of thermal generators in the economic dispatch problems based on the value of the (already solved) unit-commitment variables.
+  - *Feedforward*: The definition of exactly what information is passed using the defined chronologies is accomplished using feedforwards. Specifically, a feedforward is used to define what to do with information being passed with an inter-stage chronology in a Simulation. The most common feedforward is the `SemiContinuousFeedforward` that affects the semi-continuous range constraints of thermal generators in the economic dispatch problems based on the value of the (already solved) unit-commitment variables.
 
 ## H
 
