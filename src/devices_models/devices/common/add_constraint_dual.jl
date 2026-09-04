@@ -179,12 +179,13 @@ end
 
 function assign_dual_variable!(
     container::OptimizationContainer,
-    constraint_type::Type{CopperPlateBalanceConstraint}
+    constraint_type::Type{CopperPlateBalanceConstraint},
     ::U,
     ::NetworkModel{V},
 ) where {U <: PSY.System, V <: Union{AreaBalancePowerModel, AreaPTDFPowerModel}}
     time_steps = get_time_steps(container)
-    existing = get_constraint(container, constraint_type, PSY.Area)
+    existing = get_constraint(container, constraint_type(), PSY.Area)
+    @show existing
     area_names = axes(existing)[1]
     add_dual_container!(container, constraint_type, PSY.Area, area_names, time_steps)
     return
