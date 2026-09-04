@@ -487,7 +487,7 @@ function test_decision_problem_results_values(
                 results_uc,
                 ActivePowerVariable,
                 ThermalStandard;
-                initial_time = now(),
+                start_time = now(),
             )
         )
     )
@@ -495,7 +495,7 @@ function test_decision_problem_results_values(
         (:error, r"not stored"),
         @test_throws(
             IS.InvalidValue,
-            read_variable(results_uc, ActivePowerVariable, ThermalStandard; count = 25)
+            read_variable(results_uc, ActivePowerVariable, ThermalStandard; len = 25)
         )
     )
 

@@ -378,8 +378,8 @@ function export_results(results::SimulationResults, exports, store::SimulationSt
                     dfs = read_variable(
                         problem_results,
                         name;
-                        initial_time = timestamp,
-                        count = 1,
+                        start_time = timestamp,
+                        len = 1,
                         store = store,
                     )
                     export_output(
@@ -398,8 +398,8 @@ function export_results(results::SimulationResults, exports, store::SimulationSt
                     dfs = read_aux_variable(
                         problem_results,
                         name;
-                        initial_time = timestamp,
-                        count = 1,
+                        start_time = timestamp,
+                        len = 1,
                         store = store,
                     )
                     export_output(
@@ -418,8 +418,8 @@ function export_results(results::SimulationResults, exports, store::SimulationSt
                     dfs = read_parameter(
                         problem_results,
                         name;
-                        initial_time = timestamp,
-                        count = 1,
+                        start_time = timestamp,
+                        len = 1,
                         store = store,
                     )
                     export_output(
@@ -438,8 +438,8 @@ function export_results(results::SimulationResults, exports, store::SimulationSt
                     dfs = read_dual(
                         problem_results,
                         name;
-                        initial_time = timestamp,
-                        count = 1,
+                        start_time = timestamp,
+                        len = 1,
                         store = store,
                     )
                     export_output(
@@ -461,8 +461,8 @@ function export_results(results::SimulationResults, exports, store::SimulationSt
                     dfs = read_expression(
                         problem_results,
                         name;
-                        initial_time = timestamp,
-                        count = 1,
+                        start_time = timestamp,
+                        len = 1,
                         store = store,
                     )
                     export_output(

@@ -286,8 +286,7 @@ Decision problem results are returned in a Dict{String, Dict{DateTime, DataFrame
 
 Emulation problem results are returned in a Dict{String, DataFrame}.
 
-Limit the data sizes returned by specifying `initial_time` and `count` for decision problems
-or `start_time` and `len` for emulation problems.
+Limit the data sizes returned by specifying `start_time` and `len`.
 
 If the Julia process is started with multiple threads, the code will read the variables in
 parallel.
@@ -298,12 +297,9 @@ See also [`load_results!`](@ref) to preload data into memory.
 
   - `variables::Vector{Union{String, Tuple}}`: Variable name as a string or a Tuple with
     variable type and device type. If not provided then return all variables.
-  - `initial_time::Dates.DateTime`: Initial time of the requested results. Decision problems
-    only.
-  - `count::Int`: Number of results. Decision problems only.
-  - `start_time::Dates.DateTime`: Start time of the requested results. Emulation problems
-    only.
-  - `len::Int`: Number of rows in each DataFrame. Emulation problems only.
+  - `start_time::Dates.DateTime`: Start time of the requested results.
+  - `len::Int`: Number of results (decision problems) or rows in each DataFrame (emulation
+    problems).
   - `table_format::TableFormat`: Format of the table to be returned. Default is
     `TableFormat.LONG` where the columns are `DateTime`, `name`, and `value` when the data
     has two dimensions and `DateTime`, `name`, `name2`, and `value` when the data has three
@@ -373,8 +369,7 @@ Decision problem results are returned in a Dict{DateTime, DataFrame}.
 
 Emulation problem results are returned in a DataFrame.
 
-Limit the data sizes returned by specifying `initial_time` and `count` for decision problems
-or `start_time` and `len` for emulation problems.
+Limit the data sizes returned by specifying `start_time` and `len`.
 
 See also [`load_results!`](@ref) to preload data into memory.
 
@@ -382,12 +377,9 @@ See also [`load_results!`](@ref) to preload data into memory.
 
   - `variable::Union{String, Tuple}`: Variable name as a string or a Tuple with
     variable type and device type.
-  - `initial_time::Dates.DateTime`: Initial time of the requested results. Decision problems
-    only.
-  - `count::Int`: Number of results. Decision problems only.
-  - `start_time::Dates.DateTime`: Start time of the requested results. Emulation problems
-    only.
-  - `len::Int`: Number of rows in each DataFrame. Emulation problems only.
+  - `start_time::Dates.DateTime`: Start time of the requested results.
+  - `len::Int`: Number of results (decision problems) or rows in each DataFrame (emulation
+    problems).
   - `table_format::TableFormat`: Format of the table to be returned. Default is
     `TableFormat.LONG` where the columns are `DateTime`, `name`, and `value` when the data
     has two dimensions and `DateTime`, `name`, `name2`, and `value` when the data has three

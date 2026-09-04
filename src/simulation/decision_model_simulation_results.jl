@@ -329,8 +329,8 @@ Return the values for the requested variable. It keeps requests when performing 
 
   - `args`: Can be a string returned from [`list_variable_names`](@ref) or args that can be
     splatted into a VariableKey.
-  - `initial_time::Dates.DateTime` : initial of the requested results
-  - `count::Int`: Number of results
+  - `start_time::Dates.DateTime` : initial of the requested results
+  - `len::Int`: Number of results
   - `store::SimulationStore`: a store that has been opened for reading
   - `table_format::TableFormat`: Format of the table to be returned. Default is
     `TableFormat.LONG` where the columns are `DateTime`, `name`, and `value` when the data
@@ -350,13 +350,13 @@ IOM.read_variable(results, "ActivePowerVariable__ThermalStandard", table_format 
 function IOM.read_variable(
     res::SimulationProblemResults{DecisionModelSimulationResults},
     args...;
-    initial_time::Union{Nothing, Dates.DateTime} = nothing,
-    count::Union{Int, Nothing} = nothing,
+    start_time::Union{Nothing, Dates.DateTime} = nothing,
+    len::Union{Int, Nothing} = nothing,
     store = nothing,
     table_format::TableFormat = TableFormat.LONG,
 )
     key = _deserialize_key(VariableKey, res, args...)
-    timestamps = _process_timestamps(res, initial_time, count)
+    timestamps = _process_timestamps(res, start_time, len)
     return make_dataframes(
         _read_results(res, [key], timestamps, store)[key];
         table_format = table_format,
@@ -370,8 +370,8 @@ Return the values for the requested dual. It keeps requests when performing mult
 
   - `args`: Can be a string returned from [`list_dual_names`](@ref) or args that can be
     splatted into a ConstraintKey.
-  - `initial_time::Dates.DateTime` : initial of the requested results
-  - `count::Int`: Number of results
+  - `start_time::Dates.DateTime` : initial of the requested results
+  - `len::Int`: Number of results
   - `store::SimulationStore`: a store that has been opened for reading
   - `table_format::TableFormat`: Format of the table to be returned. Default is
     `TableFormat.LONG` where the columns are `DateTime`, `name`, and `value` when the data
@@ -383,13 +383,13 @@ Return the values for the requested dual. It keeps requests when performing mult
 function IOM.read_dual(
     res::SimulationProblemResults{DecisionModelSimulationResults},
     args...;
-    initial_time::Union{Nothing, Dates.DateTime} = nothing,
-    count::Union{Int, Nothing} = nothing,
+    start_time::Union{Nothing, Dates.DateTime} = nothing,
+    len::Union{Int, Nothing} = nothing,
     store = nothing,
     table_format::TableFormat = TableFormat.LONG,
 )
     key = _deserialize_key(ConstraintKey, res, args...)
-    timestamps = _process_timestamps(res, initial_time, count)
+    timestamps = _process_timestamps(res, start_time, len)
     return make_dataframes(
         _read_results(res, [key], timestamps, store)[key];
         table_format = table_format,
@@ -403,8 +403,8 @@ Return the values for the requested parameter. It keeps requests when performing
 
   - `args`: Can be a string returned from [`list_parameter_names`](@ref) or args that can be
     splatted into a ParameterKey.
-  - `initial_time::Dates.DateTime` : initial of the requested results
-  - `count::Int`: Number of results
+  - `start_time::Dates.DateTime` : initial of the requested results
+  - `len::Int`: Number of results
   - `table_format::TableFormat`: Format of the table to be returned. Default is
     `TableFormat.LONG` where the columns are `DateTime`, `name`, and `value` when the data
     has two dimensions and `DateTime`, `name`, `name2`, and `value` when the data has three
@@ -415,13 +415,13 @@ Return the values for the requested parameter. It keeps requests when performing
 function IOM.read_parameter(
     res::SimulationProblemResults{DecisionModelSimulationResults},
     args...;
-    initial_time::Union{Nothing, Dates.DateTime} = nothing,
-    count::Union{Int, Nothing} = nothing,
+    start_time::Union{Nothing, Dates.DateTime} = nothing,
+    len::Union{Int, Nothing} = nothing,
     store = nothing,
     table_format::TableFormat = TableFormat.LONG,
 )
     key = _deserialize_key(ParameterKey, res, args...)
-    timestamps = _process_timestamps(res, initial_time, count)
+    timestamps = _process_timestamps(res, start_time, len)
     return make_dataframes(
         _read_results(res, [key], timestamps, store)[key];
         table_format = table_format,
@@ -435,19 +435,19 @@ Return the values for the requested auxillary variables. It keeps requests when 
 
   - `args`: Can be a string returned from [`list_aux_variable_names`](@ref) or args that can be
     splatted into a AuxVarKey.
-  - `initial_time::Dates.DateTime` : initial of the requested results
-  - `count::Int`: Number of results
+  - `start_time::Dates.DateTime` : initial of the requested results
+  - `len::Int`: Number of results
 """
 function IOM.read_aux_variable(
     res::SimulationProblemResults{DecisionModelSimulationResults},
     args...;
-    initial_time::Union{Nothing, Dates.DateTime} = nothing,
-    count::Union{Int, Nothing} = nothing,
+    start_time::Union{Nothing, Dates.DateTime} = nothing,
+    len::Union{Int, Nothing} = nothing,
     store = nothing,
     table_format::TableFormat = TableFormat.LONG,
 )
     key = _deserialize_key(AuxVarKey, res, args...)
-    timestamps = _process_timestamps(res, initial_time, count)
+    timestamps = _process_timestamps(res, start_time, len)
     return make_dataframes(
         _read_results(res, [key], timestamps, store)[key];
         table_format = table_format,
@@ -461,19 +461,19 @@ Return the values for the requested auxillary variables. It keeps requests when 
 
   - `args`: Can be a string returned from [`list_expression_names`](@ref) or args that can be
     splatted into a ExpressionKey.
-  - `initial_time::Dates.DateTime` : initial of the requested results
-  - `count::Int`: Number of results
+  - `start_time::Dates.DateTime` : initial of the requested results
+  - `len::Int`: Number of results
 """
 function IOM.read_expression(
     res::SimulationProblemResults{DecisionModelSimulationResults},
     args...;
-    initial_time::Union{Nothing, Dates.DateTime} = nothing,
-    count::Union{Int, Nothing} = nothing,
+    start_time::Union{Nothing, Dates.DateTime} = nothing,
+    len::Union{Int, Nothing} = nothing,
     store = nothing,
     table_format::TableFormat = TableFormat.LONG,
 )
     key = _deserialize_key(ExpressionKey, res, args...)
-    timestamps = _process_timestamps(res, initial_time, count)
+    timestamps = _process_timestamps(res, start_time, len)
     return make_dataframes(
         _read_results(res, [key], timestamps, store)[key];
         table_format = table_format,
