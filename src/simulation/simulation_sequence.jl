@@ -198,124 +198,28 @@ function _attach_feedforwards(models::SimulationModels, feedforwards)
     return ff_dict
 end
 
-#= EVENTS-EXCISION: event attachment helpers; framework not yet in POM.
-function _add_event_to_model(
-    sim_model::OperationModel,
-    key::EventKey{T, U},
-    event_model::EventModel,
-) where {T <: PSY.Contingency, U <: PSY.Device}
-    device_model = get_model(get_template(sim_model), U)
-    if !haskey(get_events(device_model), key)
-        set_event_model!(device_model, key, event_model)
-    else
-        @debug "Event Model with key $key already in the device model"
-    end
-    return
-end
+"""
+Attach every event model to the template of every model in the simulation.
 
-function _validate_event_timeseries_data(
-    sys::PSY.System,
-    event::PSY.Contingency,
-    event_model::EventModel,
-)
-    devices_with_attribute = PSY.get_components(sys, event)
-    for (k, v) in event_model.timeseries_mapping
-        if !isnothing(v)
-            try
-                PSY.get_time_series(
-                    IS.SingleTimeSeries,
-                    event,
-                    v,
-                )
-            catch e
-                devices_with_attribute = PSY.get_components(sys, event)
-                device_names_with_attribute =
-                    [PSY.get_name(d) for d in devices_with_attribute]
-                error(
-                    "Event $event belonging to devices $device_names_with_attribute missing time series with name $v",
-                )
-            end
-        end
-        if !haskey(get_empty_timeseries_mapping(typeof(event)), k)
-            error(
-                "Key $k passed as part of event time series mapping does not correspond to a parameter.",
-            )
-        end
-        if k == :outage_status && isnothing(v)
-            error(
-                "FixedForcedOutage requires a timeseries mapping for :outage_status parameter",
-            )
-        end
-    end
-end
-
-function _add_model_to_event_map!(
-    model::OperationModel,
-    sys::PSY.System,
-    event_models::Vector{T},
-) where {T <: EventModel}
-    model_name = get_name(model)
-    for event_model in event_models
-        event_type = get_event_type(event_model)
-        if isempty(PSY.get_supplemental_attributes(event_type, sys))
-            error(
-                "There is no data for $event_type in $(model_name). \
-            Since events are simulation-wide objects, they need to be added to all models.",
-            )
-            continue
-        end
-        event_model.attribute_device_map[model_name] =
-            Dict{Base.UUID, Dict{DataType, Set{String}}}()
-        event_model.attribute_device_map[model_name]
-        for event in PSY.get_supplemental_attributes(event_type, sys)
-            _validate_event_timeseries_data(sys, event, event_model)
-            event_uuid = PSY.IS.get_uuid(event)
-            @debug "Attaching $event_uuid to $model_name"
-            devices_with_attribute = PSY.get_components(sys, event)
-            device_types_with_attribute = Set{DataType}()
-            event_model.attribute_device_map[model_name][event_uuid] =
-                Dict{DataType, Set{String}}()
-            for device in devices_with_attribute
-                dtype = typeof(device)
-                push!(device_types_with_attribute, dtype)
-                name_set = get!(
-                    event_model.attribute_device_map[model_name][event_uuid],
-                    dtype,
-                    Set{String}(),
-                )
-                push!(name_set, PSY.get_name(device))
-            end
-            for device_type in device_types_with_attribute
-                key = EventKey(event_type, device_type)
-                _add_event_to_model(model, key, event_model)
-            end
-        end
-        event_model.attribute_device_map[model_name]
-    end
-    return
-end
-
+Discovery and validation happen in PowerOperationsModels at build time: attaching an
+event model to a template is what makes `build!` find the system's outage attributes,
+populate the event model's `attribute_device_map`, and distribute the event to the
+matching `DeviceModel`s. This function used to do that work itself, per model, against
+a map keyed by model name.
+"""
 function _attach_events!(
     models::SimulationModels,
-    event_models::Vector{T},
-) where {T <: EventModel}
-    for model in get_decision_models(models)
-        sys = get_system(model)
-        _add_model_to_event_map!(model, sys, event_models)
-    end
-
+    event_models::Vector{<:POM.EventModel},
+)
+    isempty(event_models) && return
+    sim_models = IOM.AbstractOptimizationModel[get_decision_models(models)...]
     em_model = get_emulation_model(models)
-    if !isnothing(em_model)
-        _add_model_to_event_map!(
-            em_model,
-            get_system(em_model),
-            event_models,
-        )
+    isnothing(em_model) || push!(sim_models, em_model)
+    for model in sim_models, event_model in event_models
+        set_event_model!(get_template(model), event_model)
     end
-
     return
 end
-=#
 
 """
     SimulationSequence(
@@ -373,11 +277,13 @@ mutable struct SimulationSequence
     executions_by_model::OrderedDict{Symbol, Int}
     current_execution_index::Int64
     uuid::Base.UUID
+    events::Vector{<:POM.EventModel}
 
     function SimulationSequence(;
         models::SimulationModels,
         feedforwards = Dict{String, Vector{<:AbstractAffectFeedforward}}(),
         ini_cond_chronology = InterProblemChronology(),
+        events = POM.EventModel[],
     )
         # Allow strings or symbols as keys; convert to symbols.
         intervals = determine_intervals(models)
@@ -397,6 +303,7 @@ mutable struct SimulationSequence
         executions_by_model = _get_num_executions_by_model(models, execution_order)
         sequence_uuid = IS.make_uuid()
         initialize_simulation_internals!(models, sequence_uuid)
+        _attach_events!(models, events)
         new(
             horizons,
             intervals,
@@ -406,18 +313,10 @@ mutable struct SimulationSequence
             executions_by_model,
             0,
             sequence_uuid,
+            events,
         )
     end
 end
-
-#= EVENTS-EXCISION: SimulationSequence originally carried an `events` field, populated via
-   `_attach_events!` in the constructor. Framework not yet in POM; original struct field,
-   constructor kwarg default, attachment call, and `new(...)` positional arg below.
-    events::Vector{<:EventModel}
-    events = Vector{EventModel}(),
-    _attach_events!(models, events)
-    events,
-=#
 
 get_step_resolution(sequence::SimulationSequence) = first(values(sequence.intervals))
 
@@ -429,7 +328,5 @@ function IOM.get_interval(sequence::SimulationSequence, model::DecisionModel)
     return sequence.intervals[get_name(model)]
 end
 
-#= EVENTS-EXCISION: SimulationSequence.events field removed; framework not yet in POM.
 get_events(sequence::SimulationSequence) = sequence.events
-=#
 get_execution_order(sequence::SimulationSequence) = sequence.execution_order

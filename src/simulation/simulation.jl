@@ -870,26 +870,17 @@ function _update_simulation_state_parameters!(sim::Simulation, model::DecisionMo
     state = get_simulation_state(sim)
     model_params = get_decision_model_params(store, model_name)
     all_parameter_keys = list_decision_model_keys(store, model_name, :parameters)
-    #= EVENTS-EXCISION: countdown-first ordering; AvailableStatusChangeCountdownParameter
-       must be updated first when events are active. Framework not yet in POM.
-    countdown_parameter_keys = filter(_is_event_countdown_parameter_key, all_parameter_keys)
-    other_parameter_keys = filter(!_is_event_countdown_parameter_key, all_parameter_keys)
-    # Order matters; AvailableStatusChangeCountdownParameter must be updated first if it exists
-    for key in countdown_parameter_keys
-        !has_dataset(get_decision_states(state), key) && continue
-        res = read_result(DenseAxisArray, store, model_name, key, simulation_time)
-        update_decision_state!(state, key, res, simulation_time, model_params)
-    end
-    =#
-    for key in all_parameter_keys
+    # Order matters: the availability parameter is derived from the countdown, so the
+    # countdown has to be updated first wherever events are active.
+    countdown_keys = filter(_is_event_countdown_parameter_key, all_parameter_keys)
+    other_keys = filter(!_is_event_countdown_parameter_key, all_parameter_keys)
+    for key in vcat(countdown_keys, other_keys)
         !has_dataset(get_decision_states(state), key) && continue
         res = read_result(DenseAxisArray, store, model_name, key, simulation_time)
         update_decision_state!(state, key, res, simulation_time, model_params)
     end
 end
 
-#= EVENTS-EXCISION: countdown-parameter-key predicate for
-   _update_simulation_state_parameters!; framework not yet in POM.
 function _is_event_countdown_parameter_key(
     ::ParameterKey{T, U},
 ) where {T <: ParameterType, U <: PSY.Component}
@@ -901,7 +892,6 @@ function _is_event_countdown_parameter_key(
 ) where {U <: PSY.Component}
     return true
 end
-=#
 
 function _update_simulation_state_others!(sim::Simulation, model::DecisionModel)
     model_name = get_name(model)
@@ -1131,13 +1121,9 @@ function _execute!(
                         if model_number == execution_order[end]
                             _update_system_state!(sim, model)
                             _write_state_to_store!(store, sim)
-                            #= EVENTS-EXCISION: apply_simulation_events! must run last so the
-                               state update is written AFTER the models run. Framework not
-                               yet in POM.
-                            # This function needs to be called last so make sure that the update to the
-                            # state get written AFTER the models run.
+                            # Called last so the state update is written AFTER the
+                            # models run.
                             apply_simulation_events!(sim)
-                            =#
                         end
                     end
                 end

@@ -117,8 +117,6 @@ function ParameterUpdateEvent(
     )
 end
 
-#= EVENTS-EXCISION: ParameterUpdateEvent constructor for EventParametersAttributes;
-   framework not yet in POM.
 function ParameterUpdateEvent(
     parameter_type::Type{<:ParameterType},
     component_type::Type,
@@ -134,7 +132,6 @@ function ParameterUpdateEvent(
         model_name,
     )
 end
-=#
 
 function ParameterUpdateEvent(
     parameter_type::Type{<:ParameterType},
