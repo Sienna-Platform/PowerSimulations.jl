@@ -29,16 +29,23 @@ PowerDynamicsOpenAPIModels = "044a0b22-31f8-4ef6-8282-c9a61b3013f6"
 PowerInvestmentsOpenAPIModels = "33cb4396-f4d9-4f59-8585-787ebb56cb1b"
 PowerOpenAPIModels = "0730f07c-cff6-4c3b-a9df-c546153be50a"
 PowerOperationsOpenAPIModels = "a372b6d7-45a2-44c2-8199-6a724b72e8ff"
+# PSB depends on these off the psy6 branch and they are not registered there, so the same
+# rule applies: pin them here or the docs env resolves an incompatible version.
+PowerFlowFileParser = "bed98974-b02e-5e2f-9ee0-a103f5c450dd"
+PowerTableDataParser = "2b750c0e-0bff-11f1-9200-1befd75df6be"
 
 [sources]
-# LOCAL PATH CO-DEV PINS (temporary), mirroring the root Project.toml: docs/ is one directory
-# deeper than the package root, so paths climb one extra level.
-InfrastructureSystems = {path = "../../InfrastructureSystems.jl"}
-InfrastructureOptimizationModels = {path = "../../InfrastructureOptimizationModels.jl"}
-PowerSystems = {path = "../../PowerSystems.jl"}
-PowerNetworkMatrices = {path = "../../PowerNetworkMatrices.jl"}
-PowerOperationsModels = {path = "../../PowerOperationsModels.jl"}
-PowerSystemCaseBuilder = {path = "../../PowerSystemCaseBuilder.jl"}
+InfrastructureSystems = {url = "https://github.com/Sienna-Platform/InfrastructureSystems.jl", rev = "IS4"}
+# TEMPORARY: pinned to the event-parameter bound fix (IOM #162) until it merges.
+InfrastructureOptimizationModels = {url = "https://github.com/Sienna-Platform/InfrastructureOptimizationModels.jl", rev = "lk/event-parameter-attribute-bounds"}
+PowerSystems = {url = "https://github.com/Sienna-Platform/PowerSystems.jl", rev = "psy6"}
+PowerNetworkMatrices = {url = "https://github.com/Sienna-Platform/PowerNetworkMatrices.jl", rev = "psy6"}
+# TEMPORARY: pinned to the events port (POM #286) until it merges to main.
+PowerOperationsModels = {url = "https://github.com/Sienna-Platform/PowerOperationsModels.jl", rev = "lk/events-port"}
+PowerSystemCaseBuilder = {url = "https://github.com/Sienna-Platform/PowerSystemCaseBuilder.jl", rev = "psy6"}
+# PSB depends on these off the psy6 branch; not registered there yet.
+PowerFlowFileParser = {url = "https://github.com/Sienna-Platform/PowerFlowFileParser.jl", rev = "psy6"}
+PowerTableDataParser = {url = "https://github.com/NLR-Sienna/PowerTableDataParser.jl", rev = "psy6"}
 PowerCoreOpenAPIModels = {url = "https://github.com/Sienna-Platform/PowerOpenAPIModels.git", rev = "main", subdir = "PowerCoreOpenAPIModels.jl"}
 InfrastructureTimeSeriesOpenAPIModels = {url = "https://github.com/Sienna-Platform/PowerOpenAPIModels.git", rev = "main", subdir = "InfrastructureTimeSeriesOpenAPIModels.jl"}
 InfrastructureCoreOpenAPIModels = {url = "https://github.com/Sienna-Platform/PowerOpenAPIModels.git", rev = "main", subdir = "InfrastructureCoreOpenAPIModels.jl"}

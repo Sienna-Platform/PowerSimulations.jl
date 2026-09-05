@@ -233,7 +233,7 @@ Dict([
 read_parameter(
     ed_results,
     "ActivePowerTimeSeriesParameter__RenewableDispatch";
-    count = 2,
+    len = 2,
 )
 
 # !!! info
