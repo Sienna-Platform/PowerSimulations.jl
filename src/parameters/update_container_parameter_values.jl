@@ -495,11 +495,9 @@ function _update_parameter_values!(
     state_data = get_dataset(state, get_attribute_key(attributes))
     state_timestamps = state_data.timestamps
     state_data_index = find_timestamp_index(state_timestamps, current_time)
-    #= EVENTS-EXCISION: outage-status override for the feedforward `OnVariable` value;
-       framework not yet in POM.
     has_outage = haskey(
         get_parameters_values(state),
-        ISOPT.ParameterKey{
+        ParameterKey{
             AvailableStatusParameter,
             U,
         }(
@@ -509,7 +507,7 @@ function _update_parameter_values!(
     if has_outage
         status_values = get_dataset_values(
             state,
-            ISOPT.ParameterKey{
+            ParameterKey{
                 AvailableStatusParameter,
                 U,
             }(
@@ -518,7 +516,7 @@ function _update_parameter_values!(
         )
         status_data = get_dataset(
             state,
-            ISOPT.ParameterKey{
+            ParameterKey{
                 AvailableStatusParameter,
                 U,
             }(
@@ -532,7 +530,6 @@ function _update_parameter_values!(
         # so we can `haskey` and integer-index without a String-keyed scan.
         status_lookup_dict = status_values.lookup[1].data
     end
-    =#
     # Hoist underlying dense storage and per-axis name lookups for the inner loop.
     parent_param = parameter_array.data
     parent_state = state_values.data
@@ -541,8 +538,6 @@ function _update_parameter_values!(
     for name in component_names
         i_state = state_lookup[name]
         i_param = param_lookup[name]
-        #= EVENTS-EXCISION: outage-status override for the feedforward `OnVariable` value;
-           framework not yet in POM.
         if has_outage && haskey(status_lookup_dict, name) &&
            parent_status[status_lookup_dict[name], status_data_index] == 0.0 &&
            round(parent_state[i_state, state_data_index]) == 1.0
@@ -551,8 +546,6 @@ function _update_parameter_values!(
         else
             value = round(parent_state[i_state, state_data_index])
         end
-        =#
-        value = round(parent_state[i_state, state_data_index])
         if !isfinite(value)
             error(
                 "The value for the system state used in $(encode_key_as_string(get_attribute_key(attributes))) is not a finite value $(value) \
@@ -582,7 +575,6 @@ function _update_parameter_values!(
     return
 end
 
-#= EVENTS-EXCISION: EventParametersAttributes parameter updates; framework not yet in POM.
 function _update_parameter_values!(
     parameter_array::DenseAxisArray{T},
     attributes::EventParametersAttributes{W, U},
@@ -676,7 +668,6 @@ function _update_parameter_values!(
     end
     return
 end
-=#
 
 """
 Update parameter function an IOM.AbstractOptimizationModel
@@ -697,11 +688,9 @@ function IOM.update_container_parameter_values!(
     return
 end
 
-#= EVENTS-EXCISION: EventParameter dispatch for update_container_parameter_values!;
-   framework not yet in POM.
-function update_container_parameter_values!(
+function IOM.update_container_parameter_values!(
     optimization_container::OptimizationContainer,
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     key::ParameterKey{T, U},
     input::DatasetContainer{InMemoryDataset},
 ) where {T <: EventParameter, U <: PSY.Component}
@@ -714,7 +703,6 @@ function update_container_parameter_values!(
     _update_parameter_values!(parameter_array, parameter_attributes, U, model, input)
     return
 end
-=#
 
 function IOM.update_container_parameter_values!(
     optimization_container::OptimizationContainer,
@@ -859,15 +847,12 @@ function IOM.update_container_parameter_values!(
     return
 end
 
-#= EVENTS-EXCISION: EventParameter/Service ambiguity-avoidance dispatch; framework not
-   yet in POM.
 # This method is included to avoid ambiguities
-function update_container_parameter_values!(
+function IOM.update_container_parameter_values!(
     optimization_container::OptimizationContainer,
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     key::ParameterKey{T, U},
     input::DatasetContainer{InMemoryDataset},
 ) where {T <: EventParameter, U <: PSY.Service}
     return
 end
-=#

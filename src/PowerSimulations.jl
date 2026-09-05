@@ -184,21 +184,12 @@ using DocStringExtensions
 include("core/definitions.jl")
 include("core/abstract_simulation_store.jl")
 include("core/cache_utils.jl")
-# EVENTS-EXCISION: event framework not yet in POM.
-# include("core/event_keys.jl")
-# include("core/event_model.jl")
-
 include("initial_conditions/initial_condition_chronologies.jl")
 include("simulation/simulation_store_requirements.jl")
 include("operation/decision_model.jl")
 include("operation/emulation_model.jl")
 
 include("initial_conditions/update_initial_conditions.jl")
-
-# EVENTS-EXCISION: contingency model not yet in POM.
-# include("contingency_model/contingency.jl")
-# include("contingency_model/contingency_arguments.jl")
-# include("contingency_model/contingency_constraints.jl")
 
 include("simulation/optimization_output_cache.jl")
 include("simulation/optimization_output_caches.jl")
@@ -219,7 +210,7 @@ include("simulation/simulation_partition_results.jl")
 include("simulation/simulation_sequence.jl")
 include("simulation/simulation_internal.jl")
 include("simulation/simulation.jl")
-# EVENTS-EXCISION: include("simulation/simulation_events.jl")
+include("simulation/simulation_events.jl")
 include("simulation/simulation_results_export.jl")
 include("simulation/simulation_results.jl")
 include("operation/operation_model_simulation_interface.jl")

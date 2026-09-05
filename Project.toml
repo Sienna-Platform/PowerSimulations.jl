@@ -38,10 +38,13 @@ PowerOperationsOpenAPIModels = "a372b6d7-45a2-44c2-8199-6a724b72e8ff"
 
 [sources]
 InfrastructureSystems = {url = "https://github.com/Sienna-Platform/InfrastructureSystems.jl", rev = "IS4"}
-InfrastructureOptimizationModels = {url = "https://github.com/Sienna-Platform/InfrastructureOptimizationModels.jl", rev = "main"}
+# TEMPORARY: pinned to the event-parameter bound fix (IOM #162) until it merges.
+InfrastructureOptimizationModels = {url = "https://github.com/Sienna-Platform/InfrastructureOptimizationModels.jl", rev = "lk/event-parameter-attribute-bounds"}
 PowerSystems = {url = "https://github.com/Sienna-Platform/PowerSystems.jl", rev = "psy6"}
 PowerNetworkMatrices = {url = "https://github.com/Sienna-Platform/PowerNetworkMatrices.jl", rev = "psy6"}
-PowerOperationsModels = {url = "https://github.com/Sienna-Platform/PowerOperationsModels.jl", rev = "main"}
+# TEMPORARY: pinned to the events port branch until it merges to POM main.
+# TEMPORARY: pinned to the events port (POM #286) until it merges to main.
+PowerOperationsModels = {url = "https://github.com/Sienna-Platform/PowerOperationsModels.jl", rev = "lk/events-port"}
 PowerCoreOpenAPIModels = {url = "https://github.com/Sienna-Platform/PowerOpenAPIModels.git", rev = "main", subdir = "PowerCoreOpenAPIModels.jl"}
 InfrastructureTimeSeriesOpenAPIModels = {url = "https://github.com/Sienna-Platform/PowerOpenAPIModels.git", rev = "main", subdir = "InfrastructureTimeSeriesOpenAPIModels.jl"}
 InfrastructureCoreOpenAPIModels = {url = "https://github.com/Sienna-Platform/PowerOpenAPIModels.git", rev = "main", subdir = "InfrastructureCoreOpenAPIModels.jl"}
