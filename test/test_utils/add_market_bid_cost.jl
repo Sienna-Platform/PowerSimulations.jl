@@ -14,9 +14,8 @@ function add_mbc_inner!(
         error("At least one of incr_curve or decr_curve must be provided")
     end
     mbc = MarketBidCost(;
-        no_load_cost = 0.0,
         start_up = (hot = 0.0, warm = 0.0, cold = 0.0),
-        shut_down = 0.0,
+        shut_down = LinearCurve(0.0),
     )
     if !isnothing(decr_curve)
         set_decremental_offer_curves!(mbc, CostCurve(decr_curve))
@@ -63,22 +62,115 @@ function add_mbc!(
     add_mbc_inner!(sys, active_components; incr_curve = incr_curve, decr_curve = decr_curve)
 end
 
-"""
-Get a deterministic or DeterministicSingleTimeSeries time series from the system.
-"""
-function get_deterministic_ts(sys::PSY.System)
-    for device in get_components(PSY.Device, sys)
-        if has_time_series(device, Union{DeterministicSingleTimeSeries, Deterministic})
-            for key in PSY.get_time_series_keys(device)
-                ts = get_time_series(device, key)
-                if ts isa DeterministicSingleTimeSeries || ts isa Deterministic
-                    return ts
-                end
-            end
-        end
+#################################################################################
+# psy6 split `MarketBidCost` (static) from `MarketBidTimeSeriesCost` (all five of
+# minimum_energy_offer/start_up/shut_down/incremental_offer_curves/decremental_offer_curves
+# are time-series-backed, with no static fallback on any one field). The helpers below
+# convert a static `MarketBidCost` into a `MarketBidTimeSeriesCost`, wrapping whichever
+# fields aren't given a `new_*` override in a same-valued ("constant") time series so the
+# result type-checks. This is the one conversion point every MBC test-fixture builder in
+# this file and mbc_system_utils.jl goes through.
+#################################################################################
+
+"Wrap a static `LinearCurve`'s current value in a same-valued time series."
+function _constant_ts_linear_curve(sys::PSY.System, comp::PSY.Component, name::String,
+    linear_curve::LinearCurve)
+    fd = get_function_data(linear_curve)
+    ts = make_deterministic_ts(sys, name, fd, 0.0, 0.0)
+    return TimeSeriesLinearCurve(add_time_series!(sys, comp, ts))
+end
+
+"Wrap a static `StartUpStages`'s current value in a same-valued time series, returning the
+bare `StartUpStagesKey` (the `start_up` field of `MarketBidTimeSeriesCost` is the key
+itself, not a curve wrapper)."
+function _constant_ts_start_up_key(sys::PSY.System, comp::PSY.Component,
+    stages::PSY.StartUpStages)
+    ts = make_deterministic_ts(sys, "start_up", Tuple(stages), 0.0, 0.0)
+    return add_time_series!(sys, comp, ts)
+end
+
+"Wrap a static offer `CostCurve{PiecewiseIncrementalCurve}`'s current (constant) shape in a
+same-valued time series."
+function _constant_ts_offer_curve(sys::PSY.System, comp::PSY.Component, name::String,
+    curve::CostCurve{PiecewiseIncrementalCurve})
+    baseline = get_value_curve(curve)
+    pwl_ts = make_deterministic_ts(
+        sys,
+        name,
+        get_function_data(baseline),
+        (0.0, 0.0, 0.0),
+        (0.0, 0.0, 0.0),
+    )
+    pwl_key = add_time_series!(sys, comp, pwl_ts)
+    initial_input = get_initial_input(baseline)
+    initial_key = if isnothing(initial_input)
+        nothing
+    else
+        ii_ts = make_deterministic_ts(sys, name * "_initial_input", initial_input, 0.0, 0.0)
+        add_time_series!(sys, comp, ii_ts)
     end
-    @assert false "No Deterministic or DeterministicSingleTimeSeries found in system"
-    return DeterministicSingleTimeSeries(nothing)
+    return make_market_bid_ts_curve(pwl_key, initial_key, get_power_units(curve))
+end
+
+"""
+Convert the static `MarketBidCost` `mbc` attached to `comp` into a `MarketBidTimeSeriesCost`.
+Pass `new_*` to give a field a genuinely time-varying value (already built: a
+`StartUpStagesKey`/`TimeSeriesLinearCurve`/TS-backed `CostCurve`); every field without a
+`new_*` override keeps its current value, wrapped in a constant-valued time series.
+"""
+function to_market_bid_ts_cost(
+    sys::PSY.System,
+    comp::PSY.Component,
+    mbc::MarketBidCost;
+    new_minimum_energy_offer = nothing,
+    new_start_up = nothing,
+    new_shut_down = nothing,
+    new_incremental_offer_curves = nothing,
+    new_decremental_offer_curves = nothing,
+)
+    # `something(x, f(...))` evaluates `f(...)` eagerly even when `x` is already given,
+    # which would add the "constant-wrap" time series (and, worse, error on a name clash)
+    # even for fields the caller is already overriding with a genuinely time-varying value.
+    # Branch explicitly instead so the fallback only runs when actually needed.
+    meo = if isnothing(new_minimum_energy_offer)
+        _constant_ts_linear_curve(sys, comp, "minimum_energy_offer",
+            get_minimum_energy_offer(mbc))
+    else
+        new_minimum_energy_offer
+    end
+    start_up = if isnothing(new_start_up)
+        _constant_ts_start_up_key(sys, comp, get_start_up(mbc))
+    else
+        new_start_up
+    end
+    shut_down = if isnothing(new_shut_down)
+        _constant_ts_linear_curve(sys, comp, "shut_down", get_shut_down(mbc))
+    else
+        new_shut_down
+    end
+    incremental = if isnothing(new_incremental_offer_curves)
+        _constant_ts_offer_curve(sys, comp, "incremental_offer_curves",
+            get_incremental_offer_curves(mbc))
+    else
+        new_incremental_offer_curves
+    end
+    decremental = if isnothing(new_decremental_offer_curves)
+        _constant_ts_offer_curve(sys, comp, "decremental_offer_curves",
+            get_decremental_offer_curves(mbc))
+    else
+        new_decremental_offer_curves
+    end
+    return MarketBidTimeSeriesCost(;
+        minimum_energy_offer = meo,
+        start_up = start_up,
+        shut_down = shut_down,
+        incremental_offer_curves = incremental,
+        decremental_offer_curves = decremental,
+        ancillary_service_offers = get_ancillary_service_offers(mbc),
+        incremental_slope = get_incremental_slope(mbc),
+        decremental_slope = get_decremental_slope(mbc),
+        curve_style = get_curve_style(mbc),
+    )
 end
 
 """
@@ -114,33 +206,26 @@ function extend_mbc!(
     @assert !isempty(get_components(active_components, sys)) "No components selected"
     # incremental_initial_input is cost at minimum generation, NOT cost at zero generation
     for comp in get_components(active_components, sys)
-        op_cost = get_operation_cost(comp)
+        op_cost = get_operation_cost(comp)::MarketBidCost
         if do_override_min_x && :active_power_limits in fieldnames(typeof(comp))
-            min_power = with_units_base(sys, UnitSystem.NATURAL_UNITS) do
-                get_active_power_limits(comp).min
-            end
+            min_power = get_active_power_limits(comp, PSY.NU).min
         else
             min_power = nothing
         end
 
-        @assert op_cost isa MarketBidCost
-        for (getter, setter_initial, setter_curves, incr_or_decr) in (
-            (
-                get_incremental_offer_curves,
-                set_incremental_initial_input!,
-                set_incremental_offer_curves!,
-                "incremental",
-            ),
-            (
-                get_decremental_offer_curves,
-                set_decremental_initial_input!,
-                set_decremental_offer_curves!,
-                "decremental",
-            ),
+        new_curves = Dict{String, Any}()
+        for (getter, incr_or_decr) in (
+            (get_incremental_offer_curves, "incremental"),
+            (get_decremental_offer_curves, "decremental"),
         )
             cost_curve = getter(op_cost)
-            isnothing(cost_curve) && continue
-
+            # psy6's `MarketBidCost.{in,de}cremental_offer_curves` are non-nullable,
+            # defaulting to `PSY.ZERO_OFFER_CURVE` (a degenerate, zero-width curve) rather
+            # than pre-psy6's `nothing` for "this side has no offer". Skip perturbing that
+            # side here — `to_market_bid_ts_cost`'s own `new_*_offer_curves === nothing`
+            # fallback below constant-wraps the (already zero) baseline unperturbed, so the
+            # result still faithfully represents "no offer on this side".
+            PSY._is_zero_offer_curve(cost_curve) && continue
             baseline = get_value_curve(cost_curve)::PiecewiseIncrementalCurve
             baseline_initial = get_initial_input(baseline)
             if zero_cost_at_min
@@ -183,10 +268,34 @@ function extend_mbc!(
             )
             initial_key = add_time_series!(sys, comp, my_initial_ts)
             curve_key = add_time_series!(sys, comp, my_pwl_ts)
-            setter_initial(op_cost, initial_key)
-            setter_curves(op_cost, curve_key)
+            new_curves[incr_or_decr] =
+                make_market_bid_ts_curve(
+                    curve_key,
+                    initial_key,
+                    get_power_units(cost_curve),
+                )
         end
+        ts_cost = to_market_bid_ts_cost(
+            sys,
+            comp,
+            op_cost;
+            new_incremental_offer_curves = get(new_curves, "incremental", nothing),
+            new_decremental_offer_curves = get(new_curves, "decremental", nothing),
+        )
+        set_operation_cost!(comp, ts_cost)
     end
+    return
+end
+
+"""`Tuple` broadcasts elementwise against a single increment; `Number` and
+`IS.LinearFunctionData` (which defines scalar `+` but is not a collection, so broadcasting it
+errors) both add a single per-step increment directly."""
+function _stepped_value(ini_val::Tuple, res_incr, interval_incr, j, i)
+    return ini_val .+ (res_incr * j + i * interval_incr)
+end
+
+function _stepped_value(ini_val, res_incr, interval_incr, j, i)
+    return ini_val + res_incr * j + i * interval_incr
 end
 
 """
@@ -203,18 +312,14 @@ function make_deterministic_ts(
     interval::Period,
     window_count::Int,
     resolution::Period,
-) where {T <: Union{Number, Tuple}}
+) where {T <: Union{Number, Tuple, IS.LinearFunctionData}}
     horizon_count = IS.get_horizon_count(horizon, resolution)
     ts_data = OrderedDict{DateTime, Vector{T}}()
     for i in 0:(window_count - 1)
-        if ini_val isa Tuple
-            series = [
-                ini_val .+ (res_incr * j + i * interval_incr) for
-                j in 0:(horizon_count - 1)
-            ]
-        else
-            series = ini_val .+ res_incr .* (0:(horizon_count - 1)) .+ i * interval_incr
-        end
+        series = [
+            _stepped_value(ini_val, res_incr, interval_incr, j, i) for
+            j in 0:(horizon_count - 1)
+        ]
         ts_data[init_time + i * interval] = series
     end
     return Deterministic(;

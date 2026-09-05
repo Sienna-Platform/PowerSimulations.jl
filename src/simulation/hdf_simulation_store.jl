@@ -202,7 +202,7 @@ end
 
 function write_optimizer_stats!(
     store::HdfSimulationStore,
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     ::DecisionModelIndexType,
 )
     stats = get_optimizer_stats(model)
@@ -220,7 +220,7 @@ end
 
 function write_optimizer_stats!(
     store::HdfSimulationStore,
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     ::EmulationModelIndexType,
 )
     return
@@ -229,7 +229,7 @@ end
 """
 Read the optimizer stats for a problem execution.
 """
-function read_optimizer_stats(
+function IOM.read_optimizer_stats(
     store::HdfSimulationStore,
     simulation_step::Int,
     model_name::Symbol,
@@ -245,7 +245,7 @@ end
 """
 Return the optimizer stats for a problem as a DataFrame.
 """
-function read_optimizer_stats(store::HdfSimulationStore, model_name)
+function IOM.read_optimizer_stats(store::HdfSimulationStore, model_name)
     dataset = _get_dataset(OptimizerStats, store, model_name)
     data = permutedims(dataset[:, :])
     stats = [IS.to_namedtuple(OptimizerStats(data[i, :])) for i in axes(data)[1]]
@@ -773,7 +773,7 @@ end
 function serialize_system!(store::HdfSimulationStore, sys::PSY.System)
     root = store.file[HDF_SIMULATION_ROOT_PATH]
     systems_group = _get_group_or_create(root, "systems")
-    uuid = string(IS.get_uuid(sys))
+    uuid = string(PSY.get_system_uuid(sys))
     if haskey(systems_group, uuid)
         @debug "System with UUID = $uuid is already stored" _group =
             LOG_GROUP_SIMULATION_STORE

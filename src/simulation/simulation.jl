@@ -23,8 +23,10 @@ Construct the `Simulation` structure to run the sequence of decision and emulati
 # Example
 
 ```julia
-template_uc = template_unit_commitment()
-template_ed = template_economic_dispatch()
+template_uc = PowerOperationsProblemTemplate(NetworkModel(CopperPlateNetworkModel))
+set_device_model!(template_uc, ThermalStandard, ThermalBasicUnitCommitment)
+template_ed = PowerOperationsProblemTemplate(NetworkModel(CopperPlateNetworkModel))
+set_device_model!(template_ed, ThermalStandard, ThermalBasicDispatch)
 my_decision_model_uc = DecisionModel(template_1, sys_uc, optimizer, name = "UC")
 my_decision_model_ed = DecisionModel(template_ed, sys_ed, optimizer, name = "ED")
 models = SimulationModels(
@@ -110,7 +112,7 @@ end
 get_initial_time(sim::Simulation) = sim.initial_time
 get_sequence(sim::Simulation) = sim.sequence
 get_steps(sim::Simulation) = sim.steps
-get_current_time(sim::Simulation) = get_current_time(get_simulation_state(sim))
+IOM.get_current_time(sim::Simulation) = get_current_time(get_simulation_state(sim))
 get_simulation_model(s::Simulation, name) = get_simulation_model(get_models(s), name)
 get_models(sim::Simulation) = sim.models
 get_simulation_dir(sim::Simulation) = dirname(sim.internal.logs_dir)
@@ -126,7 +128,7 @@ get_simulation_store(sim::Simulation) = sim.internal.store
 get_results_dir(sim::Simulation) = sim.internal.results_dir
 get_models_dir(sim::Simulation) = sim.internal.models_dir
 
-get_interval(sim::Simulation, name::Symbol) = get_interval(sim.sequence, name)
+IOM.get_interval(sim::Simulation, name::Symbol) = get_interval(sim.sequence, name)
 
 function get_simulation_time(sim::Simulation, problem_number::Int)
     return sim.internal.date_ref[problem_number]
@@ -254,10 +256,31 @@ function _check_folder(sim::Simulation)
     end
 end
 
+# `Nothing` initial condition values encode a device-level trait (e.g. a must-run unit has
+# no meaningful `InitialTimeDurationOn`), not a per-model computation, so every model must
+# agree on whether the value is present. Dispatch on `Nothing` instead of an `isa` check.
+_ic_value_is_missing(::Nothing) = true
+_ic_value_is_missing(::Any) = false
+
+# Determine whether a set of per-model values for one initial condition are reconciled:
+# all missing is consistent by definition, all present compares numerically, and a mix of
+# missing/present is a real mismatch that must be reported like any other disagreement.
+function _ic_values_reconciled(all_values::Vector)
+    missing_flags = _ic_value_is_missing.(all_values)
+    if all(missing_flags)
+        return true
+    end
+    if any(missing_flags)
+        return false
+    end
+    ref_value = first(all_values)
+    return allequal(isapprox.(all_values, ref_value; atol = ABSOLUTE_TOLERANCE))
+end
+
 # Compare initial conditions for all `InitialConditionType`s with the
 # `requires_reconciliation` trait across `models`, log @info messages for mismatches
 function _initial_conditions_reconciliation!(
-    models::Vector{<:OperationModel})
+    models::Vector{<:IOM.AbstractOptimizationModel})
     model_names = get_name.(models)
     has_mismatches = false
     @info "Reconciling initial conditions across models $(join(model_names, ", "))"
@@ -277,7 +300,10 @@ function _initial_conditions_reconciliation!(
             haskey(ics, ic_key) || continue
             # ic_vals_per_component: Dict{component_name, ic_value}
             ic_vals_per_component =
-                Dict(get_name(get_component(ic)) => get_condition(ic) for ic in ics[ic_key])
+                Dict(
+                    get_name(IOM.get_component(ic)) => get_condition(ic) for
+                    ic in ics[ic_key]
+                )
             ic_vals_per_model[i] = ic_vals_per_component
         end
 
@@ -288,8 +314,7 @@ function _initial_conditions_reconciliation!(
         component_names = keys(first(values(ic_vals_per_model)))
         for component_name in component_names
             all_values = [result[component_name] for result in values(ic_vals_per_model)]
-            ref_value = first(all_values)
-            if !allequal(isapprox.(all_values, ref_value; atol = ABSOLUTE_TOLERANCE))
+            if !_ic_values_reconciled(all_values)
                 has_mismatches = true
                 mismatch_msg = "For IC key $ic_key, mismatch on component $component_name:"
                 for (model_i, result) in sort(pairs(ic_vals_per_model); by = first)
@@ -323,7 +348,7 @@ function _build_single_model_for_simulation(
         # TODO-PJ: Temporary while are able to switch from PJ to POI
         container = get_optimization_container(model)
         container.built_for_recurrent_solves = true
-        build_impl!(model)
+        POM.build_model!(model)
         sim.internal.date_ref[model_number] = initial_time
         set_status!(model, ModelBuildStatus.BUILT)
         _pre_solve_model_checks(model)
@@ -363,7 +388,7 @@ function _build_emulation_model!(sim::Simulation)
         mkpath(output_dir)
         set_output_dir!(model, output_dir)
         TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "Problem Emulation $(get_name(model))" begin
-            build_impl!(model)
+            POM.build_model!(model)
         end
         sim.internal.date_ref[length(sim.internal.date_ref) + 1] = initial_time
         set_status!(model, ModelBuildStatus.BUILT)
@@ -388,7 +413,7 @@ end
 
 function _get_model_store_requirements!(
     rules::CacheFlushRules,
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     num_rows::Int,
 )
     model_name = get_name(model)
@@ -681,7 +706,7 @@ Build the Simulation, problems and the related folder structure.
   - `console_level = Logging.Error`:
   - `file_level = Logging.Info`:
 """
-function build!(
+function POM.build!(
     sim::Simulation;
     recorders = [],
     console_level = Logging.Error,
@@ -731,7 +756,7 @@ function build!(
     return get_simulation_build_status(sim)
 end
 
-function _apply_warm_start!(model::OperationModel)
+function _apply_warm_start!(model::IOM.AbstractOptimizationModel)
     container = get_optimization_container(model)
     # If the model was used to retrieve duals from an MILP the logic has to be different and
     # the results need to be read from the primal cache
@@ -845,15 +870,11 @@ function _update_simulation_state_parameters!(sim::Simulation, model::DecisionMo
     state = get_simulation_state(sim)
     model_params = get_decision_model_params(store, model_name)
     all_parameter_keys = list_decision_model_keys(store, model_name, :parameters)
-    countdown_parameter_keys = filter(_is_event_countdown_parameter_key, all_parameter_keys)
-    other_parameter_keys = filter(!_is_event_countdown_parameter_key, all_parameter_keys)
-    # Order matters; AvailableStatusChangeCountdownParameter must be updated first if it exists
-    for key in countdown_parameter_keys
-        !has_dataset(get_decision_states(state), key) && continue
-        res = read_result(DenseAxisArray, store, model_name, key, simulation_time)
-        update_decision_state!(state, key, res, simulation_time, model_params)
-    end
-    for key in other_parameter_keys
+    # Order matters: the availability parameter is derived from the countdown, so the
+    # countdown has to be updated first wherever events are active.
+    countdown_keys = filter(_is_event_countdown_parameter_key, all_parameter_keys)
+    other_keys = filter(!_is_event_countdown_parameter_key, all_parameter_keys)
+    for key in vcat(countdown_keys, other_keys)
         !has_dataset(get_decision_states(state), key) && continue
         res = read_result(DenseAxisArray, store, model_name, key, simulation_time)
         update_decision_state!(state, key, res, simulation_time, model_params)
@@ -888,6 +909,25 @@ function _update_simulation_state_others!(sim::Simulation, model::DecisionModel)
     return
 end
 
+"""
+Extract the single already-written row `last_row` from a range read of the state-flush
+store. `HdfSimulationStore` reads return exactly one row already (row-indexed HDF5 read);
+`InMemorySimulationStore` reads return every column from `last_row` to the end (its
+`read_outputs` is a tail-range read, not a point read), so the target column must be
+sliced out here. The slice drops the trailing time axis for any rank.
+"""
+function _last_recorded_state_value(::HdfSimulationStore, raw_state_values, ::Int)
+    return raw_state_values
+end
+
+function _last_recorded_state_value(
+    ::InMemorySimulationStore,
+    raw_state_values::DenseAxisArray{T, N},
+    last_row::Int,
+) where {T, N}
+    return raw_state_values[ntuple(_ -> Colon(), Val(N - 1))..., last_row]
+end
+
 function _write_state_to_store!(store::SimulationStore, sim::Simulation)
     sim_state = get_simulation_state(sim)
     system_state = get_system_states(sim_state)
@@ -902,10 +942,36 @@ function _write_state_to_store!(store::SimulationStore, sim::Simulation)
         # If the store is outdated w.r.t to the state
         @assert store_update_time <= simulation_time
         if store_update_time < state_update_time
+            # A key's own decision-state resolution can be coarser than the simulation-wide
+            # `state_resolution` (the finest resolution across all models) whenever the key
+            # is unique to a coarser-resolution model. `_update_timestamp` walks the
+            # simulation-wide grid, so it must be floored onto the key's own grid (a
+            # zero-order hold) before reading `decision_states`, whose dataset only has
+            # entries at its native resolution.
+            decision_dataset = get_dataset(get_decision_states(sim_state), key)
+            decision_resolution = get_data_resolution(decision_dataset)
+            window_start = first(decision_dataset.timestamps)
             _update_timestamp = max(store_update_time + state_resolution, sim_ini_time)
             while _update_timestamp <= state_update_time
-                state_values =
-                    get_decision_state_value(sim_state, key, _update_timestamp)
+                aligned_timestamp =
+                    sim_ini_time +
+                    ((_update_timestamp - sim_ini_time) ÷ decision_resolution) *
+                    decision_resolution
+                if aligned_timestamp < window_start
+                    # The owning model has already rebuilt for its next window (single-shot
+                    # models with no rolling overlap between executions) before this
+                    # straggling sub-tick could be flushed. The held value hasn't changed
+                    # since the last row actually written to the store, so reuse it instead
+                    # of `decision_states`, whose window no longer covers `aligned_timestamp`.
+                    last_row = get_last_recorded_row(em_store, key)
+                    raw_state_values =
+                        read_result(DenseAxisArray, store, model_name, key, last_row)
+                    state_values =
+                        _last_recorded_state_value(store, raw_state_values, last_row)
+                else
+                    state_values =
+                        get_decision_state_value(sim_state, key, aligned_timestamp)
+                end
                 ix = get_last_recorded_row(em_store, key) + 1
                 write_result!(
                     store,
@@ -925,12 +991,12 @@ end
 """
 Default problem update function for most problems with no customization
 """
-function update_model!(model::OperationModel, sim::Simulation)
+function update_model!(model::IOM.AbstractOptimizationModel, sim::Simulation)
     update_model!(model, get_simulation_state(sim), get_ini_cond_chronology(sim))
     if get_rebuild_model(model)
         container = get_optimization_container(model)
         reset_optimization_model!(container)
-        build_impl!(container, get_template(model), get_system(model))
+        POM.build_problem!(container, get_template(model), get_system(model))
     end
 
     return
@@ -987,7 +1053,7 @@ function _execute!(
     store = get_simulation_store(sim)
     for step in 1:steps
         IS.@record :simulation_status SimulationStepEvent(
-            get_current_time(sim),
+            IOM.get_current_time(sim),
             step,
             "start",
         )
@@ -1055,8 +1121,8 @@ function _execute!(
                         if model_number == execution_order[end]
                             _update_system_state!(sim, model)
                             _write_state_to_store!(store, sim)
-                            # This function needs to be called last so make sure that the update to the
-                            # state get written AFTER the models run.
+                            # Called last so the state update is written AFTER the
+                            # models run.
                             apply_simulation_events!(sim)
                         end
                     end
@@ -1074,7 +1140,7 @@ function _execute!(
                 end
 
                 IS.@record :simulation_status ProblemExecutionEvent(
-                    get_current_time(sim),
+                    IOM.get_current_time(sim),
                     step,
                     model_name,
                     "done",
@@ -1087,7 +1153,7 @@ function _execute!(
         end # execution order for loop
 
         IS.@record :simulation_status SimulationStepEvent(
-            get_current_time(sim),
+            IOM.get_current_time(sim),
             step,
             "done",
         )
@@ -1178,7 +1244,7 @@ function _serialize_systems_to_json(sim::Simulation)
     @debug Threads.threadid() "Serializing systems to JSON in parallel with model building"
     for dm in get_decision_models(simulation_models)
         sys = get_system(dm)
-        uuid = string(IS.get_uuid(sys))
+        uuid = string(get_system_uuid(sys))
         if !haskey(results, uuid)
             results[uuid] = PSY.to_json(sys)
         end
@@ -1186,7 +1252,7 @@ function _serialize_systems_to_json(sim::Simulation)
     em = get_emulation_model(simulation_models)
     if !isnothing(em)
         sys = get_system(em)
-        uuid = string(IS.get_uuid(sys))
+        uuid = string(get_system_uuid(sys))
         if !haskey(results, uuid)
             results[uuid] = PSY.to_json(sys)
         end

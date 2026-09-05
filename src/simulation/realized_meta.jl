@@ -47,7 +47,7 @@ function RealizedMeta(
 end
 
 function _make_dataframe(
-    results_by_time::ResultsByTime{DataFrame, N},
+    results_by_time::OutputsByTime{DataFrame, N},
     num_timestamps::Int,
     meta::RealizedMeta,
     key::OptimizationContainerKey,
@@ -105,7 +105,7 @@ function _make_dataframe(
 end
 
 function _make_dataframe(
-    results_by_time::ResultsByTime{DataFrame, N},
+    results_by_time::OutputsByTime{DataFrame, N},
     num_timestamps::Int,
     meta::RealizedMeta,
     key::OptimizationContainerKey,
@@ -150,7 +150,7 @@ function _make_dataframe(
 end
 
 function get_realization(
-    results::Dict{OptimizationContainerKey, ResultsByTime{DataFrame}},
+    results::Dict{OptimizationContainerKey, OutputsByTime{DataFrame}},
     meta::RealizedMeta;
     table_format = TableFormat.LONG,
 )

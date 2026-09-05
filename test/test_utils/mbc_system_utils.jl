@@ -16,11 +16,11 @@ function replace_with_renewable!(
         name = "RG1",
         available = true,
         bus = get_bus(unit1),
-        active_power = get_active_power(unit1),
-        reactive_power = get_reactive_power(unit1),
-        rating = get_rating(unit1),
+        active_power = get_active_power(unit1, PSY.DU),
+        reactive_power = get_reactive_power(unit1, PSY.DU),
+        rating = get_rating(unit1, PSY.DU),
         prime_mover_type = PSY.PrimeMovers.PVe,
-        reactive_power_limits = get_reactive_power_limits(unit1),
+        reactive_power_limits = get_reactive_power_limits(unit1, PSY.DU),
         power_factor = 0.9,
         # the start up, shunt down, and no-load cost of renewables should be zero,
         # but we'll use the unit's operation cost as-is for simplicity.
@@ -30,32 +30,42 @@ function replace_with_renewable!(
     add_component!(sys, rg1)
     transfer_mbc!(rg1, unit1, sys)
     remove_component!(sys, unit1)
-    zero_out_startup_shutdown_costs!(rg1)
+    zero_out_startup_shutdown_costs!(sys, rg1)
 
     # add a max_active_power time series to the component
     load = first(PSY.get_components(PSY.PowerLoad, sys))
     load_ts = get_time_series(Deterministic, load, "max_active_power")
     num_windows = length(get_data(load_ts))
     num_forecast_steps =
-        floor(Int, get_horizon(load_ts) / get_interval(load_ts))
+        floor(Int, IS.get_horizon(load_ts) / IS.get_interval(load_ts))
     total_steps = num_windows + num_forecast_steps - 1
     dates = range(
         get_initial_timestamp(load_ts);
-        step = get_interval(load_ts),
+        step = IS.get_interval(load_ts),
         length = total_steps,
     )
     if use_thermal_max_power
-        rg_data = fill(get_active_power_limits(unit1).max, total_steps)
+        rg_data = fill(get_active_power_limits(unit1, PSY.NU).max, total_steps)
     else
         rg_data = magnitude .* ones(total_steps) .+ random_variation .* rand(total_steps)
     end
-    rg_ts = SingleTimeSeries("max_active_power", TimeArray(dates, rg_data))
-    add_time_series!(sys, rg1, rg_ts)
-    transform_single_time_series!(
-        sys,
-        get_horizon(load_ts),
-        get_interval(load_ts),
+    # Build a native `Deterministic` directly (windows keyed exactly like `load_ts`'s own,
+    # each holding `num_forecast_steps` values sliced from `rg_data`) instead of adding a
+    # `SingleTimeSeries` and calling `transform_single_time_series!`: that call produces a
+    # `DeterministicSingleTimeSeries`, a distinct forecast type from the rest of this
+    # system's (MarketBidCost-derived) native `Deterministic` time series, and
+    # `IOM.get_deterministic_time_series_type` refuses a System mixing the two.
+    rg_ts_data = OrderedDict{DateTime, Vector{Float64}}(
+        dates[w] => rg_data[w:(w + num_forecast_steps - 1)] for w in 1:num_windows
     )
+    rg_ts = Deterministic(;
+        name = "max_active_power",
+        data = rg_ts_data,
+        resolution = IS.get_interval(load_ts),
+        interval = IS.get_interval(load_ts),
+    )
+    add_time_series!(sys, rg1, rg_ts)
+    return
 end
 
 function replace_load_with_interruptible!(sys::System)
@@ -65,17 +75,17 @@ function replace_load_with_interruptible!(sys::System)
         name = get_name(load1) * "_interruptible",
         bus = get_bus(load1),
         available = get_available(load1),
-        active_power = get_active_power(load1),
-        reactive_power = get_reactive_power(load1),
-        max_active_power = get_max_active_power(load1),
-        max_reactive_power = get_max_reactive_power(load1),
+        active_power = get_active_power(load1, PSY.DU),
+        reactive_power = get_reactive_power(load1, PSY.DU),
+        max_active_power = get_max_active_power(load1, PSY.DU),
+        max_reactive_power = get_max_reactive_power(load1, PSY.DU),
         operation_cost = PSY.LoadCost(nothing),
         base_power = get_base_power(load1),
         conformity = get_conformity(load1),
     )
     add_component!(sys, interruptible_load)
-    for ts_key in get_time_series_keys(load1)
-        ts = get_time_series(load1, ts_key)
+    for md in IS.list_time_series_metadata(load1)
+        ts = get_time_series(load1, IS.get_time_series_key(md))
         add_time_series!(
             sys,
             interruptible_load,
@@ -97,103 +107,163 @@ Multiplies {} for {} by {}:
 """
 function tweak_system!(sys::System, load_pow_mult, therm_pow_mult, therm_price_mult)
     for load in get_components(PowerLoad, sys)
-        set_max_active_power!(load, get_max_active_power(load) * load_pow_mult)
+        set_max_active_power!(
+            load,
+            get_max_active_power(load, PSY.SU) * load_pow_mult * PSY.SU,
+        )
     end
     # replace with type of component?
     for therm in get_components(ThermalStandard, sys)
         op_cost = get_operation_cost(therm)
-        op_cost isa MarketBidCost && continue
-        with_units_base(sys, UnitSystem.DEVICE_BASE) do
-            old_limits = get_active_power_limits(therm)
-            new_limits = (min = old_limits.min, max = old_limits.max * therm_pow_mult)
-            set_active_power_limits!(therm, new_limits)
-        end
-        if get_variable(op_cost) isa CostCurve{LinearCurve} ||
-           get_variable(op_cost) isa CostCurve{QuadraticCurve}
-            prop = get_proportional_term(get_value_curve(get_variable(op_cost)))
-            set_variable!(op_cost, CostCurve(LinearCurve(prop * therm_price_mult)))
-        elseif get_variable(op_cost) isa CostCurve{PiecewiseIncrementalCurve}
-            pwl = get_value_curve(get_variable(op_cost))
-            new_pwl = PiecewiseIncrementalCurve(
-                therm_price_mult * get_initial_input(pwl),
-                get_x_coords(pwl),
-                therm_price_mult * get_slopes(pwl),
-            )
-            set_variable!(op_cost, CostCurve(new_pwl))
-        else
-            error("Unhandled operation cost variable type $(typeof(get_variable(op_cost)))")
-        end
+        _is_market_bid_cost(op_cost) && continue
+        old_limits = get_active_power_limits(therm, PSY.DU)
+        new_limits =
+            (min = old_limits.min * PSY.DU, max = old_limits.max * therm_pow_mult * PSY.DU)
+        set_active_power_limits!(therm, new_limits)
+        set_variable_operation_cost!(
+            op_cost,
+            _scaled_variable_cost(get_variable_operation_cost(op_cost), therm_price_mult),
+        )
     end
+end
+
+_is_market_bid_cost(::MarketBidCost) = true
+_is_market_bid_cost(::PSY.OperationalCost) = false
+
+function _scaled_variable_cost(curve::CostCurve{LinearCurve}, mult)
+    prop = get_proportional_term(get_value_curve(curve))
+    return CostCurve(LinearCurve(prop * mult))
+end
+
+function _scaled_variable_cost(curve::CostCurve{QuadraticCurve}, mult)
+    prop = get_proportional_term(get_value_curve(curve))
+    return CostCurve(LinearCurve(prop * mult))
+end
+
+function _scaled_variable_cost(curve::CostCurve{PiecewiseIncrementalCurve}, mult)
+    pwl = get_value_curve(curve)
+    new_pwl = PiecewiseIncrementalCurve(
+        mult * get_initial_input(pwl),
+        get_x_coords(pwl),
+        mult * get_slopes(pwl),
+    )
+    return CostCurve(new_pwl)
+end
+
+function _scaled_variable_cost(curve, mult)
+    error("Unhandled operation cost variable type $(typeof(curve))")
 end
 
 tweak_for_startup_shutdown!(sys::System) = tweak_system!(sys::System, 0.8, 1.0, 1.0)
 
 tweak_for_decremental_initial!(sys::PSY.System) = tweak_system!(sys, 1.0, 1.2, 0.5)
 
-"""Transfer the market bid cost from old_comp to new_comp, copying any time series in the process."""
+"""Transfer the market bid cost from old_comp to new_comp, copying any time series in the
+process. `old_comp`'s cost may be a static `MarketBidCost` (nothing to copy) or a
+`MarketBidTimeSeriesCost` (every field is a time series reference that must be re-homed onto
+`new_comp`)."""
 function transfer_mbc!(
     new_comp::PSY.Device,
     old_comp::PSY.Device,
     new_sys::PSY.System,
 )
     mbc = deepcopy(get_operation_cost(old_comp))
-    @assert mbc isa PSY.MarketBidCost
-    for field in fieldnames(PSY.MarketBidCost)
-        val = getfield(mbc, field)
-        if val isa IS.TimeSeriesKey
-            ts = PSY.get_time_series(old_comp, val)
-            new_ts_key = add_time_series!(new_sys, new_comp, deepcopy(ts))
-            setfield!(mbc, field, new_ts_key)
-        end
-    end
-    set_operation_cost!(new_comp, mbc)
+    set_operation_cost!(new_comp, _rehomed_mbc(mbc, old_comp, new_sys, new_comp))
     return
 end
 
-function zero_out_startup_shutdown_costs!(comp::PSY.Device)
-    op_cost = get_operation_cost(comp)::MarketBidCost
-    set_start_up!(op_cost, (hot = 0.0, warm = 0.0, cold = 0.0))
-    set_shut_down!(op_cost, 0.0)
+_rehomed_mbc(mbc::MarketBidCost, ::PSY.Device, ::PSY.System, ::PSY.Device) = mbc
+
+function _rehomed_mbc(
+    mbc::MarketBidTimeSeriesCost,
+    old_comp::PSY.Device,
+    new_sys::PSY.System,
+    new_comp::PSY.Device,
+)
+    rehome_key(key::IS.TimeSeriesKey) =
+        add_time_series!(new_sys, new_comp, deepcopy(PSY.get_time_series(old_comp, key)))
+    return MarketBidTimeSeriesCost(;
+        minimum_energy_offer = TimeSeriesLinearCurve(
+            rehome_key(IS.get_time_series_key(get_minimum_energy_offer(mbc))),
+        ),
+        start_up = rehome_key(get_start_up(mbc)),
+        shut_down = TimeSeriesLinearCurve(
+            rehome_key(IS.get_time_series_key(get_shut_down(mbc))),
+        ),
+        incremental_offer_curves =
+        _rehomed_offer_curve(get_incremental_offer_curves(mbc), rehome_key),
+        decremental_offer_curves =
+        _rehomed_offer_curve(get_decremental_offer_curves(mbc), rehome_key),
+        ancillary_service_offers = get_ancillary_service_offers(mbc),
+        incremental_slope = get_incremental_slope(mbc),
+        decremental_slope = get_decremental_slope(mbc),
+        curve_style = get_curve_style(mbc),
+    )
 end
 
-"""Set everything except the incremental_offer_curves to zero on the MarketBidCost attached to the unit."""
-function zero_out_non_incremental_curve!(sys::PSY.System, unit::PSY.Component)
-    cost = deepcopy(get_operation_cost(unit)::MarketBidCost)
-    set_no_load_cost!(cost, 0.0)
-    set_start_up!(cost, (hot = 0.0, warm = 0.0, cold = 0.0))
-    set_shut_down!(cost, 0.0)
-    # set minimum generation cost (but not min gen power) to zero.
-    if get_incremental_offer_curves(cost) isa IS.TimeSeriesKey
-        zero_ts = make_deterministic_ts(sys, "initial_input", 0.0, 0.0, 0.0)
-        zero_ts_key = add_time_series!(sys, unit, zero_ts)
-        set_incremental_initial_input!(cost, zero_ts_key)
+function _rehomed_offer_curve(curve::CostCurve{<:TimeSeriesPiecewiseIncrementalCurve},
+    rehome_key,
+)
+    vc = get_value_curve(curve)
+    new_pwl_key = rehome_key(IS.get_time_series_key(vc))
+    initial_key = IS.get_initial_input(vc)
+    local new_initial_key
+    if isnothing(initial_key)
+        new_initial_key = nothing
     else
-        base_curve = get_value_curve(get_incremental_offer_curves(cost))
-        x_coords = get_x_coords(base_curve)
-        slopes = get_slopes(base_curve)
-        new_curve = PiecewiseIncrementalCurve(0.0, x_coords, slopes)
-        set_incremental_offer_curves!(cost, CostCurve(new_curve))
+        new_initial_key = rehome_key(initial_key)
     end
-    set_operation_cost!(unit, cost)
+    return make_market_bid_ts_curve(new_pwl_key, new_initial_key, get_power_units(curve))
 end
 
-"Set the no_load_cost to `nothing` and the initial_input to the old no_load_cost. Not designed for time series"
-function no_load_to_initial_input!(comp::Generator)
+zero_out_startup_shutdown_costs!(sys::PSY.System, comp::PSY.Device) =
+    _zero_out_startup_shutdown_costs!(sys, comp, get_operation_cost(comp))
+
+function _zero_out_startup_shutdown_costs!(
+    ::PSY.System,
+    ::PSY.Device,
+    op_cost::MarketBidCost,
+)
+    set_start_up!(op_cost, (hot = 0.0, warm = 0.0, cold = 0.0))
+    set_shut_down!(op_cost, LinearCurve(0.0))
+    return
+end
+
+function _zero_out_startup_shutdown_costs!(
+    sys::PSY.System,
+    comp::PSY.Device,
+    op_cost::MarketBidTimeSeriesCost,
+)
+    startup_ts = make_deterministic_ts(sys, "zeroed_start_up", (0.0, 0.0, 0.0), 0.0, 0.0)
+    shutdown_ts =
+        make_deterministic_ts(sys, "zeroed_shut_down", LinearFunctionData(0.0), 0.0, 0.0)
+    set_start_up!(op_cost, add_time_series!(sys, comp, startup_ts))
+    set_shut_down!(op_cost, TimeSeriesLinearCurve(add_time_series!(sys, comp, shutdown_ts)))
+    return
+end
+
+"""
+Move the `minimum_energy_offer` cost onto the incremental offer curve's `initial_input`,
+zeroing `minimum_energy_offer` in exchange (`MEO = no-load cost / P_min`, so the flat dollar
+figure baked into `initial_input` is `MEO * P_min`). Not designed for time series.
+"""
+function no_load_to_initial_input!(sys::PSY.System, comp::Generator)
     cost = get_operation_cost(comp)::MarketBidCost
-    no_load = PSY.get_no_load_cost(cost)
+    meo_rate = IS.get_proportional_term(get_function_data(get_minimum_energy_offer(cost)))
+    p_min = get_active_power_limits(comp, PSY.NU).min
     old_fd = get_function_data(
-        get_value_curve(get_incremental_offer_curves(get_operation_cost(comp))),
+        get_value_curve(get_incremental_offer_curves(cost)),
     )::IS.PiecewiseStepData
-    new_vc = PiecewiseIncrementalCurve(old_fd, no_load, nothing)
-    set_incremental_offer_curves!(get_operation_cost(comp), CostCurve(new_vc))
-    set_no_load_cost!(get_operation_cost(comp), nothing)
+    new_vc = PiecewiseIncrementalCurve(old_fd, meo_rate * p_min, nothing)
+    set_incremental_offer_curves!(cost, CostCurve(new_vc))
+    set_minimum_energy_offer!(cost, LinearCurve(0.0))
     return
 end
 
 no_load_to_initial_input!(
     sys::PSY.System,
     sel = make_selector(x -> get_operation_cost(x) isa MarketBidCost, Generator),
-) = no_load_to_initial_input!.(get_components(sel, sys))
+) = foreach(comp -> no_load_to_initial_input!(sys, comp), get_components(sel, sys))
 
 "Set all MBC thermal unit min active powers to their min breakpoints"
 function adjust_min_power!(sys)
@@ -203,9 +273,10 @@ function adjust_min_power!(sys)
         cost_curve = get_incremental_offer_curves(op_cost)::CostCurve
         baseline = get_value_curve(cost_curve)::PiecewiseIncrementalCurve
         x_coords = get_x_coords(get_function_data(baseline))
-        with_units_base(sys, UnitSystem.NATURAL_UNITS) do
-            set_active_power_limits!(comp, (min = first(x_coords), max = last(x_coords)))
-        end
+        set_active_power_limits!(
+            comp,
+            (min = first(x_coords) * PSY.MW, max = last(x_coords) * PSY.MW),
+        )
     end
 end
 
@@ -218,7 +289,7 @@ function add_startup_shutdown_ts_a!(sys::System, with_increments::Bool)
     res_incr = with_increments ? 0.05 : 0.0
     interval_incr = with_increments ? 0.01 : 0.0
     unit1 = get_component(ThermalStandard, sys, "Test Unit1")
-    @assert get_operation_cost(unit1) isa MarketBidCost
+    op_cost = get_operation_cost(unit1)::MarketBidCost
     startup_ts_1 = make_deterministic_ts(
         sys,
         "start_up",
@@ -226,10 +297,19 @@ function add_startup_shutdown_ts_a!(sys::System, with_increments::Bool)
         res_incr,
         interval_incr,
     )
-    set_start_up!(sys, unit1, startup_ts_1)
     shutdown_ts_1 =
-        make_deterministic_ts(sys, "shut_down", 0.5, res_incr, interval_incr)
-    set_shut_down!(sys, unit1, shutdown_ts_1)
+        make_deterministic_ts(sys, "shut_down", LinearFunctionData(0.5), res_incr,
+            interval_incr)
+    startup_key = add_time_series!(sys, unit1, startup_ts_1)
+    shutdown_key = add_time_series!(sys, unit1, shutdown_ts_1)
+    ts_cost = to_market_bid_ts_cost(
+        sys,
+        unit1,
+        op_cost;
+        new_start_up = startup_key,
+        new_shut_down = TimeSeriesLinearCurve(shutdown_key),
+    )
+    set_operation_cost!(unit1, ts_cost)
     return startup_ts_1, shutdown_ts_1
 end
 
@@ -241,9 +321,9 @@ function add_startup_shutdown_ts_b!(sys::System, with_increments::Bool)
     res_incr = with_increments ? 0.05 : 0.0
     interval_incr = with_increments ? 0.01 : 0.0
     unit1 = get_component(ThermalMultiStart, sys, "115_STEAM_1")
-    base_startup = Tuple(get_start_up(get_operation_cost(unit1)))
-    base_shutdown = get_shut_down(get_operation_cost(unit1))
-    @assert get_operation_cost(unit1) isa MarketBidCost
+    op_cost = get_operation_cost(unit1)::MarketBidCost
+    base_startup = Tuple(get_start_up(op_cost))
+    base_shutdown = get_function_data(get_shut_down(op_cost))
     startup_ts_1 = make_deterministic_ts(
         sys,
         "start_up",
@@ -251,7 +331,6 @@ function add_startup_shutdown_ts_b!(sys::System, with_increments::Bool)
         res_incr,
         interval_incr,
     )
-    set_start_up!(sys, unit1, startup_ts_1)
     shutdown_ts_1 =
         make_deterministic_ts(
             sys,
@@ -260,7 +339,16 @@ function add_startup_shutdown_ts_b!(sys::System, with_increments::Bool)
             res_incr,
             interval_incr,
         )
-    set_shut_down!(sys, unit1, shutdown_ts_1)
+    startup_key = add_time_series!(sys, unit1, startup_ts_1)
+    shutdown_key = add_time_series!(sys, unit1, shutdown_ts_1)
+    ts_cost = to_market_bid_ts_cost(
+        sys,
+        unit1,
+        op_cost;
+        new_start_up = startup_key,
+        new_shut_down = TimeSeriesLinearCurve(shutdown_key),
+    )
+    set_operation_cost!(unit1, ts_cost)
     return startup_ts_1, shutdown_ts_1
 end
 
@@ -295,15 +383,16 @@ function load_sys_incr()
     # Give Test Unit1 a device base_power != system base_power, so unit-conversion bugs
     # (e.g. rating-dependent per-unit multipliers) aren't masked by the two coinciding.
     unit1 = get_component(SEL_INCR, sys)
-    with_units_base(sys, UnitSystem.NATURAL_UNITS) do
-        limits = get_active_power_limits(unit1)
-        rating = get_rating(unit1)
-        active_power = get_active_power(unit1)
-        set_base_power!(unit1, get_base_power(sys) * 1.4)
-        set_active_power_limits!(unit1, limits)
-        set_rating!(unit1, rating)
-        set_active_power!(unit1, active_power)
-    end
+    limits = get_active_power_limits(unit1, PSY.NU)
+    rating = get_rating(unit1, PSY.NU)
+    active_power = get_active_power(unit1, PSY.NU)
+    set_base_power!(unit1, get_base_power(sys) * 1.4)
+    set_active_power_limits!(
+        unit1,
+        (min = limits.min * PSY.MW, max = limits.max * PSY.MW),
+    )
+    set_rating!(unit1, rating * PSY.MW)
+    set_active_power!(unit1, active_power * PSY.MW)
     return sys
 end
 
@@ -362,9 +451,11 @@ function remove_thermal_mbcs!(sys::PSY.System)
         old_cost = get_operation_cost(comp)
         old_cost isa MarketBidCost || continue
         new_op_cost = ThermalGenerationCost(;
-            variable = get_incremental_offer_curves(old_cost),
+            variable_operation_cost = get_incremental_offer_curves(old_cost),
             start_up = get_start_up(old_cost),
-            shut_down = get_shut_down(old_cost),
+            shut_down = IS.get_proportional_term(
+                get_function_data(get_shut_down(old_cost)),
+            ),
             fixed = 0.0,
         )
         set_operation_cost!(comp, new_op_cost)
@@ -376,7 +467,7 @@ function zero_out_thermal_costs!(sys)
         set_operation_cost!(
             comp,
             ThermalGenerationCost(;
-                variable = CostCurve(
+                variable_operation_cost = CostCurve(
                     LinearCurve(0.0),
                 ),
                 start_up = (hot = 0.0, warm = 0.0, cold = 0.0),
@@ -434,11 +525,11 @@ function build_sys_decr2(
 
     # make the max_active_power time series constant.
     il = first(get_components(PSY.InterruptiblePowerLoad, sys))
-    for ts_key in get_time_series_keys(il)
-        if get_name(ts_key) == "max_active_power"
+    for md in IS.list_time_series_metadata(il)
+        if get_name(md) == "max_active_power"
             max_active_power_ts = get_time_series(
                 first(get_components(PSY.InterruptiblePowerLoad, sys)),
-                ts_key,
+                IS.get_time_series_key(md),
             )
             max_max_active_power = maximum(maximum(values(max_active_power_ts.data)))
             remove_time_series!(sys, Deterministic, il, "max_active_power")
@@ -468,15 +559,14 @@ function create_multistart_sys(
     tweak_system!(c_sys5_pglib, load_pow_mult, therm_pow_mult, therm_price_mult)
     ms_comp = get_component(SEL_MULTISTART, c_sys5_pglib)
     old_op = get_operation_cost(ms_comp)
-    old_ic = IncrementalCurve(get_value_curve(get_variable(old_op)))
+    old_ic = IncrementalCurve(get_value_curve(get_variable_operation_cost(old_op)))
     new_ii = get_initial_input(old_ic) + get_fixed(old_op)
     new_ic = IncrementalCurve(get_function_data(old_ic), new_ii, nothing)
     set_operation_cost!(
         ms_comp,
         MarketBidCost(;
-            no_load_cost = nothing,
             start_up = (hot = 300.0, warm = 450.0, cold = 500.0),
-            shut_down = 100.0,
+            shut_down = LinearCurve(100.0),
             incremental_offer_curves = CostCurve(new_ic),
         ),
     )

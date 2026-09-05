@@ -1,4 +1,8 @@
-function update_model!(model::OperationModel, source::SimulationState, ini_cond_chronology)
+function update_model!(
+    model::IOM.AbstractOptimizationModel,
+    source::SimulationState,
+    ini_cond_chronology,
+)
     TimerOutputs.@timeit RUN_SIMULATION_TIMER "Parameter Updates" begin
         update_parameters!(model, source)
     end

@@ -1,161 +1,162 @@
 # PowerSimulations.jl — Claude Guide
 
-Platform-wide Sienna conventions (performance, type stability, formatter, environments, code style) live in `.claude/Sienna.md` — read it too. This file is repo-specific and does not restate them.
+Platform-wide Sienna conventions (performance, type stability, formatter, environments, code style) live in `.claude/Sienna.md` and the `sienna-psy6` skill — read them too. This file is repo-specific and does not restate them.
 
-Power-system optimization and simulation framework. Builds and solves large-scale optimization (JuMP) problems for operations modeling across multiple time scales (planning, day-ahead, real-time). Package version `0.36.x`; Julia compat `^1.10`.
+## Scope (psy6 line, post-excision)
 
-## Where it sits in the Sienna stack
+PSI is the **simulation orchestration** package of the psy6 line. It runs optimization models in the loop over time, keeps the simulation state, updates parameters and initial conditions between solves, stores results, and reads them back. It does **not** build optimization models. That job belongs to two upstream packages:
 
-- **Upstream deps:** `InfrastructureSystems` (IS — container, time series, serialization, `@assert_op`), `PowerSystems` (PSY — `System`, component/device/service types), `PowerNetworkMatrices` (PNM — PTDF/LODF/`VirtualPTDF`/`VirtualMODF`, network reduction), `PowerFlows` (PF — power-flow-in-the-loop), `PowerModels` (PM — AC/DC network formulation abstract types), `JuMP`/`MathOptInterface` (the optimizer interface), `HDF5` (results store).
-- **Downstream:** PowerAnalytics / PowerGraphics / PowerSimulationsDynamics consume PSI results and `System` copies. Changes to results storage and serialization have downstream blast radius.
-- `InfrastructureOptimizationModels` and `PowerOperationsModels` are NOT current dependencies (not in `Project.toml`) — do not assume coupling to them.
+- **InfrastructureOptimizationModels (IOM)** — domain-neutral core: `OptimizationContainer`, `DecisionModel{M}`, `EmulationModel{M}`, `ModelInternal`, `Settings`, per-model stores, datasets (`InMemoryDataset`, `HDF5Dataset`, `DatasetContainer`), `OptimizationProblemOutputs`, generic builders, objective functions, status enums.
+- **PowerOperationsModels (POM)** — power formulations: every device/service/network/HVDC/storage/hydro/hybrid formulation, `PowerOperationsProblemTemplate`, the `AbstractPowerOperationProblem` problem chain, per-model `build!`/`solve!`/`run!`, `build_problem!`, feedforward types and their constraint construction, parameter types and `add_parameters!`, initial-condition allocation, the initialization sub-problem, and PF-in-the-loop via `ext/PowerFlowsExt`.
 
-### Version pairing (non-obvious, keep coupled)
-- PF and PNM are version-coupled: do not mix incompatible majors. Current compat: `PowerFlows ^0.21.1`, `PowerNetworkMatrices ^0.24`, `PowerSystems ^5.11`, `PowerModels ^0.21.5`, `JuMP ^1.28`, `InfrastructureSystems ^3.5`. When bumping PF, bump PNM in lockstep and re-run the full suite.
+Rule of thumb for where a change goes: **if it needs `SimulationState`, a `SimulationStore`, or knowledge of more than one model, it is PSI. If it adds a variable, constraint, parameter, or expression to a container, it is POM (or IOM if domain-neutral).** Never port formulation code back into PSI.
 
-## Core Architecture
+`using PowerSimulations` re-exports the full IOM and POM public API, so user scripts need only one `using`.
 
-### Operation Models
-Central abstraction `OperationModel`, two concrete types:
-- **`DecisionModel{M <: DecisionProblem}`** — optimization over a horizon (e.g. 24h UC, 1h ED). Holds a `ProblemTemplate`, an `OptimizationContainer` (JuMP wrapper), and a PSY `System`.
-- **`EmulationModel{M <: EmulationProblem}`** — single-time-step real-time emulation (AGC, reserve deployment).
+PSI was cut down to this scope by the excision plan in `.claude/plans/2026-09-02-pom-excision.md`, with its spec and file classification in `2026-09-02-pom-excision-spec.md`. Commit-by-commit progress and the final counts are in `.claude/plans/excision-progress.md`. These are local, gitignored working notes — not tracked in git, not on other clones.
 
-Built-in problem types: `GenericOpProblem`, `UnitCommitmentProblem`, `EconomicDispatchProblem`, `AGCReserveDeployment`.
+### Where PSI sits
 
-### ProblemTemplate
-Defines network representation + device/service/event formulations:
-```julia
-template = ProblemTemplate(NetworkModel(CopperPlatePowerModel))
-set_device_model!(template, ThermalStandard, ThermalBasicUnitCommitment)
-set_service_model!(template, VariableReserve{ReserveUp}, RangeReserve)
+```
+IS  ──▶ IOM ──▶ POM ──▶ PSI ──▶ PowerAnalytics / PowerGraphics
+IS  ──▶ PSY ──▶ POM
+PSY ──▶ PNM ──▶ POM
+PSY ──▶ PF  ──▶ POM
+PSY ──▶ PSB
 ```
 
-### Device, Service, Network, Event Models
-- **`DeviceModel{D <: PSY.Device, B <: AbstractDeviceFormulation}`** — binds a device type to a formulation; carries feedforwards, time-series mappings, attributes.
-- **`ServiceModel{D <: PSY.Service, B <: AbstractServiceFormulation}`** — same pattern for ancillary services.
-- **`NetworkModel{T <: PM.AbstractPowerModel}`** — power-flow formulation: `CopperPlatePowerModel`, `PTDFPowerModel`/`AbstractPTDFModel`, `AreaBalancePowerModel`, `AreaPTDFPowerModel`, full AC/DC from PowerModels.
-- **`EventModel`** (`set_event_model!`) — outage/contingency events; see `src/core/event_model.jl`, `event_keys.jl`, and the `contingency_model/` directory.
+- **Upstream deps:** IOM, POM, PSY, IS, PNM (reduced-network branch time-series routing in parameter updates), HDF5, JuMP, DataFrames, Distributed.
+- **Not deps anymore:** PowerModels (POM network models are native), PowerFlows (PF-in-the-loop is POM's extension; PSI only needs PF in tests), Distributions (events only, fenced).
+- **Downstream:** PowerAnalytics / PowerGraphics consume `SimulationResults`. Results storage, key encoding (`"VariableType__ComponentType"`), and serialization changes have downstream blast radius.
+- **Co-dev wiring:** `Project.toml` and `test/Project.toml` `[sources]` carry git rev pins (IS `IS4`, IOM `lk/event-parameter-attribute-bounds`, PSY `psy6`, PNM `psy6`, POM `lk/events-port`; test env also pins PSB `psy6`, PF `psy6`, PowerFlowFileParser `psy6`, PowerTableDataParser `psy6`) plus the OpenAPI git pins PSY needs — this is what CI (`julia-buildpkg`/`julia-runtest`) resolves from. POM is pinned to the events port (POM #286), rebased on POM `main`. IOM stays off `main`: main's 34c1341 extends `instantiate_network_model!` with service models and POM still implements the 4-argument form. `docs/Project.toml` pins the same revs. To co-dev locally against an in-progress sibling checkout without touching these tracked pins, `Pkg.develop(path="../<Sibling>.jl")` from `--project=.` or `--project=test`; that writes only to the gitignored `Manifest.toml`. Switch the tracked pins to `main`/released revs before a PR to `main`. No version bumps: PSI stays `0.38.3` until release.
 
-### Formulation Hierarchy (formulation type controls what is built)
-- **Thermal:** `ThermalBasicUnitCommitment`, `ThermalStandardUnitCommitment`, `ThermalCompactUnitCommitment`, `ThermalBasicDispatch`, etc. (UC = binary on/off + min up/down; dispatch = continuous only)
-- **Renewable:** `RenewableFullDispatch`, `RenewableConstantPowerFactor`
-- **Load:** `StaticPowerLoad`, `PowerLoadInterruption`, `PowerLoadDispatch`
-- **Storage:** `BookKeeping`, `BatteryAncillaryServices`
-- **Branches:** `StaticBranch`, `StaticBranchBounds`, `StaticBranchUnbounded`, `HVDCTwoTerminalDispatch`, `SecurityConstrainedStaticBranch`
+## What PSI owns
 
-### OptimizationContainer
-Wraps the JuMP model; holds Variables, Constraints, Parameters (time series + feedforward), Expressions (shared nodal/area balance), and the objective, all in typed containers keyed by `OptimizationContainerKey`.
-
-## Simulation Architecture
-
-- **`Simulation`** orchestrates multi-model runs across time.
-- **`SimulationModels`** — vector of `DecisionModel`s + optional `EmulationModel`.
-- **`SimulationSequence`** — execution order, feedforward connections, initial-condition chronologies.
-- **`SimulationState`** — `current_time`, `last_decision_model`, `decision_states::DatasetContainer`, `system_states::DatasetContainer`.
-
-### Feedforwards
-`UpperBoundFeedforward`, `LowerBoundFeedforward`, `SemiContinuousFeedforward`, `FixValueFeedforward` — parameterize a downstream model with upstream results (source model, source variable, affected target component/variable).
-
-### Initial Conditions
-`DevicePower`, `DeviceStatus`, `InitialTimeDurationOn/Off`, `InitialEnergyLevel`, `AreaControlError`. Chronologies: `InterProblemChronology` (other model's results) / `IntraProblemChronology` (same model's previous solve).
+- **`Simulation`** — orchestrates multi-model runs; `build!(sim)`, `execute!(sim)`.
+- **`SimulationModels`** — vector of `DecisionModel`s + optional `EmulationModel`; horizon/interval/resolution reconciliation; assigns `SimulationInfo` (an IS type) to each model.
+- **`SimulationSequence`** — execution order, feedforward attachment (`attach_feedforward!` is POM's), initial-condition chronologies (`InterProblemChronology`, `IntraProblemChronology`).
+- **`SimulationState`** — `decision_states` and `system_states` as IOM `DatasetContainer{InMemoryDataset}`.
+- **Parameter update between solves** — `update_parameter_values!`, PSI's methods of IOM's bare extension point `update_container_parameter_values!`, and `update_cost_parameters.jl` (time-varying cost refresh). These calls stay in PSI by decision; POM's standalone emulation does not update between steps.
+- **Initial-condition update between solves** — PSI methods of `IOM.update_initial_conditions!` reading from `SimulationState`.
+- **Simulation stores** — `HdfSimulationStore`, `InMemorySimulationStore` (subtypes of PSI's `SimulationStore`, distinct from IOM's per-model `AbstractModelStore`), output caches, `SimulationStoreParams`, `SimulationModelStoreRequirements`.
+- **Results** — `SimulationResults`, `SimulationProblemResults`, realized reads, export, partitions and partition joins, recorder events.
+- **Entry points into a model during a run** — `solve!(step, model, start_time, store::SimulationStore)` defined as methods of `POM.solve!`; `update_model!(model, sim)` which may rebuild via `reset_optimization_model!` + `POM.build_problem!`.
 
 ### Execution loop
-read state → update feedforward params → update initial conditions → `JuMP.optimize!` → write results to `SimulationState` + store (HDF5 or in-memory) → advance.
+read state → update feedforward and time-series parameters → update initial conditions → `IOM.solve_model!` → write results to `SimulationState` + `SimulationStore` → advance.
 
 ## src/ layout
 
 ```
 src/
-├── PowerSimulations.jl            # main module: include order + ALL exports
-├── core/                          # OptimizationContainer, DeviceModel, NetworkModel,
-│                                  #   ServiceModel, EventModel, formulations, variable/
-│                                  #   constraint/parameter/expression keys, settings,
-│                                  #   datasets, network_reductions, power_flow_data_wrapper
-├── operation/                     # DecisionModel, EmulationModel, ProblemTemplate,
-│                                  #   built-in templates, template_validation, build/solve
-├── simulation/                    # Simulation, SimulationModels, SimulationSequence,
-│                                  #   SimulationState, results storage (HDF5 / in-memory)
-├── devices_models/
-│   ├── devices/                   # per-device impls (AC_branches, TwoTerminalDC_branches,
-│   │                              #   thermal/renewable/loads/HVDC/source, area_interchange,
-│   │                              #   ac_transmission_security_constrained_models)
-│   ├── devices/common/            # shared device helpers
-│   └── device_constructors/       # construct_device! build functions per formulation
-├── network_models/                # CopperPlate, PTDF, AreaBalance, PowerModels interface,
-│                                  #   power_flow_evaluation (PF-in-the-loop), HVDC constructors
-├── services_models/               # reserve + transmission interface formulations
-├── feedforward/                   # feedforward types, argument setup, constraint builders
-├── initial_conditions/            # IC types, chronologies, update logic
-├── contingency_model/             # contingency.jl, contingency_arguments.jl,
-│                                  #   contingency_constraints.jl (N-1 / SCUC support)
-├── parameters/                    # parameter update mechanisms (time series + state)
-└── utils/
+├── PowerSimulations.jl          # exports, explicit IOM imports, IOM/POM re-export loop, include order
+├── core/                        # definitions (PSI constants), SimulationStore abstract, cache policy
+│                                # event_keys.jl / event_model.jl — EVENTS-EXCISION, not included
+├── operation/                   # problem types (GenericOpProblem, UC/ED), simulation solve! entry
+│                                # points, update_model!/update_parameters! adapters, templates
+├── initial_conditions/          # chronologies, between-solve IC update
+├── parameters/                  # update_parameters, update_container_parameter_values,
+│                                # update_cost_parameters (highest PSY-psy6 risk file)
+├── simulation/                  # Simulation, models, sequence, state, stores, results, partitions
+│                                # simulation_events.jl — EVENTS-EXCISION, not included
+├── contingency_model/           # EVENTS-EXCISION, not included
+└── utils/                       # recorder events, simulation show methods (print_pt_v3.jl),
+                                 # store dimensions, CSV/system-filename helpers (file_utils.jl),
+                                 # single-time-series resolution consistency checks
 ```
 
-## Build flow (`build!(model, system)`)
-1. Template specifies device/service/network/event models.
-2. Each `DeviceModel` dispatches on its formulation to `construct_device!`, which adds variables, constraints, parameters, expressions to the `OptimizationContainer` in two stages: **ArgumentConstructStage** (variables, parameters, expressions) then **ModelConstructStage** (constraints). Each `DeviceModel` checks its own `haskey(get_time_series_names(device_model), <ParameterType>)` in each stage — mirror ThermalGeneration.
-3. Network model adds power-balance/flow constraints; devices contribute to shared nodal/area balance expressions.
-4. Service models add reserve variables/participation constraints.
-5. Feedforwards (simulation context) add linking constraints/parameters.
-6. Objective assembled from cost components.
+## Events are fenced, not gone
+
+POM has only the four `EventParameter` types and no-op `add_event_arguments!`/`add_event_constraints!`. Until the event framework moves to POM, every event method in PSI sits inside a `#= EVENTS-EXCISION: … =#` block or behind a commented `include`. `grep -rn EVENTS-EXCISION src test` lists the follow-up. Do not delete fenced code, do not rewrite it, and do not add new event code outside a fence.
 
 ## Running tests, docs, formatter (verified commands for THIS repo)
 
 ```sh
 # Formatter (run after every change; this is the project script)
 julia --project=scripts/formatter -e 'include("scripts/formatter/formatter_code.jl")'
-#   (script self-activates scripts/formatter and instantiates; formats ./src ./test ./docs)
+
+# Compile check
+julia --project=. -e 'using PowerSimulations'
 
 # Full test suite (test env)
 julia --project=test test/runtests.jl
 
 # A single test file by name (runner uses @includetests ARGS)
-julia --project=test test/runtests.jl test_network_constructors
+julia --project=test test/runtests.jl test_simulation_build
+
+# One file in isolation (loads the shared preamble first)
+julia --project=test -e 'include("test/includes.jl"); include("test/test_simulation_store.jl")'
 
 # Instantiate test env
 julia --project=test -e 'using Pkg; Pkg.instantiate()'
 
-# Build docs
+# Build docs (must finish clean; a broken docs build is a task failure)
 julia --project=docs docs/make.jl
 ```
-- Test runner is the classic InfrastructureSystems `@includetests ARGS` runner (`test/runtests.jl`), plus `Aqua` (`test_unbound_args`, ambiguity, etc.). Test files are named `test_*.jl`; deps live in `test/Project.toml`.
-- See `.claude/Sienna.md` for the `--project=test` rule and PSB shared-state gotchas; see the `sienna-test-environment` skill for in-isolation-vs-`runtests` differences.
+- Test runner is the classic `@includetests ARGS` runner plus Aqua. Test files are `test_*.jl`; deps live in `test/Project.toml` with the same path pins as the package.
+- Test fixtures come from PSB `PSITestSystems` (`c_sys5_uc`, `c_sys5_ed`, `c_sys5_hy_uc`, …). Hydro simulation tests use POM's native hydro formulations through `test/test_utils/operations_problem_templates.jl`.
+- Test templates use POM names: `PowerOperationsProblemTemplate`, `CopperPlateNetworkModel`, `PTDFNetworkModel`, `DCPNetworkModel`, `ACPNetworkModel`. There is no `ProblemTemplate` alias.
 
-## Optimization Model Construction Conventions
+## Conventions, invariants, gotchas
 
-### `add_*!()` methods must not return collections
-Methods that create variables, constraints, or expressions (`add_variables!`, `add_constraints!`, `add_expressions!`, etc.) must always end with a bare `return` (i.e., return `nothing`). They must never return dicts or collections of JuMP objects. Instead, instantiate the appropriate container via `add_*_container!` and store all created objects there.
+### Extend, never shadow
+PSI methods on result and model types must extend the generic they belong to: `function IOM.get_system(res::SimulationProblemResults)`, `function POM.solve!(step::Int, …)`, `function IOM.update_initial_conditions!(…)`. A bare `function get_system(…)` inside PSI creates a second function that shadows the imported one instead of extending it — check with `parentmodule` on the live binding, or grep for a bare `function <name>(` where an `IOM.`/`POM.` qualified definition exists for the same name.
 
-### Inline expressions when possible
-Expression construction should be inlined at the point of use. Only store an expression in a container when it is intended to be reused across multiple constraints or objective terms. Avoid creating expression containers solely as intermediate computation steps.
+### `get_available_components` is two different functions
+`PSY.get_available_components(sys, Type)` and `IOM.get_available_components(device_model, sys)` are unrelated functions that share a name. PSI imports the PSY one bare (for system-level reads) and calls the IOM one qualified as `IOM.get_available_components` everywhere it needs the device-model-aware version (`parameters/update_container_parameter_values.jl`, `parameters/update_cost_parameters.jl`). Never assume the bare name resolves to IOM's version.
 
-## Package-specific conventions, invariants, gotchas
+### `COST_EPSILON` is defined by both IOM and POM
+Both packages `export COST_EPSILON` as their own `const COST_EPSILON = 1e-3`. Re-exporting both via the `names(m)` loop in `src/PowerSimulations.jl` would leave the name unbound (ambiguous) in `PowerSimulations`. PSI resolves this with an explicit `import InfrastructureOptimizationModels: COST_EPSILON` — do not remove it, and do not try to "unify" the two upstream constants into one.
 
-### Never modify `src/core/optimization_container.jl`
-The harness layer (template iteration over branches/devices, build orchestration) is off-limits — central pipeline, outsized blast radius, breaks invariants other code relies on (e.g. `AreaInterchange` depends on natural template iteration order under `AreaPTDFPowerModel`). If a fix looks like it needs reordering template iteration, claiming arcs, or cross-`DeviceModel` coordination at the container level: STOP and push the fix down into the specific `construct_device!` / `add_parameters!` / `add_constraints!` chain in `src/devices_models/`. Cross-type coordination, when genuinely needed, is data-driven (e.g. iterate a `name_to_arc_map[T]` so a time-series `DeviceModel` sees every arc its branch type participates in).
+### `populate_units` is gone, not silently ignored
+psy6 PowerSystems removed the system-wide unit base (`with_units_base` / `set_units_base_system!` / `get_units_base` no longer exist). `SimulationResults`/`SimulationProblemResults`'s `populate_units` keyword is kept only to error loudly — passing anything but `nothing` raises `IS.InvalidValue` explaining the unit base is gone (`src/simulation/simulation_results.jl`). Never resurrect silent handling for it.
 
-### Branch dedup / parallel groups — do NOT make `get_branch_argument_constraint_axis` time-series-aware
-A mixed-type parallel branch group collapsed to one reduced arc routes its time-varying limit through parameter addition (reduction-aware routing), NOT through dedup. Two prior attempts to make dedup TS-aware both regressed the green "BranchesParallel of different types (MonitoredLine with BranchRatingTimeSeriesParameter)" testset. The correct layer is parameter addition; do not re-attempt a dedup change.
+### `SimulationStore` and IOM's `AbstractModelStore` use different verbs, on purpose
+PSI's `SimulationStore` (`HdfSimulationStore`, `InMemorySimulationStore`) keeps `write_result!` / `read_result` / `read_results`. IOM's per-model `AbstractModelStore` (`DecisionModelStore`, `EmulationModelStore`) uses `write_output!` / `read_outputs`. These are deliberately different names for different layers — do not rename either side to "unify" them.
 
-### Branch-rating time-series multiplier is type-aware
-`_resolve_branch_multiplier` (`src/devices_models/devices/AC_branches.jl`) is a dispatch set, not an `isa` branch: parallel groups use `PNM.get_sum_of_max_rating` / `get_equivalent_emergency_rating`; non-parallel series/3W use `PNM.get_equivalent_rating` / `get_equivalent_emergency_rating` (matches the static path). All PNM reduction wrappers are `<: PSY.ACTransmission`. Branch-rating TS is only supported with `StaticBranch` / `AbstractSecurityConstrainedStaticBranch` (enforced in `template_validation.jl`). **PSI JuMP parameter objects can never be squared in a constraint expression** — AC `FlowRateConstraintFromTo/ToFrom` use `<= param[name,t]*mult[name,t]`; the resolved AC RHS already equals `(DC RHS)^2` via the multiplier, so do not re-introduce `(param*mult)^2`.
+### Realized-results export goes through a bridge method
+The generic export entry point is `IOM.export_realized_outputs`, which calls `IOM.read_outputs_with_keys` — a method IOM only defines for its own `OptimizationProblemOutputs`. `src/simulation/simulation_problem_results.jl` adds `function IOM.read_outputs_with_keys(res::SimulationProblemResults, ...)` that forwards to PSI's own `read_results_with_keys`, so `SimulationProblemResults` satisfies the same export path without IOM code changes.
 
-### Security-constrained branch network-model support
-`SecurityConstrainedStaticBranch` must WORK for PTDF (`AbstractPTDFModel`), ACP (`PM.AbstractACPModel`), and DCP (`DCPPowerModel`) — SC/MODF is DC-linearized so DCP is valid. NFA and CopperPlate must be deliberate NO-OP `construct_device!` (build nothing, do not error, not `ConflictingInputsError`/MethodError) — no meaningful branch-flow representation means SC is silently inert by design (this is the one intentional no-op, distinct from the forbidden silent data-error skip).
+### Initial-condition values can legitimately be `Nothing`
+A must-run device has no meaningful `InitialTimeDurationOn`, so per-model IC values are dispatched (`_ic_value_is_missing(::Nothing) = true` / `::Any = false`), never `isa`-checked. `_ic_values_reconciled` (`src/simulation/simulation.jl`) treats all-missing as consistent, all-present as a numeric comparison, and a **mix** of missing/present across models as a real mismatch to report. Do not "fix" this by filtering out `nothing` — that would hide genuine cross-model disagreement.
 
-### Parameter multiplier `fill!` optimizations need a manual audit
-Whether a parameter type has a uniform multiplier across all `(device, time)` cells is NOT statically derivable — it depends on which `get_parameter_multiplier(::T, ::D, ::W)` overloads return a constant vs per-device value, spread across many formulation files. Never claim a multiplier is uniform without a user audit; frame `fill!` proposals as "for uniform-multiplier types" and ask which qualify. Safe generic alternatives: integer-indexed writes to `.data`, or hoisting `get_multiplier_array` out of loops. Hot paths: `_add_parameters!` in `src/parameters/add_parameters.jl`, `src/contingency_model/contingency_arguments.jl`.
+### Unexported IOM surface
+Most of IOM's model-lifecycle accessors (`get_store`, `set_status!`, `get_output_dir`, `advance_execution_count!`, dataset functions, `ModelStoreParams`, `LOG_GROUP_SIMULATION_STORE`, `set_interval!`, …) are not exported. PSI imports them explicitly in `src/PowerSimulations.jl`. Add to that block; do not qualify at call sites and do not ask IOM to export them for PSI's sake.
+
+### IOM refuses simulation-owned models
+`IOM.OptimizationProblemOutputs(model)` errors with "Model Solved as part of a Simulation" when the model store is empty. That is by design: simulation results come from PSI's `SimulationStore`, never from the per-model store.
+
+### `update_cost_parameters.jl` mirrors POM build-time code
+Time-varying cost refresh must call the same IOM/POM objective-function functions the build uses (`market_bid_plumbing.jl`, `value_curve_cost.jl`). psy6 cost curves carry the unit marker as a type parameter and `IS.UnitSystem` is gone. Every `PSY.get_*` on a convertible field passes the unit system explicitly.
+
+### Never modify IOM's `optimization_container.jl`
+Same rule as before, one package down. Push fixes into POM's `construct_device!` / `add_parameters!` chain or PSI's update chain.
 
 ### No silent absence-sentinel skips
-Do not add `isnothing(x) && continue` / `x === nothing && continue` guards that hide malformed-data bugs; let the next call (`add_time_series!`, `error()`, a MethodError) surface the data error. When triaging bot review comments, mark "add a nothing-skip" suggestions as invalid.
+Do not add `isnothing(x) && continue` guards that hide malformed-data bugs; let the next call surface the data error. When triaging bot review comments, mark "add a nothing-skip" suggestions as invalid.
+
+### Parameter multiplier `fill!` optimizations need a manual audit
+Whether a parameter type has a uniform multiplier across all `(device, time)` cells is NOT statically derivable. Frame `fill!` proposals as "for uniform-multiplier types" and ask which qualify. Hot path in PSI: `parameters/update_container_parameter_values.jl`.
 
 ### Results time-series recovery (downstream coupling)
-PSI 0.34+ stopped serializing a full `System` copy, so `populate_system=true` can return a `System` with 0 time series, breaking PowerAnalytics/PowerGraphics. `TimeSeriesAttributes.component_name_to_ts_uuid` (`src/core/parameters.jl`) is populated via `add_component_name!` (`src/parameters/add_parameters.jl`) but historically not serialized — relevant when touching results/serialization (`_serialize_systems_to_json` in `simulation.jl`).
+`populate_system=true` can return a `System` with 0 time series. `TimeSeriesAttributes.component_name_to_ts_uuid` (now IOM `core/parameter_container.jl`) is populated at build time in POM but not serialized — relevant when touching `_serialize_systems_to_json` in `simulation.jl`.
 
-## Auto-generated / do-not-hand-edit
-- Variable/constraint/parameter/expression type definitions and their export lists are concentrated in `src/core/` and `src/PowerSimulations.jl`. Respect include order: new constants/types must be defined in files included before files that reference them — check `src/PowerSimulations.jl` for include order before placing definitions.
-- Do not edit any auto-generated files directly (see Sienna.md).
+## Follow-ups tracked outside this file
+Events framework to POM then unfence; AGC (`AGCReserveDeployment` dropped; POM's `agc.jl` is not compiled); service feedforwards (POM errors on `attach_feedforward!(::ServiceModel, …)`); path pins → git pins before PR; PowerAnalytics/PowerGraphics re-validation; `test/runtests.jl` drops `Aqua.find_persistent_tasks_deps`/`Aqua.test_persistent_tasks` (they resolve a throwaway env from the registry, which can't satisfy PowerSystems' unregistered OpenAPI deps on the psy6 line) — re-enable once those packages are registered, matching the same exclusion already in POM's and IOM's test suites.
+
+### Upstream bugs found during the excision (not PSI's to fix)
+
+- **IOM: frozen PWL breakpoints — fixed.** Was a correctness bug in
+  `../InfrastructureOptimizationModels.jl/src/objective_function/objective_function_pwl_delta.jl`:
+  `add_pwl_block_offer_constraints!` discarded the width constraint's `ConstraintRef`, so
+  time-varying market-bid breakpoints were frozen across a multi-step simulation. Fixed by IOM
+  `f127bc5` (stores the width constraint refs) plus PSI `a2f9c7ec5`
+  (`_update_pwl_width_constraint!` sets the width RHS between solves).
+- **POM: standalone emulation does not update between executions.**
+  `../PowerOperationsModels.jl/src/operation/emulation_model.jl` (~line 177) documents that its
+  own run loop never calls the update hook, so a standalone `EmulationModel` run outside a
+  `Simulation` produces no recorder events and no between-step updates. PSI's simulation path
+  drives updates itself (see "Parameter update between solves" above) and is unaffected.
 
 ## Default branch
-`main` (not `master`). Diff/PR/review against `origin/main`. Per global rules: never `git commit`; leave changes unstaged.
+`main` (not `master`). Diff/PR/review against `origin/main`. Excision work is on `jd/pom_excision` with per-task commits (a decision scoped to that effort); elsewhere the global rule holds: never `git commit`, leave changes unstaged.

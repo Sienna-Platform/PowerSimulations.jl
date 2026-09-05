@@ -1,9 +1,9 @@
 struct DecisionModelSimulationResults <: OperationModelSimulationResults
-    variables::ResultsByKeyAndTime
-    duals::ResultsByKeyAndTime
-    parameters::ResultsByKeyAndTime
-    aux_variables::ResultsByKeyAndTime
-    expressions::ResultsByKeyAndTime
+    variables::OutputsByKeyAndTime
+    duals::OutputsByKeyAndTime
+    parameters::OutputsByKeyAndTime
+    aux_variables::OutputsByKeyAndTime
+    expressions::OutputsByKeyAndTime
     forecast_horizon::Int
     container_key_lookup::Dict{String, OptimizationContainerKey}
 end
@@ -26,19 +26,19 @@ function SimulationProblemResults(
         sim_params,
         path,
         DecisionModelSimulationResults(
-            ResultsByKeyAndTime(
+            OutputsByKeyAndTime(
                 list_decision_model_keys(store, name, STORE_CONTAINER_VARIABLES),
             ),
-            ResultsByKeyAndTime(
+            OutputsByKeyAndTime(
                 list_decision_model_keys(store, name, STORE_CONTAINER_DUALS),
             ),
-            ResultsByKeyAndTime(
+            OutputsByKeyAndTime(
                 list_decision_model_keys(store, name, STORE_CONTAINER_PARAMETERS),
             ),
-            ResultsByKeyAndTime(
+            OutputsByKeyAndTime(
                 list_decision_model_keys(store, name, STORE_CONTAINER_AUX_VARIABLES),
             ),
-            ResultsByKeyAndTime(
+            OutputsByKeyAndTime(
                 list_decision_model_keys(store, name, STORE_CONTAINER_EXPRESSIONS),
             ),
             get_horizon_count(problem_params),
@@ -49,7 +49,7 @@ function SimulationProblemResults(
 end
 
 function _list_containers(res::SimulationProblemResults{DecisionModelSimulationResults})
-    return (getfield(res.values, x).cached_results for x in get_container_fields(res))
+    return (getfield(res.values, x).cached_outputs for x in get_container_fields(res))
 end
 
 function Base.empty!(res::SimulationProblemResults{DecisionModelSimulationResults})
@@ -66,27 +66,27 @@ function Base.length(res::SimulationProblemResults{DecisionModelSimulationResult
     return mapreduce(length, +, (y for x in _list_containers(res) for y in values(x)))
 end
 
-list_aux_variable_keys(res::SimulationProblemResults{DecisionModelSimulationResults}) =
-    res.values.aux_variables.result_keys[:]
-list_dual_keys(res::SimulationProblemResults{DecisionModelSimulationResults}) =
-    res.values.duals.result_keys[:]
-list_expression_keys(res::SimulationProblemResults{DecisionModelSimulationResults}) =
-    res.values.expressions.result_keys[:]
-list_parameter_keys(res::SimulationProblemResults{DecisionModelSimulationResults}) =
-    res.values.parameters.result_keys[:]
-list_variable_keys(res::SimulationProblemResults{DecisionModelSimulationResults}) =
-    res.values.variables.result_keys[:]
+IOM.list_aux_variable_keys(res::SimulationProblemResults{DecisionModelSimulationResults}) =
+    res.values.aux_variables.output_keys[:]
+IOM.list_dual_keys(res::SimulationProblemResults{DecisionModelSimulationResults}) =
+    res.values.duals.output_keys[:]
+IOM.list_expression_keys(res::SimulationProblemResults{DecisionModelSimulationResults}) =
+    res.values.expressions.output_keys[:]
+IOM.list_parameter_keys(res::SimulationProblemResults{DecisionModelSimulationResults}) =
+    res.values.parameters.output_keys[:]
+IOM.list_variable_keys(res::SimulationProblemResults{DecisionModelSimulationResults}) =
+    res.values.variables.output_keys[:]
 
 get_cached_aux_variables(res::SimulationProblemResults{DecisionModelSimulationResults}) =
-    res.values.aux_variables.cached_results
+    res.values.aux_variables.cached_outputs
 get_cached_duals(res::SimulationProblemResults{DecisionModelSimulationResults}) =
-    res.values.duals.cached_results
+    res.values.duals.cached_outputs
 get_cached_expressions(res::SimulationProblemResults{DecisionModelSimulationResults}) =
-    res.values.expressions.cached_results
+    res.values.expressions.cached_outputs
 get_cached_parameters(res::SimulationProblemResults{DecisionModelSimulationResults}) =
-    res.values.parameters.cached_results
+    res.values.parameters.cached_outputs
 get_cached_variables(res::SimulationProblemResults{DecisionModelSimulationResults}) =
-    res.values.variables.cached_results
+    res.values.variables.cached_outputs
 
 get_cached_results(
     res::SimulationProblemResults{DecisionModelSimulationResults},
@@ -109,7 +109,9 @@ get_cached_results(
     ::VariableKey,
 ) = get_cached_variables(res)
 
-function get_forecast_horizon(res::SimulationProblemResults{DecisionModelSimulationResults})
+function IOM.get_forecast_horizon(
+    res::SimulationProblemResults{DecisionModelSimulationResults},
+)
     return res.values.forecast_horizon
 end
 
@@ -131,7 +133,7 @@ function _get_store_value(
     timestamps::Vector{Dates.DateTime},
     store::SimulationStore,
 )
-    results_by_key = Dict{OptimizationContainerKey, ResultsByTime}()
+    results_by_key = Dict{OptimizationContainerKey, OutputsByTime}()
     model_name = Symbol(get_model_name(sim_results))
     for ckey in container_keys
         n_dims = get_number_of_dimensions(store, DecisionModelIndexType, model_name, ckey)
@@ -155,7 +157,7 @@ function _get_store_value(
     horizon = get_forecast_horizon(sim_results)
     base_power = get_model_base_power(sim_results)
     model_name = Symbol(get_model_name(sim_results))
-    results_by_time = ResultsByTime(
+    results_by_time = OutputsByTime(
         key,
         SortedDict{Dates.DateTime, T}(),
         resolution,
@@ -171,7 +173,7 @@ function _get_store_value(
                 "Arrays for $(encode_key_as_string(key)) at different timestamps have different sizes",
             )
         end
-        if convert_result_to_natural_units(key)
+        if convert_output_to_natural_units(key)
             array.data .*= base_power
         end
         if array_size[2] != horizon
@@ -196,7 +198,7 @@ function _get_store_value(
     horizon = get_forecast_horizon(sim_results)
     base_power = get_model_base_power(sim_results)
     model_name = Symbol(get_model_name(sim_results))
-    results_by_time = ResultsByTime(
+    results_by_time = OutputsByTime(
         key,
         SortedDict{Dates.DateTime, T}(),
         resolution,
@@ -212,7 +214,7 @@ function _get_store_value(
                 "Arrays for $(encode_key_as_string(key)) at different timestamps have different sizes",
             )
         end
-        if convert_result_to_natural_units(key)
+        if convert_output_to_natural_units(key)
             array.data .*= base_power
         end
         if array_size[3] != horizon
@@ -226,7 +228,7 @@ function _get_store_value(
     return results_by_time
 end
 
-function _process_timestamps(
+function IOM._process_timestamps(
     res::SimulationProblemResults,
     initial_time::Union{Nothing, Dates.DateTime},
     count::Union{Nothing, Int},
@@ -263,17 +265,20 @@ function _read_results(
     table_format::TableFormat = TableFormat.LONG,
 )
     vals = _read_results(res, result_keys, timestamps, store)
-    converted_vals = Dict{OptimizationContainerKey, ResultsByTime{DataFrame}}()
+    converted_vals = Dict{OptimizationContainerKey, OutputsByTime{DataFrame}}()
     for (result_key, result_data) in vals
         inner_converted = SortedDict{Dates.DateTime, DataFrame}()
         for (date_key, inner_data) in result_data
             extra = ntuple(_ -> (:), ndims(inner_data) - 1)
             inner_converted[date_key] =
-                to_results_dataframe(inner_data[cols, extra...], nothing, Val(table_format))
+                to_outputs_dataframe(inner_data[cols, extra...], nothing, Val(table_format))
         end
-        _cols = (cols isa Vector) ? (cols,) : result_data.column_names
-        num_dims = length(_cols)
-        converted_vals[result_key] = ResultsByTime{DataFrame, num_dims}(
+        # `to_outputs_dataframe` reshapes the raw component axis into either a fixed
+        # 3-column long table or a wide table with one column per component plus
+        # `:DateTime`; `IOM.OutputsByTime` validates against the actual resulting
+        # DataFrame's columns, not the pre-reshape component axis.
+        _cols = (String.(names(first(values(inner_converted)))),)
+        converted_vals[result_key] = OutputsByTime(
             result_data.key,
             inner_converted,
             result_data.resolution,
@@ -289,11 +294,11 @@ function _read_results(
     store::Union{Nothing, <:SimulationStore},
 )
     isempty(result_keys) &&
-        return Dict{OptimizationContainerKey, ResultsByTime{DenseAxisArray{Float64, 2}}}()
+        return Dict{OptimizationContainerKey, OutputsByTime{DenseAxisArray{Float64, 2}}}()
 
     _store = try_resolve_store(store, res.store)
     existing_keys = list_result_keys(res, first(result_keys))
-    ISOPT._validate_keys(existing_keys, result_keys)
+    IOM._validate_keys(existing_keys, result_keys)
     cached_results = get_cached_results(res, eltype(result_keys))
     if _are_results_cached(res, result_keys, timestamps, keys(cached_results))
         @debug "reading results from SimulationsResults cache"  # NOTE tests match on this
@@ -303,7 +308,7 @@ function _read_results(
         filtered_vals = Dict{keytype(vals), valtype(vals)}()
         for (result_key, result_data) in vals
             inner_converted = filter((((k, v),) -> k in timestamps), result_data.data)
-            filtered_vals[result_key] = ResultsByTime{valtype(inner_converted), 1}(
+            filtered_vals[result_key] = OutputsByTime(
                 result_data.key,
                 inner_converted,
                 result_data.resolution,
@@ -324,8 +329,8 @@ Return the values for the requested variable. It keeps requests when performing 
 
   - `args`: Can be a string returned from [`list_variable_names`](@ref) or args that can be
     splatted into a VariableKey.
-  - `initial_time::Dates.DateTime` : initial of the requested results
-  - `count::Int`: Number of results
+  - `start_time::Dates.DateTime` : initial of the requested results
+  - `len::Int`: Number of results
   - `store::SimulationStore`: a store that has been opened for reading
   - `table_format::TableFormat`: Format of the table to be returned. Default is
     `TableFormat.LONG` where the columns are `DateTime`, `name`, and `value` when the data
@@ -337,21 +342,21 @@ Return the values for the requested variable. It keeps requests when performing 
 # Examples
 
 ```julia
-read_variable(results, ActivePowerVariable, ThermalStandard)
-read_variable(results, "ActivePowerVariable__ThermalStandard")
-read_variable(results, "ActivePowerVariable__ThermalStandard", table_format = TableFormat.WIDE)
+IOM.read_variable(results, ActivePowerVariable, ThermalStandard)
+IOM.read_variable(results, "ActivePowerVariable__ThermalStandard")
+IOM.read_variable(results, "ActivePowerVariable__ThermalStandard", table_format = TableFormat.WIDE)
 ```
 """
-function read_variable(
+function IOM.read_variable(
     res::SimulationProblemResults{DecisionModelSimulationResults},
     args...;
-    initial_time::Union{Nothing, Dates.DateTime} = nothing,
-    count::Union{Int, Nothing} = nothing,
+    start_time::Union{Nothing, Dates.DateTime} = nothing,
+    len::Union{Int, Nothing} = nothing,
     store = nothing,
     table_format::TableFormat = TableFormat.LONG,
 )
     key = _deserialize_key(VariableKey, res, args...)
-    timestamps = _process_timestamps(res, initial_time, count)
+    timestamps = _process_timestamps(res, start_time, len)
     return make_dataframes(
         _read_results(res, [key], timestamps, store)[key];
         table_format = table_format,
@@ -365,8 +370,8 @@ Return the values for the requested dual. It keeps requests when performing mult
 
   - `args`: Can be a string returned from [`list_dual_names`](@ref) or args that can be
     splatted into a ConstraintKey.
-  - `initial_time::Dates.DateTime` : initial of the requested results
-  - `count::Int`: Number of results
+  - `start_time::Dates.DateTime` : initial of the requested results
+  - `len::Int`: Number of results
   - `store::SimulationStore`: a store that has been opened for reading
   - `table_format::TableFormat`: Format of the table to be returned. Default is
     `TableFormat.LONG` where the columns are `DateTime`, `name`, and `value` when the data
@@ -375,16 +380,16 @@ Return the values for the requested dual. It keeps requests when performing mult
     Set to it `TableFormat.WIDE` to pivot the names as columns.
     Note: `TableFormat.WIDE` is not supported when the data has three dimensions.
 """
-function read_dual(
+function IOM.read_dual(
     res::SimulationProblemResults{DecisionModelSimulationResults},
     args...;
-    initial_time::Union{Nothing, Dates.DateTime} = nothing,
-    count::Union{Int, Nothing} = nothing,
+    start_time::Union{Nothing, Dates.DateTime} = nothing,
+    len::Union{Int, Nothing} = nothing,
     store = nothing,
     table_format::TableFormat = TableFormat.LONG,
 )
     key = _deserialize_key(ConstraintKey, res, args...)
-    timestamps = _process_timestamps(res, initial_time, count)
+    timestamps = _process_timestamps(res, start_time, len)
     return make_dataframes(
         _read_results(res, [key], timestamps, store)[key];
         table_format = table_format,
@@ -398,8 +403,8 @@ Return the values for the requested parameter. It keeps requests when performing
 
   - `args`: Can be a string returned from [`list_parameter_names`](@ref) or args that can be
     splatted into a ParameterKey.
-  - `initial_time::Dates.DateTime` : initial of the requested results
-  - `count::Int`: Number of results
+  - `start_time::Dates.DateTime` : initial of the requested results
+  - `len::Int`: Number of results
   - `table_format::TableFormat`: Format of the table to be returned. Default is
     `TableFormat.LONG` where the columns are `DateTime`, `name`, and `value` when the data
     has two dimensions and `DateTime`, `name`, `name2`, and `value` when the data has three
@@ -407,16 +412,16 @@ Return the values for the requested parameter. It keeps requests when performing
     Set to it `TableFormat.WIDE` to pivot the names as columns.
     Note: `TableFormat.WIDE` is not supported when the data has three dimensions.
 """
-function read_parameter(
+function IOM.read_parameter(
     res::SimulationProblemResults{DecisionModelSimulationResults},
     args...;
-    initial_time::Union{Nothing, Dates.DateTime} = nothing,
-    count::Union{Int, Nothing} = nothing,
+    start_time::Union{Nothing, Dates.DateTime} = nothing,
+    len::Union{Int, Nothing} = nothing,
     store = nothing,
     table_format::TableFormat = TableFormat.LONG,
 )
     key = _deserialize_key(ParameterKey, res, args...)
-    timestamps = _process_timestamps(res, initial_time, count)
+    timestamps = _process_timestamps(res, start_time, len)
     return make_dataframes(
         _read_results(res, [key], timestamps, store)[key];
         table_format = table_format,
@@ -430,19 +435,19 @@ Return the values for the requested auxillary variables. It keeps requests when 
 
   - `args`: Can be a string returned from [`list_aux_variable_names`](@ref) or args that can be
     splatted into a AuxVarKey.
-  - `initial_time::Dates.DateTime` : initial of the requested results
-  - `count::Int`: Number of results
+  - `start_time::Dates.DateTime` : initial of the requested results
+  - `len::Int`: Number of results
 """
-function read_aux_variable(
+function IOM.read_aux_variable(
     res::SimulationProblemResults{DecisionModelSimulationResults},
     args...;
-    initial_time::Union{Nothing, Dates.DateTime} = nothing,
-    count::Union{Int, Nothing} = nothing,
+    start_time::Union{Nothing, Dates.DateTime} = nothing,
+    len::Union{Int, Nothing} = nothing,
     store = nothing,
     table_format::TableFormat = TableFormat.LONG,
 )
     key = _deserialize_key(AuxVarKey, res, args...)
-    timestamps = _process_timestamps(res, initial_time, count)
+    timestamps = _process_timestamps(res, start_time, len)
     return make_dataframes(
         _read_results(res, [key], timestamps, store)[key];
         table_format = table_format,
@@ -456,72 +461,26 @@ Return the values for the requested auxillary variables. It keeps requests when 
 
   - `args`: Can be a string returned from [`list_expression_names`](@ref) or args that can be
     splatted into a ExpressionKey.
-  - `initial_time::Dates.DateTime` : initial of the requested results
-  - `count::Int`: Number of results
+  - `start_time::Dates.DateTime` : initial of the requested results
+  - `len::Int`: Number of results
 """
-function read_expression(
+function IOM.read_expression(
     res::SimulationProblemResults{DecisionModelSimulationResults},
     args...;
-    initial_time::Union{Nothing, Dates.DateTime} = nothing,
-    count::Union{Int, Nothing} = nothing,
+    start_time::Union{Nothing, Dates.DateTime} = nothing,
+    len::Union{Int, Nothing} = nothing,
     store = nothing,
     table_format::TableFormat = TableFormat.LONG,
 )
     key = _deserialize_key(ExpressionKey, res, args...)
-    timestamps = _process_timestamps(res, initial_time, count)
+    timestamps = _process_timestamps(res, start_time, len)
     return make_dataframes(
         _read_results(res, [key], timestamps, store)[key];
         table_format = table_format,
     )
 end
 
-function get_realized_timestamps(
-    res::IS.Results;
-    start_time::Union{Nothing, Dates.DateTime} = nothing,
-    len::Union{Int, Nothing} = nothing,
-)
-    timestamps = get_timestamps(res)
-    resolution = get_resolution(res)
-    intervals = diff(timestamps)
-    if isempty(intervals) && isnothing(resolution)
-        # If Single Interval Step and single time step: use dummy resolution/interval
-        interval = Dates.Millisecond(1)
-        resolution = Dates.Millisecond(1)
-    elseif !isempty(intervals) && isnothing(resolution)
-        # Multiple simulation steps but single time step: Set resolution = interval
-        interval = first(intervals)
-        resolution = interval
-    elseif isempty(intervals) && !isnothing(resolution)
-        # There is multiple time steps but single simulation step: Set interval = resolution
-        interval = resolution
-    else
-        # Both data are available: Use existing resolution and grab first interval
-        interval = first(intervals)
-    end
-    horizon = get_forecast_horizon(res)
-    start_time = isnothing(start_time) ? first(timestamps) : start_time
-    end_time =
-        if isnothing(len)
-            last(timestamps) + interval - resolution
-        else
-            start_time + (len - 1) * resolution
-        end
-
-    requested_range = start_time:resolution:end_time
-    available_range =
-        first(timestamps):resolution:(last(timestamps) + (horizon - 1) * resolution)
-    invalid_timestamps = setdiff(requested_range, available_range)
-
-    if !isempty(invalid_timestamps)
-        msg = "Requested time does not match available results"
-        @error msg
-        throw(IS.InvalidValue(msg))
-    end
-
-    return requested_range
-end
-
-function get_realized_timestamps(
+function IOM.get_realized_timestamps(
     res::SimulationProblemResults;
     start_time::Union{Nothing, Dates.DateTime} = nothing,
     len::Union{Int, Nothing} = nothing,

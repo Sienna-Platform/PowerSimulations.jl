@@ -39,6 +39,7 @@ generated*.md
 Manifest.toml
 .vscode
 *.h5
+.claude/plans
 data
 
 # profiling results

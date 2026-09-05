@@ -220,9 +220,9 @@ Return SimulationProblemResults corresponding to a SimulationResults
  - `problem::String`: the name of the problem (e.g., "UC", "ED")
  - `populate_system::Bool = true`: whether to set the results' system as if using
    [`get_system!`](@ref)
- - `populate_units::Union{IS.UnitSystem, String, Nothing} = IS.UnitSystem.NATURAL_UNITS`:
-   the units system with which to populate the results' system, if any (requires
-   `populate_system=true`)
+ - `populate_units::Union{IS.UnitSystem, String, Nothing} = nothing`: unsupported;
+   PowerSystems (psy6) has no system-wide unit base, so passing a non-`nothing`
+   value throws (requires `populate_system=true`)
 """
 function get_decision_problem_results(
     results::SimulationResults,
@@ -247,9 +247,9 @@ Return SimulationProblemResults corresponding to a SimulationResults
  - `sim_results::PSI.SimulationResults`: the simulation results to read from
  - `populate_system::Bool = true`: whether to set the results' system as if using
    [`get_system!`](@ref)
- - `populate_units::Union{IS.UnitSystem, String, Nothing} = IS.UnitSystem.NATURAL_UNITS`:
-   the units system with which to populate the results' system, if any (requires
-   `populate_system=true`)
+ - `populate_units::Union{IS.UnitSystem, String, Nothing} = nothing`: unsupported;
+   PowerSystems (psy6) has no system-wide unit base, so passing a non-`nothing`
+   value throws (requires `populate_system=true`)
 """
 function get_emulation_problem_results(
     results::SimulationResults;
@@ -273,10 +273,15 @@ function _populate_system_in_results!(
             error("Can't find the system file or retrieve the system error=$e")
         end
 
+        # PowerSystems (psy6) removed the system-wide unit-base mode this used to set via
+        # `set_units_base_system!`; getters now take an explicit unit system (PSY.SU/DU/NU)
+        # per call. Error loudly rather than silently ignoring a caller's request.
         if !isnothing(populate_units)
-            PSY.set_units_base_system!(PSI.get_system(results), populate_units)
-        else
-            PSY.set_units_base_system!(PSI.get_system(results), IS.UnitSystem.NATURAL_UNITS)
+            error(
+                "populate_units is not supported: PowerSystems no longer has a system-wide " *
+                "unit base. Pass the desired unit system explicitly to each accessor instead " *
+                "(e.g. PSY.get_rating(component, PSY.SU)).",
+            )
         end
 
     else
@@ -373,11 +378,11 @@ function export_results(results::SimulationResults, exports, store::SimulationSt
                     dfs = read_variable(
                         problem_results,
                         name;
-                        initial_time = timestamp,
-                        count = 1,
+                        start_time = timestamp,
+                        len = 1,
                         store = store,
                     )
-                    ISOPT.export_result(
+                    export_output(
                         file_type,
                         export_path,
                         name,
@@ -393,11 +398,11 @@ function export_results(results::SimulationResults, exports, store::SimulationSt
                     dfs = read_aux_variable(
                         problem_results,
                         name;
-                        initial_time = timestamp,
-                        count = 1,
+                        start_time = timestamp,
+                        len = 1,
                         store = store,
                     )
-                    ISOPT.export_result(
+                    export_output(
                         file_type,
                         export_path,
                         name,
@@ -413,11 +418,11 @@ function export_results(results::SimulationResults, exports, store::SimulationSt
                     dfs = read_parameter(
                         problem_results,
                         name;
-                        initial_time = timestamp,
-                        count = 1,
+                        start_time = timestamp,
+                        len = 1,
                         store = store,
                     )
-                    ISOPT.export_result(
+                    export_output(
                         file_type,
                         export_path,
                         name,
@@ -433,11 +438,31 @@ function export_results(results::SimulationResults, exports, store::SimulationSt
                     dfs = read_dual(
                         problem_results,
                         name;
-                        initial_time = timestamp,
-                        count = 1,
+                        start_time = timestamp,
+                        len = 1,
                         store = store,
                     )
-                    ISOPT.export_result(
+                    export_output(
+                        file_type,
+                        export_path,
+                        name,
+                        timestamp,
+                        dfs[timestamp],
+                    )
+                end
+            end
+
+            export_path = mkpath(joinpath(path, problem_results.problem, "expression"))
+            for name in list_expression_names(problem_results)
+                if should_export_expression(problem_exports, name)
+                    dfs = read_expression(
+                        problem_results,
+                        name;
+                        start_time = timestamp,
+                        len = 1,
+                        store = store,
+                    )
+                    export_output(
                         file_type,
                         export_path,
                         name,
@@ -448,30 +473,10 @@ function export_results(results::SimulationResults, exports, store::SimulationSt
             end
         end
 
-        export_path = mkpath(joinpath(path, problem_results.problem, "expression"))
-        for name in list_expression_names(problem_results)
-            if should_export_expression(problem_exports, name)
-                dfs = read_expression(
-                    problem_results,
-                    name;
-                    initial_time = timestamp,
-                    count = 1,
-                    store = store,
-                )
-                ISOPT.export_result(
-                    file_type,
-                    export_path,
-                    name,
-                    timestamp,
-                    dfs[timestamp],
-                )
-            end
-        end
-
         if problem_exports.optimizer_stats
             export_path = joinpath(path, problem_results.problem, "optimizer_stats.csv")
             df = read_optimizer_stats(problem_results; store = store)
-            ISOPT.export_result(file_type, export_path, df)
+            export_output(file_type, export_path, df)
         end
     end
     return

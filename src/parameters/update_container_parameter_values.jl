@@ -67,7 +67,7 @@ function _update_parameter_values!(
     else
         device_model = get_model(template, V, subsystem)
     end
-    components = get_available_components(device_model, get_system(model))
+    components = IOM.get_available_components(device_model, get_system(model))
     # Hoist the underlying dense storage and per-component name lookup once so each
     # write skips DenseAxisArray's String-keyed axis lookup. `additional_axes` is
     # invariant for the lifetime of this update call.
@@ -94,7 +94,7 @@ function _update_parameter_values!(
             for (t, value) in enumerate(ts_vector)
                 # first two axes of parameter_array are component, time; we care about any additional ones
                 unwrapped_value =
-                    _unwrap_for_param(W(), value, additional_axes)
+                    unwrap_for_param(W(), value, additional_axes)
                 if !all(isfinite.(unwrapped_value))
                     error("The value for the time series $(ts_name) is not finite. \
                           Check that the data in the time series is valid.")
@@ -208,7 +208,7 @@ function _update_parameter_values!(
     i_param = parameter_array.lookup[1][ts_uuid]
     additional_axes = lookup_additional_axes(parameter_array)
     for (t, value) in enumerate(ts_vector)
-        unwrapped_value = _unwrap_for_param(W(), value, additional_axes)
+        unwrapped_value = unwrap_for_param(W(), value, additional_axes)
         if !all(isfinite.(unwrapped_value))
             error("The value for the time series $(ts_name) is not finite. \
                   Check that the data in the time series is valid.")
@@ -228,7 +228,7 @@ function _update_parameter_values!(
     initial_forecast_time = get_current_time(model)
     template = get_template(model)
     device_model = get_model(template, V)
-    components = get_available_components(device_model, get_system(model))
+    components = IOM.get_available_components(device_model, get_system(model))
     ts_name = get_time_series_name(attributes)
     ts_resolution = get_resolution(get_settings(model))
     # Hoist the underlying dense storage and per-component name lookup once.
@@ -497,7 +497,7 @@ function _update_parameter_values!(
     state_data_index = find_timestamp_index(state_timestamps, current_time)
     has_outage = haskey(
         get_parameters_values(state),
-        ISOPT.ParameterKey{
+        ParameterKey{
             AvailableStatusParameter,
             U,
         }(
@@ -507,7 +507,7 @@ function _update_parameter_values!(
     if has_outage
         status_values = get_dataset_values(
             state,
-            ISOPT.ParameterKey{
+            ParameterKey{
                 AvailableStatusParameter,
                 U,
             }(
@@ -516,7 +516,7 @@ function _update_parameter_values!(
         )
         status_data = get_dataset(
             state,
-            ISOPT.ParameterKey{
+            ParameterKey{
                 AvailableStatusParameter,
                 U,
             }(
@@ -670,11 +670,11 @@ function _update_parameter_values!(
 end
 
 """
-Update parameter function an OperationModel
+Update parameter function an IOM.AbstractOptimizationModel
 """
-function update_container_parameter_values!(
+function IOM.update_container_parameter_values!(
     optimization_container::OptimizationContainer,
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     key::ParameterKey{T, U},
     input::DatasetContainer{InMemoryDataset},
 ) where {T <: ParameterType, U <: PSY.Component}
@@ -688,9 +688,9 @@ function update_container_parameter_values!(
     return
 end
 
-function update_container_parameter_values!(
+function IOM.update_container_parameter_values!(
     optimization_container::OptimizationContainer,
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     key::ParameterKey{T, U},
     input::DatasetContainer{InMemoryDataset},
 ) where {T <: EventParameter, U <: PSY.Component}
@@ -704,9 +704,9 @@ function update_container_parameter_values!(
     return
 end
 
-function update_container_parameter_values!(
+function IOM.update_container_parameter_values!(
     optimization_container::OptimizationContainer,
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     key::ParameterKey{T, U},
     input::DatasetContainer{InMemoryDataset},
 ) where {T <: ObjectiveFunctionParameter, U <: PSY.Component}
@@ -728,9 +728,9 @@ function update_container_parameter_values!(
     return
 end
 
-function update_container_parameter_values!(
+function IOM.update_container_parameter_values!(
     optimization_container::OptimizationContainer,
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     key::ParameterKey{T, U},
     input::DatasetContainer{InMemoryDataset},
 ) where {T <: ObjectiveFunctionParameter, U <: PSY.Service}
@@ -753,9 +753,9 @@ function update_container_parameter_values!(
     return
 end
 
-function update_container_parameter_values!(
+function IOM.update_container_parameter_values!(
     optimization_container::OptimizationContainer,
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     key::ParameterKey{FixValueParameter, U},
     input::DatasetContainer{InMemoryDataset},
 ) where {U <: PSY.Component}
@@ -775,9 +775,9 @@ function update_container_parameter_values!(
     return
 end
 
-function update_container_parameter_values!(
+function IOM.update_container_parameter_values!(
     optimization_container::OptimizationContainer,
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     key::ParameterKey{FixValueParameter, U},
     input::DatasetContainer{InMemoryDataset},
 ) where {U <: PSY.Service}
@@ -802,9 +802,28 @@ function update_container_parameter_values!(
     return
 end
 
-function update_container_parameter_values!(
+function IOM.update_container_parameter_values!(
     optimization_container::OptimizationContainer,
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
+    key::ParameterKey{T, U},
+    input::DatasetContainer{InMemoryDataset},
+) where {T <: TimeSeriesParameter, U <: PSY.Service}
+    # Time-series service parameters (e.g. `RequirementTimeSeriesParameter`) are per-type
+    # containers keyed `(T, ServiceType)` with an empty `key.meta` -- the name axis inside
+    # `parameter_array` holds every service of type `U` (POM
+    # `common_models/add_parameters.jl`). There is no single named component to look up by
+    # `key.meta`, so this routes through the generic per-type `_update_parameter_values!`
+    # used for device time series instead of the per-instance lookup the method below
+    # performs for feedforward-sourced (`VariableValueAttributes`) service parameters.
+    parameter_array = get_parameter_array(optimization_container, key)
+    parameter_attributes = get_parameter_attributes(optimization_container, key)
+    _update_parameter_values!(parameter_array, T(), parameter_attributes, U, model, input)
+    return
+end
+
+function IOM.update_container_parameter_values!(
+    optimization_container::OptimizationContainer,
+    model::IOM.AbstractOptimizationModel,
     key::ParameterKey{T, U},
     input::DatasetContainer{InMemoryDataset},
 ) where {T <: ParameterType, U <: PSY.Service}
@@ -829,9 +848,9 @@ function update_container_parameter_values!(
 end
 
 # This method is included to avoid ambiguities
-function update_container_parameter_values!(
+function IOM.update_container_parameter_values!(
     optimization_container::OptimizationContainer,
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     key::ParameterKey{T, U},
     input::DatasetContainer{InMemoryDataset},
 ) where {T <: EventParameter, U <: PSY.Service}

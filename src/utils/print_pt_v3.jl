@@ -1,285 +1,26 @@
-function Base.show(io::IO, container::OptimizationContainer)
-    show(io, get_jump_model(container))
-end
-
-function Base.show(io::IO, ::MIME"text/plain", input::Union{ServiceModel, DeviceModel})
-    _show_method(io, input, :auto)
-end
-
-function Base.show(io::IO, ::MIME"text/html", input::Union{ServiceModel, DeviceModel})
-    # The tf_html_simple format was eliminated from PrettyTables and it was added to PowerSystems
-    _show_method(io, input, :html; stand_alone = false, table_format = PSY.tf_html_simple)
-end
-
-function _show_method(
-    io::IO,
-    model::Union{ServiceModel, DeviceModel},
-    backend::Symbol;
-    kwargs...,
-)
-    println(io)
-    header = ["Device Type", "Formulation", "Slacks"]
-
-    table = Matrix{String}(undef, 1, length(header))
-    table[1, 1] = string(get_component_type(model))
-    table[1, 2] = string(get_formulation(model))
-    table[1, 3] = string(model.use_slacks)
-
-    PrettyTables.pretty_table(
-        io,
-        table;
-        column_labels = header,
-        backend = backend,
-        title = "Device Model",
-        alignment = :l,
-        kwargs...,
-    )
-
-    if !isempty(model.attributes)
-        println(io)
-        header = ["Name", "Value"]
-
-        table = Matrix{String}(undef, length(model.attributes), length(header))
-        for (ix, (k, v)) in enumerate(model.attributes)
-            table[ix, 1] = string(k)
-            table[ix, 2] = string(v)
-        end
-
-        PrettyTables.pretty_table(
-            io,
-            table;
-            column_labels = header,
-            backend = backend,
-            title = "Attributes",
-            alignment = :l,
-            kwargs...,
-        )
-    end
-
-    if !isempty(model.time_series_names)
-        println(io)
-        header = ["Parameter Name", "Time Series Name"]
-
-        table = Matrix{String}(undef, length(model.time_series_names), length(header))
-        for (ix, (k, v)) in enumerate(model.time_series_names)
-            table[ix, 1] = string(k)
-            table[ix, 2] = string(v)
-        end
-
-        PrettyTables.pretty_table(
-            io,
-            table;
-            column_labels = header,
-            backend = backend,
-            title = "Time Series Names",
-            alignment = :l,
-            kwargs...,
-        )
-    end
-
-    if !isempty(model.duals)
-        println(io)
-
-        table = string.(model.duals)
-
-        PrettyTables.pretty_table(
-            io,
-            table;
-            show_column_labels = false,
-            backend = backend,
-            title = "Duals",
-            alignment = :l,
-            kwargs...,
-        )
-    end
-
-    if !isempty(model.feedforwards)
-        println(io)
-        header = ["Type", "Source", "Affected Values"]
-        table = Matrix{String}(undef, length(model.feedforwards), length(header))
-        for (ix, v) in enumerate(model.feedforwards)
-            table[ix, 1] = string(typeof(v))
-            table[ix, 2] = encode_key_as_string(get_optimization_container_key(v))
-            table[ix, 3] = first(encode_key_as_string.(get_affected_values(v)))
-        end
-        PrettyTables.pretty_table(
-            io,
-            table;
-            column_labels = header,
-            backend = backend,
-            title = "Feedforwards",
-            alignment = :l,
-            kwargs...,
-        )
-    else
-        println(io)
-        print(io, "No FeedForwards Assigned")
-    end
-end
-
-function Base.show(io::IO, ::MIME"text/plain", input::NetworkModel)
-    _show_method(io, input, :auto)
-end
-
-function Base.show(io::IO, ::MIME"text/html", input::NetworkModel)
-    # The tf_html_simple format was eliminated from PrettyTables and it was added to PowerSystems
-    _show_method(io, input, :html; stand_alone = false, table_format = PSY.tf_html_simple)
-end
-
-function _show_method(io::IO, network_model::NetworkModel, backend::Symbol; kwargs...)
-    table = [
-        "Network Model" string(get_network_formulation(network_model))
-        "Slacks" get_use_slacks(network_model)
-        "PTDF" !isnothing(get_PTDF_matrix(network_model))
-        "Duals" join(string.(get_duals(network_model)), " ")
-    ]
-
-    PrettyTables.pretty_table(
-        io,
-        table;
-        backend = backend,
-        column_labels = ["Field", "Value"],
-        title = "Network Model",
-        alignment = :l,
-        kwargs...,
-    )
-    return
-end
-
-function Base.show(io::IO, ::MIME"text/plain", input::OperationModel)
-    _show_method(io, input, :auto)
-end
-
-function Base.show(io::IO, ::MIME"text/html", input::OperationModel)
-    # The tf_html_simple format was eliminated from PrettyTables and it was added to PowerSystems
-    _show_method(io, input, :html; stand_alone = false, table_format = PSY.tf_html_simple)
-end
-
-function _show_method(io::IO, model::OperationModel, backend::Symbol; kwargs...)
-    _show_method(io, model.template, backend; kwargs...)
-end
-
-function Base.show(io::IO, ::MIME"text/plain", input::ProblemTemplate)
-    _show_method(io, input, :auto)
-end
-
-function Base.show(io::IO, ::MIME"text/html", input::ProblemTemplate)
-    # The tf_html_simple format was eliminated from PrettyTables and it was added to PowerSystems
-    _show_method(io, input, :html; stand_alone = false, table_format = PSY.tf_html_simple)
-end
-
-function _show_method(io::IO, template::ProblemTemplate, backend::Symbol; kwargs...)
-    table = [
-        "Network Model" string(get_network_formulation(template.network_model))
-        "Slacks" get_use_slacks(template.network_model)
-        "PTDF" !isnothing(get_PTDF_matrix(template.network_model))
-        "Duals" isempty(get_duals(template.network_model)) ? "None" : string.(get_duals(template.network_model))
-        "HVDC Network Model" isnothing(get_hvdc_network_model(template.network_model)) ? "None" : replace(string(get_hvdc_network_model(template.network_model)), r"[()]" => "")
-    ]
-
-    PrettyTables.pretty_table(
-        io,
-        table;
-        backend = backend,
-        show_column_labels = false,
-        title = "Network Model",
-        alignment = :l,
-        kwargs...,
-    )
-
-    println(io)
-    header = ["Device Type", "Formulation", "Slacks"]
-
-    table = Matrix{String}(undef, length(template.devices), length(header))
-    for (ix, model) in enumerate(values(template.devices))
-        table[ix, 1] = string(get_component_type(model))
-        table[ix, 2] = string(get_formulation(model))
-        table[ix, 3] = string(model.use_slacks)
-    end
-
-    PrettyTables.pretty_table(
-        io,
-        table;
-        backend = backend,
-        column_labels = header,
-        title = "Device Models",
-        alignment = :l,
-    )
-
-    if !isempty(template.branches)
-        println(io)
-        header = ["Branch Type", "Formulation", "Slacks"]
-
-        table = Matrix{String}(undef, length(template.branches), length(header))
-        for (ix, model) in enumerate(values(template.branches))
-            table[ix, 1] = string(get_component_type(model))
-            table[ix, 2] = string(get_formulation(model))
-            table[ix, 3] = string(model.use_slacks)
-        end
-
-        PrettyTables.pretty_table(
-            io,
-            table;
-            column_labels = header,
-            backend = backend,
-            title = "Branch Models",
-            alignment = :l,
-            kwargs...,
-        )
-    end
-
-    if !isempty(template.services)
-        println(io)
-        if isempty(first(keys(template.services))[1])
-            header = ["Service Type", "Formulation", "Slacks", "Aggregated Model"]
-        else
-            header = ["Name", "Service Type", "Formulation", "Slacks", "Aggregated Model"]
-        end
-
-        table = Matrix{String}(undef, length(template.services), length(header))
-        for (ix, (key, model)) in enumerate(template.services)
-            if isempty(key[1])
-                table[ix, 1] = string(get_component_type(model))
-                table[ix, 2] = string(get_formulation(model))
-                table[ix, 3] = string(model.use_slacks)
-                table[ix, 4] =
-                    string(get(model.attributes, "aggregated_service_model", "false"))
-            else
-                table[ix, 1] = key[1]
-                table[ix, 2] = string(get_component_type(model))
-                table[ix, 3] = string(get_formulation(model))
-                table[ix, 4] = string(model.use_slacks)
-                table[ix, 5] =
-                    string(get(model.attributes, "aggregated_service_model", "false"))
-            end
-        end
-
-        PrettyTables.pretty_table(
-            io,
-            table;
-            column_labels = header,
-            backend = backend,
-            title = "Service Models",
-            alignment = :l,
-            kwargs...,
-        )
-    end
-    return
-end
+# list_variable_names/list_dual_names/etc. (simulation_problem_results.jl) call this
+# unqualified; it is missing from the main module's IOM import block.
+import InfrastructureOptimizationModels: encode_keys_as_strings
 
 function Base.show(io::IO, ::MIME"text/plain", input::SimulationModels)
-    _show_method(io, input, :auto)
+    IOM._show_method(io, input, :auto)
 end
 
 function Base.show(io::IO, ::MIME"text/html", input::SimulationModels)
     # The tf_html_simple format was eliminated from PrettyTables and it was added to PowerSystems
-    _show_method(io, input, :html; stand_alone = false, table_format = PSY.tf_html_simple)
+    IOM._show_method(
+        io,
+        input,
+        :html;
+        stand_alone = false,
+        table_format = PSY.tf_html_simple,
+    )
 end
 
-_get_model_type(::DecisionModel{T}) where {T <: DecisionProblem} = T
-_get_model_type(::EmulationModel{T}) where {T <: EmulationProblem} = T
+_get_model_type(::DecisionModel{T}) where {T <: POM.AbstractPowerDecisionProblem} = T
+_get_model_type(::EmulationModel{T}) where {T <: POM.AbstractPowerEmulationProblem} = T
 
-function _show_method(io::IO, sim_models::SimulationModels, backend::Symbol; kwargs...)
+function IOM._show_method(io::IO, sim_models::SimulationModels, backend::Symbol; kwargs...)
     println(io)
     header = ["Model Name", "Model Type", "Status", "Output Directory"]
 
@@ -326,15 +67,21 @@ function _show_method(io::IO, sim_models::SimulationModels, backend::Symbol; kwa
 end
 
 function Base.show(io::IO, ::MIME"text/plain", input::SimulationSequence)
-    _show_method(io, input, :auto)
+    IOM._show_method(io, input, :auto)
 end
 
 function Base.show(io::IO, ::MIME"text/html", input::SimulationSequence)
     # The tf_html_simple format was eliminated from PrettyTables and it was added to PowerSystems
-    _show_method(io, input, :html; stand_alone = false, table_format = PSY.tf_html_simple)
+    IOM._show_method(
+        io,
+        input,
+        :html;
+        stand_alone = false,
+        table_format = PSY.tf_html_simple,
+    )
 end
 
-function _show_method(io::IO, sequence::SimulationSequence, backend::Symbol; kwargs...)
+function IOM._show_method(io::IO, sequence::SimulationSequence, backend::Symbol; kwargs...)
     println(io)
     table = [
         "Simulation Step Interval" Dates.Hour(get_step_resolution(sequence))
@@ -392,12 +139,18 @@ function _show_method(io::IO, sequence::SimulationSequence, backend::Symbol; kwa
 end
 
 function Base.show(io::IO, ::MIME"text/plain", input::Simulation)
-    _show_method(io, input, :auto)
+    IOM._show_method(io, input, :auto)
 end
 
 function Base.show(io::IO, ::MIME"text/html", input::Simulation)
     # The tf_html_simple format was eliminated from PrettyTables and it was added to PowerSystems
-    _show_method(io, input, :html; stand_alone = false, table_format = PSY.tf_html_simple)
+    IOM._show_method(
+        io,
+        input,
+        :html;
+        stand_alone = false,
+        table_format = PSY.tf_html_simple,
+    )
 end
 
 function _get_initial_time_for_show(sim::Simulation)
@@ -427,7 +180,7 @@ function _get_run_status_for_show(sim::Simulation)
     end
 end
 
-function _show_method(io::IO, sim::Simulation, backend::Symbol; kwargs...)
+function IOM._show_method(io::IO, sim::Simulation, backend::Symbol; kwargs...)
     table = [
         "Simulation Name" get_name(sim)
         "Build Status" _get_build_status_for_show(sim)
@@ -446,20 +199,26 @@ function _show_method(io::IO, sim::Simulation, backend::Symbol; kwargs...)
         kwargs...,
     )
 
-    _show_method(io, sim.models, backend; kwargs...)
-    _show_method(io, sim.sequence, backend; kwargs...)
+    IOM._show_method(io, sim.models, backend; kwargs...)
+    IOM._show_method(io, sim.sequence, backend; kwargs...)
 end
 
 function Base.show(io::IO, ::MIME"text/plain", input::SimulationResults)
-    _show_method(io, input, :auto)
+    IOM._show_method(io, input, :auto)
 end
 
 function Base.show(io::IO, ::MIME"text/html", input::SimulationResults)
     # The tf_html_simple format was eliminated from PrettyTables and it was added to PowerSystems
-    _show_method(io, input, :html; stand_alone = false, table_format = PSY.tf_html_simple)
+    IOM._show_method(
+        io,
+        input,
+        :html;
+        stand_alone = false,
+        table_format = PSY.tf_html_simple,
+    )
 end
 
-function _show_method(io::IO, results::SimulationResults, backend::Symbol; kwargs...)
+function IOM._show_method(io::IO, results::SimulationResults, backend::Symbol; kwargs...)
     header = ["Problem Name", "Initial Time", "Resolution", "Last Solution Timestamp"]
 
     table = Matrix{Any}(undef, length(results.decision_problem_results), length(header))
@@ -496,17 +255,23 @@ function _show_method(io::IO, results::SimulationResults, backend::Symbol; kwarg
     )
 end
 
-ProblemResultsTypes = Union{OptimizationProblemResults, SimulationProblemResults}
+ProblemResultsTypes = Union{SimulationProblemResults}
 function Base.show(io::IO, ::MIME"text/plain", input::ProblemResultsTypes)
-    _show_method(io, input, :auto)
+    IOM._show_method(io, input, :auto)
 end
 
 function Base.show(io::IO, ::MIME"text/html", input::ProblemResultsTypes)
     # The tf_html_simple format was eliminated from PrettyTables and it was added to PowerSystems
-    _show_method(io, input, :html; stand_alone = false, table_format = PSY.tf_html_simple)
+    IOM._show_method(
+        io,
+        input,
+        :html;
+        stand_alone = false,
+        table_format = PSY.tf_html_simple,
+    )
 end
 
-function _show_method(
+function IOM._show_method(
     io::IO,
     results::T,
     backend::Symbol;
@@ -516,7 +281,7 @@ function _show_method(
 
     # `get_resolution` returns `nothing` when there is a single timestamp (no
     # interval to diff), so guard against `Dates.Minute(nothing)`.
-    resolution = ISOPT.get_resolution(results)
+    resolution = get_resolution(results)
     resolution_str =
         isnothing(resolution) ? "N/A (single period)" :
         string(Dates.Minute(resolution))
@@ -559,22 +324,4 @@ function _show_method(
             )
         end
     end
-end
-
-function Base.show(io::IO, ::MIME"text/plain", bounds::ConstraintBounds)
-    println(io, "ConstraintBounds:")
-    println(io, "Constraint Coefficient")
-    show(io, MIME"text/plain"(), bounds.coefficient)
-    println(io, "Constraint RHS")
-    show(io, MIME"text/plain"(), bounds.rhs)
-end
-
-function Base.show(io::IO, ::MIME"text/plain", bounds::VariableBounds)
-    println(io, "VariableBounds:")
-    show(io, MIME"text/plain"(), bounds.bounds)
-end
-
-function Base.show(io::IO, ::MIME"text/plain", bounds::NumericalBounds)
-    println(io, rpad("  Minimum", 20), "Maximum")
-    println(io, rpad("  $(bounds.min)", 20), "$(bounds.max)")
 end

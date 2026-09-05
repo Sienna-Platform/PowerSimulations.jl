@@ -1,10 +1,3 @@
-function load_pf_export(root, export_subdir)
-    raw_path, md_path = get_psse_export_paths(export_subdir)
-    sys = System(joinpath(root, raw_path), JSON3.read(joinpath(root, md_path), Dict))
-    set_units_base_system!(sys, "NATURAL_UNITS")
-    return sys
-end
-
 function run_simulation(
     c_sys5_hy_uc,
     c_sys5_hy_ed,
@@ -19,12 +12,12 @@ function run_simulation(
     template_ed = get_template_nomin_ed_simulation()
     isnothing(uc_network_model) && (
         uc_network_model =
-            NetworkModel(CopperPlatePowerModel; duals = [CopperPlateBalanceConstraint])
+            NetworkModel(CopperPlateNetworkModel; duals = [CopperPlateBalanceConstraint])
     )
     isnothing(ed_network_model) && (
         ed_network_model =
             NetworkModel(
-                CopperPlatePowerModel;
+                CopperPlateNetworkModel;
                 duals = [CopperPlateBalanceConstraint],
                 use_slacks = true,
             )
@@ -50,7 +43,7 @@ function run_simulation(
                 template_ed,
                 c_sys5_hy_ed;
                 name = "ED",
-                optimizer = ipopt_optimizer,
+                optimizer = HiGHS_optimizer,
             ),
         ],
     )

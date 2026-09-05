@@ -1,8 +1,8 @@
 """
-Update parameter function an OperationModel
+Update parameter function an IOM.AbstractOptimizationModel
 """
 function update_parameter_values!(
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     key::ParameterKey{T, U},
     simulation_state::SimulationState,
 ) where {T <: ParameterType, U <: PSY.Component}
@@ -55,7 +55,7 @@ function _fix_parameter_value!(
 end
 
 function update_parameter_values!(
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     key::ParameterKey{FixValueParameter, T},
     simulation_state::SimulationState,
 ) where {T <: PSY.Service}

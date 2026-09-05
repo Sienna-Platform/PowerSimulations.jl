@@ -14,7 +14,7 @@ function SimulationState()
     )
 end
 
-get_current_time(s::SimulationState) = s.current_time[]
+IOM.get_current_time(s::SimulationState) = s.current_time[]
 get_last_decision_model(s::SimulationState) = s.last_decision_model[]
 get_decision_states(s::SimulationState) = s.decision_states
 get_system_states(s::SimulationState) = s.system_states
@@ -95,7 +95,7 @@ end
 
 function _initialize_model_states!(
     sim_state::SimulationState,
-    model::OperationModel,
+    model::IOM.AbstractOptimizationModel,
     simulation_initial_time::Dates.DateTime,
     simulation_step::Dates.Millisecond,
     params::OrderedDict{OptimizationContainerKey, STATE_TIME_PARAMS},
@@ -263,8 +263,13 @@ function update_decision_state!(
     set_update_timestamp!(state_data, simulation_time)
     for t in result_time_index
         state_range = state_data_index:(state_data_index + offset)
-        for name in column_names, (ix, i) in enumerate(state_range)
-            state_data.values[name, i] = max(0.0, store_data[name, t] - ix + 1)
+        for name in column_names
+            # One countdown step per state step inside the model's interval.
+            trajectory =
+                POM.countdown_trajectory(store_data[name, t], length(state_range))
+            for (ix, i) in enumerate(state_range)
+                state_data.values[name, i] = trajectory[ix]
+            end
         end
         set_last_recorded_row!(state_data, state_range[end])
         state_data_index += resolution_ratio
@@ -307,11 +312,8 @@ function update_decision_state!(
     for t in result_time_index
         state_range = state_data_index:(state_data_index + offset)
         for name in column_names, i in state_range
-            if countdown_data.values[name, i] > 0.0
-                state_data.values[name, i] = 0.0
-            else
-                state_data.values[name, i] = 1.0
-            end
+            state_data.values[name, i] =
+                POM.availability_from_countdown(countdown_data.values[name, i])
         end
         set_last_recorded_row!(state_data, state_range[end])
         state_data_index += resolution_ratio
@@ -339,25 +341,16 @@ function update_decision_state!(
     @assert_op resolution_ratio >= 1
     state_timestamps = state_data.timestamps
     state_data_index = find_timestamp_index(state_timestamps, simulation_time)
-    for name in column_names
-        if event_occurrence_data.values[name, state_data_index] == 1.0
-            outage_index = state_data_index + 1     #outage occurs at the following timestep
-            subsequent_outage_occurence_data =
-                Vector(event_occurrence_data.values[name, outage_index:end])
-            n_remaining_indices = findfirst(x -> x == 1.0, subsequent_outage_occurence_data)
-            if isnothing(n_remaining_indices)
-                n_remaining_indices = length(subsequent_outage_occurence_data)
-            end
-            for ix in outage_index:(state_data_index + n_remaining_indices)
-                # Set the offset parameter to equal the negative of the timeseries parameter
-                state_data.values[name, ix] =
-                    -1.0 * activepower_data.values[name, ix]
-            end
-        end
+    # The offset follows the countdown: it cancels the device's own time series while
+    # the outage runs and is cleared everywhere else, so a stale offset cannot survive.
+    for name in column_names, ix in axes(state_data.values)[2]
+        state_data.values[name, ix] = POM.outage_power_offset(
+            event_occurrence_data.values[name, ix],
+            activepower_data.values[name, ix],
+        )
     end
     return
 end
-
 function update_decision_state!(
     state::SimulationState,
     key::OptimizationContainerKey,
@@ -400,46 +393,6 @@ function update_decision_state!(
     return
 end
 
-function _get_time_to_recover(
-    event::PSY.GeometricDistributionForcedOutage,
-    event_model::EventModel,
-    simulation_time,
-)
-    timeseries_mapping = event_model.timeseries_mapping
-    if isnothing(timeseries_mapping[:mean_time_to_recovery])
-        return PSY.get_mean_time_to_recovery(event)
-    else
-        ts_mttr = PSY.get_time_series(
-            IS.SingleTimeSeries,
-            event,
-            timeseries_mapping[:mean_time_to_recovery];
-            start_time = simulation_time,
-            len = 1,
-        )
-        return TimeSeries.values(ts_mttr.data)[1]
-    end
-end
-
-function _get_time_to_recover(
-    event::PSY.FixedForcedOutage,
-    event_model::EventModel,
-    simulation_time,
-)
-    timeseries_mapping = event_model.timeseries_mapping
-    ts_outage_status = PSY.get_time_series(
-        IS.SingleTimeSeries,
-        event,
-        timeseries_mapping[:outage_status];
-        start_time = simulation_time,
-    )
-    vals = TimeSeries.values(ts_outage_status.data)
-    if length(vals) < 3 || isnothing(findfirst(isequal(0.0), vals[3:end]))
-        return length(vals)
-    else
-        return findfirst(isequal(0.0), vals[3:end])
-    end
-end
-
 function update_decision_state!(
     state::SimulationState,
     key::OptimizationContainerKey,
@@ -461,35 +414,25 @@ function update_decision_state!(
     simulation_time::Dates.DateTime,
     ::ModelStoreParams,
 ) where {T <: PSY.Component}
+    # The system state already holds the countdown POM computed for this step; the
+    # decision state gets that countdown projected across the rest of the horizon.
     event_occurrence_data =
         get_system_state_data(state, AvailableStatusChangeCountdownParameter(), T)
     event_occurrence_values = get_last_recorded_value(event_occurrence_data)
-    # This is required since the data for outages (mttr and λ) is always assumed to be on hourly resolution
-    mttr_resolution = Dates.Hour(1)
     state_data = get_decision_state_data(state, key)
-    state_resolution = get_data_resolution(state_data)
-    resolution_ratio = mttr_resolution ÷ state_resolution
     state_timestamps = state_data.timestamps
-    @assert_op resolution_ratio >= 1
     state_data_index = find_timestamp_index(state_timestamps, simulation_time)
+    set_update_timestamp!(state_data, simulation_time)
     for name in column_names
-        state_data.values[name, state_data_index] = event_occurrence_values[name, 1]
-        if event_occurrence_values[name, 1] == 1.0
-            mttr_hr = _get_time_to_recover(event, event_model, simulation_time)
-            mttr_state_resolution = mttr_hr * resolution_ratio
-            if !isinteger(mttr_state_resolution)
-                @warn "MTTR is not an integer after conversion from hours to $state_resolution resolution
-                    MTTR will be rounded up to $(Int(ceil(mttr_state_resolution))) steps of $state_resolution"
-                mttr_state_resolution = ceil(mttr_state_resolution)
-            end
-            off_time_step_count = Int(mttr_state_resolution)
-            set_update_timestamp!(state_data, simulation_time)
-            for (ix, countdown) in enumerate(off_time_step_count:-1.0:1.0)
-                if state_data_index + ix > length(state_timestamps) #outage extends beyond current state
-                    break
-                end
-                state_data.values[name, state_data_index + ix] = countdown
-            end
+        countdown = event_occurrence_values[name, 1]
+        # The outage takes effect at the step *after* the one that detected it, which is
+        # also the step the occurrence was read from, so the projection starts one index
+        # ahead. An outage running past the end of the state window is truncated here;
+        # the countdown survives in the system state, so the next projection continues it.
+        remaining = length(state_timestamps) - state_data_index
+        trajectory = POM.countdown_trajectory(countdown, remaining)
+        for (ix, value) in enumerate(trajectory)
+            state_data.values[name, state_data_index + ix] = value
         end
     end
     return
@@ -513,19 +456,9 @@ function update_decision_state!(
     @assert_op resolution_ratio >= 1
     state_timestamps = state_data.timestamps
     state_data_index = find_timestamp_index(state_timestamps, simulation_time)
-    for name in column_names
-        if event_occurrence_data.values[name, state_data_index] == 1.0
-            outage_index = state_data_index + 1     #outage occurs at the following timestep
-            subsequent_outage_occurence_data =
-                Vector(event_occurrence_data.values[name, outage_index:end])
-            n_remaining_indices = findfirst(x -> x == 1.0, subsequent_outage_occurence_data)
-            if isnothing(n_remaining_indices)
-                n_remaining_indices = length(subsequent_outage_occurence_data)
-            end
-            for ix in outage_index:(state_data_index + n_remaining_indices)
-                state_data.values[name, ix] = 0.0
-            end
-        end
+    for name in column_names, ix in axes(state_data.values)[2]
+        state_data.values[name, ix] =
+            POM.availability_from_countdown(event_occurrence_data.values[name, ix])
     end
     return
 end
@@ -548,9 +481,9 @@ function update_decision_state!(
     event_occurence_index =
         find_timestamp_index(event_occurrence_data.timestamps, simulation_time)
     for name in column_names
-        if event_occurrence_data.values[name, event_occurence_index] == 1.0
+        if event_occurrence_data.values[name, event_occurence_index] > 0.0
             state_data.values[name, (state_data_index + 1):end] .=
-                MISSING_INITIAL_CONDITIONS_TIME_COUNT
+                IOM.MISSING_INITIAL_CONDITIONS_TIME_COUNT
         end
     end
     return
@@ -574,7 +507,7 @@ function update_decision_state!(
     event_occurence_index =
         find_timestamp_index(event_occurrence_data.timestamps, simulation_time)
     for name in column_names
-        if event_occurrence_data.values[name, event_occurence_index] == 1.0
+        if event_occurrence_data.values[name, event_occurence_index] > 0.0
             for (time_off, ix) in
                 enumerate((state_data_index + 1):length(state_data.values[name, :]))
                 state_data.values[name, ix] = time_off
@@ -602,13 +535,12 @@ function update_decision_state!(
     event_occurence_index =
         find_timestamp_index(event_occurrence_data.timestamps, simulation_time)
     for name in column_names
-        if event_occurrence_data.values[name, event_occurence_index] == 1.0
+        if event_occurrence_data.values[name, event_occurence_index] > 0.0
             state_data.values[name, (state_data_index + 1):end] .= 0.0
         end
     end
     return
 end
-
 function update_decision_state!(
     state::SimulationState,
     key::OptimizationContainerKey,
@@ -800,6 +732,19 @@ function update_system_state!(
     return
 end
 
+# Event parameters are exogenous state the models read, not results they produce. Copying
+# the emulator's own values back over them resets the countdown every step, which is the
+# outage's memory: the device would be re-outaged forever and never recover.
+function update_system_state!(
+    ::DatasetContainer{InMemoryDataset},
+    ::ParameterKey{T, U},
+    ::SimulationStore,
+    ::Symbol,
+    ::Dates.DateTime,
+) where {T <: EventParameter, U <: PSY.Component}
+    return
+end
+
 function update_system_state!(
     state::SimulationState,
     key::OptimizationContainerKey,
@@ -830,56 +775,10 @@ function update_system_state!(
         get_last_recorded_value(available_status_change_parameter)
 
     for name in column_names_
-        current_status = available_status_parameter_values[name]
-        current_status_change = available_status_change_parameter_values[name]
-        if current_status == 1.0 && current_status_change == 1.0
-            available_status_parameter.values[name, 1] = 0.0
-        end
+        available_status_parameter.values[name, 1] =
+            POM.availability_from_countdown(available_status_change_parameter_values[name])
     end
     return
-end
-
-function _get_outage_occurrence(
-    event::PSY.GeometricDistributionForcedOutage,
-    event_model::EventModel,
-    rng::AbstractRNG,
-    current_time,
-)
-    timeseries_mapping = event_model.timeseries_mapping
-    if isnothing(timeseries_mapping[:outage_transition_probability])
-        λ = PSY.get_outage_transition_probability(event)
-    else
-        ts_outage_prob = PSY.get_time_series(
-            IS.SingleTimeSeries,
-            event,
-            timeseries_mapping[:outage_transition_probability];
-            start_time = current_time,
-            len = 1,
-        )
-        λ = TimeSeries.values(ts_outage_prob.data)[1]
-    end
-    outage_occurrence = Float64(rand(rng, Bernoulli(λ)))
-    return outage_occurrence
-end
-
-function _get_outage_occurrence(
-    event::PSY.FixedForcedOutage,
-    event_model::EventModel,
-    rng::AbstractRNG,
-    current_time,
-)
-    timeseries_mapping = event_model.timeseries_mapping
-    ts = PSY.get_time_series(
-        IS.SingleTimeSeries,
-        event,
-        timeseries_mapping[:outage_status];
-        start_time = current_time,
-    )
-    val = TimeSeries.values(ts.data)
-    if length(val) == 1
-        return 0
-    end
-    return val[2]
 end
 
 function update_system_state!(
@@ -890,26 +789,36 @@ function update_system_state!(
     event_model::EventModel,
     simulation_time::Dates.DateTime,
     rng::AbstractRNG,
+    may_start::Bool = true,
 ) where {T <: PSY.Component}
-    outage_occurrence = _get_outage_occurrence(event, event_model, rng, simulation_time)
     sym_state = get_system_states(state)
     system_dataset = get_dataset(sym_state, key)
-
-    # Writes the timestamp of the value used for the update
-    available_status_parameter = get_system_state_data(state, AvailableStatusParameter(), T)
-    available_status_parameter_values = get_last_recorded_value(available_status_parameter)
-
     available_status_change_parameter = get_system_state_data(state, key)
+    resolution = get_data_resolution(available_status_change_parameter)
+    previous = get_last_recorded_value(available_status_change_parameter)
     set_update_timestamp!(system_dataset, simulation_time)
 
     for name in column_names_
-        current_status = available_status_parameter_values[name]
-        if current_status == 1.0 && outage_occurrence == 1.0
-            @warn "Outage occurred at time $simulation_time for devices $column_names_"
-            available_status_change_parameter.values[name, 1] = outage_occurrence
-        else
-            available_status_change_parameter.values[name, 1] = 0.0
-        end
+        # POM decides whether an outage begins and how long it runs; the countdown it
+        # returns is the number of state steps the device stays out.
+        values = POM.event_step_values(
+            event,
+            event_model,
+            simulation_time,
+            previous[name];
+            resolution = resolution,
+            rng = rng,
+            # The condition gates only whether a new outage may begin; the countdown
+            # decays either way, which is why this runs every step.
+            may_start = may_start,
+            # TODO(events): PowerSystems documents `mean_time_to_recovery` in minutes
+            # while this runtime has always read it as hours. Passing the unit
+            # explicitly preserves existing behavior; the contradiction is upstream.
+            mttr_units = Dates.Hour,
+        )
+        values.occurred &&
+            @warn "Outage occurred at time $simulation_time for device $name"
+        available_status_change_parameter.values[name, 1] = values.countdown
     end
     return
 end
@@ -941,15 +850,10 @@ function update_system_state!(
         get_last_recorded_value(active_power_timeseries_parameter)
 
     for name in column_names_
-        current_status = available_status_parameter_values[name]
-        current_status_change = available_status_change_parameter_values[name]
-        if current_status == 1.0 && current_status_change == 1.0
-            active_power_offset_parameter.values[name, 1] =
-                -1.0 * active_power_timeseries_parameter_values[name]
-        else
-            # Clear stale offset when the device is no longer in an active outage state.
-            active_power_offset_parameter.values[name, 1] = 0.0
-        end
+        active_power_offset_parameter.values[name, 1] = POM.outage_power_offset(
+            available_status_change_parameter_values[name],
+            active_power_timeseries_parameter_values[name],
+        )
     end
     return
 end
@@ -973,7 +877,7 @@ function update_system_state!(
     current_status_values = get_last_recorded_value(current_status_data)
     set_update_timestamp!(system_dataset, simulation_time)
     for name in column_names
-        if event_occurrence_values[name] == 1.0
+        if event_occurrence_values[name] > 0.0
             current_status_data.values[name, 1] = 0.0
         end
     end
@@ -999,8 +903,8 @@ function update_system_state!(
     current_status_values = get_last_recorded_value(current_status_data)
     set_update_timestamp!(system_dataset, simulation_time)
     for name in column_names
-        if event_occurrence_values[name] == 1.0
-            current_status_data.values[name, 1] = MISSING_INITIAL_CONDITIONS_TIME_COUNT
+        if event_occurrence_values[name] > 0.0
+            current_status_data.values[name, 1] = IOM.MISSING_INITIAL_CONDITIONS_TIME_COUNT
         end
     end
     return
@@ -1025,13 +929,12 @@ function update_system_state!(
     current_status_values = get_last_recorded_value(current_status_data)
     set_update_timestamp!(system_dataset, simulation_time)
     for name in column_names
-        if event_occurrence_values[name] == 1.0
+        if event_occurrence_values[name] > 0.0
             current_status_data.values[name, 1] = 0.0
         end
     end
     return
 end
-
 function update_system_state!(
     state::DatasetContainer{InMemoryDataset},
     key::OptimizationContainerKey,

@@ -6,35 +6,46 @@ CurrentModule = PowerSimulations
 
 ## Overview
 
-`PowerSimulations.jl` is a power system operations simulation tool developed as a flexible and open source software for quasi-static power systems simulations including Production Cost Models. `PowerSimulations.jl` tackles the issues of developing a simulation model in a modular way providing tools for the formulation of decision models and emulation models that can be solved independently or in an interconnected fashion.
+`PowerSimulations.jl` (PSI) is the **simulation orchestration** package of the Sienna psy6
+line. It runs optimization models in a loop over time, keeps simulation state, updates
+parameters and initial conditions between solves, stores results, and reads them back. It does
+not build optimization models.
 
-`PowerSimulations.jl` supports the workflows to develop simulations by separating the development
-of operations models and simulation models.
+Model building belongs to two upstream packages:
 
-  - **Operation Models**: Optimization model used to find the solution of an operation problem.
-  - **Simulations Models**: Defined the requirements to find solutions to a sequence of operation problems in a way that resembles the procedures followed by operators.
+  - [`InfrastructureOptimizationModels.jl`](https://github.com/Sienna-Platform/InfrastructureOptimizationModels.jl) (IOM) — the domain-neutral optimization
+    core: `OptimizationContainer`, `DecisionModel`, `EmulationModel`, settings, per-model
+    stores, datasets, results types, objective functions.
+  - [`PowerOperationsModels.jl`](https://sienna-platform.github.io/PowerOperationsModels.jl/dev/) (POM) — power formulations: every device, service,
+    network, HVDC, storage, and hydro formulation, `PowerOperationsProblemTemplate`, the
+    problem-type chain, per-model `build!`/`solve!`/`run!`, feedforward types, parameter
+    types, and power-flow-in-the-loop.
 
-The most common Simulation Model is the solution of a Unit Commitment and Economic Dispatch sequence of problems. This model is used in commercial Production Cost Modeling tools, but it has a limited scope of analysis.
+`using PowerSimulations` re-exports the full IOM and POM public API, so a script needs only
+one `using` statement.
 
-`PowerSimulations.jl` is an active project under development, and we welcome your feedback, suggestions, and bug reports.
+```
+IS ──▶ IOM ──▶ POM ──▶ PSI ──▶ PowerAnalytics / PowerGraphics
+        ▲       ▲
+       PSY ──▶ PNM, PF, PSB
+```
 
-## About Sienna
+PSI owns:
+
+  - `Simulation`, `SimulationModels`, `SimulationSequence` — multi-model orchestration,
+    execution order, and feedforward attachment.
+  - `SimulationState` — the state passed between solves.
+  - Parameter and initial-condition updates between solves.
+  - `HdfSimulationStore` / `InMemorySimulationStore`, results, realized results, partitions,
+    and recorder events.
+
+If a change needs `SimulationState`, a `SimulationStore`, or knowledge of more than one
+model, it belongs in PSI. If it adds a variable, constraint, parameter, or expression to a
+container, it belongs in POM (or IOM, if domain-neutral).
 
 `PowerSimulations.jl` is part of the National Renewable Energy Laboratory's
 [Sienna ecosystem](https://sienna-platform.github.io/Sienna/), an open source framework for
-power system modeling, simulation, and optimization. The Sienna ecosystem can be
-[found on Github](https://github.com/Sienna-Platform/Sienna). It contains three applications:
-
-  - [Sienna\Data](https://sienna-platform.github.io/Sienna/pages/applications/sienna_data.html) enables
-    efficient data input, analysis, and transformation
-  - [Sienna\Ops](https://sienna-platform.github.io/Sienna/pages/applications/sienna_ops.html) enables
-    enables system scheduling simulations by formulating and solving optimization problems
-  - [Sienna\Dyn](https://sienna-platform.github.io/Sienna/pages/applications/sienna_dyn.html) enables
-    system transient analysis including small signal stability and full system dynamic
-    simulations
-
-Each application uses multiple packages in the [`Julia`](http://www.julialang.org)
-programming language.
+power system modeling, simulation, and optimization.
 
 ## Installation and Quick Links
 
@@ -46,16 +57,16 @@ programming language.
 
 ## How To Use This Documentation
 
-There are five main sections containing different information:
-
   - **Tutorials** - Detailed walk-throughs to help you *learn* how to use
     `PowerSimulations.jl`
   - **How to...** - Directions to help *guide* your work for a particular task
   - **Explanation** - Additional details and background information to help you *understand*
     `PowerSimulations.jl`, its structure, and how it works behind the scenes
   - **Reference** - Technical references and API for a quick *look-up* during your work
-  - **Formulation Library** - Technical reference for the variables, parameters, and
-  equations that PowerSimulations.jl uses to define device behavior
+
+For device, service, and network formulations, see the
+[`PowerOperationsModels.jl`](https://sienna-platform.github.io/PowerOperationsModels.jl/dev/)
+documentation.
 
 `PowerSimulations.jl` strives to follow the [Diataxis](https://diataxis.fr/) documentation
 framework.

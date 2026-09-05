@@ -50,15 +50,15 @@ function SimulationProblemResults(
     )
 end
 
-list_aux_variable_keys(res::SimulationProblemResults{EmulationModelSimulationResults}) =
+IOM.list_aux_variable_keys(res::SimulationProblemResults{EmulationModelSimulationResults}) =
     collect(keys(res.values.aux_variables))
-list_dual_keys(res::SimulationProblemResults{EmulationModelSimulationResults}) =
+IOM.list_dual_keys(res::SimulationProblemResults{EmulationModelSimulationResults}) =
     collect(keys(res.values.duals))
-list_expression_keys(res::SimulationProblemResults{EmulationModelSimulationResults}) =
+IOM.list_expression_keys(res::SimulationProblemResults{EmulationModelSimulationResults}) =
     collect(keys(res.values.expressions))
-list_parameter_keys(res::SimulationProblemResults{EmulationModelSimulationResults}) =
+IOM.list_parameter_keys(res::SimulationProblemResults{EmulationModelSimulationResults}) =
     collect(keys(res.values.parameters))
-list_variable_keys(res::SimulationProblemResults{EmulationModelSimulationResults}) =
+IOM.list_variable_keys(res::SimulationProblemResults{EmulationModelSimulationResults}) =
     collect(keys(res.values.variables))
 
 get_cached_aux_variables(res::SimulationProblemResults{EmulationModelSimulationResults}) =
@@ -144,14 +144,14 @@ function _get_store_value(
         start_time, _len, resolution = _check_offsets(res, key, store, start_time, len)
         start_index = (start_time - first(res.timestamps)) ÷ resolution + 1
         array = read_results(store, key; index = start_index, len = _len)
-        if convert_result_to_natural_units(key)
+        if convert_output_to_natural_units(key)
             array.data .*= base_power
         end
         # PERF: this is a double-permutedims with HDF
         # We could make an optimized version of this that reads Arrays
         # like decision_model_simulation_results
         timestamps = range(start_time; length = _len, step = res.resolution)
-        results[key] = to_results_dataframe(array, timestamps, Val(table_format))
+        results[key] = to_outputs_dataframe(array, timestamps, Val(table_format))
     end
 
     return results
@@ -207,7 +207,9 @@ function _read_results(
     isempty(result_keys) && return Dict{OptimizationContainerKey, DataFrames.DataFrame}()
     _store = try_resolve_store(store, res.store)
     existing_keys = list_result_keys(res, first(result_keys))
-    ISOPT._validate_keys(existing_keys, result_keys)
+    # IOM._validate_keys is unexported; mirrors the call in
+    # IOM.optimization_problem_outputs.jl's `_read_outputs`.
+    IOM._validate_keys(existing_keys, result_keys)
     cached_results = Dict(
         k => v for
         (k, v) in get_cached_results(res, eltype(result_keys)) if !isempty(v)

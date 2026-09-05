@@ -86,7 +86,7 @@ end
 
 function ParameterUpdateEvent(
     parameter_type::Type{<:ParameterType},
-    component_type::DataType,
+    component_type::Type,
     tag::String,
     simulation_time::Dates.DateTime,
     model_name::Symbol,
@@ -103,7 +103,7 @@ end
 
 function ParameterUpdateEvent(
     parameter_type::Type{<:ParameterType},
-    component_type::DataType,
+    component_type::Type,
     attributes::TimeSeriesAttributes,
     simulation_time::Dates.DateTime,
     model_name::Symbol,
@@ -119,7 +119,7 @@ end
 
 function ParameterUpdateEvent(
     parameter_type::Type{<:ParameterType},
-    component_type::DataType,
+    component_type::Type,
     attributes::EventParametersAttributes,
     simulation_time::Dates.DateTime,
     model_name::Symbol,
@@ -135,7 +135,7 @@ end
 
 function ParameterUpdateEvent(
     parameter_type::Type{<:ParameterType},
-    component_type::DataType,
+    component_type::Type,
     attributes::VariableValueAttributes,
     simulation_time::Dates.DateTime,
     model_name::Symbol,
@@ -152,7 +152,7 @@ end
 
 function ParameterUpdateEvent(
     parameter_type::Type{<:ParameterType},
-    component_type::DataType,
+    component_type::Type,
     attributes::CostFunctionAttributes,
     simulation_time::Dates.DateTime,
     model_name::Symbol,

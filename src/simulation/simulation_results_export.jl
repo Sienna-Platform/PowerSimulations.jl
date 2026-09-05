@@ -2,7 +2,7 @@
 const _SUPPORTED_FORMATS = ("csv",)
 
 mutable struct SimulationResultsExport
-    models::Dict{Symbol, OptimizationProblemResultsExport}
+    models::Dict{Symbol, IOM.OptimizationProblemOutputsExport}
     start_time::Dates.DateTime
     end_time::Dates.DateTime
     path::Union{Nothing, String}
@@ -10,7 +10,7 @@ mutable struct SimulationResultsExport
 end
 
 function SimulationResultsExport(
-    models::Vector{OptimizationProblemResultsExport},
+    models::Vector{IOM.OptimizationProblemOutputsExport},
     params::SimulationStoreParams;
     start_time = nothing,
     end_time = nothing,
@@ -55,7 +55,7 @@ function SimulationResultsExport(filename::AbstractString, params::SimulationSto
 end
 
 function SimulationResultsExport(data::AbstractDict, params::SimulationStoreParams)
-    models = Vector{OptimizationProblemResultsExport}()
+    models = Vector{IOM.OptimizationProblemOutputsExport}()
     for model in get(data, "models", [])
         if !haskey(model, "name")
             throw(IS.InvalidValue("model data does not define 'name'"))
@@ -78,7 +78,7 @@ function SimulationResultsExport(data::AbstractDict, params::SimulationStorePara
             deserialize_key(problem_params, x) for
             x in get(model, "variables", Set{AuxVarKey}())
         )
-        problem_export = OptimizationProblemResultsExport(
+        problem_export = IOM.OptimizationProblemOutputsExport(
             model["name"];
             duals = duals,
             parameters = parameters,
@@ -135,31 +135,42 @@ function should_export(exports::SimulationResultsExport, tstamp::Dates.DateTime)
     return tstamp >= exports.start_time && tstamp <= exports.end_time
 end
 
-function should_export_dual(exports::SimulationResultsExport, tstamp, model, name)
+function IOM.should_export_dual(exports::SimulationResultsExport, tstamp, model, name)
     return _should_export(exports, tstamp, model, STORE_CONTAINER_DUALS, name)
 end
 
-function should_export_parameter(exports::SimulationResultsExport, tstamp, model, name)
+function IOM.should_export_parameter(exports::SimulationResultsExport, tstamp, model, name)
     return _should_export(exports, tstamp, model, STORE_CONTAINER_PARAMETERS, name)
 end
 
-function should_export_variable(exports::SimulationResultsExport, tstamp, model, name)
+function IOM.should_export_variable(exports::SimulationResultsExport, tstamp, model, name)
     return _should_export(exports, tstamp, model, STORE_CONTAINER_VARIABLES, name)
 end
 
-function should_export_expression(exports::SimulationResultsExport, tstamp, model, name)
+function IOM.should_export_expression(exports::SimulationResultsExport, tstamp, model, name)
     return _should_export(exports, tstamp, model, STORE_CONTAINER_EXPRESSIONS, name)
 end
 
-function should_export_aux_variable(exports::SimulationResultsExport, tstamp, model, name)
+function IOM.should_export_aux_variable(
+    exports::SimulationResultsExport,
+    tstamp,
+    model,
+    name,
+)
     return _should_export(exports, tstamp, model, STORE_CONTAINER_AUX_VARIABLES, name)
 end
 
-function _should_export(exports::SimulationResultsExport, tstamp, model, field_name, name)
+function IOM._should_export(
+    exports::SimulationResultsExport,
+    tstamp,
+    model,
+    field_name,
+    name,
+)
     if tstamp < exports.start_time || tstamp >= exports.end_time
         return false
     end
 
     problem_exports = get_problem_exports(exports, model)
-    return ISOPT._should_export(problem_exports, field_name, name)
+    return _should_export(problem_exports, field_name, name)
 end

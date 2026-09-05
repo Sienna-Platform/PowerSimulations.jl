@@ -1,16 +1,16 @@
-function update_initial_conditions!(
-    model::OperationModel,
+function IOM.update_initial_conditions!(
+    model::IOM.AbstractOptimizationModel,
     state::SimulationState,
     ::InterProblemChronology,
 )
     for key in keys(get_initial_conditions(model))
-        update_initial_conditions!(model, key, state)
+        IOM.update_initial_conditions!(model, key, state)
     end
     return
 end
 
-function update_initial_conditions!(
-    ::OperationModel,
+function IOM.update_initial_conditions!(
+    ::IOM.AbstractOptimizationModel,
     ::SimulationState,
     ::IntraProblemChronology,
 )
@@ -21,7 +21,7 @@ function update_initial_conditions!(
     return
 end
 
-function update_initial_conditions!(
+function IOM.update_initial_conditions!(
     ics::T,
     state::SimulationState,
     model_resolution::Dates.Millisecond,
@@ -54,7 +54,7 @@ function update_initial_conditions!(
     return
 end
 
-function update_initial_conditions!(
+function IOM.update_initial_conditions!(
     ics::T,
     state::SimulationState,
     model_resolution::Dates.Millisecond,
@@ -88,7 +88,7 @@ function update_initial_conditions!(
     return
 end
 
-function update_initial_conditions!(
+function IOM.update_initial_conditions!(
     ics::T,
     state::SimulationState,
     ::Dates.Millisecond,
@@ -111,7 +111,7 @@ function update_initial_conditions!(
     for ic in ics
         comp_name = get_component_name(ic)
         comp_type = get_component_type(ic)
-        comp = get_component(ic)
+        comp = IOM.get_component(ic)
         if hasmethod(PSY.get_must_run, Tuple{comp_type}) && PSY.get_must_run(comp)
             status_val = 1.0
         else
@@ -119,8 +119,8 @@ function update_initial_conditions!(
         end
         var_val = get_system_state_value(state, ActivePowerVariable(), comp_type)[comp_name]
         if !isapprox(status_val, 0.0; atol = ABSOLUTE_TOLERANCE)
-            min = PSY.get_active_power_limits(comp).min
-            max = PSY.get_active_power_limits(comp).max
+            min = PSY.get_active_power_limits(comp, PSY.SU).min
+            max = PSY.get_active_power_limits(comp, PSY.SU).max
             if var_val <= max && var_val >= min
                 set_ic_quantity!(ic, var_val)
             elseif isapprox(min - var_val, 0.0; atol = ABSOLUTE_TOLERANCE)
@@ -144,7 +144,7 @@ function update_initial_conditions!(
     return
 end
 
-function update_initial_conditions!(
+function IOM.update_initial_conditions!(
     ics::T,
     state::SimulationState,
     ::Dates.Millisecond,
@@ -172,7 +172,7 @@ function update_initial_conditions!(
     return
 end
 
-function update_initial_conditions!(
+function IOM.update_initial_conditions!(
     ics::T,
     state::SimulationState,
     ::Dates.Millisecond,
@@ -203,7 +203,7 @@ function update_initial_conditions!(
     return
 end
 
-function update_initial_conditions!(
+function IOM.update_initial_conditions!(
     ics::T,
     state::SimulationState,
     ::Dates.Millisecond,
@@ -225,6 +225,37 @@ function update_initial_conditions!(
 }
     for ic in ics
         var_val = get_system_state_value(state, EnergyVariable(), get_component_type(ic))
+        set_ic_quantity!(ic, var_val[get_component_name(ic)])
+    end
+    return
+end
+
+function IOM.update_initial_conditions!(
+    ics::T,
+    state::SimulationState,
+    ::Dates.Millisecond,
+) where {
+    T <: Union{
+        Vector{
+            Union{
+                InitialCondition{InitialReservoirVolume, Nothing},
+                InitialCondition{InitialReservoirVolume, Float64},
+            },
+        },
+        Vector{
+            Union{
+                InitialCondition{InitialReservoirVolume, Nothing},
+                InitialCondition{InitialReservoirVolume, JuMP.VariableRef},
+            },
+        },
+    },
+}
+    for ic in ics
+        var_val = get_system_state_value(
+            state,
+            HydroReservoirVolumeVariable(),
+            get_component_type(ic),
+        )
         set_ic_quantity!(ic, var_val[get_component_name(ic)])
     end
     return

@@ -1,17 +1,17 @@
 # [Read results](@id read_results)
 
-Once a [`DecisionModel`](@ref) is solved via `solve!(model)` or a Simulation is executed (and solved) via `execute!(simulation)`, the results are stored and can be accessed directly in the REPL for result exploration and plotting.
+Once a `DecisionModel` is solved via `solve!(model)` or a Simulation is executed (and solved) via `execute!(simulation)`, the results are stored and can be accessed directly in the REPL for result exploration and plotting.
 
 ## Read results of a Decision Problem
 
-Once a [`DecisionModel`](@ref) is solved, results are accessed using `OptimizationProblemResults(model)` as follows:
+Once a `DecisionModel` is solved, results are accessed using `OptimizationProblemOutputs(model)` as follows:
 
 ```julia
 # The DecisionModel is already constructed
 build!(model; output_dir = mktempdir())
 solve!(model)
 
-results = OptimizationProblemResults(model)
+results = OptimizationProblemOutputs(model)
 ```
 
 The output will showcase the available expressions, parameters and variables to read. For example it will look like:
@@ -22,10 +22,10 @@ End: 2020-01-03T23:00:00
 Resolution: 60 minutes
 
 PowerSimulations Problem Auxiliary variables Results
-┌──────────────────────────────────────────┐
-│ CumulativeCyclingCharge__HybridSystem    │
-│ CumulativeCyclingDischarge__HybridSystem │
-└──────────────────────────────────────────┘
+┌────────────────────────────────┐
+│ TimeDurationOn__ThermalStandard │
+│ TimeDurationOff__ThermalStandard│
+└────────────────────────────────┘
 
 PowerSimulations Problem Expressions Results
 ┌─────────────────────────────────────────────┐
@@ -39,48 +39,32 @@ PowerSimulations Problem Duals Results
 └──────────────────────────────────────┘
 
 PowerSimulations Problem Parameters Results
-┌────────────────────────────────────────────────────────────────────────┐
-│ ActivePowerTimeSeriesParameter__RenewableNonDispatch                           │
-│ RenewablePowerTimeSeries__HybridSystem                                 │
-│ RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R3 │
-│ RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Reg_Up     │
-│ ActivePowerTimeSeriesParameter__PowerLoad                              │
-│ ActivePowerTimeSeriesParameter__RenewableDispatch                      │
-│ RequirementTimeSeriesParameter__VariableReserve__ReserveDown__Reg_Down │
-│ ActivePowerTimeSeriesParameter__HydroDispatch                          │
-│ RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R1 │
-│ RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R2 │
-└────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│ ActivePowerTimeSeriesParameter__RenewableNonDispatch                │
+│ RequirementTimeSeriesParameter__OnlineReserve__ReserveUp__Spin_Up_R3│
+│ RequirementTimeSeriesParameter__OnlineReserve__ReserveUp__Reg_Up    │
+│ ActivePowerTimeSeriesParameter__PowerLoad                           │
+│ ActivePowerTimeSeriesParameter__RenewableDispatch                   │
+│ RequirementTimeSeriesParameter__OnlineReserve__ReserveDown__Reg_Down│
+│ RequirementTimeSeriesParameter__OnlineReserve__ReserveUp__Spin_Up_R1│
+│ RequirementTimeSeriesParameter__OnlineReserve__ReserveUp__Spin_Up_R2│
+└────────────────────────────────────────────────────────────────────┘
 
 PowerSimulations Problem Variables Results
-┌────────────────────────────────────────────────────────────────────┐
-│ ActivePowerOutVariable__HybridSystem                               │
-│ ReservationVariable__HybridSystem                                  │
-│ RenewablePower__HybridSystem                                       │
-│ ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R1 │
-│ SystemBalanceSlackUp__System                                       │
-│ BatteryEnergyShortageVariable__HybridSystem                        │
-│ ActivePowerReserveVariable__VariableReserve__ReserveUp__Reg_Up     │
+┌───────────────────────────────────────────────────────────────────┐
+│ ActivePowerReserveVariable__OnlineReserve__ReserveUp__Spin_Up_R1   │
+│ SystemBalanceSlackUp__System                                      │
+│ ActivePowerReserveVariable__OnlineReserve__ReserveUp__Reg_Up       │
 │ StopVariable__ThermalStandard                                      │
-│ BatteryStatus__HybridSystem                                        │
-│ BatteryDischarge__HybridSystem                                     │
-│ ActivePowerInVariable__HybridSystem                                │
-│ DischargeRegularizationVariable__HybridSystem                      │
-│ BatteryCharge__HybridSystem                                        │
 │ ActivePowerVariable__RenewableDispatch                             │
-│ ActivePowerReserveVariable__VariableReserve__ReserveDown__Reg_Down │
-│ EnergyVariable__HybridSystem                                       │
-│ OnVariable__HybridSystem                                           │
-│ BatteryEnergySurplusVariable__HybridSystem                         │
+│ ActivePowerReserveVariable__OnlineReserve__ReserveDown__Reg_Down   │
 │ SystemBalanceSlackDown__System                                     │
-│ ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R2 │
-│ ThermalPower__HybridSystem                                         │
+│ ActivePowerReserveVariable__OnlineReserve__ReserveUp__Spin_Up_R2   │
 │ ActivePowerVariable__ThermalStandard                               │
 │ StartVariable__ThermalStandard                                     │
-│ ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R3 │
+│ ActivePowerReserveVariable__OnlineReserve__ReserveUp__Spin_Up_R3   │
 │ OnVariable__ThermalStandard                                        │
-│ ChargeRegularizationVariable__HybridSystem                         │
-└────────────────────────────────────────────────────────────────────┘
+└───────────────────────────────────────────────────────────────────┘
 ```
 
 Then the following code can be used to read results:
@@ -100,7 +84,7 @@ cost_thermal = read_expression(results, "ProductionCostExpression__ThermalStanda
 dual_balance_constraint = read_dual(results, "CopperPlateBalanceConstraint__System")
 
 # Read auxiliary variables
-aux_var_result = read_aux_variable(results, "CumulativeCyclingCharge__HybridSystem")
+aux_var_result = read_aux_variable(results, "TimeDurationOn__ThermalStandard")
 ```
 
 Results will be in the form of DataFrames that can be easily explored.
@@ -134,7 +118,7 @@ Emulator Results
 └─────────────────┴───────────┘
 ```
 
-With this, it is possible to obtain results of each [`DecisionModel`](@ref) and `EmulationModel` as follows:
+With this, it is possible to obtain results of each `DecisionModel` and `EmulationModel` as follows:
 
 ```julia
 # Use the Problem Name for Decision Problems

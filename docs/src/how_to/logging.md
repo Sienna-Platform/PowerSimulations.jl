@@ -42,6 +42,18 @@ build!(simulation; console_level = Logging.Info, file_level = Logging.Debug)
 
 The log file will be located at `<your-output-path>/<simulation-name>/<run-output-dir>/logs/simulation.log`.
 
+## Log groups
+
+Debug messages in PSI's own code are tagged with one of these log groups:
+
+  - `LOG_GROUP_SIMULATION_STORE` — the `HdfSimulationStore`/`InMemorySimulationStore` cache and flush path
+  - `LOG_GROUP_OUTPUTS` — result reads and writes
+  - `LOG_GROUP_MODEL_STORE` — per-model store access during a simulation
+  - `LOG_GROUP_BUILD_INITIAL_CONDITIONS` — initial-condition setup between solves
+
+Model-building log groups (variables, constraints, parameters) belong to
+`PowerOperationsModels.jl` and `InfrastructureOptimizationModels.jl`.
+
 ## Solver logs
 
 You can configure logging for the solver you use.  Refer to the solver

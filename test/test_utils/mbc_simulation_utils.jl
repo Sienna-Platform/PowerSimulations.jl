@@ -4,7 +4,6 @@ const TIME1 = DateTime("2024-01-01T00:00:00")
 test_path = mktempdir()
 const FormulationDict =
     Dict{Type{<:PSY.Device}, Union{DeviceModel, Type{<:PSI.AbstractDeviceFormulation}}}
-# TODO could replace with PSI's defaults, template_unit_commitment
 const DEFAULT_FORMULATIONS =
     FormulationDict(
         ThermalStandard => ThermalBasicUnitCommitment,
@@ -15,6 +14,33 @@ const DEFAULT_FORMULATIONS =
         # HydroDispatch => HydroCommitmentRunOfRiver,
         # EnergyReservoirStorage => StorageDispatchWithReserves,
     )
+
+# psy6 split MarketBidCost/ImportExportCost into a static type and a
+# MarketBidTimeSeriesCost/ImportExportTimeSeriesCost type; the time-varying variants'
+# `get_{incremental,decremental,import,export}_variable_cost(device, cost; start_time, len)`
+# resolve a `Vector{CostCurve}` window, while the static variants' methods of the same
+# functions ignore `len` and return one `CostCurve`. This dispatches on the cost type to
+# give both cases the same `Vector{CostCurve}`-of-length-`len` shape for shared test code.
+const _STATIC_OFFER_COST = Union{PSY.MarketBidCost, PSY.ImportExportCost}
+const _TS_OFFER_COST = Union{PSY.MarketBidTimeSeriesCost, PSY.ImportExportTimeSeriesCost}
+const _ANY_MBC = Union{PSY.MarketBidCost, PSY.MarketBidTimeSeriesCost}
+const _ANY_IEC = Union{PSY.ImportExportCost, PSY.ImportExportTimeSeriesCost}
+_is_mbc(::_ANY_MBC) = true
+_is_mbc(::PSY.OperationalCost) = false
+_is_iec(::_ANY_IEC) = true
+_is_iec(::PSY.OperationalCost) = false
+_is_ts_pwl_curve(::PSY.CostCurve{<:PSY.TimeSeriesPiecewiseIncrementalCurve}) = true
+_is_ts_pwl_curve(::Any) = false
+_resolve_variable_cost_window(
+    getter,
+    comp,
+    cost::_STATIC_OFFER_COST,
+    start_time,
+    len::Int,
+) =
+    fill(getter(comp, cost; start_time = start_time), len)
+_resolve_variable_cost_window(getter, comp, cost::_TS_OFFER_COST, start_time, len::Int) =
+    getter(comp, cost; start_time = start_time, len = len)
 
 # debugging code for inspecting objective functions -- ignore
 function format_objective_function_file(filepath::String)
@@ -54,7 +80,7 @@ function save_constraints(model::DecisionModel, filepath::String)
 end
 # end debugging code
 
-function set_formulations!(template::ProblemTemplate,
+function set_formulations!(template::PowerOperationsProblemTemplate,
     sys::PSY.System,
     device_to_formulation::FormulationDict,
 )
@@ -71,12 +97,16 @@ function set_formulations!(template::ProblemTemplate,
 end
 
 _set_formulations_helper(
-    template::ProblemTemplate,
+    template::PowerOperationsProblemTemplate,
     device::Type{<:PSY.Device},
     formulation::Type{<:PSI.AbstractDeviceFormulation},
 ) =
     set_device_model!(template, device, formulation)
-_set_formulations_helper(template::ProblemTemplate, _, device_model::DeviceModel) =
+_set_formulations_helper(
+    template::PowerOperationsProblemTemplate,
+    _,
+    device_model::DeviceModel,
+) =
     set_device_model!(template, device_model)
 
 # Layer of indirection to upgrade problem results to look like simulation results
@@ -85,13 +115,13 @@ _maybe_upgrade_to_dict(input::DataFrame) =
     SortedDict{DateTime, DataFrame}(first(input[!, :DateTime]) => input)
 
 read_variable_dict(
-    res::IS.Results,
+    res::IS.Outputs,
     var_name::Type{<:PSI.VariableType},
     comp_type::Type{<:PSY.Component},
 ) =
     _maybe_upgrade_to_dict(read_variable(res, var_name, comp_type))
 read_parameter_dict(
-    res::IS.Results,
+    res::IS.Outputs,
     par_name::Type{<:PSI.ParameterType},
     comp_type::Type{<:PSY.Component},
 ) =
@@ -111,9 +141,9 @@ function build_generic_mbc_model(sys::System;
     standard::Bool = false,
     device_to_formulation = FormulationDict(),
 )
-    template = ProblemTemplate(
+    template = PowerOperationsProblemTemplate(
         NetworkModel(
-            CopperPlatePowerModel;
+            CopperPlateNetworkModel;
             duals = [CopperPlateBalanceConstraint],
         ),
     )
@@ -160,7 +190,7 @@ function run_generic_mbc_prob(
     test_success && @test build_result == PSI.ModelBuildStatus.BUILT
     solve_result = solve!(model)
     test_success && @test solve_result == PSI.RunStatus.SUCCESSFULLY_FINALIZED
-    res = OptimizationProblemResults(model)
+    res = OptimizationProblemOutputs(model)
     if !isnothing(filename)
         adj = is_decremental ? "decr" : "incr"
         save_objective_function(
@@ -280,11 +310,11 @@ function run_mbc_sim(
     if is_decremental
         bp_param_type = PSI.DecrementalPiecewiseLinearBreakpointParameter
         sl_param_type = PSI.DecrementalPiecewiseLinearSlopeParameter
-        oc_getter = get_decremental_offer_curves
+        oc_getter = get_decremental_variable_cost
     else
         bp_param_type = PSI.IncrementalPiecewiseLinearBreakpointParameter
         sl_param_type = PSI.IncrementalPiecewiseLinearSlopeParameter
-        oc_getter = get_incremental_offer_curves
+        oc_getter = get_incremental_variable_cost
     end
     # Both bp_param and sl_param are SortedDict{DateTime, DataFrame}.
     # Columns: :DateTime, :name ("Test Unit1"), :name2 ("tranche_1"),
@@ -302,10 +332,22 @@ function run_mbc_sim(
         for gen_name in unique(bp_step_df.name)
             comp = get_component(T, sys, gen_name)
             cost = PSY.get_operation_cost(comp)
-            oc_ts = oc_getter(comp, cost; start_time = step_dt)
             gen_bp = @rsubset(bp_step_df, :name == gen_name)
             gen_sl = @rsubset(sl_step_df, :name == gen_name)
-            for (ts, psd) in zip(TimeSeries.timestamp(oc_ts), TimeSeries.values(oc_ts))
+            timestamps = unique(gen_bp.DateTime)
+            psds =
+                get_function_data.(
+                    get_value_curve.(
+                        _resolve_variable_cost_window(
+                            oc_getter,
+                            comp,
+                            cost,
+                            step_dt,
+                            length(timestamps),
+                        ),
+                    ),
+                )
+            for (ts, psd) in zip(timestamps, psds)
                 expected_bp = get_x_coords(psd)
                 expected_sl = get_y_coords(psd)
                 actual_bp = sort(@rsubset(gen_bp, :DateTime == ts), :name2).value
@@ -322,25 +364,29 @@ function run_mbc_sim(
     if has_initial_input
         if is_decremental
             param_type = PSI.DecrementalCostAtMinParameter
-            initial_getter = get_decremental_initial_input
+            offer_curve_getter = get_decremental_offer_curves
         else  # Default to incremental for ThermalStandard and other types
             param_type = PSI.IncrementalCostAtMinParameter
-            initial_getter = get_incremental_initial_input
+            offer_curve_getter = get_incremental_offer_curves
         end
         init_param = read_parameter_dict(res, param_type, T)
         for (step_dt, step_df) in pairs(init_param)
             for gen_name in unique(step_df.name)
                 comp = get_component(T, sys, gen_name)
-                ii_comp = initial_getter(
+                cost = PSY.get_operation_cost(comp)
+                timestamps = unique(step_df.DateTime)
+                initial_key =
+                    IS.get_initial_input(get_value_curve(offer_curve_getter(cost)))
+                ii_values = IS.get_time_series_values(
                     comp,
-                    PSY.get_operation_cost(comp);
+                    initial_key;
                     start_time = step_dt,
+                    len = length(timestamps),
                 )
-                @test all(step_df[!, :DateTime] .== TimeSeries.timestamp(ii_comp))
                 @test all(
                     isapprox.(
                         @rsubset(step_df, :name == gen_name).value,
-                        TimeSeries.values(ii_comp),
+                        ii_values,
                     ),
                 )
             end
@@ -366,7 +412,7 @@ end
 
 function cost_due_to_time_varying_mbc(
     sys::System,
-    res::IS.Results,
+    res::IS.Outputs,
     ::Type{T};
     is_decremental = false,
     has_initial_input = true,
@@ -385,7 +431,7 @@ function cost_due_to_time_varying_mbc(
         gen_names = unique(power_df.name)
         @assert !isempty(gen_names)
         @assert any([
-            get_operation_cost(comp) isa MarketBidCost for
+            _is_mbc(get_operation_cost(comp)) for
             comp in get_components(T, sys)
         ])
         if has_initial_input
@@ -403,33 +449,54 @@ function cost_due_to_time_varying_mbc(
         for gen_name in gen_names
             comp = get_component(T, sys, gen_name)
             cost = PSY.get_operation_cost(comp)
-            (cost isa MarketBidCost) || continue
+            _is_mbc(cost) || continue
             step_df[!, gen_name] .= 0.0
-            ii_getter = if is_decremental
-                get_decremental_initial_input
+            offer_curve_getter = if is_decremental
+                get_decremental_offer_curves
             else
-                get_incremental_initial_input
-            end
-            if PSI.is_time_variant(ii_getter(cost))
-                # initial cost: initial input time series multiplied by OnVariable value.
-                ii_ts = ii_getter(comp, cost; start_time = step_dt)
-                @assert all(unique(on_df.DateTime) .== TimeSeries.timestamp(ii_ts))
-                step_df[!, gen_name] .+=
-                    @rsubset(on_df, :name == gen_name).value .*
-                    TimeSeries.values(ii_ts)
-            end
-            oc_getter =
-                is_decremental ?
-                get_decremental_offer_curves :
                 get_incremental_offer_curves
-            if PSI.is_time_variant(oc_getter(cost))
-                vc_ts = oc_getter(comp, cost; start_time = step_dt)
-                @assert all(unique(power_df.DateTime) .== TimeSeries.timestamp(vc_ts))
+            end
+            if IS.is_time_series_backed(offer_curve_getter(cost))
+                initial_key =
+                    IS.get_initial_input(get_value_curve(offer_curve_getter(cost)))
+                if !isnothing(initial_key)
+                    # initial cost: initial input time series multiplied by OnVariable value.
+                    on_timestamps = unique(on_df.DateTime)
+                    ii_values = IS.get_time_series_values(
+                        comp,
+                        initial_key;
+                        start_time = step_dt,
+                        len = length(on_timestamps),
+                    )
+                    step_df[!, gen_name] .+=
+                        @rsubset(on_df, :name == gen_name).value .* ii_values
+                end
+            end
+            variable_cost_getter =
+                if is_decremental
+                    get_decremental_variable_cost
+                else
+                    get_incremental_variable_cost
+                end
+            if PSI.is_time_variant(offer_curve_getter(cost))
+                power_timestamps = unique(power_df.DateTime)
+                psds =
+                    get_function_data.(
+                        get_value_curve.(
+                            _resolve_variable_cost_window(
+                                variable_cost_getter,
+                                comp,
+                                cost,
+                                step_dt,
+                                length(power_timestamps),
+                            ),
+                        ),
+                    )
                 # variable cost: cost function time series evaluated at ActivePowerVariable value.
                 step_df[!, gen_name] .+=
                     _calc_pwi_cost.(
                         @rsubset(power_df, :name == gen_name).value,
-                        TimeSeries.values(vc_ts),
+                        psds,
                     ) # could replace with direct evaluation, now that it is implemented in IS. (https://github.com/Sienna-Platform/PowerSimulations.jl/issues/1430)
             end
         end
@@ -599,8 +666,13 @@ function _calc_pwi_cost(active_power::Float64, pwi::PiecewiseStepData)
 end
 
 "Test that the two systems (typically one without time series and one with constant time series) simulate the same"
-function test_generic_mbc_equivalence(sys0, sys1; kwargs...)
-    for runner in (run_generic_mbc_prob, run_generic_mbc_sim)  # test with both a single problem and a full simulation
+function test_generic_mbc_equivalence(
+    sys0,
+    sys1;
+    runners = (run_generic_mbc_prob, run_generic_mbc_sim),
+    kwargs...,
+)
+    for runner in runners  # by default, test with both a single problem and a full simulation
         filename_in = get(kwargs, :filename, nothing)
         # Create a mutable copy of kwargs
         kwargs_dict = Dict(kwargs)
