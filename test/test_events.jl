@@ -91,7 +91,7 @@ end
 ### 5 MINUTE DATA (RESOLUTION MISMATCH) ###
 
 #Note: if using basic for ed, emulator fails at timestep  after outage due to OutageConstraint_ub
-#= TODO: a 5-minute emulator against hourly/daily decision models fails in
+#= TODO(#1665): a 5-minute emulator against hourly/daily decision models fails in
 # `_update_system_state!` -> `update_system_state!(::AuxVarKey{TimeDurationOn/Off})`,
 # which looks an off-the-hour timestamp up in an hourly decision dataset. Verified
 # independent of events: the same fixture fails with no event models attached.
@@ -117,7 +117,7 @@ end
 end
 =#
 
-#= TODO: a 5-minute emulator against hourly/daily decision models fails in
+#= TODO(#1665): a 5-minute emulator against hourly/daily decision models fails in
 # `_update_system_state!` -> `update_system_state!(::AuxVarKey{TimeDurationOn/Off})`,
 # which looks an off-the-hour timestamp up in an hourly decision dataset. Verified
 # independent of events: the same fixture fails with no event models attached.
@@ -146,7 +146,7 @@ end
 # Note: Running a standard UC formulation without a feedforward to the ED is not a feasible modeling setup
 #Active power can change in Em without regard for OnVariable which messes up initializing the standard UC models.
 
-#= TODO: a 5-minute emulator against hourly/daily decision models fails in
+#= TODO(#1665): a 5-minute emulator against hourly/daily decision models fails in
 # `_update_system_state!` -> `update_system_state!(::AuxVarKey{TimeDurationOn/Off})`,
 # which looks an off-the-hour timestamp up in an hourly decision dataset. Verified
 # independent of events: the same fixture fails with no event models attached.
