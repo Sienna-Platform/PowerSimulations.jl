@@ -1050,7 +1050,7 @@ end
             table_format = TableFormat.WIDE,
         )
         @test size(area_duals, 1) == 24
-        foreach(get_component(Area, c_sys)) do area
+        foreach(get_components(Area, c_sys)) do area
             @test get_name(area) in names(area_duals)
             @test all(isfinite, area_duals[!, get_name(area)])
         end
