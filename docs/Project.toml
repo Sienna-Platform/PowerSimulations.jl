@@ -36,7 +36,8 @@ PowerTableDataParser = "2b750c0e-0bff-11f1-9200-1befd75df6be"
 
 [sources]
 InfrastructureSystems = {url = "https://github.com/Sienna-Platform/InfrastructureSystems.jl", rev = "IS4"}
-# TEMPORARY: pinned to the event-parameter bound fix (IOM #162) until it merges.
+# TEMPORARY: IOM `main` carries 34c1341, which extends `instantiate_network_model!` with
+# service models; POM still implements the 4-argument form. Hold here until POM adopts it.
 InfrastructureOptimizationModels = {url = "https://github.com/Sienna-Platform/InfrastructureOptimizationModels.jl", rev = "lk/event-parameter-attribute-bounds"}
 PowerSystems = {url = "https://github.com/Sienna-Platform/PowerSystems.jl", rev = "psy6"}
 PowerNetworkMatrices = {url = "https://github.com/Sienna-Platform/PowerNetworkMatrices.jl", rev = "psy6"}
