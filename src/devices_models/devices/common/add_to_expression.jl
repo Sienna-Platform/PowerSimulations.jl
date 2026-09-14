@@ -1478,9 +1478,41 @@ function add_to_expression!(
     network_model::NetworkModel{X},
 ) where {
     T <: ActivePowerBalance,
-    U <: ActivePowerVariable,
+    U <: VariableType,
     V <: PSY.StaticInjection,
     W <: AbstractDeviceFormulation,
+    X <: AreaPTDFPowerModel,
+}
+    variable = get_variable(container, U(), V)
+    area_expr = get_expression(container, T(), PSY.Area)
+    nodal_expr = get_expression(container, T(), PSY.ACBus)
+    network_reduction = get_network_reduction(network_model)
+    multiplier = get_variable_multiplier(U(), V, W())
+    for d in devices
+        name = PSY.get_name(d)
+        device_bus = PSY.get_bus(d)
+        area_name = PSY.get_name(PSY.get_area(device_bus))
+        bus_no = PNM.get_mapped_bus_number(network_reduction, device_bus)
+        for t in get_time_steps(container)
+            _add_to_jump_expression!(area_expr[area_name, t], variable[name, t], multiplier)
+            _add_to_jump_expression!(nodal_expr[bus_no, t], variable[name, t], multiplier)
+        end
+    end
+    return
+end
+
+function add_to_expression!(
+    container::OptimizationContainer,
+    ::Type{T},
+    ::Type{U},
+    devices::IS.FlattenIteratorWrapper{V},
+    device_model::DeviceModel{V, W},
+    network_model::NetworkModel{X},
+) where {
+    T <: ActivePowerBalance,
+    U <: OnVariable,
+    V <: PSY.ThermalGen,
+    W <: AbstractCompactUnitCommitment,
     X <: AreaPTDFPowerModel,
 }
     variable = get_variable(container, U(), V)
@@ -1492,17 +1524,26 @@ function add_to_expression!(
         device_bus = PSY.get_bus(d)
         area_name = PSY.get_name(PSY.get_area(device_bus))
         bus_no = PNM.get_mapped_bus_number(network_reduction, device_bus)
-        for t in get_time_steps(container)
-            _add_to_jump_expression!(
-                area_expr[area_name, t],
-                variable[name, t],
-                get_variable_multiplier(U(), V, W()),
-            )
-            _add_to_jump_expression!(
-                nodal_expr[bus_no, t],
-                variable[name, t],
-                get_variable_multiplier(U(), V, W()),
-            )
+        must_run = PSY.get_must_run(d)
+        multiplier = get_variable_multiplier(U(), d, W())
+        if must_run
+            for t in get_time_steps(container)
+                _add_to_jump_expression!(area_expr[area_name, t], multiplier)
+                _add_to_jump_expression!(nodal_expr[bus_no, t], multiplier)
+            end
+        else
+            for t in get_time_steps(container)
+                _add_to_jump_expression!(
+                    area_expr[area_name, t],
+                    variable[name, t],
+                    multiplier,
+                )
+                _add_to_jump_expression!(
+                    nodal_expr[bus_no, t],
+                    variable[name, t],
+                    multiplier,
+                )
+            end
         end
     end
     return

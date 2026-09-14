@@ -1057,6 +1057,76 @@ end
     end
 end
 
+@testset "AreaPTDFPowerModel Hydro Pump Balance Expressions" begin
+    c_sys = PSB.build_system(PSISystems, "two_area_pjm_DA")
+    transform_single_time_series!(c_sys, Hour(24), Hour(1))
+    pump_bus = get_component(PSY.ACBus, c_sys, "Bus_nodeC_2")
+    pump = PSY.HydroPumpTurbine(;
+        name = "AreaPump",
+        available = true,
+        bus = pump_bus,
+        active_power = 0.0,
+        reactive_power = 0.0,
+        rating = 4.0,
+        active_power_limits = (min = 0.1, max = 4.0),
+        reactive_power_limits = nothing,
+        active_power_limits_pump = (min = 0.2, max = 4.0),
+        outflow_limits = nothing,
+        powerhouse_elevation = 0.0,
+        ramp_limits = nothing,
+        time_limits = nothing,
+        base_power = 100.0,
+        active_power_pump = 0.0,
+        efficiency = (turbine = 0.93, pump = 0.93),
+    )
+    add_component!(c_sys, pump)
+
+    template = get_thermal_dispatch_template_network(NetworkModel(AreaPTDFPowerModel))
+    set_device_model!(template, AreaInterchange, StaticBranch)
+    set_device_model!(template, MonitoredLine, StaticBranchUnbounded)
+    set_device_model!(template, PSY.HydroPumpTurbine, HydroPumpEnergyDispatch)
+    ps_model =
+        DecisionModel(template, c_sys; resolution = Hour(1), optimizer = HiGHS_optimizer)
+
+    @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+    constraint_keys = [
+        PSI.ConstraintKey(ActivePowerVariableLimitsConstraint, PSY.ThermalStandard, "lb"),
+        PSI.ConstraintKey(ActivePowerVariableLimitsConstraint, PSY.ThermalStandard, "ub"),
+        PSI.ConstraintKey(ActivePowerVariableLimitsConstraint, PSY.HydroPumpTurbine, "lb"),
+        PSI.ConstraintKey(ActivePowerVariableLimitsConstraint, PSY.HydroPumpTurbine, "ub"),
+        PSI.ConstraintKey(CopperPlateBalanceConstraint, PSY.Area),
+        PSI.ConstraintKey(FlowRateConstraint, PSY.Line, "lb"),
+        PSI.ConstraintKey(FlowRateConstraint, PSY.Line, "ub"),
+        PSI.ConstraintKey(FlowLimitConstraint, PSY.AreaInterchange, "lb"),
+        PSI.ConstraintKey(FlowLimitConstraint, PSY.AreaInterchange, "ub"),
+        PSI.ConstraintKey(LineFlowBoundConstraint, PSY.AreaInterchange, "lb"),
+        PSI.ConstraintKey(LineFlowBoundConstraint, PSY.AreaInterchange, "ub"),
+    ]
+    psi_constraint_test(ps_model, constraint_keys)
+    moi_tests(ps_model, 312, 0, 600, 600, 48, false)
+    psi_checkobjfun_test(ps_model, GAEVF)
+    psi_checksolve_test(ps_model, [MOI.OPTIMAL], 314479.0428904646, 100)
+
+    container = PSI.get_optimization_container(ps_model)
+    pump_variable = PSI.get_variable(
+        container,
+        ActivePowerPumpVariable(),
+        PSY.HydroPumpTurbine,
+    )
+    area_balance = PSI.get_expression(container, ActivePowerBalance(), PSY.Area)
+    bus_balance = PSI.get_expression(container, ActivePowerBalance(), PSY.ACBus)
+    pump_name = PSY.get_name(pump)
+    area_name = PSY.get_name(PSY.get_area(pump_bus))
+    bus_no = PNM.get_mapped_bus_number(
+        PSI.get_network_reduction(PSI.get_network_model(ps_model.template)),
+        pump_bus,
+    )
+
+    @test !iszero(JuMP.coefficient(area_balance[area_name, 1], pump_variable[pump_name, 1]))
+    @test !iszero(JuMP.coefficient(bus_balance[bus_no, 1], pump_variable[pump_name, 1]))
+end
+
 @testset "2 Areas AreaPTDFPowerModel" begin
     c_sys = PSB.build_system(PSISystems, "two_area_pjm_DA")
     transform_single_time_series!(c_sys, Hour(24), Hour(1))
