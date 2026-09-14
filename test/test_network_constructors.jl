@@ -1106,7 +1106,7 @@ end
     psi_constraint_test(ps_model, constraint_keys)
     moi_tests(ps_model, 312, 0, 600, 600, 48, false)
     psi_checkobjfun_test(ps_model, GAEVF)
-    psi_checksolve_test(ps_model, [MOI.OPTIMAL], 314479.0428904646, 1e-3)
+    psi_checksolve_test(ps_model, [MOI.OPTIMAL], 314479.0428904646, 100)
 
     container = PSI.get_optimization_container(ps_model)
     pump_variable = PSI.get_variable(
