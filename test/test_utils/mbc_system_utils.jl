@@ -16,11 +16,11 @@ function replace_with_renewable!(
         name = "RG1",
         available = true,
         bus = get_bus(unit1),
-        active_power = get_active_power(unit1, PSY.DU),
-        reactive_power = get_reactive_power(unit1, PSY.DU),
-        rating = get_rating(unit1, PSY.DU),
+        active_power = get_active_power(unit1, PSY.CU),
+        reactive_power = get_reactive_power(unit1, PSY.CU),
+        rating = get_rating(unit1, PSY.CU),
         prime_mover_type = PSY.PrimeMovers.PVe,
-        reactive_power_limits = get_reactive_power_limits(unit1, PSY.DU),
+        reactive_power_limits = get_reactive_power_limits(unit1, PSY.CU),
         power_factor = 0.9,
         # the start up, shunt down, and no-load cost of renewables should be zero,
         # but we'll use the unit's operation cost as-is for simplicity.
@@ -75,10 +75,10 @@ function replace_load_with_interruptible!(sys::System)
         name = get_name(load1) * "_interruptible",
         bus = get_bus(load1),
         available = get_available(load1),
-        active_power = get_active_power(load1, PSY.DU),
-        reactive_power = get_reactive_power(load1, PSY.DU),
-        max_active_power = get_max_active_power(load1, PSY.DU),
-        max_reactive_power = get_max_reactive_power(load1, PSY.DU),
+        active_power = get_active_power(load1, PSY.CU),
+        reactive_power = get_reactive_power(load1, PSY.CU),
+        max_active_power = get_max_active_power(load1, PSY.CU),
+        max_reactive_power = get_max_reactive_power(load1, PSY.CU),
         operation_cost = PSY.LoadCost(nothing),
         base_power = get_base_power(load1),
         conformity = get_conformity(load1),
@@ -116,9 +116,9 @@ function tweak_system!(sys::System, load_pow_mult, therm_pow_mult, therm_price_m
     for therm in get_components(ThermalStandard, sys)
         op_cost = get_operation_cost(therm)
         _is_market_bid_cost(op_cost) && continue
-        old_limits = get_active_power_limits(therm, PSY.DU)
+        old_limits = get_active_power_limits(therm, PSY.CU)
         new_limits =
-            (min = old_limits.min * PSY.DU, max = old_limits.max * therm_pow_mult * PSY.DU)
+            (min = old_limits.min * PSY.CU, max = old_limits.max * therm_pow_mult * PSY.CU)
         set_active_power_limits!(therm, new_limits)
         set_variable_operation_cost!(
             op_cost,
@@ -275,7 +275,7 @@ function adjust_min_power!(sys)
         x_coords = get_x_coords(get_function_data(baseline))
         set_active_power_limits!(
             comp,
-            (min = first(x_coords) * PSY.MW, max = last(x_coords) * PSY.MW),
+            (min = first(x_coords) * u"MW", max = last(x_coords) * u"MW"),
         )
     end
 end
@@ -389,10 +389,10 @@ function load_sys_incr()
     set_base_power!(unit1, get_base_power(sys) * 1.4)
     set_active_power_limits!(
         unit1,
-        (min = limits.min * PSY.MW, max = limits.max * PSY.MW),
+        (min = limits.min * u"MW", max = limits.max * u"MW"),
     )
-    set_rating!(unit1, rating * PSY.MW)
-    set_active_power!(unit1, active_power * PSY.MW)
+    set_rating!(unit1, rating * u"MW")
+    set_active_power!(unit1, active_power * u"MW")
     return sys
 end
 

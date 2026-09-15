@@ -609,10 +609,10 @@ end
     set_base_power!(u_matched, get_base_power(sys_matched))
     set_active_power_limits!(
         u_matched,
-        (min = limits.min * PSY.MW, max = limits.max * PSY.MW),
+        (min = limits.min * u"MW", max = limits.max * u"MW"),
     )
-    set_rating!(u_matched, rating * PSY.MW)
-    set_active_power!(u_matched, active_power * PSY.MW)
+    set_rating!(u_matched, rating * u"MW")
+    set_active_power!(u_matched, active_power * u"MW")
 
     model_mismatch, _ =
         run_generic_mbc_sim(sys_mismatch; device_to_formulation = device_to_formulation)
@@ -639,7 +639,7 @@ end
 @testset "MarketBidCost block-width update forwards the offer curve's declared power units" begin
     # The update path must convert refreshed breakpoints with the units DECLARED on the offer
     # curve, the way the build path does, not a hardcoded `IS.NaturalUnit()`. "Test Unit1" has a
-    # device base power != the system base, so a `DeviceBaseUnit` curve converts differently
+    # device base power != the system base, so a `ComponentBaseUnit` curve converts differently
     # from a natural-units one and the build-time and updated width RHS diverge under the bug.
     # (`IS.SystemBaseUnit()` cannot be used here: PSY's OpenAPI export rejects it, and `solve!`
     # serializes the system.)
@@ -663,11 +663,11 @@ end
         du_x_coords,
         get_y_coords(baseline_fd) .* db,
         get_initial_input(baseline);
-        power_units = IS.DeviceBaseUnit(),
+        power_units = IS.ComponentBaseUnit(),
     )
     du_decr_curve = CostCurve(
         get_value_curve(get_decremental_offer_curves(op_cost)),
-        IS.DeviceBaseUnit(),
+        IS.ComponentBaseUnit(),
     )
     du_op_cost = MarketBidCost(;
         minimum_energy_offer = get_minimum_energy_offer(op_cost),
@@ -685,7 +685,7 @@ end
 
     ts_op_cost = get_operation_cost(unit1)::MarketBidTimeSeriesCost
     @test IS.get_power_units(get_incremental_offer_curves(ts_op_cost)) ==
-          IS.DeviceBaseUnit()
+          IS.ComponentBaseUnit()
 
     model_build, _ =
         run_generic_mbc_prob(sys; device_to_formulation = device_to_formulation)
