@@ -63,7 +63,7 @@ function build_simulation(
     for sys in [c_sys5_pjm_da, c_sys5_pjm_rt]
         th = get_component(ThermalStandard, sys, "Park City")
         set_active_power_limits!(th, (min = 0.1 * PSY.SU, max = 1.7 * PSY.SU))
-        set_status!(th, false)
+        set_status!(th, OperationalStates.OFFLINE)
         set_active_power!(th, 0.0 * PSY.SU)
         c = get_operation_cost(th)
         PSY.set_start_up!(c, 1500.0)
@@ -97,13 +97,16 @@ function build_simulation(
 
         th = get_component(ThermalStandard, sys, "Solitude")
         set_active_power_limits!(th, (min = 1.0 * PSY.SU, max = 5.2 * PSY.SU))
-        set_ramp_limits!(th, (up = 0.0052 * PSY.SU, down = 0.0052 * PSY.SU))
+        set_ramp_limits!(
+            th,
+            (up = 0.0052 * PSY.SU / u"minute", down = 0.0052 * PSY.SU / u"minute"),
+        )
         set_active_power!(th, 2.0 * PSY.SU)
         c = get_operation_cost(th)
         PSY.set_start_up!(c, 3000.0)
         PSY.set_shut_down!(c, 1500.0)
-        PSY.set_must_run!(th, true)
-        set_status!(th, true)
+        PSY.set_commitment_mode!(th, PSY.CommitmentModes.MUST_RUN)
+        set_status!(th, OperationalStates.ONLINE)
     end
 
     to_json(

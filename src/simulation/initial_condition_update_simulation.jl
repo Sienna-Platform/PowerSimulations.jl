@@ -113,7 +113,7 @@ function IOM.update_initial_conditions!(
     for ic in ics
         comp_name = get_component_name(ic)
         comp = IOM.get_component(ic)
-        if hasmethod(PSY.get_must_run, Tuple{comp_type}) && PSY.get_must_run(comp)
+        if IOM.get_must_run(comp)
             status_val = 1.0
         else
             status_val = get_system_state_value(state, OnVariable(), comp_type)[comp_name]

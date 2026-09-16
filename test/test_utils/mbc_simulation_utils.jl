@@ -140,6 +140,7 @@ function build_generic_mbc_model(sys::System;
     multistart::Bool = false,
     standard::Bool = false,
     device_to_formulation = FormulationDict(),
+    optimizer = HiGHS_optimizer_small_gap,
 )
     template = PowerOperationsProblemTemplate(
         NetworkModel(
@@ -165,7 +166,7 @@ function build_generic_mbc_model(sys::System;
         sys;
         name = "UC",
         store_variable_names = true,
-        optimizer = HiGHS_optimizer_small_gap,
+        optimizer = optimizer,
     )
     return model
 end
@@ -178,12 +179,14 @@ function run_generic_mbc_prob(
     filename::Union{String, Nothing} = nothing,
     is_decremental::Bool = false,
     device_to_formulation = FormulationDict(),
+    optimizer = HiGHS_optimizer_small_gap,
 )
     model = build_generic_mbc_model(
         sys;
         multistart = multistart,
         standard = standard,
         device_to_formulation = device_to_formulation,
+        optimizer = optimizer,
     )
     test_path = mktempdir()
     build_result = build!(model; output_dir = test_path)
@@ -214,12 +217,14 @@ function run_generic_mbc_sim(
     filename::Union{String, Nothing} = nothing,
     is_decremental::Bool = false,
     device_to_formulation = FormulationDict(),
+    optimizer = HiGHS_optimizer_small_gap,
 )
     model = build_generic_mbc_model(
         sys;
         multistart = multistart,
         standard = standard,
         device_to_formulation = device_to_formulation,
+        optimizer = optimizer,
     )
     models = SimulationModels(;
         decision_models = [
