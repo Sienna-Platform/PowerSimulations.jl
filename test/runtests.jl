@@ -16,9 +16,7 @@ Aqua.test_unbound_args(PowerSimulations)
 
 const LOG_FILE = "power-simulations-test.log"
 
-const DISABLED_TEST_FILES = [
-    "test_postcontingency_mixed_outage_axes.jl",
-]
+const DISABLED_TEST_FILES = String[]
 
 LOG_LEVELS = Dict(
     "Debug" => Logging.Debug,
