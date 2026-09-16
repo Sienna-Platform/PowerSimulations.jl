@@ -167,9 +167,14 @@ function run_iec_sim(sys::System, comp_name::String, ::Type{T};
             sys;
             in_memory_store = in_memory_store,
             device_to_formulation = device_to_formulation,
+            optimizer = HiGHS_optimizer_tight_gap,
         )
     else
-        run_generic_mbc_prob(sys; device_to_formulation = device_to_formulation)
+        run_generic_mbc_prob(
+            sys;
+            device_to_formulation = device_to_formulation,
+            optimizer = HiGHS_optimizer_tight_gap,
+        )
     end
 
     # Test that breakpoint and slope parameters read from results match the
