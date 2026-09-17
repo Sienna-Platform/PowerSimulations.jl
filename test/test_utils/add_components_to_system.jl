@@ -171,3 +171,67 @@ function add_reserve_product_without_requirement_time_series!(
     )
     add_service!(sys, reserve_instance, contributing_devices)
 end
+
+"""
+    add_renewable_dispatch_with_time_series!(
+        sys,
+        reference_generator,
+        availability;
+        name = "renewable_dispatch",
+        curtailment_cost = 0.0,
+    )
+
+Adds a `RenewableDispatch` with the same static maximum active power as
+`reference_generator` and an hourly deterministic `max_active_power` forecast.
+`availability` values are per unit of the renewable's static maximum active
+power.
+
+# Arguments
+
+    - `sys::PSY.System`: System that owns the thermal generator.
+    - `reference_generator::PSY.ThermalStandard`: Generator that supplies the
+        renewable's bus, static maximum active power, and base power.
+  - `availability::Vector{Float64}`: Per-unit availability values.
+  - `name::String`: Name assigned to the renewable generator.
+    - `curtailment_cost::Float64`: Linear curtailment cost in \$/MWh.
+"""
+function add_renewable_dispatch_with_time_series!(
+    sys::PSY.System,
+    reference_generator::PSY.ThermalStandard,
+    availability::Vector{Float64};
+    name::String = "renewable_dispatch",
+    curtailment_cost::Float64 = 0.0,
+)
+    renewable = PSY.RenewableDispatch(;
+        name = name,
+        available = PSY.get_available(reference_generator),
+        bus = PSY.get_bus(reference_generator),
+        active_power = PSY.get_active_power(reference_generator),
+        reactive_power = PSY.get_reactive_power(reference_generator),
+        rating = PSY.get_rating(reference_generator),
+        prime_mover_type = PSY.PrimeMovers.PVe,
+        reactive_power_limits = PSY.get_reactive_power_limits(reference_generator),
+        power_factor = 0.9,
+        operation_cost = PSY.RenewableGenerationCost(
+            ;
+            variable = PSY.CostCurve(PSY.LinearCurve(0.0)),
+            curtailment_cost = PSY.CostCurve(PSY.LinearCurve(curtailment_cost)),
+        ),
+        base_power = PSY.get_base_power(reference_generator),
+    )
+    load = first(PSY.get_components(PSY.PowerLoad, sys))
+    load_time_series = PSY.get_time_series(PSY.Deterministic, load, "max_active_power")
+    availability_data = Dict(
+        timestamp => availability for timestamp in keys(IS.get_data(load_time_series))
+    )
+    availability_forecast = PSY.Deterministic(
+        "max_active_power",
+        availability_data,
+        Hour(1);
+        scaling_factor_multiplier = PSY.get_max_active_power,
+        interval = IS.get_interval(load_time_series),
+    )
+    PSY.add_component!(sys, renewable)
+    PSY.add_time_series!(sys, renewable, availability_forecast)
+    return renewable
+end

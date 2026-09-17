@@ -167,3 +167,64 @@ end
     re_vars = PSI.get_variable(container, PSI.ActivePowerVariable(), PSY.RenewableDispatch)
     @test all(JuMP.coefficient(obj, v) < 0 for v in re_vars)
 end
+
+@testset "Renewable CurtailmentCostExpression uses time-varying availability" begin
+    c_sys5 = PSB.build_system(PSITestSystems, "c_sys5")
+    thermal_generator = first(
+        sort(
+            collect(get_components(ThermalStandard, c_sys5));
+            by = generator -> get_rating(generator),
+            rev = true,
+        ),
+    )
+    availability = [isodd(t) ? 1.6 : 1.5 for t in 1:24]
+    renewable = add_renewable_dispatch_with_time_series!(
+        c_sys5,
+        thermal_generator,
+        availability;
+        name = "high_availability_renewable",
+        curtailment_cost = 50.0,
+    )
+
+    template = ProblemTemplate(NetworkModel(CopperPlatePowerModel))
+    set_device_model!(template, RenewableDispatch, RenewableFullDispatch)
+    set_device_model!(template, ThermalStandard, ThermalStandardDispatch)
+    set_device_model!(template, PowerLoad, StaticPowerLoad)
+    model = DecisionModel(
+        template,
+        c_sys5;
+        optimizer = HiGHS_optimizer,
+        resolution = Hour(1),
+        interval = Day(1),
+    )
+
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+    @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    results = OptimizationProblemResults(model)
+    dispatch = read_variable(
+        results,
+        "ActivePowerVariable__RenewableDispatch";
+        table_format = TableFormat.WIDE,
+    )[
+        !,
+        get_name(renewable),
+    ]
+    curtailment_cost = read_expression(
+        results,
+        "CurtailmentCostExpression__RenewableDispatch";
+        table_format = TableFormat.WIDE,
+    )[
+        !,
+        get_name(renewable),
+    ]
+    availability_mw =
+        availability .* get_max_active_power(renewable) .* get_base_power(c_sys5)
+    expected_cost = 50.0 .* (availability_mw .- dispatch)
+
+    @test length(unique(availability_mw)) == 2
+    @test all(dispatch .<= availability_mw .+ 1e-8)
+    @test any(availability_mw .- dispatch .> 1e-8)
+    @test curtailment_cost ≈ expected_cost
+end
