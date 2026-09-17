@@ -398,16 +398,16 @@ build!(problem; output_dir = mktempdir())</code></pre><pre class="documenter-exa
   </thead>
   <tbody>
     <tr class = "dataRow">
-      <td style = "text-align: left;">CurtailmentCostExpression__RenewableDispatch</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">ProductionCostExpression__ThermalStandard</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">ProductionCostExpression__RenewableDispatch</td>
+      <td style = "text-align: left;">FuelCostExpression__ThermalStandard</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: left;">ProductionCostExpression__HydroDispatch</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">FixedCostExpression__RenewableDispatch</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">FixedCostExpression__ThermalStandard</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: left;">StartUpCostExpression__ThermalStandard</td>
@@ -416,25 +416,25 @@ build!(problem; output_dir = mktempdir())</code></pre><pre class="documenter-exa
       <td style = "text-align: left;">VOMCostExpression__RenewableDispatch</td>
     </tr>
     <tr class = "dataRow">
+      <td style = "text-align: left;">ActivePowerBalance__System</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">ProductionCostExpression__ThermalStandard</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">ProductionCostExpression__RenewableDispatch</td>
+    </tr>
+    <tr class = "dataRow">
       <td style = "text-align: left;">FuelConsumptionExpression__ThermalStandard</td>
     </tr>
     <tr class = "dataRow">
-      <td style = "text-align: left;">ShutDownCostExpression__ThermalStandard</td>
+      <td style = "text-align: left;">CurtailmentCostExpression__RenewableDispatch</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: left;">VOMCostExpression__ThermalStandard</td>
     </tr>
     <tr class = "dataRow">
-      <td style = "text-align: left;">FixedCostExpression__RenewableDispatch</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">ActivePowerBalance__System</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">FuelCostExpression__ThermalStandard</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">FixedCostExpression__ThermalStandard</td>
+      <td style = "text-align: left;">ShutDownCostExpression__ThermalStandard</td>
     </tr>
   </tbody>
 </table>
@@ -447,13 +447,13 @@ build!(problem; output_dir = mktempdir())</code></pre><pre class="documenter-exa
   </thead>
   <tbody>
     <tr class = "dataRow">
-      <td style = "text-align: left;">HydroEnergyOutput__HydroDispatch</td>
-    </tr>
-    <tr class = "dataRow">
       <td style = "text-align: left;">TimeDurationOn__ThermalStandard</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: left;">TimeDurationOff__ThermalStandard</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">HydroEnergyOutput__HydroDispatch</td>
     </tr>
   </tbody>
 </table>
@@ -472,7 +472,7 @@ build!(problem; output_dir = mktempdir())</code></pre><pre class="documenter-exa
       <td style = "text-align: left;">ActivePowerTimeSeriesParameter__HydroDispatch</td>
     </tr>
     <tr class = "dataRow">
-      <td style = "text-align: left;">ActivePowerTimeSeriesParameter__RenewableDispatch</td>
+      <td style = "text-align: left;">RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Reg_Up</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: left;">RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R1</td>
@@ -481,16 +481,16 @@ build!(problem; output_dir = mktempdir())</code></pre><pre class="documenter-exa
       <td style = "text-align: left;">RequirementTimeSeriesParameter__VariableReserve__ReserveDown__Reg_Down</td>
     </tr>
     <tr class = "dataRow">
-      <td style = "text-align: left;">RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Reg_Up</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">ActivePowerTimeSeriesParameter__PowerLoad</td>
+      <td style = "text-align: left;">RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R2</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: left;">RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R3</td>
     </tr>
     <tr class = "dataRow">
-      <td style = "text-align: left;">RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R2</td>
+      <td style = "text-align: left;">ActivePowerTimeSeriesParameter__PowerLoad</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">ActivePowerTimeSeriesParameter__RenewableDispatch</td>
     </tr>
   </tbody>
 </table>
@@ -503,37 +503,37 @@ build!(problem; output_dir = mktempdir())</code></pre><pre class="documenter-exa
   </thead>
   <tbody>
     <tr class = "dataRow">
-      <td style = "text-align: left;">ActivePowerVariable__HydroDispatch</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">ActivePowerReserveVariable__VariableReserve__ReserveUp__Reg_Up</td>
+      <td style = "text-align: left;">OnVariable__ThermalStandard</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: left;">ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R1</td>
     </tr>
     <tr class = "dataRow">
-      <td style = "text-align: left;">ActivePowerVariable__ThermalStandard</td>
+      <td style = "text-align: left;">ActivePowerReserveVariable__VariableReserve__ReserveUp__Reg_Up</td>
     </tr>
     <tr class = "dataRow">
-      <td style = "text-align: left;">ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R3</td>
+      <td style = "text-align: left;">ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R2</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: left;">ActivePowerReserveVariable__VariableReserve__ReserveDown__Reg_Down</td>
     </tr>
     <tr class = "dataRow">
+      <td style = "text-align: left;">StartVariable__ThermalStandard</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">ActivePowerVariable__ThermalStandard</td>
+    </tr>
+    <tr class = "dataRow">
       <td style = "text-align: left;">StopVariable__ThermalStandard</td>
+    </tr>
+    <tr class = "dataRow">
+      <td style = "text-align: left;">ActivePowerVariable__HydroDispatch</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: left;">ActivePowerVariable__RenewableDispatch</td>
     </tr>
     <tr class = "dataRow">
-      <td style = "text-align: left;">StartVariable__ThermalStandard</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">OnVariable__ThermalStandard</td>
-    </tr>
-    <tr class = "dataRow">
-      <td style = "text-align: left;">ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R2</td>
+      <td style = "text-align: left;">ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R3</td>
     </tr>
   </tbody>
 </table>
@@ -600,15 +600,15 @@ build!(problem; output_dir = mktempdir())</code></pre><pre class="documenter-exa
       <td style = "text-align: right;">missing</td>
       <td style = "text-align: right;">missing</td>
       <td style = "text-align: right;">missing</td>
-      <td style = "text-align: right;">1.0411205291748047</td>
+      <td style = "text-align: right;">1.1058423519134521</td>
       <td style = "text-align: right;">missing</td>
       <td style = "text-align: right;">missing</td>
       <td style = "text-align: right;">missing</td>
-      <td style = "text-align: right;">1.231022458</td>
-      <td style = "text-align: right;">0.002098945</td>
-      <td style = "text-align: right;">0.002824135</td>
-      <td style = "text-align: right;">3.5188544e7</td>
-      <td style = "text-align: right;">0.0</td>
+      <td style = "text-align: right;">1.425212679</td>
+      <td style = "text-align: right;">0.002262371</td>
+      <td style = "text-align: right;">0.002604576</td>
+      <td style = "text-align: right;">3.5199584e7</td>
+      <td style = "text-align: right;">0.125803124</td>
     </tr>
   </tbody>
 </table>
@@ -701,4 +701,4 @@ read_parameter(res, &quot;ActivePowerTimeSeriesParameter__RenewableDispatch&quot
     </tr>
   </tbody>
 </table>
-<h2 id="Plotting"><a class="docs-heading-anchor" href="#Plotting">Plotting</a><a id="Plotting-1"></a><a class="docs-heading-anchor-permalink" href="#Plotting" title="Permalink"></a></h2><p>Take a look at the plotting capabilities in <a href="https://sienna-platform.github.io/PowerGraphics.jl/stable/">PowerGraphics.jl</a></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../">« Welcome Page</a><a class="docs-footer-nextpage" href="../generated_pcm_simulation/">Multi-stage Production Cost Simulation »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Monday 14 September 2026 17:59">Monday 14 September 2026</span>. Using Julia version 1.13.0.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+<h2 id="Plotting"><a class="docs-heading-anchor" href="#Plotting">Plotting</a><a id="Plotting-1"></a><a class="docs-heading-anchor-permalink" href="#Plotting" title="Permalink"></a></h2><p>Take a look at the plotting capabilities in <a href="https://sienna-platform.github.io/PowerGraphics.jl/stable/">PowerGraphics.jl</a></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../">« Welcome Page</a><a class="docs-footer-nextpage" href="../generated_pcm_simulation/">Multi-stage Production Cost Simulation »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Thursday 17 September 2026 03:06">Thursday 17 September 2026</span>. Using Julia version 1.13.0.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
