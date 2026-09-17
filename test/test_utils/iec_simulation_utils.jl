@@ -140,26 +140,8 @@ function run_iec_obj_fun_test(sys1, sys2, comp_name::String, ::Type{T};
     return decisions1, decisions2
 end
 
-function run_iec_sim(sys::System, comp_name::String, ::Type{T};
-    simulation = true, in_memory_store = false, reservation = false,
-) where {T <: PSY.Component}
-    device_to_formulation = FormulationDict(
-        Source => DeviceModel(
-            Source,
-            ImportExportSourceModel;
-            attributes = Dict("reservation" => reservation),
-        ),
-    )
-    model, res = if simulation
-        run_generic_mbc_sim(
-            sys;
-            in_memory_store = in_memory_store,
-            device_to_formulation = device_to_formulation,
-        )
-    else
-        run_generic_mbc_prob(sys; device_to_formulation = device_to_formulation)
-    end
-
+function check_iec_time_series_parameters(res::IS.Results, sys::System, ::Type{T}) where {
+    T <: PSY.Component}
     # Test that breakpoint and slope parameters read from results match the
     # ground truth from the system's offer curve time series.
     # We can compare raw PiecewiseStepData values directly because time-variant offer curve
@@ -204,6 +186,30 @@ function run_iec_sim(sys::System, comp_name::String, ::Type{T};
             end
         end
     end
+    return
+end
+
+function run_iec_sim(sys::System, comp_name::String, ::Type{T};
+    simulation = true, in_memory_store = false, reservation = false,
+) where {T <: PSY.Component}
+    device_to_formulation = FormulationDict(
+        Source => DeviceModel(
+            Source,
+            ImportExportSourceModel;
+            attributes = Dict("reservation" => reservation),
+        ),
+    )
+    model, res = if simulation
+        run_generic_mbc_sim(
+            sys;
+            in_memory_store = in_memory_store,
+            device_to_formulation = device_to_formulation,
+        )
+    else
+        run_generic_mbc_prob(sys; device_to_formulation = device_to_formulation)
+    end
+
+    check_iec_time_series_parameters(res, sys, T)
 
     decisions = (
         _read_one_value(res, PSI.ActivePowerOutVariable, T, comp_name),
@@ -224,6 +230,41 @@ function run_iec_sim(sys::System, comp_name::String, ::Type{T};
     end
 
     return model, res, decisions, ()  # return format follows the MBC run_startup_shutdown_test convention
+end
+
+function run_fixed_flow_iec_prob(
+    sys::System;
+    power_out::Float64 = 1.5,
+    power_in::Float64 = 1.5,
+)
+    device_to_formulation = FormulationDict(
+        Source => DeviceModel(
+            Source,
+            ImportExportSourceModel;
+            attributes = Dict("reservation" => false),
+        ),
+    )
+    model = build_generic_mbc_model(sys; device_to_formulation = device_to_formulation)
+    @test build!(model; output_dir = mktempdir()) == PSI.ModelBuildStatus.BUILT
+
+    container = PSI.get_optimization_container(model)
+    power_out_variables = PSI.get_variable(container, PSI.ActivePowerOutVariable(), Source)
+    power_in_variables = PSI.get_variable(container, PSI.ActivePowerInVariable(), Source)
+
+    # Fix both directions inside the final tranche. This makes the objective delta depend
+    # only on the time-varying offer curves while exercising breakpoint perturbations
+    # without relying on upper-bound piecewise behavior.
+    for variable in power_out_variables
+        JuMP.fix(variable, power_out; force = true)
+    end
+    for variable in power_in_variables
+        JuMP.fix(variable, power_in; force = true)
+    end
+
+    @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+    res = OptimizationProblemResults(model)
+    check_iec_time_series_parameters(res, sys, Source)
+    return res
 end
 
 # Analogous to cost_due_to_time_varying_mbc in test_utils/mbc_simulation_utils.jl
@@ -289,24 +330,14 @@ function cost_due_to_time_varying_iec(
     return result
 end
 
-function iec_obj_fun_test_wrapper(sys_constant, sys_varying; reservation = false)
-    for use_simulation in (false, true)
-        for in_memory_store in (use_simulation ? (false, true) : (false,))
-            decisions1, decisions2 = run_iec_obj_fun_test(
-                sys_constant,
-                sys_varying,
-                IEC_COMPONENT_NAME,
-                IECComponentType;
-                simulation = use_simulation,
-                in_memory_store = in_memory_store,
-                reservation = reservation,
-            )
-
-            if !all(isapprox.(decisions1, decisions2))
-                @error decisions1
-                @error decisions2
-            end
-            @assert all(approx_geq_1.(decisions1))
-        end
-    end
+function iec_obj_fun_test_wrapper(sys_constant, sys_varying)
+    res_constant = run_fixed_flow_iec_prob(sys_constant)
+    res_varying = run_fixed_flow_iec_prob(sys_varying)
+    obj_fun_test_helper(
+        cost_due_to_time_varying_iec(sys_constant, res_constant, IECComponentType),
+        cost_due_to_time_varying_iec(sys_varying, res_varying, IECComponentType),
+        res_constant,
+        res_varying,
+    )
+    return
 end

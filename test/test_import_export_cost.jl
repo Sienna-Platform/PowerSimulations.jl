@@ -105,4 +105,11 @@ end
         import_scalar = import_scalar, export_scalar = export_scalar,
         name = "sys_varying_everything")
     iec_obj_fun_test_wrapper(sys_constant, sys_varying_everything)
+    # Preserve simulation-level coverage for all four time-varying curve parameters.
+    run_iec_sim(
+        sys_varying_everything,
+        IEC_COMPONENT_NAME,
+        IECComponentType;
+        simulation = true,
+    )
 end
