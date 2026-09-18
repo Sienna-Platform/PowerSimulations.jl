@@ -647,7 +647,8 @@ Build the Simulation, problems and the related folder structure.
 
   - `sim::Simulation`: simulation object
   - `recorders::Vector{Symbol} = []`: recorder names to register
-  - `store_systems_in_results::Bool = true`: stores the systems as JSON in the results HDF5 file
+  - `store_systems_in_results::Bool = true`: stores the systems as OpenAPI JSON documents in
+    the results HDF5 file, without their time series values
   - `console_level = Logging.Error`:
   - `file_level = Logging.Info`:
 """
@@ -1225,7 +1226,11 @@ function _serialize_systems_to_json(sim::Simulation)
     for model in get_all_models(simulation_models)
         sys = get_system(model)
         get!(results, string(get_system_uuid(sys))) do
-            PSY.to_json(sys)
+            # Components and attributes only. The time series values live in the store's own
+            # datasets, so association rows here would duplicate what the results HDF5
+            # already records.
+            doc = PSY.to_openapi(sys; include_time_series = false)
+            JSON3.write(PD.document_tree(doc))
         end
     end
     return results

@@ -57,6 +57,9 @@ import JuMP: optimizer_with_attributes
 import JuMP.Containers: DenseAxisArray, SparseAxisArray
 import JSON3
 import PowerSystems as PSY
+# The system snapshot in the results store is an OpenAPI document; PSY hands back the typed
+# container and this package encodes it.
+import PowerOpenAPIModels as PD
 import InfrastructureSystems as IS
 import InfrastructureSystems: @assert_op, TableFormat, list_recorder_events, get_name
 import InfrastructureSystems.Simulation: SimulationInfo
