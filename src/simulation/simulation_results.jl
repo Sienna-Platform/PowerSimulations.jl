@@ -222,7 +222,7 @@ Return SimulationProblemResults corresponding to a SimulationResults
  - `problem::String`: the name of the problem (e.g., "UC", "ED")
  - `populate_system::Bool = true`: whether to set the results' system as if using
    [`get_system!`](@ref)
- - `populate_units::Union{IS.UnitSystem, String, Nothing} = nothing`: unsupported;
+ - `populate_units::Union{IS.UnitSystem.Value, String, Nothing} = nothing`: unsupported;
    PowerSystems (psy6) has no system-wide unit base, so passing a non-`nothing`
    value throws (requires `populate_system=true`)
 """
@@ -230,7 +230,7 @@ function get_decision_problem_results(
     results::SimulationResults,
     problem::String;
     populate_system::Bool = false,
-    populate_units::Union{IS.UnitSystem, String, Nothing} = nothing,
+    populate_units::Union{IS.UnitSystem.Value, String, Nothing} = nothing,
 )
     if !haskey(results.decision_problem_results, problem)
         throw(IS.InvalidValue("$problem is not stored"))
@@ -249,14 +249,14 @@ Return SimulationProblemResults corresponding to a SimulationResults
  - `sim_results::PSI.SimulationResults`: the simulation results to read from
  - `populate_system::Bool = true`: whether to set the results' system as if using
    [`get_system!`](@ref)
- - `populate_units::Union{IS.UnitSystem, String, Nothing} = nothing`: unsupported;
+ - `populate_units::Union{IS.UnitSystem.Value, String, Nothing} = nothing`: unsupported;
    PowerSystems (psy6) has no system-wide unit base, so passing a non-`nothing`
    value throws (requires `populate_system=true`)
 """
 function get_emulation_problem_results(
     results::SimulationResults;
     populate_system::Bool = false,
-    populate_units::Union{IS.UnitSystem, String, Nothing} = nothing,
+    populate_units::Union{IS.UnitSystem.Value, String, Nothing} = nothing,
 )
     results = results.emulation_problem_results
     _populate_system_in_results!(results, populate_system, populate_units)
@@ -266,7 +266,7 @@ end
 function _populate_system_in_results!(
     results::SimulationProblemResults,
     populate_system::Bool,
-    populate_units::Union{IS.UnitSystem, String, Nothing},
+    populate_units::Union{IS.UnitSystem.Value, String, Nothing},
 )
     if populate_system
         try
@@ -421,7 +421,7 @@ function export_results(results::SimulationResults, exports, store::SimulationSt
     return
 end
 
-function _check_status(status::RunStatus, ignore_status)
+function _check_status(status::RunStatus.Value, ignore_status)
     status == RunStatus.SUCCESSFULLY_FINALIZED && return
 
     if ignore_status

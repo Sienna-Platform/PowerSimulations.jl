@@ -133,7 +133,7 @@ get_recorder_folder(sim::Simulation) = sim.internal.recorder_dir
 get_rng(sim::Simulation) = sim.internal.rng
 
 set_simulation_status!(sim::Simulation, status) = sim.internal.status = status
-set_simulation_build_status!(sim::Simulation, status::SimulationBuildStatus) =
+set_simulation_build_status!(sim::Simulation, status::SimulationBuildStatus.Value) =
     sim.internal.build_status = status
 
 function set_current_time!(sim::Simulation, val::Dates.DateTime)
@@ -1237,7 +1237,7 @@ end
 
 _status_file_path(results_dir::AbstractString) = joinpath(results_dir, "status.json")
 
-function serialize_status(status::RunStatus, results_dir::AbstractString)
+function serialize_status(status::RunStatus.Value, results_dir::AbstractString)
     data = Dict("run_status" => string(status))
     open(_status_file_path(results_dir), "w") do io
         JSON3.write(io, data)
@@ -1279,7 +1279,7 @@ function deserialize_status(results_path::AbstractString)
         JSON3.read(io, Dict)
     end
 
-    return get_enum_value(RunStatus, data["run_status"])
+    return get_enum_value(RunStatus.Value, data["run_status"])
 end
 
 # The next two structs allow a parent process to monitor the simulation progress.

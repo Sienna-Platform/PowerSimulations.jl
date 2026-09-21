@@ -9,8 +9,8 @@ mutable struct SimulationInternal
     partitions_dir::String
     run_count::OrderedDict{Int, OrderedDict{Int, Int}}
     date_ref::OrderedDict{Int, Dates.DateTime}
-    status::RunStatus
-    build_status::SimulationBuildStatus
+    status::RunStatus.Value
+    build_status::SimulationBuildStatus.Value
     simulation_state::SimulationState
     store::Union{Nothing, SimulationStore}
     recorders::Vector{Symbol}

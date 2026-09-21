@@ -300,7 +300,7 @@ See also [`load_results!`](@ref) to preload data into memory.
   - `start_time::Dates.DateTime`: Start time of the requested results.
   - `len::Int`: Number of results (decision problems) or rows in each DataFrame (emulation
     problems).
-  - `table_format::TableFormat`: Format of the table to be returned. Default is
+  - `table_format::TableFormat.Value`: Format of the table to be returned. Default is
     `TableFormat.LONG` where the columns are `DateTime`, `name`, and `value` when the data
     has two dimensions and `DateTime`, `name`, `name2`, and `value` when the data has three
     dimensions.
@@ -380,7 +380,7 @@ See also [`load_results!`](@ref) to preload data into memory.
   - `start_time::Dates.DateTime`: Start time of the requested results.
   - `len::Int`: Number of results (decision problems) or rows in each DataFrame (emulation
     problems).
-  - `table_format::TableFormat`: Format of the table to be returned. Default is
+  - `table_format::TableFormat.Value`: Format of the table to be returned. Default is
     `TableFormat.LONG` where the columns are `DateTime`, `name`, and `value` when the data
     has two dimensions and `DateTime`, `name`, `name2`, and `value` when the data has three
     dimensions.
