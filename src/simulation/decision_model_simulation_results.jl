@@ -200,7 +200,7 @@ function _read_results(
     timestamps::Vector{Dates.DateTime},
     store::Union{Nothing, <:SimulationStore};
     cols::Union{Colon, Vector{String}} = (:),
-    table_format::TableFormat = TableFormat.LONG,
+    table_format::TableFormat.Value = TableFormat.LONG,
 )
     vals = _read_results(res, result_keys, timestamps, store)
     converted_vals = Dict{OptimizationContainerKey, OutputsByTime{DataFrame}}()
@@ -270,7 +270,7 @@ Return the values for the requested variable. It keeps requests when performing 
   - `start_time::Dates.DateTime` : initial of the requested results
   - `len::Int`: Number of results
   - `store::SimulationStore`: a store that has been opened for reading
-  - `table_format::TableFormat`: Format of the table to be returned. Default is
+  - `table_format::TableFormat.Value`: Format of the table to be returned. Default is
     `TableFormat.LONG` where the columns are `DateTime`, `name`, and `value` when the data
     has two dimensions and `DateTime`, `name`, `name2`, and `value` when the data has three
     dimensions.
@@ -291,7 +291,7 @@ function IOM.read_variable(
     start_time::Union{Nothing, Dates.DateTime} = nothing,
     len::Union{Int, Nothing} = nothing,
     store = nothing,
-    table_format::TableFormat = TableFormat.LONG,
+    table_format::TableFormat.Value = TableFormat.LONG,
 )
     key = _deserialize_key(VariableKey, res, args...)
     timestamps = _process_timestamps(res, start_time, len)
@@ -311,7 +311,7 @@ Return the values for the requested dual. It keeps requests when performing mult
   - `start_time::Dates.DateTime` : initial of the requested results
   - `len::Int`: Number of results
   - `store::SimulationStore`: a store that has been opened for reading
-  - `table_format::TableFormat`: Format of the table to be returned. Default is
+  - `table_format::TableFormat.Value`: Format of the table to be returned. Default is
     `TableFormat.LONG` where the columns are `DateTime`, `name`, and `value` when the data
     has two dimensions and `DateTime`, `name`, `name2`, and `value` when the data has three
     dimensions.
@@ -324,7 +324,7 @@ function IOM.read_dual(
     start_time::Union{Nothing, Dates.DateTime} = nothing,
     len::Union{Int, Nothing} = nothing,
     store = nothing,
-    table_format::TableFormat = TableFormat.LONG,
+    table_format::TableFormat.Value = TableFormat.LONG,
 )
     key = _deserialize_key(ConstraintKey, res, args...)
     timestamps = _process_timestamps(res, start_time, len)
@@ -343,7 +343,7 @@ Return the values for the requested parameter. It keeps requests when performing
     splatted into a ParameterKey.
   - `start_time::Dates.DateTime` : initial of the requested results
   - `len::Int`: Number of results
-  - `table_format::TableFormat`: Format of the table to be returned. Default is
+  - `table_format::TableFormat.Value`: Format of the table to be returned. Default is
     `TableFormat.LONG` where the columns are `DateTime`, `name`, and `value` when the data
     has two dimensions and `DateTime`, `name`, `name2`, and `value` when the data has three
     dimensions.
@@ -356,7 +356,7 @@ function IOM.read_parameter(
     start_time::Union{Nothing, Dates.DateTime} = nothing,
     len::Union{Int, Nothing} = nothing,
     store = nothing,
-    table_format::TableFormat = TableFormat.LONG,
+    table_format::TableFormat.Value = TableFormat.LONG,
 )
     key = _deserialize_key(ParameterKey, res, args...)
     timestamps = _process_timestamps(res, start_time, len)
@@ -382,7 +382,7 @@ function IOM.read_aux_variable(
     start_time::Union{Nothing, Dates.DateTime} = nothing,
     len::Union{Int, Nothing} = nothing,
     store = nothing,
-    table_format::TableFormat = TableFormat.LONG,
+    table_format::TableFormat.Value = TableFormat.LONG,
 )
     key = _deserialize_key(AuxVarKey, res, args...)
     timestamps = _process_timestamps(res, start_time, len)
@@ -408,7 +408,7 @@ function IOM.read_expression(
     start_time::Union{Nothing, Dates.DateTime} = nothing,
     len::Union{Int, Nothing} = nothing,
     store = nothing,
-    table_format::TableFormat = TableFormat.LONG,
+    table_format::TableFormat.Value = TableFormat.LONG,
 )
     key = _deserialize_key(ExpressionKey, res, args...)
     timestamps = _process_timestamps(res, start_time, len)
