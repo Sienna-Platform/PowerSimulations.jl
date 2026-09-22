@@ -467,23 +467,16 @@ The destination bundle's already-merged windows for `key`, or an empty `Dict` wh
 has never been merged into it before. `join_simulation` can be called more than once against
 the same output directory (a failed partition retried, a `--skip-failures` re-run after a
 corrupted store is fixed, ...), so a re-merge must add only what is not already there instead
-of raising a duplicate-time-series error the second time. An empty result is how
-`POM.read_parameter_windows` itself represents "no data for this key" -- it documents and
-raises this on purpose rather than returning something falsy -- so this catches only that
-exact, well-defined condition and re-raises anything else.
+of raising a duplicate-time-series error the second time.
 """
 function _existing_decision_windows(
     pstore,
     key::IOM.ParameterKey,
     extra_features::Dict{String, Any},
 )::Dict{String, Dict{Dates.DateTime, Vector{Float64}}}
-    try
-        return POM.read_parameter_windows(pstore, key; extra_features = extra_features)
-    catch e
-        e isa ErrorException && startswith(e.msg, "no parameter windows found for") &&
-            return Dict{String, Dict{Dates.DateTime, Vector{Float64}}}()
-        rethrow()
-    end
+    POM.has_parameter_rows(pstore, key; extra_features = extra_features) ||
+        return Dict{String, Dict{Dates.DateTime, Vector{Float64}}}()
+    return POM.read_parameter_windows(pstore, key; extra_features = extra_features)
 end
 
 """
@@ -606,21 +599,17 @@ end
 
 """
 The destination bundle's already-merged series for `key`, or an empty `Dict` when this key
-has never been merged into it before. See [`_existing_decision_windows`](@ref) for why this
-catches only `POM.read_parameter_array`'s own well-defined "no data" error.
+has never been merged into it before. See [`_existing_decision_windows`](@ref) for why a
+re-merge must add only what is not already there.
 """
 function _existing_em_series(
     pstore,
     key::IOM.ParameterKey,
     extra_features::Dict{String, Any},
 )::Dict{String, IS.TimeSeries.TimeArray}
-    try
-        return POM.read_parameter_array(pstore, key; extra_features = extra_features)
-    catch e
-        e isa ErrorException && startswith(e.msg, "no parameter arrays found for") &&
-            return Dict{String, IS.TimeSeries.TimeArray}()
-        rethrow()
-    end
+    POM.has_parameter_rows(pstore, key; extra_features = extra_features) ||
+        return Dict{String, IS.TimeSeries.TimeArray}()
+    return POM.read_parameter_array(pstore, key; extra_features = extra_features)
 end
 
 """
