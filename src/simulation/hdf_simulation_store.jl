@@ -642,7 +642,7 @@ function _has_borrowed_store(
 )::Bool
     haskey(store.borrowed_parameter_stores, uuid) || return false
     borrowed = store.borrowed_parameter_stores[uuid]
-    return IS._store_path(borrowed.store) == abspath(sidecar_path)
+    return IS.get_file_path(borrowed.store) == abspath(sidecar_path)
 end
 
 """
