@@ -149,6 +149,11 @@ end
     partition_results = PSI.SimulationPartitionResults(base_dir)
     num_partitions = get_num_partitions(partition_results.partitions)
 
+    # Parameters have no HDF5-backed dataset to compare here (Task 8+9): they live in each
+    # model's bundle InfraStore sidecar, already compared above via read_realized_parameters.
+    dataset_output_types =
+        string.(filter(!=(PSI.STORE_CONTAINER_PARAMETERS), PSI.STORE_CONTAINERS))
+
     function compare_store_dataset(index, src_dataset, dst_dataset, step_dim)
         step_range = PSI.get_absolute_step_range(partition_results.partitions, index)
         per_step = size(src_dataset, step_dim) ÷ length(step_range)
@@ -191,7 +196,7 @@ end
                       sort(collect(keys(merged_store["simulation/decision_models"])))
                 for merged_group in merged_store["simulation/decision_models"]
                     group_path = PSI.HDF5.name(merged_group)
-                    for output_type in string.(PSI.STORE_CONTAINERS)
+                    for output_type in dataset_output_types
                         compare_store_group(
                             index,
                             partition_store,
@@ -207,7 +212,7 @@ end
                         ndims(merged_store["$group_path/optimizer_stats"]),
                     )
                 end
-                for output_type in string.(PSI.STORE_CONTAINERS)
+                for output_type in dataset_output_types
                     compare_store_group(
                         index,
                         partition_store,
@@ -247,7 +252,7 @@ end
     sentinel = -9999.0
     PSI.HDF5.h5open(joinpath(base_dir, "data_store", "simulation_store.h5"), "r+") do store
         for group in store["simulation/decision_models"]
-            for output_type in string.(PSI.STORE_CONTAINERS)
+            for output_type in dataset_output_types
                 for dataset in group[output_type]
                     endswith(PSI.HDF5.name(dataset), "__columns") && continue
                     if ndims(dataset) == 2
