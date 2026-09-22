@@ -24,6 +24,12 @@ mutable struct SimulationProblemResults{T} <:
     system_uuid::Base.UUID
     resolution::Dates.TimePeriod
     store::Union{Nothing, SimulationStore}
+    # Shared with every other SimulationProblemResults from the same SimulationResults (same
+    # Dict instance, not a copy). A decision model's bundle-backed System, once loaded via
+    # `get_system!`, is registered here under its uuid so a sibling result (e.g. the Emulator,
+    # which borrows a decision model's bundle -- R31) can read that bundle's already-open
+    # store instead of opening a second, colliding handle to the same sidecar file.
+    system_registry::Dict{Base.UUID, POM.ParameterTimeSeriesStore}
 end
 
 function SimulationProblemResults{T}(
@@ -35,6 +41,7 @@ function SimulationProblemResults{T}(
     vals::T;
     results_output_path = nothing,
     system = nothing,
+    system_registry = Dict{Base.UUID, POM.ParameterTimeSeriesStore}(),
 ) where {T <: OperationModelSimulationResults}
     if isnothing(results_output_path)
         results_output_path = joinpath(path, "results")
@@ -57,6 +64,7 @@ function SimulationProblemResults{T}(
         problem_params.system_uuid,
         IOM.get_resolution(problem_params),
         _retained_store(store),
+        system_registry,
     )
 end
 
@@ -261,7 +269,30 @@ function set_system!(results::SimulationProblemResults, system::PSY.System)
     end
 
     results.system = system
+    # Shared registry (R30): any sibling result reading the same bundle by uuid -- e.g. the
+    # Emulator borrowing a decision model's bundle -- can reuse this already-open store
+    # instead of opening a second, colliding handle. `_has_borrowed_store` verifies the
+    # sidecar path before ever trusting an entry, so registering unconditionally here is safe.
+    results.system_registry[sys_uuid] = POM.parameter_store_of(system)
     return
+end
+
+"""
+Merge `res`'s shared `system_registry` into the freshly-opened `store` (R30) before reading.
+`system_registry` is shared by every `SimulationProblemResults` from the same
+`SimulationResults` (same `Dict` instance), so a bundle-backed `System` loaded through any of
+them -- including a sibling model's, e.g. the Emulator borrowing a decision model's bundle
+(R31) -- reuses that already-open handle instead of opening a second, colliding one. A no-op
+when nothing has been loaded yet.
+"""
+_register_borrowed_stores!(::SimulationStore, ::SimulationProblemResults) = nothing
+
+function _register_borrowed_stores!(
+    store::HdfSimulationStore,
+    res::SimulationProblemResults,
+)
+    merge!(store.borrowed_parameter_stores, res.system_registry)
+    return nothing
 end
 
 function IOM._deserialize_key(

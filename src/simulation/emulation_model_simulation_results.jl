@@ -118,6 +118,7 @@ function _get_store_value(
     table_format = TableFormat.LONG,
 )
     return _open_results_store(get_execution_path(res)) do store
+        _register_borrowed_stores!(store, res)
         _get_store_value(
             res,
             container_keys,
@@ -295,6 +296,7 @@ function load_results!(
     parameter_keys = [_deserialize_key(ParameterKey, res, x...) for x in parameters]
     variable_keys = [_deserialize_key(VariableKey, res, x...) for x in variables]
     function merge_results(store)
+        _register_borrowed_stores!(store, res)
         merge!(get_cached_aux_variables(res), _read_results(res, aux_variable_keys, store))
         merge!(get_cached_duals(res), _read_results(res, dual_keys, store))
         merge!(get_cached_expressions(res), _read_results(res, expression_keys, store))

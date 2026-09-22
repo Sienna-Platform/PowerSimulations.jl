@@ -894,17 +894,26 @@ function _write_state_to_store!(store::SimulationStore, sim::Simulation)
 end
 
 """
-A parameter has no HDF5 dataset any more (buffered instead; see `finalize_parameters!`), so
-there is no store-side row to backfill or check here.
+A parameter has no HDF5 dataset (buffered instead; see `finalize_parameters!`), so this
+substitutes the buffer's own last-updated-timestamp (`_last_em_parameter_update_time`) for
+`get_last_updated_timestamp(em_store, key)`, which indexes `em_store` by key and has no entry
+for a `ParameterKey`. Otherwise mirrors the `OptimizationContainerKey` method below exactly
+(R31: the state row this backfills is real, realized simulation output — dropping it, as an
+earlier version of this method did, silently discarded results `read_realized_parameters` on
+emulation results used to serve). `HdfSimulationStore`-only: `InMemorySimulationStore` never
+moved parameters out of normal per-key storage (R19), so it keeps using the generic method
+below unchanged.
 """
 function _check_and_write_state_row!(
-    ::SimulationStore,
-    ::Simulation,
+    store::HdfSimulationStore,
+    sim::Simulation,
     em_store,
     system_state,
-    ::IOM.ParameterKey,
-    ::Dates.DateTime,
+    key::IOM.ParameterKey,
+    simulation_time::Dates.DateTime,
 )
+    @assert _last_em_parameter_update_time(store, key) <= simulation_time
+    _write_state_rows!(store, sim, key, get_update_timestamp(system_state, key))
     return nothing
 end
 
@@ -940,15 +949,47 @@ function _write_trailing_state_to_store!(store::SimulationStore, sim::Simulation
 end
 
 """
-A parameter has no HDF5 dataset any more (buffered instead; see `finalize_parameters!`), so
-there is no store-side row to backfill here.
+A parameter's emulation-model state row is buffered directly into `em_parameter_values` (the
+same buffer `finalize_parameters!` later writes into the bundle) rather than backfilled
+through an HDF5 dataset (R31): substitutes `_last_em_parameter_row`/
+`_last_em_parameter_update_time` for `get_last_recorded_row`/`get_last_updated_timestamp`
+against `em_store`, which has no entry for a `ParameterKey`. The `write_result!` call at the
+end already dispatches to the buffering `ParameterKey` method Task 8+9 added; only this
+function's own bookkeeping needed changing. `HdfSimulationStore`-only; see the note on the
+sibling method above.
 """
 function _write_state_rows!(
-    ::SimulationStore,
-    ::Simulation,
-    ::IOM.ParameterKey,
-    ::Dates.DateTime,
+    store::HdfSimulationStore,
+    sim::Simulation,
+    key::IOM.ParameterKey,
+    until::Dates.DateTime,
 )
+    sim_state = get_simulation_state(sim)
+    model_name = get_last_decision_model(sim_state)
+    sim_ini_time = get_initial_time(sim)
+    state_resolution = get_system_states_resolution(sim_state)
+    store_update_time = _last_em_parameter_update_time(store, key)
+    store_update_time >= until && return nothing
+    decision_dataset = get_dataset(get_decision_states(sim_state), key)
+    decision_resolution = get_data_resolution(decision_dataset)
+    window_start = first(decision_dataset.timestamps)
+    _update_timestamp = max(store_update_time + state_resolution, sim_ini_time)
+    while _update_timestamp <= until
+        aligned_timestamp =
+            sim_ini_time +
+            ((_update_timestamp - sim_ini_time) ÷ decision_resolution) *
+            decision_resolution
+        if aligned_timestamp < window_start
+            last_row = _last_em_parameter_row(store, key)
+            raw_state_values = read_result(DenseAxisArray, store, model_name, key, last_row)
+            state_values = _last_recorded_state_value(store, raw_state_values, last_row)
+        else
+            state_values = get_decision_state_value(sim_state, key, aligned_timestamp)
+        end
+        ix = _last_em_parameter_row(store, key) + 1
+        write_result!(store, model_name, key, ix, _update_timestamp, state_values)
+        _update_timestamp += state_resolution
+    end
     return nothing
 end
 

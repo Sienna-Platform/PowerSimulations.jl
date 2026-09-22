@@ -101,6 +101,7 @@ function _get_store_value(
     ::Nothing,
 )
     return _open_results_store(get_execution_path(res)) do store
+        _register_borrowed_stores!(store, res)
         _get_store_value(res, container_keys, timestamps, store)
     end
 end

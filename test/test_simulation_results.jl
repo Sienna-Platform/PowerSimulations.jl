@@ -142,8 +142,14 @@ function compare_results(rpath, epath, model, field, name, timestamp)
     names1 != names2 && return false
     size(df1) != size(df2_long) && return false
 
+    # Row order is an implementation detail of whichever export path wrote each file, not
+    # part of what these two exports need to agree on -- sort both the same way before
+    # comparing values position-wise.
+    df1 = DataFrames.sort(df1, [:name, :DateTime])
+    df2_long = DataFrames.sort(df2_long, [:name, :DateTime])
+
     if !isapprox(df1.value, df2_long.value)
-        @error "File mismatch" rp ep row1 row2
+        @error "File mismatch" rp ep df1 df2_long
         return false
     end
 
@@ -1177,10 +1183,65 @@ end
     @test PSY.get_system_uuid(sys_uc) == PSY.get_system_uuid(c_sys5_hy_uc)
     @test PSY.get_system_uuid(sys_ed) == PSY.get_system_uuid(c_sys5_hy_ed)
 
-    # Neither test system carries a time-series-backed cost, so the bundle's document
-    # declares no time series.
-    ts_counts = PSY.get_time_series_counts(sys_uc)
-    @test ts_counts.forecast_count == 0
+    # Neither test system carries a time-series-backed cost, so no *component* should see
+    # any time series of its own; the sidecar's catalog also holds the run's realized
+    # parameter forecasts, but those are written under a synthetic owner
+    # (`POM.PARAMETER_ROW_OWNER`) no component is ever attached to, so a System-level
+    # `PSY.get_time_series_counts` count is not the right assertion any more.
+    @test all(
+        !PSY.has_time_series(c) for c in PSY.get_components(PSY.ThermalStandard, sys_uc)
+    )
+end
+
+@testset "read_realized_parameters keeps its shape across the storage move" begin
+    c_sys5_hy_uc = PSB.build_system(PSITestSystems, "c_sys5_hy_uc")
+    c_sys5_hy_ed = PSB.build_system(PSITestSystems, "c_sys5_hy_ed")
+    sim = run_simulation(
+        c_sys5_hy_uc,
+        c_sys5_hy_ed,
+        mktempdir(; cleanup = true),
+        mktempdir(; cleanup = true);
+        in_memory = false,
+    )
+    results = SimulationResults(PSI.get_simulation_folder(sim))
+    uc = get_decision_problem_results(results, "UC")
+    params = read_realized_parameters(uc)
+    @test !isempty(params)
+    df = params["ActivePowerTimeSeriesParameter__RenewableDispatch"]
+    @test df isa DataFrames.DataFrame
+    @test names(df) == ["DateTime", "name", "value"]
+
+    # The values are the System's own "max_active_power" forecast realized over the run:
+    # compare one device's realized column against the source time series directly. Uses
+    # the original in-memory system, not `get_system!(uc)`'s reloaded one -- the results
+    # bundle's document does not carry every input forecast (only the structural/cost data
+    # `run_simulation`'s own tests check), so the reloaded System's "max_active_power" is
+    # not guaranteed to round-trip; the original system's own copy is unaffected either way.
+    # UC's realized range (48 hourly rows) spans two non-overlapping 24-step executions of
+    # a source forecast whose own windows are 24 steps each -- compare only the first
+    # execution's worth, which is exactly the source forecast's first window.
+    label = first(sort(unique(df.name)))
+    label_df = DataFrames.sort(df[df.name .== label, :], :DateTime)
+    component = PSY.get_component(PSY.RenewableDispatch, c_sys5_hy_uc, label)
+    source_ts = PSY.get_time_series(PSY.Deterministic, component, "max_active_power")
+    horizon_count = length(first(values(IS.get_data(source_ts))))
+    first_window = first(label_df, horizon_count)
+    # ActivePowerTimeSeriesParameter is a natural-units (MW) read; the source forecast is a
+    # per-unit availability multiplier (on the device's own rating, not the system base),
+    # so the realized column is a constant scalar multiple of the source series rather than
+    # an exact match -- checking that constant holds is still a real, non-degenerate
+    # correctness check on the values themselves, without hardcoding POM's own unit math.
+    source_values = PSY.get_time_series_values(
+        PSY.Deterministic,
+        component,
+        "max_active_power";
+        start_time = first_window[1, :DateTime],
+        len = horizon_count,
+    )
+    nonzero = source_values .!= 0
+    @test !isempty(source_values[nonzero])
+    ratios = first_window.value[nonzero] ./ source_values[nonzero]
+    @test all(r -> isapprox(r, first(ratios)), ratios)
 end
 
 @testset "Test system is automatically populated from HDF5 store on file deserialization" begin
@@ -1188,7 +1249,10 @@ end
     export_path = mktempdir(; cleanup = true)
     c_sys5_hy_uc = PSB.build_system(PSITestSystems, "c_sys5_hy_uc")
     c_sys5_hy_ed = PSB.build_system(PSITestSystems, "c_sys5_hy_ed")
-    sim = run_simulation(
+    # R28: store_systems_in_results = false is no longer a supported mode -- the System
+    # bundle IS the parameter results store now, so build! rejects it (mirrors the same
+    # fix already made in test_simulation_build.jl's "store_systems_in_results option" test).
+    @test_throws IS.ConflictingInputsError run_simulation(
         c_sys5_hy_uc,
         c_sys5_hy_ed,
         file_path,
@@ -1196,7 +1260,4 @@ end
         in_memory = false,
         store_systems_in_results = false,
     )
-
-    results = SimulationResults(PSI.get_simulation_folder(sim))
-    @test results isa SimulationResults
 end
