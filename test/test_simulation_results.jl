@@ -715,14 +715,15 @@ function test_decision_problem_results(
     results::SimulationResults,
     c_sys5_hy_ed,
     c_sys5_hy_uc,
-    in_memory,
+    in_memory;
+    skip_from_file_check = false,
 )
     @test list_decision_problems(results) == ["ED", "UC"]
     results_uc = get_decision_problem_results(results, "UC")
     results_ed = get_decision_problem_results(results, "ED")
 
     test_decision_problem_results_values(results_ed, results_uc, c_sys5_hy_ed, c_sys5_hy_uc)
-    if !in_memory
+    if !in_memory && !skip_from_file_check
         test_simulation_results_from_file(dirname(results.path), c_sys5_hy_ed, c_sys5_hy_uc)
     end
 end
@@ -923,16 +924,24 @@ function test_emulation_problem_results(results::SimulationResults, in_memory)
     @test isapprox(df[48, :value], export_df[48, :value])
 end
 
+"""Close the sidecar store a `get_system!`-loaded bundle system holds open, so a later
+independent read of the same on-disk bundle (InfraStore allows only one handle per file per
+process) does not hit "already open in this process"."""
+_close_sidecar_store!(sys::PSY.System) =
+    IS.close!(IS.get_data_store(sys.data.time_series_manager))
+
 function test_simulation_results_from_file(path::AbstractString, c_sys5_hy_ed, c_sys5_hy_uc)
     results = SimulationResults(path, "no_cache")
     @test list_decision_problems(results) == ["ED", "UC"]
     results_uc = get_decision_problem_results(results, "UC")
     results_ed = get_decision_problem_results(results, "ED")
 
-    @test !isnothing(get_system(results_uc))
+    loaded_uc = get_system!(results_uc)
+    @test !isnothing(loaded_uc)
     @test length(read_realized_variables(results_uc)) == length(UC_EXPECTED_VARS)
 
     @test_throws IS.InvalidValue set_system!(results_uc, c_sys5_hy_ed)
+    _close_sidecar_store!(loaded_uc)
     set_system!(results_ed, c_sys5_hy_ed)
     set_system!(results_uc, c_sys5_hy_uc)
 
@@ -949,14 +958,18 @@ function test_decision_problem_results_kwargs_handling(
     results_uc = get_decision_problem_results(results, "UC")
     results_ed = get_decision_problem_results(results, "ED")
 
-    @test !isnothing(get_system(results_uc))
-    @test !isnothing(get_system(results_ed))
+    loaded_uc = get_system!(results_uc)
+    loaded_ed = get_system!(results_ed)
+    @test !isnothing(loaded_uc)
+    @test !isnothing(loaded_ed)
 
     results_ed = get_decision_problem_results(results, "ED"; populate_system = true)
     @test !isnothing(get_system(results_ed))
 
     @test_throws IS.InvalidValue set_system!(results_uc, c_sys5_hy_ed)
 
+    _close_sidecar_store!(loaded_uc)
+    _close_sidecar_store!(loaded_ed)
     set_system!(results_ed, c_sys5_hy_ed)
     set_system!(results_uc, c_sys5_hy_uc)
 
@@ -1024,8 +1037,102 @@ end
     ed = get_decision_problem_results(results, "ED")
     sys_uc = get_system!(uc)
     sys_ed = get_system!(ed)
-    test_decision_problem_results(results, sys_ed, sys_uc, in_memory)
+    # This testset already loaded UC/ED from the on-disk bundle above; skip
+    # test_decision_problem_results' own from-file re-check, which would otherwise
+    # independently reopen the same bundle while sys_uc/sys_ed (and their still-open
+    # sidecar stores, needed later for deepcopy) are alive -- InfraStore allows only one
+    # open handle per store file per process.
+    test_decision_problem_results(
+        results,
+        sys_ed,
+        sys_uc,
+        in_memory;
+        skip_from_file_check = true,
+    )
     test_emulation_problem_results(results, in_memory)
+end
+
+@testset "The System rebuilt from results reads a time-series-backed cost" begin
+    sys = deepcopy(PSB.build_system(PSITestSystems, "c_sys5_uc"))
+    thermal = first(PSY.get_components(PSY.ThermalStandard, sys))
+
+    load = first(PSY.get_components(PSY.PowerLoad, sys))
+    load_ts = PSY.get_time_series(PSY.Deterministic, load, "max_active_power")
+    windows = collect(pairs(get_data(load_ts)))
+    horizon_count = length(last(first(windows)))
+
+    fuel_cost_data = OrderedDict{DateTime, Vector{Float64}}(
+        dt => Float64.((100 * step_ix) .+ (1:horizon_count))
+        for (step_ix, (dt, _)) in enumerate(windows)
+    )
+    fuel_ts = PSY.Deterministic(;
+        name = "fuel_cost",
+        data = fuel_cost_data,
+        resolution = IS.get_resolution(load_ts),
+        interval = IS.get_interval(load_ts),
+    )
+    fuel_key = PSY.add_time_series!(sys, thermal, fuel_ts)
+
+    old_cost = PSY.get_operation_cost(thermal)
+    PSY.set_operation_cost!(
+        thermal,
+        PSY.ThermalGenerationCost(;
+            variable_operation_cost = PSY.FuelCurve(PSY.LinearCurve(0.0, 5.0), fuel_key),
+            fixed = PSY.get_fixed(old_cost),
+            start_up = PSY.get_start_up(old_cost),
+            shut_down = PSY.get_shut_down(old_cost),
+        ),
+    )
+
+    template = test_template_unit_commitment(CopperPlateNetworkModel)
+    model = DecisionModel(template, sys; name = "UC", optimizer = HiGHS_optimizer_small_gap)
+    models = SimulationModels(; decision_models = [model])
+    sequence = SimulationSequence(;
+        models = models,
+        feedforwards = Dict(),
+        ini_cond_chronology = InterProblemChronology(),
+    )
+    sim = Simulation(;
+        name = "system_bundle_cost_sim",
+        steps = length(windows),
+        models = models,
+        sequence = sequence,
+        initial_time = first(first(windows)),
+        simulation_folder = mktempdir(; cleanup = true),
+    )
+
+    @test build!(sim; console_level = Logging.Error) == PSI.SimulationBuildStatus.BUILT
+    @test execute!(sim; enable_progress_bar = false) ==
+          PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    results = SimulationResults(PSI.get_simulation_folder(sim))
+    uc = get_decision_problem_results(results, "UC")
+    restored = get_system!(uc)
+    gen = get_component(PSY.ThermalStandard, restored, PSY.get_name(thermal))
+    cost_ts = PSY.get_fuel_cost(gen)
+    expected_values = fuel_cost_data[first(first(windows))]
+    @test length(TimeSeries.values(cost_ts)) > 0
+    @test TimeSeries.values(cost_ts) == expected_values
+end
+
+@testset "The results HDF5 store carries no systems group" begin
+    file_path = mktempdir(; cleanup = true)
+    export_path = mktempdir(; cleanup = true)
+    c_sys5_hy_uc = PSB.build_system(PSITestSystems, "c_sys5_hy_uc")
+    c_sys5_hy_ed = PSB.build_system(PSITestSystems, "c_sys5_hy_ed")
+    sim = run_simulation(
+        c_sys5_hy_uc,
+        c_sys5_hy_ed,
+        file_path,
+        export_path;
+        in_memory = false,
+    )
+    store_path = joinpath(PSI.get_store_dir(sim), PSI.HDF_FILENAME)
+    PSI.HDF5.h5open(store_path, "r") do file
+        @test !haskey(file["simulation"], "systems")
+    end
+    bundle_parent = joinpath(PSI.get_models_dir(sim), "UC")
+    @test any(startswith("system-"), readdir(bundle_parent))
 end
 
 function read_result_names(results, key::PSI.OptimizationContainerKey)
@@ -1039,7 +1146,7 @@ function read_result_names(results, key::PSI.OptimizationContainerKey)
     return Set(names(columns_without_datetime))
 end
 
-@testset "Test system is automatically populated from HDF5 store on file deserialization" begin
+@testset "Test system is populated from the results bundle on file deserialization" begin
     file_path = mktempdir(; cleanup = true)
     export_path = mktempdir(; cleanup = true)
     c_sys5_hy_uc = PSB.build_system(PSITestSystems, "c_sys5_hy_uc")
@@ -1057,17 +1164,21 @@ end
     results_ed = get_decision_problem_results(results, "ED")
     results_em = get_emulation_problem_results(results)
 
-    sys_uc = get_system(results_uc)
-    sys_ed = get_system(results_ed)
-    sys_em = get_system(results_em)
+    sys_uc = get_system!(results_uc)
+    sys_ed = get_system!(results_ed)
     @test !isnothing(sys_uc)
     @test !isnothing(sys_ed)
-    @test !isnothing(sys_em)
+
+    # This simulation has no real EmulationModel, so its results carry a placeholder
+    # "Emulator" entry (`simulation.jl`'s `emulation_model_store_params`) that borrows a
+    # decision model's system UUID but has no bundle of its own at `problems/Emulator/`.
+    @test_throws ErrorException get_system!(results_em)
 
     @test PSY.get_system_uuid(sys_uc) == PSY.get_system_uuid(c_sys5_hy_uc)
     @test PSY.get_system_uuid(sys_ed) == PSY.get_system_uuid(c_sys5_hy_ed)
 
-    # Note: the system is serialized as a JSON string into the HDF5 store and does not include time series data
+    # Neither test system carries a time-series-backed cost, so the bundle's document
+    # declares no time series.
     ts_counts = PSY.get_time_series_counts(sys_uc)
     @test ts_counts.forecast_count == 0
 end

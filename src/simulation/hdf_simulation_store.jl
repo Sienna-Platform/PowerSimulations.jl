@@ -735,31 +735,6 @@ function write_result!(
     return
 end
 
-function write_system_json!(store::HdfSimulationStore, uuid::String, json_text::String)
-    root = store.file[HDF_SIMULATION_ROOT_PATH]
-    systems_group = _get_group_or_create(root, "systems")
-    if !haskey(systems_group, uuid)
-        systems_group[uuid] = json_text
-    end
-    return
-end
-
-function has_system(store::HdfSimulationStore, uuid::Base.UUID)
-    root = store.file[HDF_SIMULATION_ROOT_PATH]
-    haskey(root, "systems") || return false
-    return haskey(root["systems"], string(uuid))
-end
-
-function deserialize_system(store::HdfSimulationStore, uuid::Base.UUID)
-    root = store.file[HDF_SIMULATION_ROOT_PATH]
-    uuid_str = string(uuid)
-    if !haskey(root, "systems") || !haskey(root["systems"], uuid_str)
-        error("No system with UUID $uuid_str is stored")
-    end
-    json_text = HDF5.read(root["systems"][uuid_str])
-    return PSY.from_json(json_text, PSY.System)
-end
-
 function _check_state(store::HdfSimulationStore)
     if has_dirty(store.cache)
         error("BUG!!! dirty cache is present at shutdown: $(store.file)")

@@ -571,14 +571,14 @@ function _build!(
         _check_steps(sim, problem_initial_times)
     end
 
-    if store_systems_in_results
-        # Spawn system serialization (JSON conversion) in parallel with model builds.
-        # Systems are read-only during building, so this is safe.
-        serialization_task = Threads.@spawn _serialize_systems_to_json(sim)
-    end
-
     _build_decision_models!(sim)
     _build_emulation_model!(sim)
+
+    if store_systems_in_results
+        TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "Serialize Systems" begin
+            _write_system_bundles!(sim)
+        end
+    end
 
     TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "Initialize Simulation State" begin
         _initialize_simulation_state!(sim)
@@ -589,13 +589,6 @@ function _build!(
             set_simulation_store!(sim, store)
             try
                 _initialize_problem_storage!(sim)
-                if store_systems_in_results
-                    # Fetch pre-computed JSON from the parallel task and write to HDF5 store.
-                    serialized = fetch(serialization_task)
-                    for (uuid, json_text) in serialized
-                        write_system_json!(store, uuid, json_text)
-                    end
-                end
             finally
                 set_simulation_store!(sim, nothing)
             end
@@ -647,7 +640,8 @@ Build the Simulation, problems and the related folder structure.
 
   - `sim::Simulation`: simulation object
   - `recorders::Vector{Symbol} = []`: recorder names to register
-  - `store_systems_in_results::Bool = true`: stores the systems as JSON in the results HDF5 file
+  - `store_systems_in_results::Bool = true`: writes each model's System as a results bundle
+    beside its outputs
   - `console_level = Logging.Error`:
   - `file_level = Logging.Info`:
 """
@@ -1218,17 +1212,24 @@ function _empty_problem_caches!(sim::Simulation)
     return
 end
 
-function _serialize_systems_to_json(sim::Simulation)
-    simulation_models = get_models(sim)
-    results = Dict{String, String}()
-    @debug Threads.threadid() "Serializing systems to JSON in parallel with model building"
-    for model in get_all_models(simulation_models)
+"""
+Write each model's System as a results bundle beside its outputs — the document plus a store
+holding the series its costs reference — so `get_system!` rebuilds a System whose costs
+resolve. Models sharing a System still get one bundle each, because the read side
+(`locate_system_bundle`) looks under the model's own `problems/<model>/` directory. The
+parameter rows are added to this same store when the simulation finishes.
+"""
+function _write_system_bundles!(sim::Simulation)
+    for model in get_all_models(get_models(sim))
         sys = get_system(model)
-        get!(results, string(get_system_uuid(sys))) do
-            PSY.to_json(sys)
-        end
+        bundle_dir = joinpath(IOM.get_output_dir(model), IOM.make_system_dirname(sys))
+        ispath(bundle_dir) && continue
+        store = POM.ParameterTimeSeriesStore()
+        key_map = POM.copy_cost_time_series!(store, sys)
+        POM.write_results_system_bundle!(sys, store, key_map, bundle_dir)
+        POM.close_parameter_store!(store)
     end
-    return results
+    return
 end
 
 function serialize_status(sim::Simulation)

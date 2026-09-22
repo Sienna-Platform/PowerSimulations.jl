@@ -163,9 +163,8 @@ IOM.get_timestamps(result::SimulationProblemResults) = result.timestamps
 Return the system used for the problem. If the system hasn't already been deserialized or
 set with [`set_system!`](@ref) then deserialize and store it.
 
-If the simulation was configured to serialize all systems to file then the returned system
-will include all data. If that was not configured then the returned system will include
-all data except time series data.
+Requires the simulation to have been built with `store_systems_in_results = true`; otherwise
+no bundle exists and this errors.
 """
 function get_system!(
     results::Union{IOM.OptimizationProblemOutputs, SimulationProblemResults};
@@ -173,11 +172,15 @@ function get_system!(
 )
     !isnothing(get_system(results)) && return get_system(results)
 
-    file = locate_system_file(results)
+    bundle = locate_system_bundle(results)
     # This flag should remain unpublished because it should never be needed
     # by the general audience.
-    if !get(kwargs, :use_system_fallback, false) && isfile(file)
-        system = PSY.System(file; time_series_read_only = true)
+    if !get(kwargs, :use_system_fallback, false) && ispath(bundle)
+        system = PSY.from_file(bundle; time_series_read_only = true)
+        # The OpenAPI document carries components and attributes, not system identity, so
+        # `from_file` hands back a System with a fresh UUID. Restore the one this bundle was
+        # named for, or the validating `set_system!` below rejects it as a mismatch.
+        PSY.set_system_uuid!(system, _expected_system_uuid(results))
         @info "De-serialized the system from files."
     else
         system = get_system_fallback(results)
@@ -187,21 +190,27 @@ function get_system!(
     return get_system(results)
 end
 
+_expected_system_uuid(results::SimulationProblemResults) = results.system_uuid
+_expected_system_uuid(results::IOM.OptimizationProblemOutputs) =
+    get_source_data_uuid(results)
+
 get_system_fallback(results::SimulationProblemResults) =
     _deserialize_system(results, results.store)
 get_system_fallback(results::IOM.OptimizationProblemOutputs) =
     error("Could not locate system")
 
-locate_system_file(results::SimulationProblemResults) = joinpath(
+# The `system-<uuid>` bundle PowerOperationsModels writes beside a model's outputs -- the only
+# form that carries the time series values, which the store's snapshot does not.
+locate_system_bundle(results::SimulationProblemResults) = joinpath(
     get_execution_path(results),
     "problems",
     get_model_name(results),
-    make_system_filename(results.system_uuid),
+    IOM.make_system_dirname(results.system_uuid),
 )
 
-locate_system_file(results::IOM.OptimizationProblemOutputs) = joinpath(
+locate_system_bundle(results::IOM.OptimizationProblemOutputs) = joinpath(
     get_output_dir(results),
-    make_system_filename(get_source_data_uuid(results)),
+    IOM.make_system_dirname(get_source_data_uuid(results)),
 )
 
 set_system!(results::IOM.OptimizationProblemOutputs, system) =
@@ -212,12 +221,7 @@ _retained_store(::HdfSimulationStore) = nothing
 _retained_store(store::InMemorySimulationStore) = store
 
 function _deserialize_system(results::SimulationProblemResults, ::Nothing)
-    _open_results_store(get_execution_path(results)) do store
-        system = deserialize_system(store, results.system_uuid)
-        @info "De-serialized the system from the simulation store. The system does " *
-              "not include time series data."
-        return system
-    end
+    error("No System bundle at $(locate_system_bundle(results))")
 end
 
 function _deserialize_system(::SimulationProblemResults, ::InMemorySimulationStore)
@@ -233,16 +237,17 @@ Throws InvalidValue if the system UUID is incorrect.
 # Arguments
 
   - `results::SimulationProblemResults`: Results object
-  - `system::AbstractString`: Path to the system json file
+  - `system::AbstractString`: Path to a serialized system -- a bundle directory, a `.json`
+    document, or a `.sns` archive
 
 # Examples
 
 ```julia
-julia > set_system!(res, "my_path/system_data.json")
+julia > set_system!(res, "my_path/system-\$(uuid)")
 ```
 """
 function set_system!(results::SimulationProblemResults, system::AbstractString)
-    set_system!(results, System(system))
+    set_system!(results, PSY.from_file(system))
 end
 
 function set_system!(results::SimulationProblemResults, system::PSY.System)

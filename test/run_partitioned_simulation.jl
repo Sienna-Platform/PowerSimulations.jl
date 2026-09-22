@@ -109,12 +109,12 @@ function build_simulation(
         set_status!(th, OperationalStates.ONLINE)
     end
 
-    to_json(
+    PSY.to_file(
         c_sys5_pjm_da,
         joinpath(output_dir, "PSI-5-BUS-UC-ED/c_sys5_pjm_da.json");
         force = true,
     )
-    to_json(
+    PSY.to_file(
         c_sys5_pjm_rt,
         joinpath(output_dir, "PSI-5-BUS-UC-ED/c_sys5_pjm_rt.json");
         force = true,

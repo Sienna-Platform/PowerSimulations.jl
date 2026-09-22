@@ -354,10 +354,15 @@ end
     )
     build_out = build!(sim_with; store_systems_in_results = true)
     @test build_out == PSI.SimulationBuildStatus.BUILT
+    for model in PSI.get_all_models(models)
+        bundle =
+            joinpath(IOM.get_output_dir(model), IOM.make_system_dirname(get_system(model)))
+        @test isdir(bundle)
+        @test !isempty(readdir(bundle))
+    end
     PSI.open_store(PSI.HdfSimulationStore, PSI.get_store_dir(sim_with), "r") do store
         root = store.file["simulation"]
-        @test haskey(root, "systems")
-        @test length(keys(root["systems"])) > 0
+        @test !haskey(root, "systems")
     end
 
     # Test store_systems_in_results = false
@@ -384,8 +389,9 @@ end
     )
     build_out = build!(sim_without; store_systems_in_results = false)
     @test build_out == PSI.SimulationBuildStatus.BUILT
-    PSI.open_store(PSI.HdfSimulationStore, PSI.get_store_dir(sim_without), "r") do store
-        root = store.file["simulation"]
-        @test !haskey(root, "systems")
+    for model in PSI.get_all_models(models2)
+        bundle =
+            joinpath(IOM.get_output_dir(model), IOM.make_system_dirname(get_system(model)))
+        @test !ispath(bundle)
     end
 end
