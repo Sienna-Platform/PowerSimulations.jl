@@ -40,6 +40,12 @@ mutable struct HdfSimulationStore <: SimulationStore
         Tuple{Symbol, IOM.ParameterKey},
         Dict{String, Dict{Dates.DateTime, Vector{Float64}}},
     }
+    # The 3-D counterpart of `parameter_read_cache`: one axis-2 slice's rows nested inside
+    # another. See `_bundle_parameter_windows_3d`.
+    parameter_read_cache_3d::Dict{
+        Tuple{Symbol, IOM.ParameterKey},
+        Dict{String, Dict{String, Dict{Dates.DateTime, Vector{Float64}}}},
+    }
     em_parameter_read_cache::Dict{IOM.ParameterKey, Dict{String, IS.TimeSeries.TimeArray}}
     # A caller's own already-open `System` for a model's bundle (R30), keyed by system uuid.
     # Merged in from a `SimulationProblemResults`'s shared `system_registry` by
@@ -97,6 +103,10 @@ function HdfSimulationStore(file_path::AbstractString, mode::AbstractString)
         Dict{
             Tuple{Symbol, IOM.ParameterKey},
             Dict{String, Dict{Dates.DateTime, Vector{Float64}}},
+        }(),
+        Dict{
+            Tuple{Symbol, IOM.ParameterKey},
+            Dict{String, Dict{String, Dict{Dates.DateTime, Vector{Float64}}}},
         }(),
         Dict{IOM.ParameterKey, Dict{String, IS.TimeSeries.TimeArray}}(),
         Dict{Base.UUID, POM.ParameterTimeSeriesStore}(),
@@ -688,30 +698,165 @@ function _bundle_parameter_windows(
 end
 
 """
-The axis-1 labels for a decision-model parameter, sorted for a deterministic column order.
-Unlike every other container type, a parameter has no HDF5 column dataset persisting its
-array's original label order (`_initialize_decision_model_container!`'s
-`STORE_CONTAINER_PARAMETERS` method creates no dataset at all), so this always returns a
-sorted order — the same order whether the value is being served from the buffer or the
-bundle, and regardless of `Dict` iteration order, which is never relied on.
+Distinguishes a 2-D decision-model parameter window (`(label, time)`, one series per axis-1
+label) from a 3-D one (`(label, label2, time)`, written sliced per axis-2 label — see
+`_write_parameter_windows!`). Whichever source serves a window (buffer or bundle) is
+dispatched through this same trait so the assembly logic for each shape is written once.
+Selected from the bundle's discovered `"axis2"` slice list (`_dm_parameter_slice_labels`):
+empty means 2-D, the only place this check is made.
 """
-function _dm_parameter_labels(
+abstract type _ParameterShape end
+struct _TwoD <: _ParameterShape end
+struct _ThreeD <: _ParameterShape end
+
+function _dm_parameter_shape(slice_labels::Vector{String})
+    isempty(slice_labels) && return _TwoD()
+    return _ThreeD()
+end
+
+"""
+The distinct `"axis2"` values `key`'s bundle rows carry for this model
+(`POM.parameter_slice_labels`, already sorted) — empty for a 2-D parameter. A discovery-only
+open (through a borrowed store when one is registered, else open-close, same as
+`_bundle_parameter_windows`); the rows themselves are read and cached separately
+(`_bundle_parameter_windows`/`_bundle_parameter_windows_3d`). Bundle-only: a buffered (mid-run)
+window's shape is read directly off its own array dimensionality instead
+(`_dm_buffered_columns`/`_dm_window_result`), never through this.
+"""
+function _dm_parameter_slice_labels(
     store::HdfSimulationStore,
     model_name::Symbol,
     key::IOM.ParameterKey,
 )::Vector{String}
-    buffered = _dm_buffered_windows(store, model_name, key)
-    !isempty(buffered) && return sort!(collect(axes(first(values(buffered)), 1)))
-    return sort!(collect(keys(_bundle_parameter_windows(store, model_name, key))))
+    params = get_decision_model_params(store, model_name)
+    uuid = get_system_uuid(params)
+    bundle_dir = _bundle_dir(store, model_name, uuid)
+    sidecar_path = joinpath(bundle_dir, PSY.TIME_SERIES_FILE)
+    base_features = Dict{String, Any}("model" => string(model_name))
+    return _with_parameter_store(store, uuid, sidecar_path) do pstore
+        POM.parameter_slice_labels(pstore, key; extra_features = base_features)
+    end
 end
 
-function _dm_parameter_window_data(::IOM.ParameterKey, window::DenseAxisArray{Float64, 2})
+"""
+The bundle sidecar's 3-D parameter windows for one decision model's key: one
+`POM.read_parameter_windows` call per `"axis2"` slice (mirrors the write side's own
+per-slice writes, `_write_parameter_windows!`, and the partition merge's read,
+`_decision_merge_units` in `simulation_partition_results.jl`), keyed by slice label, then
+axis-1 label, then initial time. Read through a borrowed store or a fresh open-read-close,
+same as `_bundle_parameter_windows`. Cached per `(model, key)`, keyed by the slice list that
+discovered it, so a sidecar's slices are read at most once across a
+`SimulationProblemResults` session.
+"""
+function _bundle_parameter_windows_3d(
+    store::HdfSimulationStore,
+    model_name::Symbol,
+    key::IOM.ParameterKey,
+    slice_labels::Vector{String},
+)::Dict{String, Dict{String, Dict{Dates.DateTime, Vector{Float64}}}}
+    cache_key = (model_name, key)
+    haskey(store.parameter_read_cache_3d, cache_key) &&
+        return store.parameter_read_cache_3d[cache_key]
+    params = get_decision_model_params(store, model_name)
+    uuid = get_system_uuid(params)
+    bundle_dir = _bundle_dir(store, model_name, uuid)
+    sidecar_path = joinpath(bundle_dir, PSY.TIME_SERIES_FILE)
+    base_features = Dict{String, Any}("model" => string(model_name))
+    rows = _with_parameter_store(store, uuid, sidecar_path) do pstore
+        Dict{String, Dict{String, Dict{Dates.DateTime, Vector{Float64}}}}(
+            label2 => POM.read_parameter_windows(
+                pstore,
+                key;
+                extra_features = merge(
+                    base_features,
+                    Dict{String, Any}("axis2" => label2),
+                ),
+            ) for label2 in slice_labels
+        )
+    end
+    store.parameter_read_cache_3d[cache_key] = rows
+    return rows
+end
+
+"""
+The column axes for a decision-model parameter: `(labels,)` for a 2-D parameter, or
+`(labels, labels2)` for a 3-D one. Same source precedence as `_read_result` (buffer while
+mid-run, bundle once `finalize_parameters!` empties it), and the same sorted-label
+fallback in both cases: unlike every other container type, a parameter has no HDF5 column
+dataset persisting its array's original label order
+(`_initialize_decision_model_container!`'s `STORE_CONTAINER_PARAMETERS` method creates no
+dataset at all), so a caller never sees the column order change depending on when it reads.
+"""
+function _dm_parameter_columns(
+    store::HdfSimulationStore,
+    model_name::Symbol,
+    key::IOM.ParameterKey,
+)::Tuple
+    buffered = _dm_buffered_windows(store, model_name, key)
+    !isempty(buffered) && return _dm_buffered_columns(first(values(buffered)))
+    slice_labels = _dm_parameter_slice_labels(store, model_name, key)
+    return _dm_bundle_columns(
+        _dm_parameter_shape(slice_labels),
+        store,
+        model_name,
+        key,
+        slice_labels,
+    )
+end
+
+_dm_buffered_columns(window::DenseAxisArray{Float64, 2}) =
+    (sort!(collect(axes(window, 1))),)
+function _dm_buffered_columns(window::DenseAxisArray{Float64, 3})
+    return (sort!(collect(axes(window, 1))), sort!(collect(axes(window, 2))))
+end
+
+function _dm_bundle_columns(
+    ::_TwoD,
+    store::HdfSimulationStore,
+    model_name::Symbol,
+    key::IOM.ParameterKey,
+    ::Vector{String},
+)
+    return (sort!(collect(keys(_bundle_parameter_windows(store, model_name, key)))),)
+end
+
+function _dm_bundle_columns(
+    ::_ThreeD,
+    store::HdfSimulationStore,
+    model_name::Symbol,
+    key::IOM.ParameterKey,
+    slice_labels::Vector{String},
+)
+    rows = _bundle_parameter_windows_3d(store, model_name, key, slice_labels)
+    labels = sort!(collect(keys(rows[first(slice_labels)])))
+    return (labels, slice_labels)
+end
+
+"""
+`(data, columns)` for one buffered decision-model parameter window: `data` is
+`(horizon, num_labels)` for a 2-D window (`columns = (labels,)`), or `time × label × label2`
+for a 3-D window (`columns = (labels, labels2)`) — the shapes `_make_denseaxisarray`'s
+`Matrix`/2-column and `Array{Float64,3}`/2-column methods expect. The 3-D axis order mirrors
+the write side: axis-1 label, axis-2 label2, axis-3 time (`_write_parameter_windows!`). Both
+label axes sorted, same reason as `_dm_parameter_columns`.
+"""
+function _dm_window_result(::IOM.ParameterKey, window::DenseAxisArray{Float64, 2})
     labels = sort!(collect(axes(window, 1)))
     data = reduce(hcat, (window[label, :] for label in labels))
-    return labels, data
+    return data, (labels,)
 end
 
-function _dm_parameter_window_data(
+function _dm_window_result(::IOM.ParameterKey, window::DenseAxisArray{Float64, 3})
+    labels = sort!(collect(axes(window, 1)))
+    labels2 = sort!(collect(axes(window, 2)))
+    mats = map(labels2) do label2
+        reduce(hcat, (window[label, label2, :] for label in labels))
+    end
+    data = cat(mats...; dims = 3)
+    return data, (labels, labels2)
+end
+
+function _dm_window_result(
     key::IOM.ParameterKey,
     ::DenseAxisArray{Float64, N},
 ) where {N}
@@ -722,14 +867,14 @@ end
 
 """
 `(data, columns)` for one decision-model parameter's realized window at execution
-`initial_time`: `data` is `(horizon, num_labels)` and `columns` is `(labels,)`, the same
-shape `_read_result` produces for every other container type, so
-`_make_dataframe`/`_make_denseaxisarray` need no `ParameterKey`-specific handling. Served
-from the buffer while mid-run (before `finalize_parameters!` empties it into the bundle);
-from the bundle's InfraStore once the run has finished. Errors, naming the model, key and
-time, when the requested window is missing from whichever source is in play — never a
-`NaN`-filled fallback. `read_result(Array/DenseAxisArray/DataFrame, ...)` and
-`_read_data_columns` for a `DecisionModelIndexType` all funnel through `_read_result`
+`initial_time`, from whichever source is in play: the buffer while mid-run (before
+`finalize_parameters!` empties it into the bundle), or the bundle's InfraStore once the run
+has finished. Dispatches 2-D vs 3-D through `_dm_window_result` (buffer, off the array's own
+dimensionality) or `_dm_bundle_result` (bundle, off the discovered `"axis2"` slice list) —
+`_read_result` itself makes only the buffer-vs-bundle choice, never a shape choice. Errors,
+naming the model, key and time, when the requested window is missing from whichever source
+is in play — never a `NaN`-filled fallback. `read_result(Array/DenseAxisArray/DataFrame, ...)`
+and `_read_data_columns` for a `DecisionModelIndexType` all funnel through `_read_result`
 (mirroring the `OptimizationContainerKey` methods above), so overriding it here is the
 narrowest point that keeps every caller unchanged.
 """
@@ -744,9 +889,36 @@ function _read_result(
         haskey(buffered, initial_time) || error(
             "no buffered parameter window for model $model_name, key $key, time $initial_time",
         )
-        labels, data = _dm_parameter_window_data(key, buffered[initial_time])
-        return data, (labels,)
+        return _dm_window_result(key, buffered[initial_time])
     end
+    return _dm_bundle_result(store, model_name, key, initial_time)
+end
+
+function _dm_bundle_result(
+    store::HdfSimulationStore,
+    model_name::Symbol,
+    key::IOM.ParameterKey,
+    initial_time::Dates.DateTime,
+)
+    slice_labels = _dm_parameter_slice_labels(store, model_name, key)
+    return _dm_bundle_result(
+        _dm_parameter_shape(slice_labels),
+        store,
+        model_name,
+        key,
+        initial_time,
+        slice_labels,
+    )
+end
+
+function _dm_bundle_result(
+    ::_TwoD,
+    store::HdfSimulationStore,
+    model_name::Symbol,
+    key::IOM.ParameterKey,
+    initial_time::Dates.DateTime,
+    ::Vector{String},
+)
     rows = _bundle_parameter_windows(store, model_name, key)
     labels = sort!(collect(keys(rows)))
     for label in labels
@@ -758,6 +930,30 @@ function _read_result(
     return data, (labels,)
 end
 
+function _dm_bundle_result(
+    ::_ThreeD,
+    store::HdfSimulationStore,
+    model_name::Symbol,
+    key::IOM.ParameterKey,
+    initial_time::Dates.DateTime,
+    slice_labels::Vector{String},
+)
+    slices = _bundle_parameter_windows_3d(store, model_name, key, slice_labels)
+    labels = sort!(collect(keys(slices[first(slice_labels)])))
+    mats = map(slice_labels) do label2
+        rows = slices[label2]
+        for label in labels
+            haskey(rows, label) && haskey(rows[label], initial_time) || error(
+                "no parameter window for model $model_name, key $key, axis2 $label2, " *
+                "label $label, time $initial_time",
+            )
+        end
+        reduce(hcat, (rows[label][initial_time] for label in labels))
+    end
+    data = cat(mats...; dims = 3)
+    return data, (labels, slice_labels)
+end
+
 function get_column_names(
     store::HdfSimulationStore,
     ::Type{DecisionModelIndexType},
@@ -765,7 +961,7 @@ function get_column_names(
     key::IOM.ParameterKey,
 )
     !isopen(store) && throw(ArgumentError("store must be opened prior to reading"))
-    return (_dm_parameter_labels(store, model_name, key),)
+    return _dm_parameter_columns(store, model_name, key)
 end
 
 function read_result(
@@ -1374,23 +1570,30 @@ function _bundle_dir(store::HdfSimulationStore, model_name::Symbol, system_uuid:
 end
 
 """
-The bundle directory an emulation model's parameters live in (R31). The emulation model
-entry (`store.params.emulation_model_params`) never has a bundle of its own under
-`problems/<em_model_name>/` — a synthetic aggregator with no real `POM.EmulationModel`
-("Emulator", see `_initialize_problem_storage!`) borrows a decision model's `System` and
-never gets a `problems/Emulator/` directory written for it, and a real `EmulationModel`
-would too if this repo ever exercises one. Both cases resolve the same way: by the system
-uuid the emulation model's params carry, matched against every decision model's own uuid
-(`store.params.decision_models_params`) — never by assuming the emulation model's name
-names a directory. Errors, naming the uuid, if no decision model's bundle carries it.
+The bundle directory an emulation model's parameters live in (R31, Task 10b). Two cases:
+
+  - A real `POM.EmulationModel` has its own `System` — a different uuid from every decision
+    model — and `_write_system_bundles!` (Task 11) writes it a bundle at
+    `problems/<em_model_name>/system-<uuid>` like any other model. Tried first: if that
+    directory exists, it is the answer, regardless of what any decision model's uuid is.
+  - The synthetic "Emulator" aggregator (`_initialize_problem_storage!`) has no `System` of
+    its own; it borrows a decision model's, and never gets a `problems/Emulator/` directory
+    written. Falls back to the first decision model whose params carry the same uuid
+    (`store.params.decision_models_params`).
+
+Errors, naming the uuid and both places searched, if neither resolves.
 """
 function _emulation_bundle_dir(store::HdfSimulationStore)
+    model_name = _em_model_name(store)
     uuid = get_system_uuid(get_emulation_model_params(store))
-    for (model_name, params) in store.params.decision_models_params
-        get_system_uuid(params) == uuid && return _bundle_dir(store, model_name, uuid)
+    own_dir = joinpath(_problem_dir(store, model_name), IOM.make_system_dirname(uuid))
+    isdir(own_dir) && return own_dir
+    for (dm_name, params) in store.params.decision_models_params
+        get_system_uuid(params) == uuid && return _bundle_dir(store, dm_name, uuid)
     end
     error(
-        "no decision model's bundle carries system uuid $uuid, borrowed by the emulation model",
+        "no bundle carries system uuid $uuid for the emulation model $model_name: " *
+        "checked its own bundle at $own_dir and every decision model's bundle",
     )
 end
 
