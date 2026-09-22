@@ -641,7 +641,8 @@ Build the Simulation, problems and the related folder structure.
   - `sim::Simulation`: simulation object
   - `recorders::Vector{Symbol} = []`: recorder names to register
   - `store_systems_in_results::Bool = true`: writes each model's System as a results bundle
-    beside its outputs
+    beside its outputs. The bundle is also where the simulation store keeps parameters
+    (`finalize_parameters!`), so this must be `true`; there is no other place to put them.
   - `console_level = Logging.Error`:
   - `file_level = Logging.Info`:
 """
@@ -654,6 +655,14 @@ function POM.build!(
     partitions::Union{Nothing, SimulationPartitions} = nothing,
     index = nothing,
 )
+    !store_systems_in_results && throw(
+        IS.ConflictingInputsError(
+            "store_systems_in_results = false is not supported: the simulation store keeps " *
+            "every model's parameters in its System bundle (finalize_parameters!), so a " *
+            "system bundle must exist for every model. Pass store_systems_in_results = true " *
+            "(or omit the keyword).",
+        ),
+    )
     TimerOutputs.reset_timer!(BUILD_PROBLEMS_TIMER)
     TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "Build Simulation" begin
         _check_folder(sim)
@@ -872,13 +881,47 @@ function _write_state_to_store!(store::SimulationStore, sim::Simulation)
     em_store = get_em_data(store)
     simulation_time = get_current_time(sim)
     for key in get_dataset_keys(system_state)
-        # The store can never be ahead of the clock while the step loop is writing. (After the
-        # last step it legitimately is: a single-model sequence holds the state through the
-        # end of its interval, so this check does not apply to the trailing flush.)
-        @assert get_last_updated_timestamp(em_store, key) <= simulation_time
-        _write_state_rows!(store, sim, key, get_update_timestamp(system_state, key))
+        _check_and_write_state_row!(
+            store,
+            sim,
+            em_store,
+            system_state,
+            key,
+            simulation_time,
+        )
     end
     return
+end
+
+"""
+A parameter has no HDF5 dataset any more (buffered instead; see `finalize_parameters!`), so
+there is no store-side row to backfill or check here.
+"""
+function _check_and_write_state_row!(
+    ::SimulationStore,
+    ::Simulation,
+    em_store,
+    system_state,
+    ::IOM.ParameterKey,
+    ::Dates.DateTime,
+)
+    return nothing
+end
+
+function _check_and_write_state_row!(
+    store::SimulationStore,
+    sim::Simulation,
+    em_store,
+    system_state,
+    key::OptimizationContainerKey,
+    simulation_time::Dates.DateTime,
+)
+    # The store can never be ahead of the clock while the step loop is writing. (After the
+    # last step it legitimately is: a single-model sequence holds the state through the
+    # end of its interval, so this check does not apply to the trailing flush.)
+    @assert get_last_updated_timestamp(em_store, key) <= simulation_time
+    _write_state_rows!(store, sim, key, get_update_timestamp(system_state, key))
+    return nothing
 end
 
 # A key coarser than the state grid last updates at its final aligned boundary, so the step
@@ -894,6 +937,19 @@ function _write_trailing_state_to_store!(store::SimulationStore, sim::Simulation
         _write_state_rows!(store, sim, key, sim_end - state_resolution)
     end
     return
+end
+
+"""
+A parameter has no HDF5 dataset any more (buffered instead; see `finalize_parameters!`), so
+there is no store-side row to backfill here.
+"""
+function _write_state_rows!(
+    ::SimulationStore,
+    ::Simulation,
+    ::IOM.ParameterKey,
+    ::Dates.DateTime,
+)
+    return nothing
 end
 
 function _write_state_rows!(
@@ -1184,6 +1240,7 @@ function execute!(sim::Simulation; kwargs...)
                     @info ("\n$(RUN_SIMULATION_TIMER)\n")
                     set_simulation_status!(sim, RunStatus.SUCCESSFULLY_FINALIZED)
                     log_cache_hit_percentages(store)
+                    finalize_parameters!(store)
                 catch e
                     set_simulation_status!(sim, RunStatus.FAILED)
                     @error "simulation failed" exception = (e, catch_backtrace())

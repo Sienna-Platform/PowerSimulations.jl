@@ -252,6 +252,54 @@ end
     @test isempty(cache.data)
 end
 
+@testset "HdfSimulationStore creates no HDF5 dataset for parameters" begin
+    model_name = :UC
+    system_uuid = Base.UUID("4076af6c-e467-56ae-b986-b466b2749572")
+    variable_key = PSI.VariableKey(ActivePowerVariable, ThermalStandard)
+    parameter_key = IOM.ParameterKey(POM.ActivePowerTimeSeriesParameter, PowerLoad)
+
+    reqs = SimulationModelStoreRequirements()
+    reqs.variables[variable_key] =
+        Dict("columns" => ([:dev1],), "dims" => (2, 1, 2))
+    reqs.parameters[parameter_key] =
+        Dict("columns" => ([:dev1],), "dims" => (2, 1, 2))
+
+    model_params = ModelStoreParams(
+        1,
+        IS.time_period_conversion(Hour(2)),
+        IS.time_period_conversion(Hour(1)),
+        IS.time_period_conversion(Hour(1)),
+        100.0,
+        system_uuid,
+    )
+    params = SimulationStoreParams(
+        Dates.DateTime("2020-01-01T00:00:00"),
+        Dates.Hour(24),
+        1,
+        OrderedDict(model_name => model_params),
+        OrderedDict{Symbol, ModelStoreParams}(),
+    )
+    cache_rules = CacheFlushRules(; max_size = 1 * MiB, min_flush_size = 4 * KiB)
+    add_rule!(cache_rules, model_name, variable_key, true)
+
+    path = mktempdir()
+    open_store(HdfSimulationStore, path, "w") do store
+        initialize_problem_storage!(
+            store,
+            params,
+            Dict(model_name => reqs),
+            SimulationModelStoreRequirements(),
+            cache_rules,
+        )
+    end
+
+    PSI.HDF5.h5open(joinpath(path, HDF_FILENAME), "r") do file
+        uc = file["simulation/decision_models/$model_name"]
+        @test !haskey(uc, "parameters")
+        @test haskey(uc, "variables")
+    end
+end
+
 # TODO: test optimizer stats
 # TODO: unit tests of individual functions, size checks
 # TODO: profiling of memory performance and GC

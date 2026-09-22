@@ -3,6 +3,7 @@ const HDF_SIMULATION_ROOT_PATH = "simulation"
 const EMULATION_MODEL_PATH = "$HDF_SIMULATION_ROOT_PATH/emulation_model"
 const OPTIMIZER_STATS_PATH = "optimizer_stats"
 const SERIALIZED_KEYS_PATH = "serialized_keys"
+const PARAMETER_KEYS_PATH = "parameter_keys"
 
 """
 Stores simulation data in an HDF file.
@@ -17,6 +18,21 @@ mutable struct HdfSimulationStore <: SimulationStore
     optimizer_stats_datasets::Dict{Symbol, HDF5.Dataset}
     optimizer_stats_write_index::Dict{Symbol, Int}
     cache::OptimizationOutputCaches
+    # Realized parameter slabs, buffered until finalize (Task 1: `:buffer`); see finalize_parameters!.
+    dm_parameter_windows::Dict{
+        Symbol,
+        Dict{IOM.ParameterKey, Dict{Dates.DateTime, DenseAxisArray{Float64}}},
+    }
+    em_parameter_values::Dict{
+        IOM.ParameterKey,
+        OrderedDict{Dates.DateTime, DenseAxisArray{Float64}},
+    }
+    # Parameter keys have no HDF5-backed dataset to enumerate `keys(...)` from (unlike every
+    # other container type), so `list_decision_model_keys`/`list_emulation_model_keys` read
+    # this registry instead. Populated once, at `initialize_problem_storage!`; the per-step
+    # decision-state sync (`_update_simulation_state_parameters!`) depends on it.
+    dm_parameter_keys::Dict{Symbol, Vector{IOM.ParameterKey}}
+    em_parameter_keys::Vector{IOM.ParameterKey}
 end
 
 get_initial_time(store::HdfSimulationStore) = get_initial_time(store.params)
@@ -53,6 +69,13 @@ function HdfSimulationStore(file_path::AbstractString, mode::AbstractString)
         Dict{Symbol, HDF5.Dataset}(),
         Dict{Symbol, Int}(),
         OptimizationOutputCaches(),
+        Dict{
+            Symbol,
+            Dict{IOM.ParameterKey, Dict{Dates.DateTime, DenseAxisArray{Float64}}},
+        }(),
+        Dict{IOM.ParameterKey, OrderedDict{Dates.DateTime, DenseAxisArray{Float64}}}(),
+        Dict{Symbol, Vector{IOM.ParameterKey}}(),
+        IOM.ParameterKey[],
     )
     mode in ("r", "rw") && _deserialize_attributes!(store)
 
@@ -170,18 +193,42 @@ list_decision_models(store::HdfSimulationStore) = keys(get_dm_data(store))
 
 """
 Return the fields stored for the `problem` and `container_type` (duals/parameters/variables).
+Parameter keys have no HDF5-backed dataset to read `keys(...)` from; they come from
+`dm_parameter_keys` instead (populated at `initialize_problem_storage!`).
 """
 function list_decision_model_keys(
     store::HdfSimulationStore,
     model::Symbol,
     container_type::Symbol,
 )
-    container = getfield(get_dm_data(store)[model], container_type)
+    return _list_decision_model_keys(store, model, Val(container_type))
+end
+
+_list_decision_model_keys(
+    store::HdfSimulationStore,
+    model::Symbol,
+    ::Val{STORE_CONTAINER_PARAMETERS},
+) =
+    get(store.dm_parameter_keys, model, IOM.ParameterKey[])
+
+function _list_decision_model_keys(
+    store::HdfSimulationStore,
+    model::Symbol,
+    ::Val{T},
+) where {T}
+    container = getfield(get_dm_data(store)[model], T)
     return collect(keys(container))
 end
 
 function list_emulation_model_keys(store::HdfSimulationStore, container_type::Symbol)
-    container = getfield(get_em_data(store), container_type)
+    return _list_emulation_model_keys(store, Val(container_type))
+end
+
+_list_emulation_model_keys(store::HdfSimulationStore, ::Val{STORE_CONTAINER_PARAMETERS}) =
+    store.em_parameter_keys
+
+function _list_emulation_model_keys(store::HdfSimulationStore, ::Val{T}) where {T}
+    container = getfield(get_em_data(store), T)
     return collect(keys(container))
 end
 
@@ -235,6 +282,137 @@ function IOM.read_optimizer_stats(store::HdfSimulationStore, model_name)
     return DataFrames.DataFrame(stats)
 end
 
+"""
+Register a decision model's parameter keys in the lookup and in `dm_parameter_keys`, and
+create nothing else: no HDF5 group, no dataset, no output cache. Parameter values are buffered
+in memory (`write_result!`) and materialized into the bundle's InfraStore at
+`finalize_parameters!`.
+"""
+function _initialize_decision_model_container!(
+    ::Val{STORE_CONTAINER_PARAMETERS},
+    problem_group,
+    dm_reqs::SimulationModelStoreRequirements,
+    store::HdfSimulationStore,
+    problem::Symbol,
+    initial_time::Dates.DateTime,
+    problem_params::ModelStoreParams,
+    flush_rules::CacheFlushRules,
+    container_key_lookup::Dict{String, OptimizationContainerKey},
+)
+    problem_keys = IOM.ParameterKey[]
+    for (key, _) in getfield(dm_reqs, STORE_CONTAINER_PARAMETERS)
+        !should_write_resulting_value(key) && continue
+        container_key_lookup[encode_key_as_string(key)] = key
+        push!(problem_keys, key)
+    end
+    store.dm_parameter_keys[problem] = problem_keys
+    return nothing
+end
+
+function _initialize_decision_model_container!(
+    ::Val{T},
+    problem_group,
+    dm_reqs::SimulationModelStoreRequirements,
+    store::HdfSimulationStore,
+    problem::Symbol,
+    initial_time::Dates.DateTime,
+    problem_params::ModelStoreParams,
+    flush_rules::CacheFlushRules,
+    container_key_lookup::Dict{String, OptimizationContainerKey},
+) where {T}
+    group = _get_group_or_create(problem_group, string(T))
+    for (key, reqs) in getfield(dm_reqs, T)
+        !should_write_resulting_value(key) && continue
+        name = encode_key_as_string(key)
+        dataset = _create_dataset(group, name, reqs)
+        # Columns can't be stored in attributes because they might be larger than
+        # the max size of 64 KiB.
+        col = _make_column_name(name)
+        if length(reqs["columns"]) == 1
+            HDF5.write_dataset(group, col, string.(reqs["columns"][1]))
+        else
+            col_vals = vcat(reqs["columns"]...)
+            HDF5.write_dataset(group, col, string.(col_vals))
+        end
+        column_dataset = group[col]
+        datasets = getfield(get_dm_data(store)[problem], T)
+        column_lengths = reqs["dims"][2:(end - 1)]
+        datasets[key] = HDF5Dataset{length(column_lengths)}(
+            dataset,
+            column_dataset,
+            column_lengths,
+            get_resolution(problem_params),
+            initial_time,
+        )
+        add_output_cache!(
+            store.cache,
+            problem,
+            key,
+            get_rule(flush_rules, problem, key),
+        )
+        container_key_lookup[name] = key
+    end
+    return nothing
+end
+
+"""
+Register an emulation model's parameter keys in the lookup and in `em_parameter_keys`, and
+create nothing else. See [`_initialize_decision_model_container!`](@ref) for the
+decision-model equivalent.
+"""
+function _initialize_emulation_model_container!(
+    ::Val{STORE_CONTAINER_PARAMETERS},
+    emulation_group,
+    em_reqs::SimulationModelStoreRequirements,
+    store::HdfSimulationStore,
+    initial_time::Dates.DateTime,
+    emulation_params::ModelStoreParams,
+    container_key_lookup::Dict{String, OptimizationContainerKey},
+)
+    for (key, _) in getfield(em_reqs, STORE_CONTAINER_PARAMETERS)
+        container_key_lookup[encode_key_as_string(key)] = key
+        push!(store.em_parameter_keys, key)
+    end
+    return nothing
+end
+
+function _initialize_emulation_model_container!(
+    ::Val{T},
+    emulation_group,
+    em_reqs::SimulationModelStoreRequirements,
+    store::HdfSimulationStore,
+    initial_time::Dates.DateTime,
+    emulation_params::ModelStoreParams,
+    container_key_lookup::Dict{String, OptimizationContainerKey},
+) where {T}
+    group = _get_group_or_create(emulation_group, string(T))
+    for (key, reqs) in getfield(em_reqs, T)
+        name = encode_key_as_string(key)
+        dataset = _create_dataset(group, name, reqs)
+        # Columns can't be stored in attributes because they might be larger than
+        # the max size of 64 KiB.
+        col = _make_column_name(name)
+        if length(reqs["columns"]) == 1
+            HDF5.write_dataset(group, col, string.(reqs["columns"][1]))
+        else
+            col_vals = vcat(reqs["columns"]...)
+            HDF5.write_dataset(group, col, string.(col_vals))
+        end
+        column_dataset = group[col]
+        datasets = getfield(store.em_data, T)
+        column_lengths = reqs["dims"][2:end]
+        datasets[key] = HDF5Dataset{length(column_lengths)}(
+            dataset,
+            column_dataset,
+            column_lengths,
+            get_resolution(emulation_params),
+            initial_time,
+        )
+        container_key_lookup[name] = key
+    end
+    return nothing
+end
+
 function initialize_problem_storage!(
     store::HdfSimulationStore,
     params::SimulationStoreParams,
@@ -253,38 +431,17 @@ function initialize_problem_storage!(
         get_dm_data(store)[problem] = DatasetContainer{HDF5Dataset}()
         problem_group = _get_group_or_create(problems_group, string(problem))
         for type in STORE_CONTAINERS
-            group = _get_group_or_create(problem_group, string(type))
-            for (key, reqs) in getfield(dm_problem_reqs[problem], type)
-                !should_write_resulting_value(key) && continue
-                name = encode_key_as_string(key)
-                dataset = _create_dataset(group, name, reqs)
-                # Columns can't be stored in attributes because they might be larger than
-                # the max size of 64 KiB.
-                col = _make_column_name(name)
-                if length(reqs["columns"]) == 1
-                    HDF5.write_dataset(group, col, string.(reqs["columns"][1]))
-                else
-                    col_vals = vcat(reqs["columns"]...)
-                    HDF5.write_dataset(group, col, string.(col_vals))
-                end
-                column_dataset = group[col]
-                datasets = getfield(get_dm_data(store)[problem], type)
-                column_lengths = reqs["dims"][2:(end - 1)]
-                datasets[key] = HDF5Dataset{length(column_lengths)}(
-                    dataset,
-                    column_dataset,
-                    column_lengths,
-                    get_resolution(problem_params),
-                    initial_time,
-                )
-                add_output_cache!(
-                    store.cache,
-                    problem,
-                    key,
-                    get_rule(flush_rules, problem, key),
-                )
-                container_key_lookup[encode_key_as_string(key)] = key
-            end
+            _initialize_decision_model_container!(
+                Val(type),
+                problem_group,
+                dm_problem_reqs[problem],
+                store,
+                problem,
+                initial_time,
+                problem_params,
+                flush_rules,
+                container_key_lookup,
+            )
         end
 
         num_stats = params.num_steps * params.decision_models_params[problem].num_executions
@@ -305,37 +462,33 @@ function initialize_problem_storage!(
     emulation_group = _get_group_or_create(root, "emulation_model")
     for emulation_params in values(store.params.emulation_model_params)
         for type in STORE_CONTAINERS
-            group = _get_group_or_create(emulation_group, string(type))
-            for (key, reqs) in getfield(em_problem_reqs, type)
-                name = encode_key_as_string(key)
-                dataset = _create_dataset(group, name, reqs)
-                # Columns can't be stored in attributes because they might be larger than
-                # the max size of 64 KiB.
-                col = _make_column_name(name)
-                if length(reqs["columns"]) == 1
-                    HDF5.write_dataset(group, col, string.(reqs["columns"][1]))
-                else
-                    col_vals = vcat(reqs["columns"]...)
-                    HDF5.write_dataset(group, col, string.(col_vals))
-                end
-                column_dataset = group[col]
-                datasets = getfield(store.em_data, type)
-                column_lengths = reqs["dims"][2:end]
-                datasets[key] = HDF5Dataset{length(column_lengths)}(
-                    dataset,
-                    column_dataset,
-                    column_lengths,
-                    get_resolution(emulation_params),
-                    initial_time,
-                )
-                container_key_lookup[encode_key_as_string(key)] = key
-            end
+            _initialize_emulation_model_container!(
+                Val(type),
+                emulation_group,
+                em_problem_reqs,
+                store,
+                initial_time,
+                emulation_params,
+                container_key_lookup,
+            )
         end
     end
     buf = IOBuffer()
     Serialization.serialize(buf, container_key_lookup)
     seek(buf, 0)
     root[SERIALIZED_KEYS_PATH] = buf.data
+
+    # `execute!` reopens the store fresh (`"rw"`, a new `HdfSimulationStore` struct), so this
+    # registry must round-trip through the file like `container_key_lookup` above, or the
+    # live per-step decision-state sync (`_update_simulation_state_parameters!`) sees no
+    # parameter keys for any model once the run starts.
+    param_keys_buf = IOBuffer()
+    Serialization.serialize(
+        param_keys_buf,
+        (store.dm_parameter_keys, store.em_parameter_keys),
+    )
+    seek(param_keys_buf, 0)
+    root[PARAMETER_KEYS_PATH] = param_keys_buf.data
 
     # This has to run after problem groups are created.
     _serialize_attributes(store)
@@ -407,6 +560,30 @@ function read_result(
         data, columns = _read_result(store, model_name, key, index)
     end
     return _make_denseaxisarray(data, columns)
+end
+
+"""
+Serve a decision model's own just-buffered parameter window back from
+`dm_parameter_windows`, keyed by the execution's initial time (`index`). This is the
+within-run round trip `_update_simulation_state_parameters!` depends on to sync a model's
+freshly-solved parameter value into `SimulationState` the same step it was written; it is not
+the post-simulation realized-parameter read (that reads the bundle's InfraStore instead, once
+the next task wires it up).
+"""
+function read_result(
+    ::Type{DenseAxisArray},
+    store::HdfSimulationStore,
+    model_name::Symbol,
+    key::IOM.ParameterKey,
+    index::DecisionModelIndexType,
+)
+    haskey(store.dm_parameter_windows, model_name) ||
+        error("no buffered parameter windows for model $model_name")
+    windows = store.dm_parameter_windows[model_name]
+    haskey(windows, key) || error("no buffered parameter window for $key at $model_name")
+    haskey(windows[key], index) ||
+        error("no buffered parameter window for $key at $model_name, time $index")
+    return windows[key][index]
 end
 
 function read_result(
@@ -735,6 +912,302 @@ function write_result!(
     return
 end
 
+"""
+Buffer a decision-model parameter window in memory, keyed by `index` — the execution's initial
+time, the same value `write_results!` passes as both `index` and the update timestamp
+(`decision_model.jl`'s `write_results!(store, model, start_time, start_time; ...)`). Never
+reaches a dataset: materialized into the bundle's InfraStore only at `finalize_parameters!`.
+"""
+function _buffer_dm_parameter_window!(
+    store::HdfSimulationStore,
+    model_name::Symbol,
+    key::IOM.ParameterKey,
+    initial_time::Dates.DateTime,
+    data::DenseAxisArray{Float64},
+)
+    model_windows = get!(
+        () -> Dict{IOM.ParameterKey, Dict{Dates.DateTime, DenseAxisArray{Float64}}}(),
+        store.dm_parameter_windows,
+        model_name,
+    )
+    windows =
+        get!(() -> Dict{Dates.DateTime, DenseAxisArray{Float64}}(), model_windows, key)
+    windows[initial_time] = data
+    return nothing
+end
+
+function write_result!(
+    store::HdfSimulationStore,
+    model_name::Symbol,
+    key::IOM.ParameterKey,
+    index::DecisionModelIndexType,
+    ::Dates.DateTime,
+    data::DenseAxisArray{Float64, 2, <:NTuple{2, Any}},
+)
+    _buffer_dm_parameter_window!(store, model_name, key, index, data)
+    return
+end
+
+function write_result!(
+    store::HdfSimulationStore,
+    model_name::Symbol,
+    key::IOM.ParameterKey,
+    index::DecisionModelIndexType,
+    ::Dates.DateTime,
+    data::DenseAxisArray{Float64, 3, <:NTuple{3, Any}},
+)
+    _buffer_dm_parameter_window!(store, model_name, key, index, data)
+    return
+end
+
+function write_result!(
+    store::HdfSimulationStore,
+    ::Symbol,
+    key::IOM.ParameterKey,
+    ::DecisionModelIndexType,
+    ::Dates.DateTime,
+    ::SparseAxisArray{Float64},
+)
+    error("sparse parameter arrays are not stored: $key")
+end
+
+"""
+Buffer an emulation-model parameter value in memory, keyed by `simulation_time`. Materialized
+into the bundle's InfraStore only at `finalize_parameters!`.
+"""
+function _buffer_em_parameter!(
+    store::HdfSimulationStore,
+    key::IOM.ParameterKey,
+    simulation_time::Dates.DateTime,
+    array::DenseAxisArray{Float64},
+)
+    values = get!(
+        () -> OrderedDict{Dates.DateTime, DenseAxisArray{Float64}}(),
+        store.em_parameter_values,
+        key,
+    )
+    values[simulation_time] = array
+    return nothing
+end
+
+function write_result!(
+    store::HdfSimulationStore,
+    ::Symbol,
+    key::IOM.ParameterKey,
+    ::EmulationModelIndexType,
+    simulation_time::Dates.DateTime,
+    array::DenseAxisArray{Float64, 2},
+)
+    _buffer_em_parameter!(store, key, simulation_time, array)
+    return
+end
+
+function write_result!(
+    store::HdfSimulationStore,
+    ::Symbol,
+    key::IOM.ParameterKey,
+    ::EmulationModelIndexType,
+    simulation_time::Dates.DateTime,
+    array::DenseAxisArray{Float64, 3},
+)
+    _buffer_em_parameter!(store, key, simulation_time, array)
+    return
+end
+
+function write_result!(
+    store::HdfSimulationStore,
+    ::Symbol,
+    key::IOM.ParameterKey,
+    ::EmulationModelIndexType,
+    simulation_time::Dates.DateTime,
+    array::DenseAxisArray{Float64},
+)
+    _buffer_em_parameter!(store, key, simulation_time, array)
+    return
+end
+
+_simulation_folder(store::HdfSimulationStore) = dirname(dirname(store.file.filename))
+
+_problem_dir(store::HdfSimulationStore, model_name::Symbol) =
+    joinpath(_simulation_folder(store), "problems", string(model_name))
+
+function _bundle_dir(store::HdfSimulationStore, model_name::Symbol, system_uuid::Base.UUID)
+    bundle_dir = joinpath(
+        _problem_dir(store, model_name),
+        IOM.make_system_dirname(system_uuid),
+    )
+    !isdir(bundle_dir) && error(
+        "no system bundle found for model $model_name at $bundle_dir; it must exist from build",
+    )
+    return bundle_dir
+end
+
+"""
+Write one decision-model parameter's realized windows into `pstore`, one `Deterministic` per
+axis-1 label. A 3-D window set has no `Deterministic` counterpart, so it is sliced per axis-3
+label into 2-D windows, each written with `"axis3"` added to `extra_features` (mirrors how POM's
+3-D `write_parameter_array!` names that feature).
+
+`windows`' declared value type is the loosely-typed `DenseAxisArray{Float64}` buffered by
+`write_result!` (any `N`), so dispatch reads the concrete dimensionality off one representative
+window rather than off the `Dict`'s own (non-concrete) value type parameter.
+"""
+function _write_parameter_windows!(
+    pstore,
+    key::IOM.ParameterKey,
+    windows::AbstractDict{Dates.DateTime, DenseAxisArray{Float64}},
+    resolution::Dates.Period,
+    interval::Dates.Period,
+    model_name::Symbol,
+)
+    return _write_parameter_windows!(
+        pstore,
+        key,
+        first(values(windows)),
+        windows,
+        resolution,
+        interval,
+        model_name,
+    )
+end
+
+function _write_parameter_windows!(
+    pstore,
+    key::IOM.ParameterKey,
+    ::DenseAxisArray{Float64, 2},
+    windows::AbstractDict{Dates.DateTime, DenseAxisArray{Float64}},
+    resolution::Dates.Period,
+    interval::Dates.Period,
+    model_name::Symbol,
+)
+    concrete_windows = Dict{Dates.DateTime, DenseAxisArray{Float64, 2}}(
+        initial_time => window for (initial_time, window) in windows
+    )
+    POM.write_parameter_windows!(
+        pstore,
+        key,
+        concrete_windows,
+        resolution,
+        interval;
+        extra_features = Dict{String, Any}("model" => string(model_name)),
+    )
+    return nothing
+end
+
+function _write_parameter_windows!(
+    pstore,
+    key::IOM.ParameterKey,
+    ::DenseAxisArray{Float64, 3},
+    windows::AbstractDict{Dates.DateTime, DenseAxisArray{Float64}},
+    resolution::Dates.Period,
+    interval::Dates.Period,
+    model_name::Symbol,
+)
+    labels3 = axes(first(values(windows)), 3)
+    for label3 in labels3
+        sliced = Dict{Dates.DateTime, DenseAxisArray{Float64, 2}}(
+            initial_time => window[:, :, label3] for (initial_time, window) in windows
+        )
+        POM.write_parameter_windows!(
+            pstore,
+            key,
+            sliced,
+            resolution,
+            interval;
+            extra_features = Dict{String, Any}(
+                "model" => string(model_name),
+                "axis3" => string(label3),
+            ),
+        )
+    end
+    return nothing
+end
+
+function _finalize_decision_model_parameters!(
+    store::HdfSimulationStore,
+    model_name::Symbol,
+    windows_by_key::Dict{IOM.ParameterKey, Dict{Dates.DateTime, DenseAxisArray{Float64}}},
+)
+    isempty(windows_by_key) && return nothing
+    params = get_decision_model_params(store, model_name)
+    bundle_dir = _bundle_dir(store, model_name, get_system_uuid(params))
+    pstore = POM.open_parameter_store_writable(joinpath(bundle_dir, PSY.TIME_SERIES_FILE))
+    try
+        for (key, windows) in windows_by_key
+            _write_parameter_windows!(
+                pstore,
+                key,
+                windows,
+                get_resolution(params),
+                get_interval(params),
+                model_name,
+            )
+        end
+    finally
+        POM.close_parameter_store!(pstore)
+    end
+    return nothing
+end
+
+function _finalize_emulation_model_parameters!(
+    store::HdfSimulationStore,
+    model_name::Symbol,
+    values_by_key::Dict{
+        IOM.ParameterKey,
+        OrderedDict{Dates.DateTime, DenseAxisArray{Float64}},
+    },
+)
+    isempty(values_by_key) && return nothing
+    params = get_emulation_model_params(store)
+    bundle_dir = _bundle_dir(store, model_name, get_system_uuid(params))
+    pstore = POM.open_parameter_store_writable(joinpath(bundle_dir, PSY.TIME_SERIES_FILE))
+    try
+        for (key, values_by_time) in values_by_key
+            timestamps = collect(keys(values_by_time))
+            labels = axes(first(values(values_by_time)), 1)
+            matrix = reduce(
+                hcat,
+                [vec(values_by_time[t].data) for t in timestamps],
+            )
+            array = DenseAxisArray(matrix, labels, 1:length(timestamps))
+            POM.write_parameter_array!(
+                pstore,
+                key,
+                array,
+                timestamps;
+                extra_features = Dict{String, Any}("model" => string(model_name)),
+            )
+        end
+    finally
+        POM.close_parameter_store!(pstore)
+    end
+    return nothing
+end
+
+"""
+Materialize the buffered parameter slabs into each model's bundle store. Runs once, when the
+simulation finishes writing results, before the store closes. Decision-model parameters become
+forecast windows (one per execution); emulation-model parameters become one series per label
+over the executions.
+"""
+function finalize_parameters!(store::HdfSimulationStore)
+    for (model_name, windows_by_key) in store.dm_parameter_windows
+        _finalize_decision_model_parameters!(store, model_name, windows_by_key)
+    end
+    empty!(store.dm_parameter_windows)
+
+    if !isempty(store.em_parameter_values)
+        em_model_name = first(keys(store.params.emulation_model_params))
+        _finalize_emulation_model_parameters!(
+            store,
+            em_model_name,
+            store.em_parameter_values,
+        )
+    end
+    empty!(store.em_parameter_values)
+    return nothing
+end
+
 function _check_state(store::HdfSimulationStore)
     if has_dirty(store.cache)
         error("BUG!!! dirty cache is present at shutdown: $(store.file)")
@@ -755,8 +1228,103 @@ function _create_dataset(group, name, reqs)
     return dataset
 end
 
+"""
+On deserialize, a decision model's parameter keys have no dataset to reconstruct: buffered
+parameter windows are never persisted to the HDF5 store (see `finalize_parameters!`), so there
+is nothing under `"parameters"` to read back here.
+"""
+function _deserialize_decision_model_container!(
+    ::Val{STORE_CONTAINER_PARAMETERS},
+    problem_group,
+    store::HdfSimulationStore,
+    model_name::Symbol,
+    initial_time::Dates.DateTime,
+    container_key_lookup::Dict{String, OptimizationContainerKey},
+)
+    return nothing
+end
+
+function _deserialize_decision_model_container!(
+    ::Val{T},
+    problem_group,
+    store::HdfSimulationStore,
+    model_name::Symbol,
+    initial_time::Dates.DateTime,
+    container_key_lookup::Dict{String, OptimizationContainerKey},
+) where {T}
+    group = problem_group[string(T)]
+    for name in keys(group)
+        if !endswith(name, "columns")
+            dataset = group[name]
+            column_dataset = group[_make_column_name(name)]
+            resolution = get_resolution(get_decision_model_params(store, model_name))
+            column_lengths = size(dataset)[2:(end - 1)]
+            item = HDF5Dataset{length(column_lengths)}(
+                dataset,
+                column_dataset,
+                column_lengths,
+                resolution,
+                initial_time,
+            )
+            container_key = container_key_lookup[name]
+            getfield(get_dm_data(store)[model_name], T)[container_key] = item
+            add_output_cache!(store.cache, model_name, container_key, CacheFlushRule())
+        end
+    end
+    return nothing
+end
+
+"""
+On deserialize, an emulation model's parameter keys have no dataset to reconstruct. See
+[`_deserialize_decision_model_container!`](@ref).
+"""
+function _deserialize_emulation_model_container!(
+    ::Val{STORE_CONTAINER_PARAMETERS},
+    em_group,
+    store::HdfSimulationStore,
+    model_name::Symbol,
+    initial_time::Dates.DateTime,
+    resolution::Dates.Period,
+    container_key_lookup::Dict{String, OptimizationContainerKey},
+)
+    return nothing
+end
+
+function _deserialize_emulation_model_container!(
+    ::Val{T},
+    em_group,
+    store::HdfSimulationStore,
+    model_name::Symbol,
+    initial_time::Dates.DateTime,
+    resolution::Dates.Period,
+    container_key_lookup::Dict{String, OptimizationContainerKey},
+) where {T}
+    group = em_group[string(T)]
+    for name in keys(group)
+        if !endswith(name, "columns")
+            dataset = group[name]
+            column_dataset = group[_make_column_name(name)]
+            column_lengths = size(dataset)[2:end]
+            item = HDF5Dataset{length(column_lengths)}(
+                dataset,
+                column_dataset,
+                column_lengths,
+                resolution,
+                initial_time,
+            )
+            container_key = container_key_lookup[name]
+            getfield(store.em_data, T)[container_key] = item
+            add_output_cache!(store.cache, model_name, container_key, CacheFlushRule())
+        end
+    end
+    return nothing
+end
+
 function _deserialize_attributes!(store::HdfSimulationStore)
     container_key_lookup = get_container_key_lookup(store)
+    param_keys_buf = IOBuffer(_get_root(store)[PARAMETER_KEYS_PATH][:])
+    store.dm_parameter_keys, store.em_parameter_keys =
+        Serialization.deserialize(param_keys_buf)
     group = store.file["simulation"]
     initial_time = Dates.DateTime(HDF5.read(HDF5.attributes(group)["initial_time"]))
     step_resolution =
@@ -784,31 +1352,14 @@ function _deserialize_attributes!(store::HdfSimulationStore)
         )
         get_dm_data(store)[model_name] = DatasetContainer{HDF5Dataset}()
         for type in STORE_CONTAINERS
-            group = problem_group[string(type)]
-            for name in keys(group)
-                if !endswith(name, "columns")
-                    dataset = group[name]
-                    column_dataset = group[_make_column_name(name)]
-                    resolution =
-                        get_resolution(get_decision_model_params(store, model_name))
-                    column_lengths = size(dataset)[2:(end - 1)]
-                    item = HDF5Dataset{length(column_lengths)}(
-                        dataset,
-                        column_dataset,
-                        column_lengths,
-                        resolution,
-                        initial_time,
-                    )
-                    container_key = container_key_lookup[name]
-                    getfield(get_dm_data(store)[model_name], type)[container_key] = item
-                    add_output_cache!(
-                        store.cache,
-                        model_name,
-                        container_key,
-                        CacheFlushRule(),
-                    )
-                end
-            end
+            _deserialize_decision_model_container!(
+                Val(type),
+                problem_group,
+                store,
+                model_name,
+                initial_time,
+                container_key_lookup,
+            )
         end
 
         store.optimizer_stats_datasets[model_name] = problem_group[OPTIMIZER_STATS_PATH]
@@ -834,24 +1385,15 @@ function _deserialize_attributes!(store::HdfSimulationStore)
         Base.UUID(HDF5.read(HDF5.attributes(em_group)["system_uuid"])),
     )
     for type in STORE_CONTAINERS
-        group = em_group[string(type)]
-        for name in keys(group)
-            if !endswith(name, "columns")
-                dataset = group[name]
-                column_dataset = group[_make_column_name(name)]
-                column_lengths = size(dataset)[2:end]
-                item = HDF5Dataset{length(column_lengths)}(
-                    dataset,
-                    column_dataset,
-                    column_lengths,
-                    resolution,
-                    initial_time,
-                )
-                container_key = container_key_lookup[name]
-                getfield(store.em_data, type)[container_key] = item
-                add_output_cache!(store.cache, model_name, container_key, CacheFlushRule())
-            end
-        end
+        _deserialize_emulation_model_container!(
+            Val(type),
+            em_group,
+            store,
+            model_name,
+            initial_time,
+            resolution,
+            container_key_lookup,
+        )
     end
     # TODO: optimizer stats are not being written for EM.
 

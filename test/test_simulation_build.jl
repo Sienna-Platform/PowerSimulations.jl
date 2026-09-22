@@ -365,7 +365,8 @@ end
         @test !haskey(root, "systems")
     end
 
-    # Test store_systems_in_results = false
+    # store_systems_in_results = false is no longer supported: the simulation store keeps
+    # parameters in the System bundle (finalize_parameters!), so every model must have one.
     models2 = create_simulation_build_test_problems(get_template_basic_uc_simulation())
     sequence2 = SimulationSequence(;
         models = models2,
@@ -387,11 +388,57 @@ end
         sequence = sequence2,
         simulation_folder = mktempdir(; cleanup = true),
     )
-    build_out = build!(sim_without; store_systems_in_results = false)
-    @test build_out == PSI.SimulationBuildStatus.BUILT
-    for model in PSI.get_all_models(models2)
-        bundle =
-            joinpath(IOM.get_output_dir(model), IOM.make_system_dirname(get_system(model)))
-        @test !ispath(bundle)
+    @test_throws IS.ConflictingInputsError build!(
+        sim_without;
+        store_systems_in_results = false,
+    )
+end
+
+@testset "Parameters are written to the bundle's InfraStore as forecast windows" begin
+    c_sys5_hy_uc = PSB.build_system(PSITestSystems, "c_sys5_hy_uc")
+    c_sys5_hy_ed = PSB.build_system(PSITestSystems, "c_sys5_hy_ed")
+    sim = run_simulation(
+        c_sys5_hy_uc,
+        c_sys5_hy_ed,
+        mktempdir(; cleanup = true),
+        mktempdir(; cleanup = true);
+        in_memory = false,
+    )
+    folder = PSI.get_simulation_dir(sim)
+    uc_dir = joinpath(folder, "problems", "UC")
+    bundle = joinpath(uc_dir, only(filter(startswith("system-"), readdir(uc_dir))))
+    sidecar = joinpath(bundle, PSY.TIME_SERIES_FILE)
+    @test isfile(sidecar)
+
+    store_dir = joinpath(folder, "data_store")
+    num_executions, num_steps, horizon_count = PSI.open_store(
+        PSI.HdfSimulationStore,
+        store_dir,
+        "r",
+    ) do store
+        params = PSI.get_decision_model_params(store, :UC)
+        @test !haskey(
+            store.file["simulation/decision_models/UC"],
+            "parameters",
+        )
+        (
+            IOM.get_num_executions(params),
+            store.params.num_steps,
+            IOM.get_horizon_count(params),
+        )
     end
+    expected_executions = num_executions * num_steps
+
+    key = IOM.ParameterKey(POM.ActivePowerTimeSeriesParameter, PSY.PowerLoad)
+    pstore = POM.open_parameter_store(sidecar)
+    windows = POM.read_parameter_windows(
+        pstore,
+        key;
+        extra_features = Dict{String, Any}("model" => "UC"),
+    )
+    POM.close_parameter_store!(pstore)
+    @test !isempty(windows)
+    label, per_time = first(windows)
+    @test length(per_time) == expected_executions
+    @test all(length(v) == horizon_count for v in values(per_time))
 end

@@ -233,3 +233,9 @@ function write_optimizer_stats!(
     write_optimizer_stats!(em_data, stats, index)
     return
 end
+
+"""
+No-op: `InMemorySimulationStore`'s parameters stay in memory in its own per-model dataset
+(R19); there is no bundle sidecar to materialize them into.
+"""
+finalize_parameters!(::InMemorySimulationStore) = nothing
