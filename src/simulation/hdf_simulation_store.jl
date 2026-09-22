@@ -1396,9 +1396,9 @@ end
 
 """
 Write one decision-model parameter's realized windows into `pstore`, one `Deterministic` per
-axis-1 label. A 3-D window set has no `Deterministic` counterpart, so it is sliced per axis-3
-label into 2-D windows, each written with `"axis3"` added to `extra_features` (mirrors how POM's
-3-D `write_parameter_array!` names that feature).
+axis-1 label. A 3-D window set has no `Deterministic` counterpart, so it is sliced per axis-2
+label into 2-D windows, each written with `"axis2"` added to `extra_features` (mirrors how POM's
+3-D `write_parameter_array!` names that feature; time is the last axis in both).
 
 `windows`' declared value type is the loosely-typed `DenseAxisArray{Float64}` buffered by
 `write_result!` (any `N`), so dispatch reads the concrete dimensionality off one representative
@@ -1455,10 +1455,10 @@ function _write_parameter_windows!(
     interval::Dates.Period,
     model_name::Symbol,
 )
-    labels3 = axes(first(values(windows)), 3)
-    for label3 in labels3
+    labels2 = axes(first(values(windows)), 2)
+    for label2 in labels2
         sliced = Dict{Dates.DateTime, DenseAxisArray{Float64, 2}}(
-            initial_time => window[:, :, label3] for (initial_time, window) in windows
+            initial_time => window[:, label2, :] for (initial_time, window) in windows
         )
         POM.write_parameter_windows!(
             pstore,
@@ -1468,7 +1468,7 @@ function _write_parameter_windows!(
             interval;
             extra_features = Dict{String, Any}(
                 "model" => string(model_name),
-                "axis3" => string(label3),
+                "axis2" => string(label2),
             ),
         )
     end
@@ -1512,6 +1512,7 @@ function _finalize_emulation_model_parameters!(
     isempty(values_by_key) && return nothing
     bundle_dir = _emulation_bundle_dir(store)
     pstore = POM.open_parameter_store_writable(joinpath(bundle_dir, PSY.TIME_SERIES_FILE))
+    resolution = get_resolution(get_emulation_model_params(store))
     try
         for (key, values_by_time) in values_by_key
             timestamps = collect(keys(values_by_time))
@@ -1521,13 +1522,21 @@ function _finalize_emulation_model_parameters!(
                 [vec(values_by_time[t].data) for t in timestamps],
             )
             array = DenseAxisArray(matrix, labels, 1:length(timestamps))
-            POM.write_parameter_array!(
-                pstore,
-                key,
-                array,
-                timestamps;
-                extra_features = Dict{String, Any}("model" => string(model_name)),
-            )
+            try
+                POM.write_parameter_array!(
+                    pstore,
+                    key,
+                    array,
+                    timestamps,
+                    resolution;
+                    extra_features = Dict{String, Any}("model" => string(model_name)),
+                )
+            catch e
+                error(
+                    "emulation model $model_name could not write parameter array for " *
+                    "$key ($(length(timestamps)) time step(s)): $(sprint(showerror, e))",
+                )
+            end
         end
     finally
         POM.close_parameter_store!(pstore)
