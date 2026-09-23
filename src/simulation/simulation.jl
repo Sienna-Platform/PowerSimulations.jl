@@ -1315,7 +1315,7 @@ Write each model's System as a results bundle beside its outputs — the documen
 holding the series its costs reference — so `get_system!` rebuilds a System whose costs
 resolve. Models sharing a System still get one bundle each, because the read side
 (`locate_system_bundle`) looks under the model's own `problems/<model>/` directory. The
-parameter rows are added to this same store when the simulation finishes.
+parameter and input rows are added to this same store when the simulation finishes.
 """
 function _write_system_bundles!(sim::Simulation)
     for model in get_all_models(get_models(sim))
@@ -1323,11 +1323,39 @@ function _write_system_bundles!(sim::Simulation)
         bundle_dir = joinpath(IOM.get_output_dir(model), IOM.make_system_dirname(sys))
         ispath(bundle_dir) && continue
         store = POM.ParameterTimeSeriesStore()
-        key_map = POM.copy_cost_time_series!(store, sys)
+        key_map = POM.copy_cost_time_series!(store, sys, _planned_run_windows(sim, model))
         POM.write_results_system_bundle!(sys, store, key_map, bundle_dir)
         POM.close_parameter_store!(store)
     end
     return
+end
+
+"""
+The forecast grid this run will realize for `model`: every execution's initial time, the model's
+horizon in steps, its resolution and interval. Cost copies take this shape at build so the
+parameter and input rows written at finalize share it (InfraStore requires every forecast of one
+`(resolution, interval)` to agree on count, initial time and horizon).
+"""
+function _planned_run_windows(sim::Simulation, model::DecisionModel)
+    resolution = get_resolution(model)
+    return POM.RunWindows(
+        get_initial_time(sim),
+        get_steps(sim) * get_executions(model),
+        get_horizon(model) ÷ resolution,
+        resolution,
+        IOM.get_interval(sim, get_name(model)),
+    )
+end
+
+function _planned_run_windows(sim::Simulation, model::EmulationModel)
+    resolution = get_resolution(model)
+    return POM.RunWindows(
+        get_initial_time(sim),
+        get_steps(sim) * get_executions(model),
+        1,
+        resolution,
+        resolution,
+    )
 end
 
 function serialize_status(sim::Simulation)

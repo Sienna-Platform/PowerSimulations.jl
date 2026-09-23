@@ -239,3 +239,11 @@ No-op: `InMemorySimulationStore`'s parameters stay in memory in its own per-mode
 (R19); there is no bundle sidecar to materialize them into.
 """
 finalize_parameters!(::InMemorySimulationStore) = nothing
+
+# Parameters never leave this store's per-key storage (R19), so there is nothing to recast.
+buffer_parameter_inputs!(
+    ::InMemorySimulationStore,
+    ::IOM.AbstractOptimizationModel,
+    ::Union{DecisionModelIndexType, EmulationModelIndexType},
+    ::Dates.DateTime,
+) = nothing

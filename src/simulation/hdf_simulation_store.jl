@@ -27,6 +27,18 @@ mutable struct HdfSimulationStore <: SimulationStore
         IOM.ParameterKey,
         OrderedDict{Dates.DateTime, DenseAxisArray{Float64}},
     }
+    # Raw (unmultiplied) time-series parameter values, per execution, recast at finalize into
+    # component-owned input series so the bundle's System can rebuild the model. Result rows
+    # keep the multiplied values under the synthetic owner. See `buffer_parameter_inputs!`.
+    dm_input_windows::Dict{
+        Symbol,
+        Dict{IOM.ParameterKey, Dict{Dates.DateTime, DenseAxisArray{Float64, 2}}},
+    }
+    em_input_values::Dict{
+        IOM.ParameterKey,
+        OrderedDict{Dates.DateTime, DenseAxisArray{Float64, 2}},
+    }
+    input_descriptors::Dict{Tuple{Symbol, IOM.ParameterKey}, POM.InputSeriesDescriptor}
     # Parameter keys have no HDF5-backed dataset to enumerate `keys(...)` from (unlike every
     # other container type), so `list_decision_model_keys`/`list_emulation_model_keys` read
     # this registry instead. Populated once, at `initialize_problem_storage!`; the per-step
@@ -98,6 +110,12 @@ function HdfSimulationStore(file_path::AbstractString, mode::AbstractString)
             Dict{IOM.ParameterKey, Dict{Dates.DateTime, DenseAxisArray{Float64}}},
         }(),
         Dict{IOM.ParameterKey, OrderedDict{Dates.DateTime, DenseAxisArray{Float64}}}(),
+        Dict{
+            Symbol,
+            Dict{IOM.ParameterKey, Dict{Dates.DateTime, DenseAxisArray{Float64, 2}}},
+        }(),
+        Dict{IOM.ParameterKey, OrderedDict{Dates.DateTime, DenseAxisArray{Float64, 2}}}(),
+        Dict{Tuple{Symbol, IOM.ParameterKey}, POM.InputSeriesDescriptor}(),
         Dict{Symbol, Vector{IOM.ParameterKey}}(),
         IOM.ParameterKey[],
         Dict{
@@ -1553,6 +1571,105 @@ function write_result!(
     return
 end
 
+"""
+Buffer the raw values of every time-series parameter this execution read, plus (once per model
+and key) where they belong: the series name and type from the container's `TimeSeriesAttributes`
+and each label's owner in the model's System. `write_result!` receives the multiplied values, so
+this is the only place the raw half is still available.
+"""
+function buffer_parameter_inputs!(
+    store::HdfSimulationStore,
+    model::IOM.AbstractOptimizationModel,
+    index::DecisionModelIndexType,
+    ::Dates.DateTime,
+)
+    _buffer_parameter_inputs!(store, model, index)
+    return nothing
+end
+
+function buffer_parameter_inputs!(
+    store::HdfSimulationStore,
+    model::IOM.AbstractOptimizationModel,
+    ::EmulationModelIndexType,
+    simulation_time::Dates.DateTime,
+)
+    _buffer_parameter_inputs!(store, model, simulation_time)
+    return nothing
+end
+
+function _buffer_parameter_inputs!(
+    store::HdfSimulationStore,
+    model::IOM.AbstractOptimizationModel,
+    time_key::Dates.DateTime,
+)
+    model_name = get_name(model)
+    sys = get_system(model)
+    for (key, pc) in get_parameters(get_optimization_container(model))
+        POM.is_input_parameter(key, pc) || continue
+        get!(store.input_descriptors, (model_name, key)) do
+            POM.input_series_descriptor(sys, key, pc)
+        end
+        _buffer_input_values!(
+            store,
+            model,
+            model_name,
+            key,
+            time_key,
+            IOM.get_parameter_values(pc),
+        )
+    end
+    return nothing
+end
+
+function _buffer_input_values!(
+    store::HdfSimulationStore,
+    ::DecisionModel,
+    model_name::Symbol,
+    key::IOM.ParameterKey,
+    initial_time::Dates.DateTime,
+    raw::DenseAxisArray{Float64, 2},
+)
+    by_key = get!(
+        () ->
+            Dict{IOM.ParameterKey, Dict{Dates.DateTime, DenseAxisArray{Float64, 2}}}(),
+        store.dm_input_windows,
+        model_name,
+    )
+    windows = get!(() -> Dict{Dates.DateTime, DenseAxisArray{Float64, 2}}(), by_key, key)
+    windows[initial_time] = raw
+    return nothing
+end
+
+function _buffer_input_values!(
+    store::HdfSimulationStore,
+    ::EmulationModel,
+    ::Symbol,
+    key::IOM.ParameterKey,
+    simulation_time::Dates.DateTime,
+    raw::DenseAxisArray{Float64, 2},
+)
+    values = get!(
+        () -> OrderedDict{Dates.DateTime, DenseAxisArray{Float64, 2}}(),
+        store.em_input_values,
+        key,
+    )
+    values[simulation_time] = raw
+    return nothing
+end
+
+# A 3-D time-series parameter has no component-series shape; its multiplied values stay in
+# the result rows (POM's `write_model_inputs!` makes the same choice).
+function _buffer_input_values!(
+    ::HdfSimulationStore,
+    ::IOM.AbstractOptimizationModel,
+    ::Symbol,
+    ::IOM.ParameterKey,
+    ::Dates.DateTime,
+    ::DenseAxisArray{Float64, 3},
+)
+    return nothing
+end
+
 _simulation_folder(store::HdfSimulationStore) = dirname(dirname(store.file.filename))
 
 _problem_dir(store::HdfSimulationStore, model_name::Symbol) =
@@ -1747,11 +1864,69 @@ function _finalize_emulation_model_parameters!(
     return nothing
 end
 
+function _finalize_decision_model_inputs!(
+    store::HdfSimulationStore,
+    model_name::Symbol,
+    windows_by_key::Dict{
+        IOM.ParameterKey,
+        Dict{Dates.DateTime, DenseAxisArray{Float64, 2}},
+    },
+)
+    isempty(windows_by_key) && return nothing
+    params = get_decision_model_params(store, model_name)
+    bundle_dir = _bundle_dir(store, model_name, get_system_uuid(params))
+    pstore = POM.open_parameter_store_writable(joinpath(bundle_dir, PSY.TIME_SERIES_FILE))
+    try
+        for (key, windows) in windows_by_key
+            POM.write_input_forecasts!(
+                pstore,
+                store.input_descriptors[(model_name, key)],
+                windows,
+                get_resolution(params),
+                get_interval(params),
+            )
+        end
+    finally
+        POM.close_parameter_store!(pstore)
+    end
+    return nothing
+end
+
+function _finalize_emulation_model_inputs!(
+    store::HdfSimulationStore,
+    model_name::Symbol,
+    values_by_key::Dict{
+        IOM.ParameterKey,
+        OrderedDict{Dates.DateTime, DenseAxisArray{Float64, 2}},
+    },
+)
+    isempty(values_by_key) && return nothing
+    bundle_dir = _emulation_bundle_dir(store)
+    pstore = POM.open_parameter_store_writable(joinpath(bundle_dir, PSY.TIME_SERIES_FILE))
+    resolution = get_resolution(get_emulation_model_params(store))
+    try
+        for (key, values_by_time) in values_by_key
+            timestamps = collect(keys(values_by_time))
+            labels = axes(first(values(values_by_time)), 1)
+            matrix = reduce(hcat, [vec(values_by_time[t].data) for t in timestamps])
+            array = DenseAxisArray(matrix, labels, 1:length(timestamps))
+            POM.write_input_series!(
+                pstore, store.input_descriptors[(model_name, key)], array, timestamps,
+                resolution,
+            )
+        end
+    finally
+        POM.close_parameter_store!(pstore)
+    end
+    return nothing
+end
+
 """
 Materialize the buffered parameter slabs into each model's bundle store. Runs once, when the
 simulation finishes writing results, before the store closes. Decision-model parameters become
 forecast windows (one per execution); emulation-model parameters become one series per label
-over the executions.
+over the executions. The raw input windows recast the same execution's values into
+component-owned series so the bundle's System can rebuild the model.
 """
 function finalize_parameters!(store::HdfSimulationStore)
     for (model_name, windows_by_key) in store.dm_parameter_windows
@@ -1768,6 +1943,16 @@ function finalize_parameters!(store::HdfSimulationStore)
         )
     end
     empty!(store.em_parameter_values)
+
+    for (model_name, windows_by_key) in store.dm_input_windows
+        _finalize_decision_model_inputs!(store, model_name, windows_by_key)
+    end
+    empty!(store.dm_input_windows)
+    if !isempty(store.em_input_values)
+        em_model_name = first(keys(store.params.emulation_model_params))
+        _finalize_emulation_model_inputs!(store, em_model_name, store.em_input_values)
+    end
+    empty!(store.em_input_values)
     return nothing
 end
 

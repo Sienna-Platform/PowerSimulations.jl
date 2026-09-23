@@ -1121,6 +1121,66 @@ end
     @test TimeSeries.values(cost_ts) == expected_values
 end
 
+@testset "The results bundle System carries the executed input windows and rebuilds the run" begin
+    c_sys5_hy_uc = PSB.build_system(PSITestSystems, "c_sys5_hy_uc")
+    c_sys5_hy_ed = PSB.build_system(PSITestSystems, "c_sys5_hy_ed")
+    file_path = mktempdir(; cleanup = true)
+    export_path = mktempdir(; cleanup = true)
+    sim = run_simulation(
+        c_sys5_hy_uc,
+        c_sys5_hy_ed,
+        file_path,
+        export_path;
+        in_memory = false,
+    )
+    results = SimulationResults(PSI.get_simulation_folder(sim))
+    uc = get_decision_problem_results(results, "UC")
+    restored = get_system!(uc)
+
+    ren = first(get_components(PSY.RenewableDispatch, c_sys5_hy_uc))
+    ren2 = get_component(PSY.RenewableDispatch, restored, PSY.get_name(ren))
+    rows = IS.list_time_series_metadata(ren2; name = "max_active_power")
+    @test length(rows) == 1
+    @test IS.get_features(only(rows))["source"] == "parameter"
+    executions = collect(uc.timestamps)   # one initial time per UC execution
+    fc = PSY.get_time_series(PSY.Deterministic, ren2, "max_active_power")
+    @test sort(collect(keys(IS.get_data(fc)))) == executions
+    horizon_count = length(first(values(IS.get_data(fc))))
+    for t in executions
+        @test IS.get_data(fc)[t] == PSY.get_time_series_values(
+            PSY.Deterministic, ren, "max_active_power"; start_time = t, len = horizon_count,
+        )
+    end
+
+    # A decision model rebuilt from the restored System at the first execution's time reads
+    # the same parameters as one built from the original System.
+    uc_model = first(PSI.get_decision_models(PSI.get_models(sim)))
+    template = POM.get_template(uc_model)
+    t1 = first(executions)
+    from_original = DecisionModel(
+        template, c_sys5_hy_uc; optimizer = HiGHS_optimizer, initial_time = t1,
+    )
+    from_restored =
+        DecisionModel(template, restored; optimizer = HiGHS_optimizer, initial_time = t1)
+    @test build!(from_original; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+    @test build!(from_restored; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+    p_orig = IOM.read_parameters(IOM.get_optimization_container(from_original))
+    p_rest = IOM.read_parameters(IOM.get_optimization_container(from_restored))
+    input_keys = [
+        k for
+        (k, pc) in IOM.get_parameters(IOM.get_optimization_container(from_original)) if
+        POM.is_input_parameter(k, pc)
+    ]
+    @test !isempty(input_keys)
+    for k in input_keys
+        @test haskey(p_rest, k)
+        @test p_rest[k].data == p_orig[k].data
+    end
+    _close_sidecar_store!(restored)
+end
+
 @testset "The results HDF5 store carries no systems group" begin
     file_path = mktempdir(; cleanup = true)
     export_path = mktempdir(; cleanup = true)

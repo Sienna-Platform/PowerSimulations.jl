@@ -27,6 +27,7 @@ function write_results!(
             Val(field),
         )
     end
+    buffer_parameter_inputs!(store, model, index, update_timestamp)
     return
 end
 
