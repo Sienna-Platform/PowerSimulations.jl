@@ -170,9 +170,6 @@ IOM.get_timestamps(result::SimulationProblemResults) = result.timestamps
 """
 Return the system used for the problem. If the system hasn't already been deserialized or
 set with [`set_system!`](@ref) then deserialize and store it.
-
-Requires the simulation to have been built with `store_systems_in_results = true`; otherwise
-no bundle exists and this errors.
 """
 function get_system!(
     results::Union{IOM.OptimizationProblemOutputs, SimulationProblemResults};

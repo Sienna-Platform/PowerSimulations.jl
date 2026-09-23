@@ -328,7 +328,7 @@ end
 # (device_name, time), so `attach_feedforward!(::ServiceModel, ff)` errors loudly. Re-add
 # once POM re-keys that path.
 
-@testset "Build with store_systems_in_results option" begin
+@testset "Build writes system bundles" begin
     models = create_simulation_build_test_problems(get_template_basic_uc_simulation())
     sequence = SimulationSequence(;
         models = models,
@@ -344,7 +344,6 @@ end
         ini_cond_chronology = InterProblemChronology(),
     )
 
-    # Test store_systems_in_results = true (default)
     sim_with = Simulation(;
         name = "test_with_systems",
         steps = 1,
@@ -352,7 +351,7 @@ end
         sequence = sequence,
         simulation_folder = mktempdir(; cleanup = true),
     )
-    build_out = build!(sim_with; store_systems_in_results = true)
+    build_out = build!(sim_with)
     @test build_out == PSI.SimulationBuildStatus.BUILT
     for model in PSI.get_all_models(models)
         bundle =
@@ -364,34 +363,6 @@ end
         root = store.file["simulation"]
         @test !haskey(root, "systems")
     end
-
-    # store_systems_in_results = false is no longer supported: the simulation store keeps
-    # parameters in the System bundle (finalize_parameters!), so every model must have one.
-    models2 = create_simulation_build_test_problems(get_template_basic_uc_simulation())
-    sequence2 = SimulationSequence(;
-        models = models2,
-        feedforwards = Dict(
-            "ED" => [
-                SemiContinuousFeedforward(;
-                    component_type = ThermalStandard,
-                    source = OnVariable,
-                    affected_values = [ActivePowerVariable],
-                ),
-            ],
-        ),
-        ini_cond_chronology = InterProblemChronology(),
-    )
-    sim_without = Simulation(;
-        name = "test_without_systems",
-        steps = 1,
-        models = models2,
-        sequence = sequence2,
-        simulation_folder = mktempdir(; cleanup = true),
-    )
-    @test_throws IS.ConflictingInputsError build!(
-        sim_without;
-        store_systems_in_results = false,
-    )
 end
 
 @testset "Parameters are written to the bundle's InfraStore as forecast windows" begin

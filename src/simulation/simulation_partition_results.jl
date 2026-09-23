@@ -224,80 +224,31 @@ function _copy_datasets!(
         end
     end
 
+    # Parameters have no HDF5-backed dataset to copy: decision-model and emulation-model
+    # parameters live in each bundle's InfraStore sidecar instead (Task 8+9), merged
+    # separately by `_merge_parameter_stores!`.
+    dataset_container_types = filter(!=(STORE_CONTAINER_PARAMETERS), STORE_CONTAINERS)
+
     check_matching_names("simulation/decision_models")
     for dst_group in dst["simulation/decision_models"]
         group_name = HDF5.name(dst_group)
         check_matching_names(group_name)
-        for output_type in STORE_CONTAINERS
-            _copy_decision_model_container_datasets!(
-                Val(output_type),
-                group_name,
-                dst_group,
-                check_matching_names,
-                process_dataset,
-            )
+        for output_type in dataset_container_types
+            output_type_name = string(output_type)
+            check_matching_names("$group_name/$output_type_name")
+            for dst_dataset in dst_group[output_type_name]
+                process_dataset(dst_dataset, _merge_dataset_rows!)
+            end
         end
         process_dataset(dst_group["optimizer_stats"], _merge_dataset_rows!)
     end
 
-    for output_type in STORE_CONTAINERS
-        _copy_emulation_model_container_datasets!(
-            Val(output_type),
-            dst,
-            check_matching_names,
-            process_dataset,
-        )
-    end
-    return nothing
-end
-
-"""
-Parameters have no HDF5-backed dataset to copy: decision-model and emulation-model
-parameters live in each bundle's InfraStore sidecar instead of an HDF5 dataset (Task 8+9),
-merged separately by [`_merge_parameter_stores!`](@ref). Mirrors the same
-`Val(STORE_CONTAINER_PARAMETERS)` skip `initialize_problem_storage!` already applies in
-`hdf_simulation_store.jl`.
-"""
-_copy_decision_model_container_datasets!(
-    ::Val{STORE_CONTAINER_PARAMETERS},
-    ::String,
-    dst_group,
-    check_matching_names,
-    process_dataset,
-) = nothing
-
-function _copy_decision_model_container_datasets!(
-    ::Val{T},
-    group_name::String,
-    dst_group,
-    check_matching_names,
-    process_dataset,
-) where {T}
-    output_type = string(T)
-    check_matching_names("$group_name/$output_type")
-    for dst_dataset in dst_group[output_type]
-        process_dataset(dst_dataset, _merge_dataset_rows!)
-    end
-    return nothing
-end
-
-_copy_emulation_model_container_datasets!(
-    ::Val{STORE_CONTAINER_PARAMETERS},
-    ::HDF5.File,
-    check_matching_names,
-    process_dataset,
-) = nothing
-
-function _copy_emulation_model_container_datasets!(
-    ::Val{T},
-    dst::HDF5.File,
-    check_matching_names,
-    process_dataset,
-) where {T}
-    output_type = string(T)
-    check_matching_names("simulation/emulation_model/$output_type")
-    for dst_dataset in dst["simulation/emulation_model/$output_type"]
-        process_dataset(dst_dataset, _merge_dataset_columns!)
+    for output_type in dataset_container_types
+        output_type_name = string(output_type)
+        check_matching_names("simulation/emulation_model/$output_type_name")
+        for dst_dataset in dst["simulation/emulation_model/$output_type_name"]
+            process_dataset(dst_dataset, _merge_dataset_columns!)
+        end
     end
     return nothing
 end
@@ -322,36 +273,12 @@ function _merge_parameter_stores!(
 
     open_store(HdfSimulationStore, joinpath(results.path, STORE_DIR), "r") do dst_store
         for model_name in keys(dst_store.params.decision_models_params)
-            _merge_decision_model_parameters!(
-                results,
-                dst_store,
-                model_name,
-                merged_indexes,
-            )
-            _merge_decision_model_inputs!(results, dst_store, merged_indexes, model_name)
+            _merge_decision_model_bundle!(results, dst_store, model_name, merged_indexes)
         end
-        _merge_emulation_model_parameters!(results, dst_store, merged_indexes)
         isempty(dst_store.params.emulation_model_params) ||
-            _merge_emulation_model_inputs!(results, dst_store, merged_indexes)
+            _merge_emulation_model_bundle!(results, dst_store, merged_indexes)
     end
     return nothing
-end
-
-"""
-The bundle sidecar directory a partition's own build wrote for `model_name`, resolved from
-that partition's own `HdfSimulationStore`. Each partition builds its own `System`, so its
-bundle's uuid need not match the main folder's.
-"""
-function _partition_decision_bundle_dir(
-    results::SimulationPartitionResults,
-    index::Int,
-    model_name::Symbol,
-)
-    partition_dir = joinpath(_partition_path(results, index), STORE_DIR)
-    return open_store(HdfSimulationStore, partition_dir, "r") do src_store
-        params = get_decision_model_params(src_store, model_name)
-        return _bundle_dir(src_store, model_name, get_system_uuid(params))
-    end
 end
 
 """
@@ -376,10 +303,11 @@ function _decision_merge_units(
 end
 
 """
-Merge one decision model's parameter windows across every partition in `merged_indexes` into
-the main bundle, one source sidecar open at a time (InfraStore allows only one open handle
-per store file per process) and the destination sidecar opened once, after every partition has
-been read.
+Merge one decision model's parameter windows and input rows across every partition in
+`merged_indexes` into the main bundle: each source sidecar is opened once per partition
+(InfraStore allows only one open handle per store file per process) and read for both
+parameters and inputs together, and the destination sidecar is opened once, after every
+partition has been read, to write both.
 
 A 3-D (`axis2`-sliced) parameter is merged one slice at a time (`_decision_merge_units`):
 `POM.read_parameter_windows` matches rows by a *subset* of features, so reading a key with
@@ -387,8 +315,13 @@ only the `"model"` feature would silently pull back every slice's rows and colla
 the same axis-1 label (they share a name; only the `"axis2"` feature tells them apart) --
 adding the slice's own `"axis2"` feature to both the read and the write keeps each slice in
 its own accumulator entry and its own destination row.
+
+Input rows are unioned by `(owner_id, owner_type, name)`: the main run never executes, so its
+bundle starts with no input rows, and each partition holds the windows of its own executions.
+Writing them is [`_write_decision_model_inputs!`](@ref); see that docstring for the
+write-once/warn behavior.
 """
-function _merge_decision_model_parameters!(
+function _merge_decision_model_bundle!(
     results::SimulationPartitionResults,
     dst_store::HdfSimulationStore,
     model_name::Symbol,
@@ -396,17 +329,20 @@ function _merge_decision_model_parameters!(
 )
     keys_to_merge =
         list_decision_model_keys(dst_store, model_name, STORE_CONTAINER_PARAMETERS)
-    isempty(keys_to_merge) && return nothing
-
     base_features = Dict{String, Any}("model" => string(model_name))
-    accumulated = Dict{
+    accumulated_params = Dict{
         Tuple{IOM.ParameterKey, String},
         Dict{String, Dict{Dates.DateTime, Vector{Float64}}},
     }()
+    accumulated_inputs =
+        Dict{Tuple{Int64, String, String}, Dict{Dates.DateTime, Vector{Float64}}}()
     for index in merged_indexes
-        bundle_dir = _partition_decision_bundle_dir(results, index, model_name)
-        pstore = POM.open_parameter_store(joinpath(bundle_dir, PSY.TIME_SERIES_FILE))
-        try
+        partition_dir = joinpath(_partition_path(results, index), STORE_DIR)
+        sidecar_path = open_store(HdfSimulationStore, partition_dir, "r") do src_store
+            params = get_decision_model_params(src_store, model_name)
+            return _dm_sidecar_path(src_store, model_name, get_system_uuid(params))
+        end
+        _with_parameter_store(sidecar_path) do pstore
             for key in keys_to_merge
                 for (slice_id, read_features) in
                     _decision_merge_units(pstore, key, base_features)
@@ -416,7 +352,7 @@ function _merge_decision_model_parameters!(
                         extra_features = read_features,
                     )
                     dest = get!(
-                        accumulated,
+                        accumulated_params,
                         (key, slice_id),
                         Dict{String, Dict{Dates.DateTime, Vector{Float64}}}(),
                     )
@@ -428,26 +364,36 @@ function _merge_decision_model_parameters!(
                     end
                 end
             end
-        finally
-            POM.close_parameter_store!(pstore)
+            for md in POM.list_input_series(pstore)
+                ts = POM.read_input_time_series(pstore, md)
+                dest = get!(
+                    accumulated_inputs,
+                    (IS.get_owner_id(md), IS.get_owner_type(md), IS.get_name(md)),
+                    Dict{Dates.DateTime, Vector{Float64}}(),
+                )
+                merge!(dest, Dict{Dates.DateTime, Vector{Float64}}(IS.get_data(ts)))
+            end
         end
     end
 
     dst_params = get_decision_model_params(dst_store, model_name)
-    dst_bundle_dir = _bundle_dir(dst_store, model_name, get_system_uuid(dst_params))
-    pstore =
-        POM.open_parameter_store_writable(joinpath(dst_bundle_dir, PSY.TIME_SERIES_FILE))
-    try
-        for ((key, slice_id), merged_by_label) in accumulated
+    sidecar_path = _dm_sidecar_path(dst_store, model_name, get_system_uuid(dst_params))
+    _with_parameter_store(sidecar_path) do pstore
+        for ((key, slice_id), merged_by_label) in accumulated_params
             if isempty(slice_id)
                 write_features = base_features
             else
                 write_features =
                     merge(base_features, Dict{String, Any}("axis2" => slice_id))
             end
-            new_by_label = _new_windows_by_label(
+            new_by_label = _new_rows_by_label(
                 merged_by_label,
-                _existing_decision_windows(pstore, key, write_features),
+                _existing_parameter_rows(
+                    POM.read_parameter_windows,
+                    pstore,
+                    key,
+                    write_features,
+                ),
             )
             isempty(new_by_label) && continue
             POM.write_parameter_windows!(
@@ -459,48 +405,63 @@ function _merge_decision_model_parameters!(
                 extra_features = write_features,
             )
         end
-    finally
-        POM.close_parameter_store!(pstore)
+        isempty(accumulated_inputs) || _write_decision_model_inputs!(
+            pstore,
+            accumulated_inputs,
+            model_name,
+            get_resolution(dst_params),
+            get_interval(dst_params),
+        )
     end
     return nothing
 end
 
 """
-The destination bundle's already-merged windows for `key`, or an empty `Dict` when this key
-has never been merged into it before. `join_simulation` can be called more than once against
-the same output directory (a failed partition retried, a `--skip-failures` re-run after a
-corrupted store is fixed, ...), so a re-merge must add only what is not already there instead
-of raising a duplicate-time-series error the second time.
+The destination bundle's already-merged parameter rows for `key`, read through `reader`
+(`POM.read_parameter_windows` for a decision-model window set, `POM.read_parameter_array` for
+an emulation-model series), or an empty `Dict` when this key has never been merged into it
+before. `join_simulation` can be called more than once against the same output directory (a
+failed partition retried, a `--skip-failures` re-run after a corrupted store is fixed, ...), so
+a re-merge must add only what is not already there instead of raising a duplicate-time-series
+error the second time.
 """
-function _existing_decision_windows(
+function _existing_parameter_rows(
+    reader,
     pstore,
     key::IOM.ParameterKey,
     extra_features::Dict{String, Any},
-)::Dict{String, Dict{Dates.DateTime, Vector{Float64}}}
-    POM.has_parameter_rows(pstore, key; extra_features = extra_features) ||
-        return Dict{String, Dict{Dates.DateTime, Vector{Float64}}}()
-    return POM.read_parameter_windows(pstore, key; extra_features = extra_features)
+)
+    POM.has_parameter_rows(pstore, key; extra_features = extra_features) || return Dict()
+    return reader(pstore, key; extra_features = extra_features)
 end
 
 """
-`merged_by_label` restricted to the initial times not already present in
-`existing_by_label` -- every label shares the same set of initial times (windows are always
-written together, one `POM.write_parameter_windows!` call per key covering every label), so
-one shared time set is enough to filter every label consistently.
+`merged_by_label` restricted to the initial times/timestamps not already present in
+`existing_by_label` -- every label shares the same set (windows/series are always written
+together, one write call per key covering every label), so one shared time set, read off the
+first label via [`_existing_times`](@ref), is enough to filter every label consistently.
+Shared by the decision-model (window) and emulation-model (series) merges.
 """
-function _new_windows_by_label(
-    merged_by_label::Dict{String, Dict{Dates.DateTime, Vector{Float64}}},
-    existing_by_label::Dict{String, Dict{Dates.DateTime, Vector{Float64}}},
-)::Dict{String, Dict{Dates.DateTime, Vector{Float64}}}
+function _new_rows_by_label(merged_by_label, existing_by_label)
     isempty(existing_by_label) && return merged_by_label
-    existing_times = Set(keys(first(values(existing_by_label))))
-    result = Dict{String, Dict{Dates.DateTime, Vector{Float64}}}()
+    existing_times = _existing_times(existing_by_label)
+    result = empty(merged_by_label)
     for (label, by_time) in merged_by_label
         new_by_time = filter(p -> !(p.first in existing_times), by_time)
         isempty(new_by_time) || (result[label] = new_by_time)
     end
     return result
 end
+
+"""
+The initial times (decision-model windows) or timestamps (emulation-model series) one label of
+`existing` already covers, dispatched on the reader's return shape so
+[`_new_rows_by_label`](@ref) need not know which one it is merging.
+"""
+_existing_times(existing::Dict{String, Dict{Dates.DateTime, Vector{Float64}}}) =
+    Set(keys(first(values(existing))))
+_existing_times(existing::Dict{String, IS.TimeSeries.TimeArray}) =
+    Set(IS.TimeSeries.timestamp(first(values(existing))))
 
 """
 Rebuild `Dict{DateTime, DenseAxisArray{Float64,2}}` windows (labels x steps) from parameter
@@ -526,56 +487,75 @@ function _windows_from_labels(
 end
 
 """
-Merge the emulation model's parameter series across every partition in `merged_indexes` into
-the main bundle, the same shape as [`_merge_decision_model_parameters!`](@ref): one source
-sidecar open at a time, the destination sidecar opened once at the end. Resolves each
-partition's bundle by system uuid ([`_emulation_bundle_dir`](@ref)), since the emulation
-model entry never has a `problems/<name>/` directory of its own.
+Merge the emulation model's parameter series and input rows across every partition in
+`merged_indexes` into the main bundle, the same one-open-per-partition,
+one-open-for-the-destination shape as [`_merge_decision_model_bundle!`](@ref). Resolves each
+partition's bundle by system uuid ([`_em_sidecar_path`](@ref)), since the emulation model entry
+never has a `problems/<name>/` directory of its own. Input rows are unioned as one
+`SingleTimeSeries` per `(owner, name)` over every partition's steps; writing them is
+[`_write_emulation_model_inputs!`](@ref).
 """
-function _merge_emulation_model_parameters!(
+function _merge_emulation_model_bundle!(
     results::SimulationPartitionResults,
     dst_store::HdfSimulationStore,
     merged_indexes::Vector{Int},
 )
     keys_to_merge = list_emulation_model_keys(dst_store, STORE_CONTAINER_PARAMETERS)
-    isempty(keys_to_merge) && return nothing
-
     em_model_name = _em_model_name(dst_store)
     extra_features = Dict{String, Any}("model" => string(em_model_name))
-    accumulated = Dict{IOM.ParameterKey, Dict{String, Dict{Dates.DateTime, Float64}}}(
-        key => Dict{String, Dict{Dates.DateTime, Float64}}() for key in keys_to_merge
-    )
+    accumulated_params =
+        Dict{IOM.ParameterKey, Dict{String, Dict{Dates.DateTime, Float64}}}(
+            key => Dict{String, Dict{Dates.DateTime, Float64}}() for key in keys_to_merge
+        )
+    accumulated_inputs = Dict{Tuple{Int64, String, String}, Dict{Dates.DateTime, Float64}}()
     for index in merged_indexes
         partition_dir = joinpath(_partition_path(results, index), STORE_DIR)
-        bundle_dir = open_store(HdfSimulationStore, partition_dir, "r") do src_store
-            return _emulation_bundle_dir(src_store)
+        sidecar_path = open_store(HdfSimulationStore, partition_dir, "r") do src_store
+            return _em_sidecar_path(src_store)
         end
-        pstore = POM.open_parameter_store(joinpath(bundle_dir, PSY.TIME_SERIES_FILE))
-        try
+        _with_parameter_store(sidecar_path) do pstore
             for key in keys_to_merge
                 series =
                     POM.read_parameter_array(pstore, key; extra_features = extra_features)
                 for (label, ts) in series
-                    dest = get!(accumulated[key], label, Dict{Dates.DateTime, Float64}())
+                    dest =
+                        get!(
+                            accumulated_params[key],
+                            label,
+                            Dict{Dates.DateTime, Float64}(),
+                        )
                     for (t, v) in zip(IS.TimeSeries.timestamp(ts), IS.TimeSeries.values(ts))
                         dest[t] = v
                     end
                 end
             end
-        finally
-            POM.close_parameter_store!(pstore)
+            for md in POM.list_input_series(pstore)
+                ts = POM.read_input_time_series(pstore, md)
+                ta = IS.make_time_array(ts, IS.get_initial_timestamp(ts))
+                dest = get!(
+                    accumulated_inputs,
+                    (IS.get_owner_id(md), IS.get_owner_type(md), IS.get_name(md)),
+                    Dict{Dates.DateTime, Float64}(),
+                )
+                for (t, v) in zip(IS.TimeSeries.timestamp(ta), IS.TimeSeries.values(ta))
+                    dest[t] = v
+                end
+            end
         end
     end
 
     em_resolution = get_resolution(get_emulation_model_params(dst_store))
-    dst_bundle_dir = _emulation_bundle_dir(dst_store)
-    pstore =
-        POM.open_parameter_store_writable(joinpath(dst_bundle_dir, PSY.TIME_SERIES_FILE))
-    try
+    sidecar_path = _em_sidecar_path(dst_store)
+    _with_parameter_store(sidecar_path) do pstore
         for key in keys_to_merge
-            new_by_label = _new_series_by_label(
-                accumulated[key],
-                _existing_em_series(pstore, key, extra_features),
+            new_by_label = _new_rows_by_label(
+                accumulated_params[key],
+                _existing_parameter_rows(
+                    POM.read_parameter_array,
+                    pstore,
+                    key,
+                    extra_features,
+                ),
             )
             isempty(new_by_label) && continue
             labels = sort!(collect(keys(new_by_label)))
@@ -594,63 +574,42 @@ function _merge_emulation_model_parameters!(
                 extra_features = extra_features,
             )
         end
-    finally
-        POM.close_parameter_store!(pstore)
+        isempty(accumulated_inputs) || _write_emulation_model_inputs!(
+            pstore,
+            accumulated_inputs,
+            em_model_name,
+            em_resolution,
+        )
     end
     return nothing
 end
 
 """
-Accumulates what [`_record_drop!`](@ref) finds across one `_merge_*_model_inputs!` call: how
-many `(owner, series)` input rows already existed in the destination for a different set of
-windows/timestamps than this join contributes, how many of those points in total, and up to 5
-example `(owner_type, owner_id, name)` triples to name in [`_warn_dropped_inputs`](@ref).
-"""
-mutable struct _DroppedInputRows
-    n_series::Int
-    n_points::Int
-    examples::Vector{Tuple{String, Int64, String}}
-end
-_DroppedInputRows() = _DroppedInputRows(0, 0, Tuple{String, Int64, String}[])
+Warn once per merge call when `dropped` -- one `(owner_type, owner_id, name, n_points)` tuple
+per affected row -- is non-empty, naming `model_name`, how many `(owner, series)` input rows
+were affected, up to 5 example rows, and the total number of `point_label` (`"windows"` for a
+decision model, `"timestamps"` for the emulation model) this join could not add. Silent when
+nothing was dropped: a pure re-join adds nothing and warns about nothing.
 
-function _record_drop!(
-    dropped::_DroppedInputRows,
-    owner_type::String,
-    owner_id::Int64,
-    name::String,
-    n_points::Int,
-)
-    dropped.n_series += 1
-    dropped.n_points += n_points
-    length(dropped.examples) < 5 && push!(dropped.examples, (owner_type, owner_id, name))
-    return nothing
-end
-
-"""
-Warn once per merge call when [`_record_drop!`](@ref) recorded anything, naming `model_name`, how
-many `(owner, series)` input rows were affected, a few example owners, and the total number of
-`point_label` (`"windows"` for a decision model, `"timestamps"` for the emulation model) this join
-could not add. Silent when nothing was dropped: a pure re-join adds nothing and warns about
-nothing.
-
-This is the write-once limitation of [`_merge_decision_model_inputs!`](@ref) and
-[`_merge_emulation_model_inputs!`](@ref) surfacing: extending an existing InfraStore row by owner
-id is not something IS exposes publicly (removal-and-rewrite is out of scope here), so once a row
-exists for an `(owner, name)`, a later partition that contributes new windows/timestamps for that
-same `(owner, name)` -- e.g. one that transitioned from failed/skipped to successful between two
-`join_simulation` calls -- cannot be appended to it. The parameter *result* rows (under the
-synthetic owner) are unaffected; only the merged System's recast input series omit these points.
+This is the write-once limitation of [`_write_decision_model_inputs!`](@ref) and
+[`_write_emulation_model_inputs!`](@ref) surfacing: extending an existing InfraStore row by
+owner id is not something IS exposes publicly (removal-and-rewrite is out of scope here), so
+once a row exists for an `(owner, name)`, a later partition that contributes new
+windows/timestamps for that same `(owner, name)` -- e.g. one that transitioned from
+failed/skipped to successful between two `join_simulation` calls -- cannot be appended to it.
+The parameter *result* rows (under the synthetic owner) are unaffected; only the merged
+System's recast input series omit these points.
 """
 function _warn_dropped_inputs(
-    dropped::_DroppedInputRows,
+    dropped::Vector{Tuple{String, Int64, String, Int}},
     model_name::Symbol,
     point_label::AbstractString,
 )
-    iszero(dropped.n_series) && return nothing
-    @warn "Merging simulation partitions for model $model_name found $(dropped.n_series) " *
+    isempty(dropped) && return nothing
+    @warn "Merging simulation partitions for model $model_name found $(length(dropped)) " *
           "input series whose merged-bundle row already exists for a different set of " *
-          "$point_label than this join contributes ($(dropped.n_points) $point_label total, " *
-          "e.g. $(dropped.examples)); write-once semantics keep the existing row, so the " *
+          "$point_label than this join contributes ($(sum(last, dropped)) $point_label total, " *
+          "e.g. $(first(dropped, 5))); write-once semantics keep the existing row, so the " *
           "merged System's input series omit them for these owners. Results read from the " *
           "parameter rows are unaffected."
     return nothing
@@ -679,13 +638,13 @@ function _write_decision_model_inputs!(
         md in POM.list_input_series(pstore) if
         IS.get_time_series_type(md) <: PSY.Deterministic
     )
-    dropped = _DroppedInputRows()
+    dropped = Tuple{String, Int64, String, Int}[]
     for ((owner_id, owner_type, name), data) in accumulated
         if haskey(existing, (owner_id, name))
             existing_ts = POM.read_input_time_series(pstore, existing[(owner_id, name)])
             new_times = setdiff(keys(data), keys(IS.get_data(existing_ts)))
             isempty(new_times) ||
-                _record_drop!(dropped, owner_type, owner_id, name, length(new_times))
+                push!(dropped, (owner_type, owner_id, name, length(new_times)))
         end
         POM.write_input_forecast_row!(
             pstore,
@@ -698,53 +657,6 @@ function _write_decision_model_inputs!(
         )
     end
     _warn_dropped_inputs(dropped, model_name, "windows")
-    return nothing
-end
-
-"""
-Union every partition's input rows for `model_name` into the main bundle, keyed by
-`(owner_id, owner_type, name)`: the main run never executes, so its bundle starts with no input
-rows, and each partition holds the windows of its own executions. Writing is
-[`_write_decision_model_inputs!`](@ref); see that docstring for the write-once/warn behavior.
-"""
-function _merge_decision_model_inputs!(
-    results::SimulationPartitionResults,
-    dst_store::HdfSimulationStore,
-    merged_indexes::Vector{Int},
-    model_name::Symbol,
-)
-    accumulated =
-        Dict{Tuple{Int64, String, String}, Dict{Dates.DateTime, Vector{Float64}}}()
-    for index in merged_indexes
-        bundle_dir = _partition_decision_bundle_dir(results, index, model_name)
-        pstore = POM.open_parameter_store(joinpath(bundle_dir, PSY.TIME_SERIES_FILE))
-        try
-            for md in POM.list_input_series(pstore)
-                ts = POM.read_input_time_series(pstore, md)
-                dest = get!(
-                    accumulated,
-                    (IS.get_owner_id(md), IS.get_owner_type(md), IS.get_name(md)),
-                    Dict{Dates.DateTime, Vector{Float64}}(),
-                )
-                merge!(dest, Dict{Dates.DateTime, Vector{Float64}}(IS.get_data(ts)))
-            end
-        finally
-            POM.close_parameter_store!(pstore)
-        end
-    end
-    isempty(accumulated) && return nothing
-    dst_params = get_decision_model_params(dst_store, model_name)
-    dst_bundle_dir = _bundle_dir(dst_store, model_name, get_system_uuid(dst_params))
-    pstore =
-        POM.open_parameter_store_writable(joinpath(dst_bundle_dir, PSY.TIME_SERIES_FILE))
-    try
-        _write_decision_model_inputs!(
-            pstore, accumulated, model_name, get_resolution(dst_params),
-            get_interval(dst_params),
-        )
-    finally
-        POM.close_parameter_store!(pstore)
-    end
     return nothing
 end
 
@@ -768,7 +680,7 @@ function _write_emulation_model_inputs!(
         md in POM.list_input_series(pstore) if
         IS.get_time_series_type(md) <: PSY.SingleTimeSeries
     )
-    dropped = _DroppedInputRows()
+    dropped = Tuple{String, Int64, String, Int}[]
     for ((owner_id, owner_type, name), by_time) in accumulated
         if haskey(existing, (owner_id, name))
             existing_ts = POM.read_input_time_series(pstore, existing[(owner_id, name)])
@@ -776,7 +688,7 @@ function _write_emulation_model_inputs!(
                 IS.make_time_array(existing_ts, IS.get_initial_timestamp(existing_ts))
             new_times = setdiff(keys(by_time), IS.TimeSeries.timestamp(existing_ta))
             isempty(new_times) ||
-                _record_drop!(dropped, owner_type, owner_id, name, length(new_times))
+                push!(dropped, (owner_type, owner_id, name, length(new_times)))
         end
         timestamps = sort!(collect(keys(by_time)))
         POM.write_input_series_row!(
@@ -786,91 +698,6 @@ function _write_emulation_model_inputs!(
     end
     _warn_dropped_inputs(dropped, em_model_name, "timestamps")
     return nothing
-end
-
-"""Emulation counterpart of [`_merge_decision_model_inputs!`](@ref): one `SingleTimeSeries` per
-`(owner, name)` over every partition's steps. Writing is
-[`_write_emulation_model_inputs!`](@ref)."""
-function _merge_emulation_model_inputs!(
-    results::SimulationPartitionResults,
-    dst_store::HdfSimulationStore,
-    merged_indexes::Vector{Int},
-)
-    accumulated = Dict{Tuple{Int64, String, String}, Dict{Dates.DateTime, Float64}}()
-    for index in merged_indexes
-        partition_dir = joinpath(_partition_path(results, index), STORE_DIR)
-        bundle_dir = open_store(HdfSimulationStore, partition_dir, "r") do src_store
-            return _emulation_bundle_dir(src_store)
-        end
-        pstore = POM.open_parameter_store(joinpath(bundle_dir, PSY.TIME_SERIES_FILE))
-        try
-            for md in POM.list_input_series(pstore)
-                ts = POM.read_input_time_series(pstore, md)
-                ta = IS.make_time_array(ts, IS.get_initial_timestamp(ts))
-                dest = get!(
-                    accumulated,
-                    (IS.get_owner_id(md), IS.get_owner_type(md), IS.get_name(md)),
-                    Dict{Dates.DateTime, Float64}(),
-                )
-                for (t, v) in zip(IS.TimeSeries.timestamp(ta), IS.TimeSeries.values(ta))
-                    dest[t] = v
-                end
-            end
-        finally
-            POM.close_parameter_store!(pstore)
-        end
-    end
-    isempty(accumulated) && return nothing
-    resolution = get_resolution(get_emulation_model_params(dst_store))
-    dst_bundle_dir = _emulation_bundle_dir(dst_store)
-    pstore =
-        POM.open_parameter_store_writable(joinpath(dst_bundle_dir, PSY.TIME_SERIES_FILE))
-    try
-        _write_emulation_model_inputs!(
-            pstore,
-            accumulated,
-            _em_model_name(dst_store),
-            resolution,
-        )
-    finally
-        POM.close_parameter_store!(pstore)
-    end
-    return nothing
-end
-
-"""
-The destination bundle's already-merged series for `key`, or an empty `Dict` when this key
-has never been merged into it before. See [`_existing_decision_windows`](@ref) for why a
-re-merge must add only what is not already there.
-"""
-function _existing_em_series(
-    pstore,
-    key::IOM.ParameterKey,
-    extra_features::Dict{String, Any},
-)::Dict{String, IS.TimeSeries.TimeArray}
-    POM.has_parameter_rows(pstore, key; extra_features = extra_features) ||
-        return Dict{String, IS.TimeSeries.TimeArray}()
-    return POM.read_parameter_array(pstore, key; extra_features = extra_features)
-end
-
-"""
-`merged_by_label` restricted to the timestamps not already present in `existing_by_label` --
-every label shares the same set of timestamps (an emulation-model parameter array is always
-written together, one `POM.write_parameter_array!` call per key covering every label), so one
-shared timestamp set is enough to filter every label consistently.
-"""
-function _new_series_by_label(
-    merged_by_label::Dict{String, Dict{Dates.DateTime, Float64}},
-    existing_by_label::Dict{String, IS.TimeSeries.TimeArray},
-)::Dict{String, Dict{Dates.DateTime, Float64}}
-    isempty(existing_by_label) && return merged_by_label
-    existing_times = Set(IS.TimeSeries.timestamp(first(values(existing_by_label))))
-    result = Dict{String, Dict{Dates.DateTime, Float64}}()
-    for (label, by_time) in merged_by_label
-        new_by_time = filter(p -> !(p.first in existing_times), by_time)
-        isempty(new_by_time) || (result[label] = new_by_time)
-    end
-    return result
 end
 
 """

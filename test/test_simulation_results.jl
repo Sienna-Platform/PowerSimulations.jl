@@ -1317,21 +1317,3 @@ end
     ratios = first_window.value[nonzero] ./ source_values[nonzero]
     @test all(r -> isapprox(r, first(ratios)), ratios)
 end
-
-@testset "Test system is automatically populated from HDF5 store on file deserialization" begin
-    file_path = mktempdir(; cleanup = true)
-    export_path = mktempdir(; cleanup = true)
-    c_sys5_hy_uc = PSB.build_system(PSITestSystems, "c_sys5_hy_uc")
-    c_sys5_hy_ed = PSB.build_system(PSITestSystems, "c_sys5_hy_ed")
-    # R28: store_systems_in_results = false is no longer a supported mode -- the System
-    # bundle IS the parameter results store now, so build! rejects it (mirrors the same
-    # fix already made in test_simulation_build.jl's "store_systems_in_results option" test).
-    @test_throws IS.ConflictingInputsError run_simulation(
-        c_sys5_hy_uc,
-        c_sys5_hy_ed,
-        file_path,
-        export_path;
-        in_memory = false,
-        store_systems_in_results = false,
-    )
-end

@@ -49,17 +49,13 @@ mutable struct HdfSimulationStore <: SimulationStore
     dm_parameter_keys::Dict{Symbol, Vector{IOM.ParameterKey}}
     em_parameter_keys::Vector{IOM.ParameterKey}
     # Parameter rows read back from a model's bundle sidecar, filled on first use per
-    # (model, key)/key so a sidecar is opened at most once per key. See
+    # (model, key, slice) so a sidecar is opened at most once per slice. `slice` is `""` for
+    # a 2-D parameter's single window set, or an axis-2 label for one slice of a 3-D
+    # parameter (`_bundle_parameter_windows_3d` fills one entry per slice label). See
     # `_bundle_parameter_windows`/`_bundle_parameter_array`.
     parameter_read_cache::Dict{
-        Tuple{Symbol, IOM.ParameterKey},
+        Tuple{Symbol, IOM.ParameterKey, String},
         Dict{String, Dict{Dates.DateTime, Vector{Float64}}},
-    }
-    # The 3-D counterpart of `parameter_read_cache`: one axis-2 slice's rows nested inside
-    # another. See `_bundle_parameter_windows_3d`.
-    parameter_read_cache_3d::Dict{
-        Tuple{Symbol, IOM.ParameterKey},
-        Dict{String, Dict{String, Dict{Dates.DateTime, Vector{Float64}}}},
     }
     em_parameter_read_cache::Dict{IOM.ParameterKey, Dict{String, IS.TimeSeries.TimeArray}}
     # A caller's own already-open `System` for a model's bundle (R30), keyed by system uuid.
@@ -123,12 +119,8 @@ function HdfSimulationStore(file_path::AbstractString, mode::AbstractString)
         Dict{Symbol, Vector{IOM.ParameterKey}}(),
         IOM.ParameterKey[],
         Dict{
-            Tuple{Symbol, IOM.ParameterKey},
+            Tuple{Symbol, IOM.ParameterKey, String},
             Dict{String, Dict{Dates.DateTime, Vector{Float64}}},
-        }(),
-        Dict{
-            Tuple{Symbol, IOM.ParameterKey},
-            Dict{String, Dict{String, Dict{Dates.DateTime, Vector{Float64}}}},
         }(),
         Dict{IOM.ParameterKey, Dict{String, IS.TimeSeries.TimeArray}}(),
         Dict{Base.UUID, POM.ParameterTimeSeriesStore}(),
@@ -684,6 +676,17 @@ function _with_parameter_store(
     if _has_borrowed_store(store, uuid, sidecar_path)
         return f(store.borrowed_parameter_stores[uuid])
     end
+    return _with_parameter_store(f, sidecar_path)
+end
+
+"""
+Run `f` on a freshly opened parameter store at `sidecar_path`, closing it afterward. Finalize
+and the partition merge (`simulation_partition_results.jl`, both its per-partition source reads
+and its destination write) always own the only handle to their sidecar, so this plain
+open/try/finally/close is also what `_with_parameter_store(f, store, uuid, ...)` falls back to
+once no borrowed store applies.
+"""
+function _with_parameter_store(f, sidecar_path::AbstractString)
     pstore = POM.open_parameter_store(sidecar_path)
     try
         return f(pstore)
@@ -693,30 +696,51 @@ function _with_parameter_store(
 end
 
 """
-The bundle sidecar's parameter windows for one decision model's key: read through a
-borrowed, already-open `System` store when one is registered for this model's system uuid
-and genuinely backed by this sidecar, or a fresh open-read-close otherwise
-(`_with_parameter_store`). Cached per `(model, key)` so a sidecar is read at most once
-across a `SimulationProblemResults` session, whichever source served it.
+The bundle sidecar path for one decision model's system: `_bundle_dir(store, model_name, uuid)`
+joined with `PSY.TIME_SERIES_FILE`. Callers resolve `uuid` themselves (`get_decision_model_params`
+then `get_system_uuid`) before calling this.
 """
+function _dm_sidecar_path(store::HdfSimulationStore, model_name::Symbol, uuid::Base.UUID)
+    return joinpath(_bundle_dir(store, model_name, uuid), PSY.TIME_SERIES_FILE)
+end
+
+"""
+One `(model, key, slice)` worth of the bundle sidecar's parameter rows (`label => time =>
+value`): read through a borrowed, already-open `System` store when one is registered for
+this model's system uuid and genuinely backed by this sidecar, or a fresh open-read-close
+otherwise (`_with_parameter_store`). `slice` is `""` for a 2-D parameter's single window set,
+or one axis-2 label for a slice of a 3-D parameter. Cached per `(model, key, slice)` so a
+sidecar is read at most once per slice across a `SimulationProblemResults` session, whichever
+source served it. Shared by `_bundle_parameter_windows` (2-D) and `_bundle_parameter_windows_3d`
+(3-D, one call per slice) so both shapes read through the same open/cache logic.
+"""
+function _bundle_parameter_rows(
+    store::HdfSimulationStore,
+    model_name::Symbol,
+    key::IOM.ParameterKey,
+    slice::AbstractString,
+)::Dict{String, Dict{Dates.DateTime, Vector{Float64}}}
+    cache_key = (model_name, key, slice)
+    haskey(store.parameter_read_cache, cache_key) &&
+        return store.parameter_read_cache[cache_key]
+    params = get_decision_model_params(store, model_name)
+    uuid = get_system_uuid(params)
+    sidecar_path = _dm_sidecar_path(store, model_name, uuid)
+    extra_features = Dict{String, Any}("model" => string(model_name))
+    isempty(slice) || (extra_features["axis2"] = slice)
+    rows = _with_parameter_store(store, uuid, sidecar_path) do pstore
+        POM.read_parameter_windows(pstore, key; extra_features = extra_features)
+    end
+    store.parameter_read_cache[cache_key] = rows
+    return rows
+end
+
 function _bundle_parameter_windows(
     store::HdfSimulationStore,
     model_name::Symbol,
     key::IOM.ParameterKey,
 )::Dict{String, Dict{Dates.DateTime, Vector{Float64}}}
-    cache_key = (model_name, key)
-    haskey(store.parameter_read_cache, cache_key) &&
-        return store.parameter_read_cache[cache_key]
-    params = get_decision_model_params(store, model_name)
-    uuid = get_system_uuid(params)
-    bundle_dir = _bundle_dir(store, model_name, uuid)
-    sidecar_path = joinpath(bundle_dir, PSY.TIME_SERIES_FILE)
-    extra_features = Dict{String, Any}("model" => string(model_name))
-    windows = _with_parameter_store(store, uuid, sidecar_path) do pstore
-        POM.read_parameter_windows(pstore, key; extra_features = extra_features)
-    end
-    store.parameter_read_cache[cache_key] = windows
-    return windows
+    return _bundle_parameter_rows(store, model_name, key, "")
 end
 
 """
@@ -752,8 +776,7 @@ function _dm_parameter_slice_labels(
 )::Vector{String}
     params = get_decision_model_params(store, model_name)
     uuid = get_system_uuid(params)
-    bundle_dir = _bundle_dir(store, model_name, uuid)
-    sidecar_path = joinpath(bundle_dir, PSY.TIME_SERIES_FILE)
+    sidecar_path = _dm_sidecar_path(store, model_name, uuid)
     base_features = Dict{String, Any}("model" => string(model_name))
     return _with_parameter_store(store, uuid, sidecar_path) do pstore
         POM.parameter_slice_labels(pstore, key; extra_features = base_features)
@@ -762,13 +785,11 @@ end
 
 """
 The bundle sidecar's 3-D parameter windows for one decision model's key: one
-`POM.read_parameter_windows` call per `"axis2"` slice (mirrors the write side's own
-per-slice writes, `_write_parameter_windows!`, and the partition merge's read,
-`_decision_merge_units` in `simulation_partition_results.jl`), keyed by slice label, then
-axis-1 label, then initial time. Read through a borrowed store or a fresh open-read-close,
-same as `_bundle_parameter_windows`. Cached per `(model, key)`, keyed by the slice list that
-discovered it, so a sidecar's slices are read at most once across a
-`SimulationProblemResults` session.
+`_bundle_parameter_rows` call per `"axis2"` slice (mirrors the write side's own per-slice
+writes, `_write_parameter_windows!`, and the partition merge's read, `_decision_merge_units`
+in `simulation_partition_results.jl`), keyed by slice label, then axis-1 label, then initial
+time. Each slice is cached independently by `_bundle_parameter_rows`, so a slice already read
+elsewhere (e.g. by a prior call with an overlapping slice list) is not re-opened.
 """
 function _bundle_parameter_windows_3d(
     store::HdfSimulationStore,
@@ -776,28 +797,10 @@ function _bundle_parameter_windows_3d(
     key::IOM.ParameterKey,
     slice_labels::Vector{String},
 )::Dict{String, Dict{String, Dict{Dates.DateTime, Vector{Float64}}}}
-    cache_key = (model_name, key)
-    haskey(store.parameter_read_cache_3d, cache_key) &&
-        return store.parameter_read_cache_3d[cache_key]
-    params = get_decision_model_params(store, model_name)
-    uuid = get_system_uuid(params)
-    bundle_dir = _bundle_dir(store, model_name, uuid)
-    sidecar_path = joinpath(bundle_dir, PSY.TIME_SERIES_FILE)
-    base_features = Dict{String, Any}("model" => string(model_name))
-    rows = _with_parameter_store(store, uuid, sidecar_path) do pstore
-        Dict{String, Dict{String, Dict{Dates.DateTime, Vector{Float64}}}}(
-            label2 => POM.read_parameter_windows(
-                pstore,
-                key;
-                extra_features = merge(
-                    base_features,
-                    Dict{String, Any}("axis2" => label2),
-                ),
-            ) for label2 in slice_labels
-        )
-    end
-    store.parameter_read_cache_3d[cache_key] = rows
-    return rows
+    return Dict{String, Dict{String, Dict{Dates.DateTime, Vector{Float64}}}}(
+        label2 => _bundle_parameter_rows(store, model_name, key, label2) for
+        label2 in slice_labels
+    )
 end
 
 """
@@ -876,15 +879,6 @@ function _dm_window_result(::IOM.ParameterKey, window::DenseAxisArray{Float64, 3
     end
     data = cat(mats...; dims = 3)
     return data, (labels, labels2)
-end
-
-function _dm_window_result(
-    key::IOM.ParameterKey,
-    ::DenseAxisArray{Float64, N},
-) where {N}
-    error(
-        "reading a $(N)-D parameter window for $key is not supported by this read path",
-    )
 end
 
 """
@@ -1107,6 +1101,13 @@ there is exactly one).
 _em_model_name(store::HdfSimulationStore) = first(keys(store.params.emulation_model_params))
 
 """
+The emulation model's bundle sidecar's time-series file path (`_emulation_bundle_dir` joined
+with `PSY.TIME_SERIES_FILE`), needed before opening a parameter store for it.
+"""
+_em_sidecar_path(store::HdfSimulationStore) =
+    joinpath(_emulation_bundle_dir(store), PSY.TIME_SERIES_FILE)
+
+"""
 The emulation model's bundle sidecar's realized series for one parameter key: read through a
 borrowed store or a fresh open-read-close, same as `_bundle_parameter_windows`
 (`_with_parameter_store`).
@@ -1118,8 +1119,7 @@ function _bundle_parameter_array(
     haskey(store.em_parameter_read_cache, key) && return store.em_parameter_read_cache[key]
     model_name = _em_model_name(store)
     uuid = get_system_uuid(get_emulation_model_params(store))
-    bundle_dir = _emulation_bundle_dir(store)
-    sidecar_path = joinpath(bundle_dir, PSY.TIME_SERIES_FILE)
+    sidecar_path = _em_sidecar_path(store)
     extra_features = Dict{String, Any}("model" => string(model_name))
     series = _with_parameter_store(store, uuid, sidecar_path) do pstore
         POM.read_parameter_array(pstore, key; extra_features = extra_features)
@@ -1197,7 +1197,8 @@ function _last_em_parameter_update_time(store::HdfSimulationStore, key::IOM.Para
     haskey(store.em_parameter_values, key) || return UNSET_INI_TIME
     values_by_time = store.em_parameter_values[key]
     isempty(values_by_time) && return UNSET_INI_TIME
-    return collect(keys(values_by_time))[end]
+    timestamp, _ = last(values_by_time)
+    return timestamp
 end
 
 function get_emulation_model_dataset_size(store::HdfSimulationStore, key::IOM.ParameterKey)
@@ -1805,17 +1806,29 @@ function _write_parameter_windows!(
     return nothing
 end
 
-function _finalize_decision_model_parameters!(
+"""
+Write one decision model's realized parameter windows and raw input windows into its bundle
+sidecar, opened once for both. Parameters become forecast windows
+(`_write_parameter_windows!`); inputs become component-owned forecasts
+(`POM.write_input_forecasts!`). No-op when the model buffered neither.
+"""
+function _finalize_decision_model!(
     store::HdfSimulationStore,
     model_name::Symbol,
-    windows_by_key::Dict{IOM.ParameterKey, Dict{Dates.DateTime, DenseAxisArray{Float64}}},
+    param_windows_by_key::Dict{
+        IOM.ParameterKey,
+        Dict{Dates.DateTime, DenseAxisArray{Float64}},
+    },
+    input_windows_by_key::Dict{
+        IOM.ParameterKey,
+        Dict{Dates.DateTime, DenseAxisArray{Float64, 2}},
+    },
 )
-    isempty(windows_by_key) && return nothing
+    isempty(param_windows_by_key) && isempty(input_windows_by_key) && return nothing
     params = get_decision_model_params(store, model_name)
-    bundle_dir = _bundle_dir(store, model_name, get_system_uuid(params))
-    pstore = POM.open_parameter_store_writable(joinpath(bundle_dir, PSY.TIME_SERIES_FILE))
-    try
-        for (key, windows) in windows_by_key
+    sidecar_path = _dm_sidecar_path(store, model_name, get_system_uuid(params))
+    _with_parameter_store(sidecar_path) do pstore
+        for (key, windows) in param_windows_by_key
             _write_parameter_windows!(
                 pstore,
                 key,
@@ -1825,33 +1838,59 @@ function _finalize_decision_model_parameters!(
                 model_name,
             )
         end
-    finally
-        POM.close_parameter_store!(pstore)
+        for (key, windows) in input_windows_by_key
+            POM.write_input_forecasts!(
+                pstore,
+                store.input_descriptors[(model_name, key)],
+                windows,
+                get_resolution(params),
+                get_interval(params),
+            )
+        end
     end
     return nothing
 end
 
-function _finalize_emulation_model_parameters!(
+"""
+`(timestamps, array)` for one emulation-model parameter or input's buffered values: the
+matrix/`DenseAxisArray` rebuild shared by `_finalize_emulation_model!`'s parameter and input
+writes (both collapse an `OrderedDict` of per-execution arrays into one `label × execution`
+array plus the ordered timestamps).
+"""
+function _em_dense_array(
+    values_by_time::AbstractDict{Dates.DateTime, <:DenseAxisArray{Float64}},
+)
+    timestamps = collect(keys(values_by_time))
+    labels = axes(first(values(values_by_time)), 1)
+    matrix = reduce(hcat, [vec(values_by_time[t].data) for t in timestamps])
+    return timestamps, DenseAxisArray(matrix, labels, 1:length(timestamps))
+end
+
+"""
+Write the emulation model's realized parameter values and raw input values into its bundle
+sidecar, opened once for both. Parameters become one series per label over the executions
+(`POM.write_parameter_array!`, wrapped so a write failure carries model/key/step-count
+context); inputs become component-owned series (`POM.write_input_series!`). No-op when the
+model buffered neither.
+"""
+function _finalize_emulation_model!(
     store::HdfSimulationStore,
     model_name::Symbol,
-    values_by_key::Dict{
+    param_values_by_key::Dict{
         IOM.ParameterKey,
         OrderedDict{Dates.DateTime, DenseAxisArray{Float64}},
     },
+    input_values_by_key::Dict{
+        IOM.ParameterKey,
+        OrderedDict{Dates.DateTime, DenseAxisArray{Float64, 2}},
+    },
 )
-    isempty(values_by_key) && return nothing
-    bundle_dir = _emulation_bundle_dir(store)
-    pstore = POM.open_parameter_store_writable(joinpath(bundle_dir, PSY.TIME_SERIES_FILE))
+    isempty(param_values_by_key) && isempty(input_values_by_key) && return nothing
+    sidecar_path = _em_sidecar_path(store)
     resolution = get_resolution(get_emulation_model_params(store))
-    try
-        for (key, values_by_time) in values_by_key
-            timestamps = collect(keys(values_by_time))
-            labels = axes(first(values(values_by_time)), 1)
-            matrix = reduce(
-                hcat,
-                [vec(values_by_time[t].data) for t in timestamps],
-            )
-            array = DenseAxisArray(matrix, labels, 1:length(timestamps))
+    _with_parameter_store(sidecar_path) do pstore
+        for (key, values_by_time) in param_values_by_key
+            timestamps, array = _em_dense_array(values_by_time)
             try
                 POM.write_parameter_array!(
                     pstore,
@@ -1868,65 +1907,13 @@ function _finalize_emulation_model_parameters!(
                 )
             end
         end
-    finally
-        POM.close_parameter_store!(pstore)
-    end
-    return nothing
-end
-
-function _finalize_decision_model_inputs!(
-    store::HdfSimulationStore,
-    model_name::Symbol,
-    windows_by_key::Dict{
-        IOM.ParameterKey,
-        Dict{Dates.DateTime, DenseAxisArray{Float64, 2}},
-    },
-)
-    isempty(windows_by_key) && return nothing
-    params = get_decision_model_params(store, model_name)
-    bundle_dir = _bundle_dir(store, model_name, get_system_uuid(params))
-    pstore = POM.open_parameter_store_writable(joinpath(bundle_dir, PSY.TIME_SERIES_FILE))
-    try
-        for (key, windows) in windows_by_key
-            POM.write_input_forecasts!(
-                pstore,
-                store.input_descriptors[(model_name, key)],
-                windows,
-                get_resolution(params),
-                get_interval(params),
-            )
-        end
-    finally
-        POM.close_parameter_store!(pstore)
-    end
-    return nothing
-end
-
-function _finalize_emulation_model_inputs!(
-    store::HdfSimulationStore,
-    model_name::Symbol,
-    values_by_key::Dict{
-        IOM.ParameterKey,
-        OrderedDict{Dates.DateTime, DenseAxisArray{Float64, 2}},
-    },
-)
-    isempty(values_by_key) && return nothing
-    bundle_dir = _emulation_bundle_dir(store)
-    pstore = POM.open_parameter_store_writable(joinpath(bundle_dir, PSY.TIME_SERIES_FILE))
-    resolution = get_resolution(get_emulation_model_params(store))
-    try
-        for (key, values_by_time) in values_by_key
-            timestamps = collect(keys(values_by_time))
-            labels = axes(first(values(values_by_time)), 1)
-            matrix = reduce(hcat, [vec(values_by_time[t].data) for t in timestamps])
-            array = DenseAxisArray(matrix, labels, 1:length(timestamps))
+        for (key, values_by_time) in input_values_by_key
+            timestamps, array = _em_dense_array(values_by_time)
             POM.write_input_series!(
                 pstore, store.input_descriptors[(model_name, key)], array, timestamps,
                 resolution,
             )
         end
-    finally
-        POM.close_parameter_store!(pstore)
     end
     return nothing
 end
@@ -1936,32 +1923,35 @@ Materialize the buffered parameter slabs into each model's bundle store. Runs on
 simulation finishes writing results, before the store closes. Decision-model parameters become
 forecast windows (one per execution); emulation-model parameters become one series per label
 over the executions. The raw input windows recast the same execution's values into
-component-owned series so the bundle's System can rebuild the model.
+component-owned series so the bundle's System can rebuild the model. Each model's sidecar is
+opened once, covering both its parameters and its inputs (`_finalize_decision_model!`/
+`_finalize_emulation_model!`).
 """
 function finalize_parameters!(store::HdfSimulationStore)
-    for (model_name, windows_by_key) in store.dm_parameter_windows
-        _finalize_decision_model_parameters!(store, model_name, windows_by_key)
+    empty_dm_param_windows =
+        Dict{IOM.ParameterKey, Dict{Dates.DateTime, DenseAxisArray{Float64}}}()
+    empty_dm_input_windows =
+        Dict{IOM.ParameterKey, Dict{Dates.DateTime, DenseAxisArray{Float64, 2}}}()
+    for model_name in union(keys(store.dm_parameter_windows), keys(store.dm_input_windows))
+        _finalize_decision_model!(
+            store,
+            model_name,
+            get(store.dm_parameter_windows, model_name, empty_dm_param_windows),
+            get(store.dm_input_windows, model_name, empty_dm_input_windows),
+        )
     end
     empty!(store.dm_parameter_windows)
+    empty!(store.dm_input_windows)
 
-    if !isempty(store.em_parameter_values)
-        em_model_name = first(keys(store.params.emulation_model_params))
-        _finalize_emulation_model_parameters!(
+    if !isempty(store.em_parameter_values) || !isempty(store.em_input_values)
+        _finalize_emulation_model!(
             store,
-            em_model_name,
+            _em_model_name(store),
             store.em_parameter_values,
+            store.em_input_values,
         )
     end
     empty!(store.em_parameter_values)
-
-    for (model_name, windows_by_key) in store.dm_input_windows
-        _finalize_decision_model_inputs!(store, model_name, windows_by_key)
-    end
-    empty!(store.dm_input_windows)
-    if !isempty(store.em_input_values)
-        em_model_name = first(keys(store.params.emulation_model_params))
-        _finalize_emulation_model_inputs!(store, em_model_name, store.em_input_values)
-    end
     empty!(store.em_input_values)
     return nothing
 end
