@@ -145,6 +145,16 @@ end
         end
     end
 
+    # The merged bundle's System carries the input windows of every partition.
+    uc_joined = get_decision_problem_results(partitioned_results, "UC")
+    restored = get_system!(uc_joined)
+    ren = first(get_components(PSY.RenewableDispatch, restored))
+    fc = PSY.get_time_series(PSY.Deterministic, ren, "max_active_power")
+    @test sort(collect(keys(IS.get_data(fc)))) == collect(uc_joined.timestamps)
+    # InfraStore allows only one open handle per file per process; the sabotage tests below
+    # reopen this same bundle for writing, so this read-only handle must not outlive this check.
+    IS.close!(IS.get_data_store(restored.data))
+
     base_dir = joinpath(sim_dir, partition_name)
     partition_results = PSI.SimulationPartitionResults(base_dir)
     num_partitions = get_num_partitions(partition_results.partitions)

@@ -328,8 +328,11 @@ function _merge_parameter_stores!(
                 model_name,
                 merged_indexes,
             )
+            _merge_decision_model_inputs!(results, dst_store, merged_indexes, model_name)
         end
         _merge_emulation_model_parameters!(results, dst_store, merged_indexes)
+        isempty(dst_store.params.emulation_model_params) ||
+            _merge_emulation_model_inputs!(results, dst_store, merged_indexes)
     end
     return nothing
 end
@@ -589,6 +592,104 @@ function _merge_emulation_model_parameters!(
                 timestamps,
                 em_resolution;
                 extra_features = extra_features,
+            )
+        end
+    finally
+        POM.close_parameter_store!(pstore)
+    end
+    return nothing
+end
+
+"""
+Union every partition's input rows for `model_name` into the main bundle, keyed by
+`(owner_id, owner_type, name)`: the main run never executes, so its bundle starts with no input
+rows, and each partition holds the windows of its own executions. A row already present in the
+destination is left alone (a re-join adds nothing).
+"""
+function _merge_decision_model_inputs!(
+    results::SimulationPartitionResults,
+    dst_store::HdfSimulationStore,
+    merged_indexes::Vector{Int},
+    model_name::Symbol,
+)
+    accumulated =
+        Dict{Tuple{Int64, String, String}, Dict{Dates.DateTime, Vector{Float64}}}()
+    for index in merged_indexes
+        bundle_dir = _partition_decision_bundle_dir(results, index, model_name)
+        pstore = POM.open_parameter_store(joinpath(bundle_dir, PSY.TIME_SERIES_FILE))
+        try
+            for md in POM.list_input_series(pstore)
+                ts = POM.read_input_time_series(pstore, md)
+                dest = get!(
+                    accumulated,
+                    (IS.get_owner_id(md), IS.get_owner_type(md), IS.get_name(md)),
+                    Dict{Dates.DateTime, Vector{Float64}}(),
+                )
+                merge!(dest, Dict{Dates.DateTime, Vector{Float64}}(IS.get_data(ts)))
+            end
+        finally
+            POM.close_parameter_store!(pstore)
+        end
+    end
+    isempty(accumulated) && return nothing
+    dst_params = get_decision_model_params(dst_store, model_name)
+    dst_bundle_dir = _bundle_dir(dst_store, model_name, get_system_uuid(dst_params))
+    pstore =
+        POM.open_parameter_store_writable(joinpath(dst_bundle_dir, PSY.TIME_SERIES_FILE))
+    try
+        for ((owner_id, owner_type, name), data) in accumulated
+            POM.write_input_forecast_row!(
+                pstore, owner_id, owner_type, name, data,
+                get_resolution(dst_params), get_interval(dst_params),
+            )
+        end
+    finally
+        POM.close_parameter_store!(pstore)
+    end
+    return nothing
+end
+
+"""Emulation counterpart: one `SingleTimeSeries` per `(owner, name)` over every partition's steps."""
+function _merge_emulation_model_inputs!(
+    results::SimulationPartitionResults,
+    dst_store::HdfSimulationStore,
+    merged_indexes::Vector{Int},
+)
+    accumulated = Dict{Tuple{Int64, String, String}, Dict{Dates.DateTime, Float64}}()
+    for index in merged_indexes
+        partition_dir = joinpath(_partition_path(results, index), STORE_DIR)
+        bundle_dir = open_store(HdfSimulationStore, partition_dir, "r") do src_store
+            return _emulation_bundle_dir(src_store)
+        end
+        pstore = POM.open_parameter_store(joinpath(bundle_dir, PSY.TIME_SERIES_FILE))
+        try
+            for md in POM.list_input_series(pstore)
+                ts = POM.read_input_time_series(pstore, md)
+                ta = IS.make_time_array(ts, IS.get_initial_timestamp(ts))
+                dest = get!(
+                    accumulated,
+                    (IS.get_owner_id(md), IS.get_owner_type(md), IS.get_name(md)),
+                    Dict{Dates.DateTime, Float64}(),
+                )
+                for (t, v) in zip(IS.TimeSeries.timestamp(ta), IS.TimeSeries.values(ta))
+                    dest[t] = v
+                end
+            end
+        finally
+            POM.close_parameter_store!(pstore)
+        end
+    end
+    isempty(accumulated) && return nothing
+    resolution = get_resolution(get_emulation_model_params(dst_store))
+    dst_bundle_dir = _emulation_bundle_dir(dst_store)
+    pstore =
+        POM.open_parameter_store_writable(joinpath(dst_bundle_dir, PSY.TIME_SERIES_FILE))
+    try
+        for ((owner_id, owner_type, name), by_time) in accumulated
+            timestamps = sort!(collect(keys(by_time)))
+            POM.write_input_series_row!(
+                pstore, owner_id, owner_type, name,
+                [by_time[t] for t in timestamps], first(timestamps), resolution,
             )
         end
     finally
