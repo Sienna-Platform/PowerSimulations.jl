@@ -404,8 +404,15 @@ end
         mv(status_backup, status_file; force = true)
     end
 
-    # With every job successful again, the join must succeed.
-    @test PSI.join_simulation(base_dir) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+    # With every job successful again, the join must succeed. It re-merges every partition: some
+    # (owner, name) input rows already hold a merged-bundle row from an earlier partial join
+    # above that cannot be appended to (write-once), so this re-join must report -- not silently
+    # drop -- the windows/timestamps it cannot add for them.
+    @test_logs(
+        (:warn, r"input series whose merged-bundle row already exists"),
+        match_mode = :any,
+        @test PSI.join_simulation(base_dir) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+    )
     @test PSI.deserialize_status(joined_status_path) ==
           PSI.RunStatus.SUCCESSFULLY_FINALIZED
 end
