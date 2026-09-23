@@ -404,15 +404,67 @@ end
         mv(status_backup, status_file; force = true)
     end
 
-    # With every job successful again, the join must succeed. It re-merges every partition: some
-    # (owner, name) input rows already hold a merged-bundle row from an earlier partial join
-    # above that cannot be appended to (write-once), so this re-join must report -- not silently
-    # drop -- the windows/timestamps it cannot add for them.
+    # With every job successful again, the join must succeed.
+    @test PSI.join_simulation(base_dir) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+    @test PSI.deserialize_status(joined_status_path) ==
+          PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    # The Emulator aggregator borrows one decision model's bundle (it has none of its own); that
+    # bundle must carry both a Deterministic input row (the decision model's own) and a
+    # SingleTimeSeries input row (the Emulator's) for devices both templates read -- proof that
+    # the type-scoped write-once fix (POM `_input_row_exists`) lets the two coexist instead of
+    # one silently blocking the other. Find which decision model that is rather than assuming.
+    emulator_model_name = PSI.open_store(
+        PSI.HdfSimulationStore,
+        joinpath(base_dir, PSI.STORE_DIR),
+        "r",
+    ) do store
+        em_bundle = PSI._emulation_bundle_dir(store)
+        for name in keys(store.params.decision_models_params)
+            params = PSI.get_decision_model_params(store, name)
+            PSI._bundle_dir(store, name, PSI.get_system_uuid(params)) == em_bundle &&
+                return name
+        end
+        return nothing
+    end
+    @test emulator_model_name !== nothing
+    final_results = SimulationResults(sim_dir, partition_name)
+    restored = get_system!(
+        get_decision_problem_results(final_results, string(emulator_model_name)),
+    )
+    input_rows = POM.list_input_series(POM.parameter_store_of(restored))
+    @test any(md -> IS.get_time_series_type(md) <: PSY.Deterministic, input_rows)
+    @test any(md -> IS.get_time_series_type(md) <: PSY.SingleTimeSeries, input_rows)
+    IS.close!(IS.get_data_store(restored.data))
+end
+
+@testset "_write_decision_model_inputs! warns instead of silently dropping new windows" begin
+    store = POM.ParameterTimeSeriesStore()
+    t0 = Dates.DateTime(2024, 1, 1)
+    resolution = Dates.Hour(1)
+    interval = Dates.Hour(24)
+    # Seed the destination with one window, as an earlier partial join would have written.
+    POM.write_input_forecast_row!(
+        store, 7, "RenewableDispatch", "max_active_power",
+        Dict(t0 => collect(1.0:24.0)), resolution, interval,
+    )
+    # This merge's accumulated data holds a second window the existing row lacks.
+    accumulated = Dict{Tuple{Int64, String, String}, Dict{Dates.DateTime, Vector{Float64}}}(
+        (7, "RenewableDispatch", "max_active_power") =>
+            Dict{Dates.DateTime, Vector{Float64}}(
+                t0 => collect(2.0:25.0),
+                t0 + interval => collect(3.0:26.0),
+            ),
+    )
     @test_logs(
         (:warn, r"input series whose merged-bundle row already exists"),
         match_mode = :any,
-        @test PSI.join_simulation(base_dir) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+        PSI._write_decision_model_inputs!(store, accumulated, :UC, resolution, interval),
     )
-    @test PSI.deserialize_status(joined_status_path) ==
-          PSI.RunStatus.SUCCESSFULLY_FINALIZED
+    # Write-once: the existing row is left exactly as it was, neither extended nor overwritten.
+    row = only(POM.list_input_series(store))
+    ts = POM.read_input_time_series(store, row)
+    @test collect(keys(IS.get_data(ts))) == [t0]
+    @test IS.get_data(ts)[t0] == collect(1.0:24.0)
+    POM.close_parameter_store!(store)
 end

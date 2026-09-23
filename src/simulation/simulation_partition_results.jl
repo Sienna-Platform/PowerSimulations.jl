@@ -657,13 +657,55 @@ function _warn_dropped_inputs(
 end
 
 """
+Diff `accumulated`'s decision-model input windows against what `pstore` already holds -- scoped
+to `Deterministic` rows only, so a `SingleTimeSeries` input row for the same `(owner_id, name)`
+(e.g. the Emulator aggregator's, in a bundle it borrows from this decision model) is a different
+series and neither blocks this write nor is mistaken for it -- and write every `(owner, name)`
+row (write-once: [`POM.write_input_forecast_row!`](@ref) is itself a no-op when the row already
+exists). Warns once via [`_warn_dropped_inputs`](@ref) when the accumulated windows for an
+already-existing row include some it lacks; see that docstring for why the row cannot simply be
+extended. The smallest real seam for testing the diff+write+warn behavior directly, without a
+full partition/store fixture.
+"""
+function _write_decision_model_inputs!(
+    pstore,
+    accumulated::Dict{Tuple{Int64, String, String}, Dict{Dates.DateTime, Vector{Float64}}},
+    model_name::Symbol,
+    resolution::Dates.Period,
+    interval::Dates.Period,
+)
+    existing = Dict{Tuple{Int64, String}, IS.TimeSeriesMetadata}(
+        (IS.get_owner_id(md), IS.get_name(md)) => md for
+        md in POM.list_input_series(pstore) if
+        IS.get_time_series_type(md) <: PSY.Deterministic
+    )
+    dropped = _DroppedInputRows()
+    for ((owner_id, owner_type, name), data) in accumulated
+        if haskey(existing, (owner_id, name))
+            existing_ts = POM.read_input_time_series(pstore, existing[(owner_id, name)])
+            new_times = setdiff(keys(data), keys(IS.get_data(existing_ts)))
+            isempty(new_times) ||
+                _record_drop!(dropped, owner_type, owner_id, name, length(new_times))
+        end
+        POM.write_input_forecast_row!(
+            pstore,
+            owner_id,
+            owner_type,
+            name,
+            data,
+            resolution,
+            interval,
+        )
+    end
+    _warn_dropped_inputs(dropped, model_name, "windows")
+    return nothing
+end
+
+"""
 Union every partition's input rows for `model_name` into the main bundle, keyed by
 `(owner_id, owner_type, name)`: the main run never executes, so its bundle starts with no input
-rows, and each partition holds the windows of its own executions. A row already present in the
-destination is left alone (write-once) -- a pure re-join (nothing new) adds nothing silently, but
-if this join's accumulated windows include any the existing row lacks, they are dropped and
-reported once via [`_warn_dropped_inputs`](@ref) rather than silently lost. See that docstring for
-why the row cannot simply be extended.
+rows, and each partition holds the windows of its own executions. Writing is
+[`_write_decision_model_inputs!`](@ref); see that docstring for the write-once/warn behavior.
 """
 function _merge_decision_model_inputs!(
     results::SimulationPartitionResults,
@@ -696,33 +738,59 @@ function _merge_decision_model_inputs!(
     pstore =
         POM.open_parameter_store_writable(joinpath(dst_bundle_dir, PSY.TIME_SERIES_FILE))
     try
-        existing = Dict{Tuple{Int64, String}, IS.TimeSeriesMetadata}(
-            (IS.get_owner_id(md), IS.get_name(md)) => md for
-            md in POM.list_input_series(pstore)
+        _write_decision_model_inputs!(
+            pstore, accumulated, model_name, get_resolution(dst_params),
+            get_interval(dst_params),
         )
-        dropped = _DroppedInputRows()
-        for ((owner_id, owner_type, name), data) in accumulated
-            if haskey(existing, (owner_id, name))
-                existing_ts = POM.read_input_time_series(pstore, existing[(owner_id, name)])
-                new_times = setdiff(keys(data), keys(IS.get_data(existing_ts)))
-                isempty(new_times) ||
-                    _record_drop!(dropped, owner_type, owner_id, name, length(new_times))
-            end
-            POM.write_input_forecast_row!(
-                pstore, owner_id, owner_type, name, data,
-                get_resolution(dst_params), get_interval(dst_params),
-            )
-        end
-        _warn_dropped_inputs(dropped, model_name, "windows")
     finally
         POM.close_parameter_store!(pstore)
     end
     return nothing
 end
 
-"""Emulation counterpart: one `SingleTimeSeries` per `(owner, name)` over every partition's steps.
-Same write-once limitation as [`_merge_decision_model_inputs!`](@ref); see
-[`_warn_dropped_inputs`](@ref)."""
+"""
+Emulation counterpart of [`_write_decision_model_inputs!`](@ref): diffs `accumulated`'s flat
+per-timestamp values against what `pstore` already holds -- scoped to `SingleTimeSeries` rows
+only, so a `Deterministic` input row for the same `(owner_id, name)` (e.g. a decision model's, in
+the bundle this Emulator aggregator borrows) is a different series and neither blocks this write
+nor is mistaken for it -- and writes every `(owner, name)` row (write-once via
+[`POM.write_input_series_row!`](@ref)). Warns once via [`_warn_dropped_inputs`](@ref) on any
+already-existing row missing some of the accumulated timestamps.
+"""
+function _write_emulation_model_inputs!(
+    pstore,
+    accumulated::Dict{Tuple{Int64, String, String}, Dict{Dates.DateTime, Float64}},
+    em_model_name::Symbol,
+    resolution::Dates.Period,
+)
+    existing = Dict{Tuple{Int64, String}, IS.TimeSeriesMetadata}(
+        (IS.get_owner_id(md), IS.get_name(md)) => md for
+        md in POM.list_input_series(pstore) if
+        IS.get_time_series_type(md) <: PSY.SingleTimeSeries
+    )
+    dropped = _DroppedInputRows()
+    for ((owner_id, owner_type, name), by_time) in accumulated
+        if haskey(existing, (owner_id, name))
+            existing_ts = POM.read_input_time_series(pstore, existing[(owner_id, name)])
+            existing_ta =
+                IS.make_time_array(existing_ts, IS.get_initial_timestamp(existing_ts))
+            new_times = setdiff(keys(by_time), IS.TimeSeries.timestamp(existing_ta))
+            isempty(new_times) ||
+                _record_drop!(dropped, owner_type, owner_id, name, length(new_times))
+        end
+        timestamps = sort!(collect(keys(by_time)))
+        POM.write_input_series_row!(
+            pstore, owner_id, owner_type, name,
+            [by_time[t] for t in timestamps], first(timestamps), resolution,
+        )
+    end
+    _warn_dropped_inputs(dropped, em_model_name, "timestamps")
+    return nothing
+end
+
+"""Emulation counterpart of [`_merge_decision_model_inputs!`](@ref): one `SingleTimeSeries` per
+`(owner, name)` over every partition's steps. Writing is
+[`_write_emulation_model_inputs!`](@ref)."""
 function _merge_emulation_model_inputs!(
     results::SimulationPartitionResults,
     dst_store::HdfSimulationStore,
@@ -758,28 +826,12 @@ function _merge_emulation_model_inputs!(
     pstore =
         POM.open_parameter_store_writable(joinpath(dst_bundle_dir, PSY.TIME_SERIES_FILE))
     try
-        existing = Dict{Tuple{Int64, String}, IS.TimeSeriesMetadata}(
-            (IS.get_owner_id(md), IS.get_name(md)) => md for
-            md in POM.list_input_series(pstore)
+        _write_emulation_model_inputs!(
+            pstore,
+            accumulated,
+            _em_model_name(dst_store),
+            resolution,
         )
-        dropped = _DroppedInputRows()
-        em_model_name = _em_model_name(dst_store)
-        for ((owner_id, owner_type, name), by_time) in accumulated
-            if haskey(existing, (owner_id, name))
-                existing_ts = POM.read_input_time_series(pstore, existing[(owner_id, name)])
-                existing_ta =
-                    IS.make_time_array(existing_ts, IS.get_initial_timestamp(existing_ts))
-                new_times = setdiff(keys(by_time), IS.TimeSeries.timestamp(existing_ta))
-                isempty(new_times) ||
-                    _record_drop!(dropped, owner_type, owner_id, name, length(new_times))
-            end
-            timestamps = sort!(collect(keys(by_time)))
-            POM.write_input_series_row!(
-                pstore, owner_id, owner_type, name,
-                [by_time[t] for t in timestamps], first(timestamps), resolution,
-            )
-        end
-        _warn_dropped_inputs(dropped, em_model_name, "timestamps")
     finally
         POM.close_parameter_store!(pstore)
     end
