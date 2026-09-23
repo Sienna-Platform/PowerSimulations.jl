@@ -39,6 +39,9 @@ mutable struct HdfSimulationStore <: SimulationStore
         OrderedDict{Dates.DateTime, DenseAxisArray{Float64, 2}},
     }
     input_descriptors::Dict{Tuple{Symbol, IOM.ParameterKey}, POM.InputSeriesDescriptor}
+    # Keys already warned about by the 3-D `_buffer_input_values!` arm, so a multi-execution
+    # simulation warns once per (model, key) instead of once per execution.
+    warned_3d_input_keys::Set{Tuple{Symbol, IOM.ParameterKey}}
     # Parameter keys have no HDF5-backed dataset to enumerate `keys(...)` from (unlike every
     # other container type), so `list_decision_model_keys`/`list_emulation_model_keys` read
     # this registry instead. Populated once, at `initialize_problem_storage!`; the per-step
@@ -116,6 +119,7 @@ function HdfSimulationStore(file_path::AbstractString, mode::AbstractString)
         }(),
         Dict{IOM.ParameterKey, OrderedDict{Dates.DateTime, DenseAxisArray{Float64, 2}}}(),
         Dict{Tuple{Symbol, IOM.ParameterKey}, POM.InputSeriesDescriptor}(),
+        Set{Tuple{Symbol, IOM.ParameterKey}}(),
         Dict{Symbol, Vector{IOM.ParameterKey}}(),
         IOM.ParameterKey[],
         Dict{
@@ -1658,15 +1662,21 @@ function _buffer_input_values!(
 end
 
 # A 3-D time-series parameter has no component-series shape; its multiplied values stay in
-# the result rows (POM's `write_model_inputs!` makes the same choice).
+# the result rows (POM's `write_model_inputs!` makes the same choice). Warns once per
+# (model, key), not once per execution.
 function _buffer_input_values!(
-    ::HdfSimulationStore,
+    store::HdfSimulationStore,
     ::IOM.AbstractOptimizationModel,
-    ::Symbol,
-    ::IOM.ParameterKey,
+    model_name::Symbol,
+    key::IOM.ParameterKey,
     ::Dates.DateTime,
     ::DenseAxisArray{Float64, 3},
 )
+    warn_key = (model_name, key)
+    if warn_key ∉ store.warned_3d_input_keys
+        push!(store.warned_3d_input_keys, warn_key)
+        @warn "$(encode_key_as_string(key)) is a 3-D time-series parameter; not recast into the bundle"
+    end
     return nothing
 end
 

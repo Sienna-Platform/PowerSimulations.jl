@@ -1178,6 +1178,20 @@ end
         @test haskey(p_rest, k)
         @test p_rest[k].data == p_orig[k].data
     end
+    @test solve!(from_original) == IOM.RunStatus.SUCCESSFULLY_FINALIZED
+    @test solve!(from_restored) == IOM.RunStatus.SUCCESSFULLY_FINALIZED
+    # Not `JuMP.objective_value(IOM.get_jump_model(...))`: this template's MILP (binary
+    # commitment) triggers IOM's post-solve dual re-solve (`calculate_dual_variables!`,
+    # `is_milp(container)` branch in `execute_optimizer!`), which replaces the container's
+    # JuMP model with the dual-computation one, so `get_jump_model` afterward reads
+    # `OPTIMIZE_NOT_CALLED`. `optimizer_stats.objective_value` is captured before that swap
+    # (`write_optimizer_stats!` runs first, "to avoid issues when getting duals from MILPs"),
+    # so `IOM.get_objective_value` on a fresh `OptimizationProblemOutputs` is the robust read.
+    @test isapprox(
+        IOM.get_objective_value(IOM.OptimizationProblemOutputs(from_restored)),
+        IOM.get_objective_value(IOM.OptimizationProblemOutputs(from_original));
+        rtol = 1e-6,
+    )
     _close_sidecar_store!(restored)
 end
 
