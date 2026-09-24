@@ -203,13 +203,13 @@ end
 # Note that this function is not type-stable.
 function _get_model_outputs(store::InMemorySimulationStore, model_name::Symbol)
     if model_name in keys(get_dm_data(store))
-        results = get_dm_data(store)
+        outputs = get_dm_data(store)
     else
         # TODO EmulationModel: this interface is TBD
         error("model name $model_name is not stored")
     end
 
-    return results[model_name]
+    return outputs[model_name]
 end
 
 function write_optimizer_stats!(

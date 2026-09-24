@@ -26,7 +26,7 @@ mutable struct SimulationProblemOutputs{T} <:
     store::Union{Nothing, SimulationStore}
     # Shared with every other SimulationProblemOutputs from the same SimulationOutputs (same
     # Dict instance, not a copy). A decision model's bundle-backed System, once loaded via
-    # `get_system!`, is registered here under its uuid so a sibling result (e.g. the Emulator,
+    # `get_system!`, is registered here under its uuid so a sibling output (e.g. the Emulator,
     # which borrows a decision model's bundle -- R31) can read that bundle's already-open
     # store instead of opening a second, colliding handle to the same sidecar file.
     system_registry::Dict{Base.UUID, POM.ParameterTimeSeriesStore}
@@ -74,18 +74,18 @@ IS.get_source_data(res::SimulationProblemOutputs) = get_system(res)  # Needed fo
 IOM.get_resolution(res::SimulationProblemOutputs) = res.resolution
 get_execution_path(res::SimulationProblemOutputs) = res.execution_path
 IOM.get_model_base_power(res::SimulationProblemOutputs) = res.base_power
-get_system_uuid(results::PSI.SimulationProblemOutputs) = results.system_uuid
-IS.get_timestamp(result::SimulationProblemOutputs) = result.outputs_timestamps
+get_system_uuid(outputs::PSI.SimulationProblemOutputs) = outputs.system_uuid
+IS.get_timestamp(output::SimulationProblemOutputs) = output.outputs_timestamps
 IOM.get_interval(res::SimulationProblemOutputs) = res.timestamps.step
-IOM.get_base_power(result::SimulationProblemOutputs) = result.base_power
+IOM.get_base_power(output::SimulationProblemOutputs) = output.base_power
 get_output_dir(res::SimulationProblemOutputs) = res.output_dir
 
-get_outputs_timestamps(result::SimulationProblemOutputs) = result.outputs_timestamps
+get_outputs_timestamps(output::SimulationProblemOutputs) = output.outputs_timestamps
 function set_outputs_timestamps!(
-    result::SimulationProblemOutputs,
+    output::SimulationProblemOutputs,
     outputs_timestamps::Vector{Dates.DateTime},
 )
-    result.outputs_timestamps = outputs_timestamps
+    output.outputs_timestamps = outputs_timestamps
 end
 
 list_output_keys(res::SimulationProblemOutputs, ::AuxVarKey) =
@@ -154,19 +154,19 @@ IOM.list_expression_names(res::SimulationProblemOutputs) =
 """
 Return a reference to a StepRange of available timestamps.
 """
-IOM.get_timestamps(result::SimulationProblemOutputs) = result.timestamps
+IOM.get_timestamps(output::SimulationProblemOutputs) = output.timestamps
 
 """
 Return the system used for the problem. If the system hasn't already been deserialized or
 set with [`set_system!`](@ref) then deserialize and store it.
 """
 function get_system!(
-    results::Union{IOM.OptimizationProblemOutputs, SimulationProblemOutputs};
+    outputs::Union{IOM.OptimizationProblemOutputs, SimulationProblemOutputs};
     kwargs...,
 )
-    !isnothing(get_system(results)) && return get_system(results)
+    !isnothing(get_system(outputs)) && return get_system(outputs)
 
-    bundle = locate_system_bundle(results)
+    bundle = locate_system_bundle(outputs)
     # This flag should remain unpublished because it should never be needed
     # by the general audience.
     if !get(kwargs, :use_system_fallback, false) && ispath(bundle)
@@ -174,48 +174,48 @@ function get_system!(
         # The OpenAPI document carries components and attributes, not system identity, so
         # `from_file` hands back a System with a fresh UUID. Restore the one this bundle was
         # named for, or the validating `set_system!` below rejects it as a mismatch.
-        PSY.set_system_uuid!(system, _expected_system_uuid(results))
+        PSY.set_system_uuid!(system, _expected_system_uuid(outputs))
         @info "De-serialized the system from files."
     else
-        system = get_system_fallback(results)
+        system = get_system_fallback(outputs)
     end
 
-    set_system!(results, system)
-    return get_system(results)
+    set_system!(outputs, system)
+    return get_system(outputs)
 end
 
-_expected_system_uuid(results::SimulationProblemOutputs) = results.system_uuid
-_expected_system_uuid(results::IOM.OptimizationProblemOutputs) =
-    get_source_data_uuid(results)
+_expected_system_uuid(outputs::SimulationProblemOutputs) = outputs.system_uuid
+_expected_system_uuid(outputs::IOM.OptimizationProblemOutputs) =
+    get_source_data_uuid(outputs)
 
-get_system_fallback(results::SimulationProblemOutputs) =
-    _deserialize_system(results, results.store)
-get_system_fallback(results::IOM.OptimizationProblemOutputs) =
+get_system_fallback(outputs::SimulationProblemOutputs) =
+    _deserialize_system(outputs, outputs.store)
+get_system_fallback(outputs::IOM.OptimizationProblemOutputs) =
     error("Could not locate system")
 
 # The `system-<uuid>` bundle PowerOperationsModels writes beside a model's outputs -- the only
 # form that carries the time series values, which the store's snapshot does not.
-locate_system_bundle(results::SimulationProblemOutputs) = joinpath(
-    get_execution_path(results),
+locate_system_bundle(outputs::SimulationProblemOutputs) = joinpath(
+    get_execution_path(outputs),
     "problems",
-    get_model_name(results),
-    IOM.make_system_dirname(results.system_uuid),
+    get_model_name(outputs),
+    IOM.make_system_dirname(outputs.system_uuid),
 )
 
-locate_system_bundle(results::IOM.OptimizationProblemOutputs) = joinpath(
-    get_output_dir(results),
-    IOM.make_system_dirname(get_source_data_uuid(results)),
+locate_system_bundle(outputs::IOM.OptimizationProblemOutputs) = joinpath(
+    get_output_dir(outputs),
+    IOM.make_system_dirname(get_source_data_uuid(outputs)),
 )
 
-set_system!(results::IOM.OptimizationProblemOutputs, system) =
-    set_source_data!(results, system)
+set_system!(outputs::IOM.OptimizationProblemOutputs, system) =
+    set_source_data!(outputs, system)
 
-# Only the in-memory store is kept on the results; an HDF store is reopened on demand.
+# Only the in-memory store is kept on the outputs; an HDF store is reopened on demand.
 _retained_store(::HdfSimulationStore) = nothing
 _retained_store(store::InMemorySimulationStore) = store
 
-function _deserialize_system(results::SimulationProblemOutputs, ::Nothing)
-    error("No System bundle at $(locate_system_bundle(results))")
+function _deserialize_system(outputs::SimulationProblemOutputs, ::Nothing)
+    error("No System bundle at $(locate_system_bundle(outputs))")
 end
 
 function _deserialize_system(::SimulationProblemOutputs, ::InMemorySimulationStore)
@@ -224,13 +224,13 @@ function _deserialize_system(::SimulationProblemOutputs, ::InMemorySimulationSto
 end
 
 """
-Set the system in the results instance.
+Set the system in the outputs instance.
 
 Throws InvalidValue if the system UUID is incorrect.
 
 # Arguments
 
-  - `results::SimulationProblemOutputs`: Results object
+  - `outputs::SimulationProblemOutputs`: Outputs object
   - `system::AbstractString`: Path to a serialized system -- a bundle directory, a `.json`
     document, or a `.sns` archive
 
@@ -240,26 +240,26 @@ Throws InvalidValue if the system UUID is incorrect.
 julia > set_system!(res, "my_path/system-\$(uuid)")
 ```
 """
-function set_system!(results::SimulationProblemOutputs, system::AbstractString)
-    set_system!(results, PSY.from_file(system))
+function set_system!(outputs::SimulationProblemOutputs, system::AbstractString)
+    set_system!(outputs, PSY.from_file(system))
 end
 
-function set_system!(results::SimulationProblemOutputs, system::PSY.System)
+function set_system!(outputs::SimulationProblemOutputs, system::PSY.System)
     sys_uuid = PSY.get_system_uuid(system)
-    if sys_uuid != results.system_uuid
+    if sys_uuid != outputs.system_uuid
         throw(
             IS.InvalidValue(
-                "System mismatch. $sys_uuid does not match the stored value of $(results.system_uuid)",
+                "System mismatch. $sys_uuid does not match the stored value of $(outputs.system_uuid)",
             ),
         )
     end
 
-    results.system = system
-    # Shared registry (R30): any sibling result reading the same bundle by uuid -- e.g. the
+    outputs.system = system
+    # Shared registry (R30): any sibling output reading the same bundle by uuid -- e.g. the
     # Emulator borrowing a decision model's bundle -- can reuse this already-open store
     # instead of opening a second, colliding handle. `_has_borrowed_store` verifies the
     # sidecar path before ever trusting an entry, so registering unconditionally here is safe.
-    results.system_registry[sys_uuid] = POM.parameter_store_of(system)
+    outputs.system_registry[sys_uuid] = POM.parameter_store_of(system)
     return
 end
 
@@ -283,16 +283,16 @@ end
 
 function IOM._deserialize_key(
     ::Type{<:OptimizationContainerKey},
-    results::SimulationProblemOutputs,
+    outputs::SimulationProblemOutputs,
     name::AbstractString,
 )
-    !haskey(results.values.container_key_lookup, name) && error("$name is not stored")
-    return results.values.container_key_lookup[name]
+    !haskey(outputs.values.container_key_lookup, name) && error("$name is not stored")
+    return outputs.values.container_key_lookup[name]
 end
 
 function IOM._deserialize_key(
     ::Type{T},
-    results::SimulationProblemOutputs,
+    outputs::SimulationProblemOutputs,
     args...,
 ) where {T <: OptimizationContainerKey}
     return make_key(T, args...)
@@ -304,9 +304,9 @@ get_container_fields(x::SimulationProblemOutputs) =
 """
 Return the final values for the requested variables for each time step for a problem.
 
-Decision problem results are returned in a Dict{String, Dict{DateTime, DataFrame}}.
+Decision problem outputs are returned in a Dict{String, Dict{DateTime, DataFrame}}.
 
-Emulation problem results are returned in a Dict{String, DataFrame}.
+Emulation problem outputs are returned in a Dict{String, DataFrame}.
 
 Limit the data sizes returned by specifying `start_time` and `len`.
 
@@ -319,8 +319,8 @@ See also [`load_outputs!`](@ref) to preload data into memory.
 
   - `variables::Vector{Union{String, Tuple}}`: Variable name as a string or a Tuple with
     variable type and device type. If not provided then return all variables.
-  - `start_time::Dates.DateTime`: Start time of the requested results.
-  - `len::Int`: Number of results (decision problems) or rows in each DataFrame (emulation
+  - `start_time::Dates.DateTime`: Start time of the requested outputs.
+  - `len::Int`: Number of outputs (decision problems) or rows in each DataFrame (emulation
     problems).
   - `table_format::TableFormat.Value`: Format of the table to be returned. Default is
     `TableFormat.LONG` where the columns are `DateTime`, `name`, and `value` when the data
@@ -337,9 +337,9 @@ julia> variables_as_strings =
     ["ActivePowerVariable__ThermalStandard", "ActivePowerVariable__RenewableDispatch"]
 julia> variables_as_types =
     [(ActivePowerVariable, ThermalStandard), (ActivePowerVariable, RenewableDispatch)]
-julia> df_long =read_realized_variables(results, variables_as_strings)
-julia> df_long = read_realized_variables(results, variables_as_types)
-julia> df_wide = read_realized_variables(results, variables_as_types, table_format = TableFormat.WIDE)
+julia> df_long =read_realized_variables(outputs, variables_as_strings)
+julia> df_long = read_realized_variables(outputs, variables_as_types)
+julia> df_wide = read_realized_variables(outputs, variables_as_types, table_format = TableFormat.WIDE)
 julia> using DataFramesMeta
 julia> df_agg_generators = @chain df_long begin
     @groupby(:DateTime)
@@ -387,9 +387,9 @@ end
 """
 Return the final values for the requested variable for each time step for a problem.
 
-Decision problem results are returned in a Dict{DateTime, DataFrame}.
+Decision problem outputs are returned in a Dict{DateTime, DataFrame}.
 
-Emulation problem results are returned in a DataFrame.
+Emulation problem outputs are returned in a DataFrame.
 
 Limit the data sizes returned by specifying `start_time` and `len`.
 
@@ -399,8 +399,8 @@ See also [`load_outputs!`](@ref) to preload data into memory.
 
   - `variable::Union{String, Tuple}`: Variable name as a string or a Tuple with
     variable type and device type.
-  - `start_time::Dates.DateTime`: Start time of the requested results.
-  - `len::Int`: Number of results (decision problems) or rows in each DataFrame (emulation
+  - `start_time::Dates.DateTime`: Start time of the requested outputs.
+  - `len::Int`: Number of outputs (decision problems) or rows in each DataFrame (emulation
     problems).
   - `table_format::TableFormat.Value`: Format of the table to be returned. Default is
     `TableFormat.LONG` where the columns are `DateTime`, `name`, and `value` when the data
@@ -412,9 +412,9 @@ See also [`load_outputs!`](@ref) to preload data into memory.
 # Examples
 
 ```julia
-julia > read_realized_variable(results, "ActivePowerVariable__ThermalStandard")
-julia > read_realized_variable(results, (ActivePowerVariable, ThermalStandard))
-julia > read_realized_variable(results, (ActivePowerVariable, ThermalStandard), table_format = TableFormat.WIDE)
+julia > read_realized_variable(outputs, "ActivePowerVariable__ThermalStandard")
+julia > read_realized_variable(outputs, (ActivePowerVariable, ThermalStandard))
+julia > read_realized_variable(outputs, (ActivePowerVariable, ThermalStandard), table_format = TableFormat.WIDE)
 ```
 """
 function read_realized_variable(
@@ -734,8 +734,9 @@ function _read_optimizer_stats(res::SimulationProblemOutputs, ::Nothing)
     end
 end
 
-# Chooses the user-passed store or results store for reading values. Either could be
+# Chooses the user-passed store or outputs store for reading values. Either could be
 # something or nothing. If both are nothing, we must open the HDF5 store.
-try_resolve_store(user::SimulationStore, results::Union{Nothing, SimulationStore}) = user
-try_resolve_store(user::Nothing, results::SimulationStore) = results
-try_resolve_store(user::Nothing, results::Nothing) = nothing
+try_resolve_store(user::SimulationStore, outputs_store::Union{Nothing, SimulationStore}) =
+    user
+try_resolve_store(user::Nothing, outputs_store::SimulationStore) = outputs_store
+try_resolve_store(user::Nothing, outputs_store::Nothing) = nothing

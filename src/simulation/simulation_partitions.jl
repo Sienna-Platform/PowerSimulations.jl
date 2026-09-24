@@ -110,8 +110,8 @@ Run one operation of a partitioned simulation from command-line arguments.
     to 0.
   - `--index=<n>`: Index of the partition to run. Required by `execute`.
   - `--skip-failures`: Only applies to `join`. Skip the partition jobs that failed and merge
-    the results of the successful jobs. `join` raises an error if any partition job failed
-    either way; if this is set, the results of the successful jobs are merged first. The
+    the outputs of the successful jobs. `join` raises an error if any partition job failed
+    either way; if this is set, the outputs of the successful jobs are merged first. The
     status of the joined simulation is a failure either way.
 """
 function process_simulation_partition_cli_args(build_function, execute_function, args...)
@@ -209,7 +209,7 @@ function process_simulation_partition_cli_args(build_function, execute_function,
         )
         if status != RunStatus.SUCCESSFULLY_FINALIZED
             error(
-                "The results of the successful partition jobs were merged, but the " *
+                "The outputs of the successful partition jobs were merged, but the " *
                 "status of the joined simulation is $status because one or more " *
                 "partition jobs failed.",
             )
@@ -236,7 +236,7 @@ _is_interrupt(_) = false
 Run a partitioned simulation in parallel on a local computer.
 
 Throw an exception if any partition fails. In that case a failed status is recorded in
-`<output_dir>/<name>/outputs/status.json` and the results of the successful partitions can
+`<output_dir>/<name>/outputs/status.json` and the outputs of the successful partitions can
 still be merged by calling
 `PowerSimulations.join_simulation(joinpath(output_dir, name); skip_failures = true)`.
 
@@ -323,8 +323,8 @@ function run_parallel_simulation(
         Distributed.pmap(PowerSimulations._run_parallel_simulation, jobs)
     catch e
         # Do not attempt the join; it would fail because at least one partition failed.
-        # Record the failure so that the results directory reports it — unless the user
-        # interrupted the run, which is not a simulation failure. The results of the
+        # Record the failure so that the outputs directory reports it — unless the user
+        # interrupted the run, which is not a simulation failure. The outputs of the
         # successful partitions can still be merged with
         # join_simulation(path; skip_failures = true).
         if !_is_interrupt(e)

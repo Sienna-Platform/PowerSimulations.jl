@@ -70,10 +70,10 @@ keyword.
 
 PSI runs built `DecisionModel`s and `EmulationModel`s in a loop over time: it decides execution
 order, moves data between models between solves, and produces **outputs** — the design rule this
-codebase follows is that modeling tools (IOM, POM, PSI, PowerFlows) produce outputs, and only
-`PowerAnalytics.jl` turns those outputs into *results*. Every PSI type and verb below uses
-"outputs" for that reason (`SimulationOutputs`, `SimulationProblemOutputs`, `write_output!`,
-`read_outputs`, …) — none of it is named "results" anymore.
+codebase follows is that modeling tools (IOM, POM, PSI, PowerFlows) produce outputs, and "results"
+is `PowerAnalytics.jl`'s term only. Every PSI type and verb below uses "outputs" for that reason
+(`SimulationOutputs`, `SimulationProblemOutputs`, `write_output!`, `read_outputs`, `execute!`'s
+`outputs_channel` keyword, `SimulationIntermediateOutput`, …).
 
 ## What PSI owns
 

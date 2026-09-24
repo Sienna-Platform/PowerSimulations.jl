@@ -691,7 +691,7 @@ end
 function _apply_warm_start!(model::IOM.AbstractOptimizationModel)
     container = get_optimization_container(model)
     # If the model was used to retrieve duals from an MILP the logic has to be different and
-    # the results need to be read from the primal cache
+    # the output values need to be read from the primal cache
     if isempty(container.primal_values_cache)
         jump_model = get_jump_model(container)
         all_vars = JuMP.all_variables(jump_model)
@@ -777,7 +777,7 @@ end
 
 function _update_simulation_state!(sim::Simulation, model::EmulationModel)
     # Order of these operations matters. Do not reverse.
-    # This will update the state with the results of the store first and then fill
+    # This will update the state with the outputs of the store first and then fill
     # the remaning values with the decision state.
     _update_system_state!(sim, model)
     _update_system_state!(sim, get_name(model))
@@ -1033,7 +1033,7 @@ function _execute!(
     exports = nothing,
     enable_progress_bar = progress_meter_enabled(),
     disable_timer_outputs = false,
-    results_channel = nothing,
+    outputs_channel = nothing,
 )
     @assert !isnothing(sim.internal)
 
@@ -1152,8 +1152,8 @@ function _execute!(
                 )
             end #execution problem timer
             progress_event.exec_time_s = time() - start_time
-            if !isnothing(results_channel)
-                put!(results_channel, SimulationIntermediateResult(progress_event))
+            if !isnothing(outputs_channel)
+                put!(outputs_channel, SimulationIntermediateOutput(progress_event))
             end
         end # execution order for loop
 
@@ -1174,7 +1174,7 @@ Solves the simulation model for sequential Simulations.
 
   - `sim::Simulation=sim`: simulation object created by Simulation()
 
-The optional keyword argument `exports` controls exporting of results to CSV files as
+The optional keyword argument `exports` controls exporting of outputs to CSV files as
 the simulation runs.
 
 # Example
@@ -1251,7 +1251,7 @@ function _empty_problem_caches!(sim::Simulation)
 end
 
 """
-Write each model's System as an outputs bundle beside its outputs — the document plus a store
+Write each model's System as a bundle beside its simulation outputs — the document plus a store
 holding the series its costs reference — so `get_system!` rebuilds a System whose costs
 resolve. Models sharing a System still get one bundle each, because the read side
 (`locate_system_bundle`) looks under the model's own `problems/<model>/` directory. The
@@ -1350,7 +1350,7 @@ function deserialize_status(outputs_path::AbstractString)
 end
 
 # The next two structs allow a parent process to monitor the simulation progress.
-# They may eventually be extended to pass result data back to the parent.
+# They may eventually be extended to pass output data back to the parent.
 
 Base.@kwdef mutable struct SimulationProgressEvent
     model_name::String
@@ -1361,6 +1361,6 @@ Base.@kwdef mutable struct SimulationProgressEvent
     exec_time_s::Float64
 end
 
-struct SimulationIntermediateResult
+struct SimulationIntermediateOutput
     progress_event::SimulationProgressEvent
 end

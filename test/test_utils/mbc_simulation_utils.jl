@@ -109,7 +109,7 @@ _set_formulations_helper(
 ) =
     set_device_model!(template, device_model)
 
-# Layer of indirection to upgrade problem results to look like simulation results
+# Layer of indirection to upgrade problem outputs to look like simulation outputs
 _maybe_upgrade_to_dict(input::AbstractDict) = input
 _maybe_upgrade_to_dict(input::DataFrame) =
     SortedDict{DateTime, DataFrame}(first(input[!, :DateTime]) => input)
@@ -307,7 +307,7 @@ function run_mbc_sim(
     # TODO make this more general as to which variables we're reading.
     # e.g. hydro.
 
-    # Test that breakpoint and slope parameters read from results match the
+    # Test that breakpoint and slope parameters read from outputs match the
     # ground truth from the system's offer curve time series.
     # The PowerLoadDispatch device formulation doesn't have
     # DecrementalCostAtMinParameter nor OnVariable.
@@ -328,7 +328,7 @@ function run_mbc_sim(
     sl_param = _maybe_upgrade_to_dict(read_parameter(res, sl_param_type, T))
 
     # We can compare the raw PiecewiseStepData values directly against read_parameter
-    # results because: (1) time-variant offer curve time series are always in natural units
+    # outputs because: (1) time-variant offer curve time series are always in natural units
     # (see PSY's cost_function_timeseries.jl), and (2) the parameter multiplier is 1.0 for
     # both slopes and breakpoints (see default_interface_methods.jl). Unit conversion via
     # get_piecewise_curve_per_system_unit only happens later when building expressions.

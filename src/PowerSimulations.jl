@@ -78,6 +78,7 @@ import InfrastructureOptimizationModels: COST_EPSILON
 # Unexported IOM surface PSI orchestrates with. Extend this block; never qualify at call sites.
 import InfrastructureOptimizationModels:
     get_store, get_status, set_status!, get_output_dir, set_output_dir!,
+    get_outputs_dir,
     get_run_status,
     is_synchronized, set_synchronized_status!, get_store_params,
     advance_execution_count!, get_execution_count, get_executions, set_executions!,

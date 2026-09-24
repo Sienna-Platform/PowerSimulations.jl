@@ -178,7 +178,7 @@ function run_iec_sim(sys::System, comp_name::String, ::Type{T};
         )
     end
 
-    # Test that breakpoint and slope parameters read from results match the
+    # Test that breakpoint and slope parameters read from outputs match the
     # ground truth from the system's offer curve time series.
     # We can compare raw PiecewiseStepData values directly because time-variant offer curve
     # time series are always in natural units and the parameter multiplier is 1.0

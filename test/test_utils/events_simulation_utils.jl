@@ -107,8 +107,8 @@ function run_fixed_forced_outage_sim_with_timeseries(;
     @test build_out == SimulationBuildStatus.BUILT
     execute_out = execute!(sim; in_memory = true)
     @test execute_out == IOM.RunStatus.SUCCESSFULLY_FINALIZED
-    results = SimulationOutputs(sim; ignore_status = true)
-    return results
+    outputs = SimulationOutputs(sim; ignore_status = true)
+    return outputs
 end
 
 function run_events_simulation(;
@@ -238,8 +238,8 @@ function run_events_simulation(;
     @test build_out == SimulationBuildStatus.BUILT
     execute_out = execute!(sim; in_memory = in_memory)
     @test execute_out == IOM.RunStatus.SUCCESSFULLY_FINALIZED
-    results = SimulationOutputs(sim; ignore_status = true)
-    return results
+    outputs = SimulationOutputs(sim; ignore_status = true)
+    return outputs
 end
 
 function test_event_outputs(;

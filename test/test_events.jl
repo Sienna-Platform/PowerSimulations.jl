@@ -19,7 +19,7 @@
         expected_power_recovery = DateTime("2024-01-01T22:00:00"),
         expected_on_variable_recovery = DateTime("2024-01-01T22:00:00"),
     )
-    #Test no ramping constraint in D2 model results
+    #Test no ramping constraint in D2 model outputs
     d2 = get_decision_problem_outputs(res, "D2")
     p_d2 =
         read_realized_variables(d2; table_format = TableFormat.WIDE)["ActivePowerVariable__ThermalStandard"]
@@ -47,7 +47,7 @@ end
         expected_power_recovery = DateTime("2024-01-01T22:00:00"),
         expected_on_variable_recovery = DateTime("2024-01-01T22:00:00"),
     )
-    #Test no ramping constraint in D2 model results
+    #Test no ramping constraint in D2 model outputs
     d2 = get_decision_problem_outputs(res, "D2")
     p_d2 =
         read_realized_variables(d2; table_format = TableFormat.WIDE)["ActivePowerVariable__ThermalStandard"]
@@ -80,7 +80,7 @@ end
         expected_power_recovery = DateTime("2024-01-01T22:00:00"),
         expected_on_variable_recovery = DateTime("2024-01-01T22:00:00"),
     )
-    #Test ramping constraint in D2 model results
+    #Test ramping constraint in D2 model outputs
     d2 = get_decision_problem_outputs(res, "D2")
     p_d2 =
         read_realized_variables(d2; table_format = TableFormat.WIDE)["ActivePowerVariable__ThermalStandard"]
@@ -155,7 +155,7 @@ end
         expected_power_recovery = DateTime("2024-01-01T22:00:00"),
         expected_on_variable_recovery = DateTime("2024-01-01T22:00:00"),
     )
-    #Test ramping constraint in D2 model results
+    #Test ramping constraint in D2 model outputs
     d2 = get_decision_problem_outputs(res, "D2")
     p_d2 =
         read_realized_variables(d2; table_format = TableFormat.WIDE)["ActivePowerVariable__ThermalStandard"]

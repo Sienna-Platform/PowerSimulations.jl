@@ -28,7 +28,7 @@ mutable struct HdfSimulationStore <: SimulationStore
         OrderedDict{Dates.DateTime, DenseAxisArray{Float64}},
     }
     # Raw (unmultiplied) time-series parameter values, per execution, recast at finalize into
-    # component-owned input series so the bundle's System can rebuild the model. Result rows
+    # component-owned input series so the bundle's System can rebuild the model. Output rows
     # keep the multiplied values under the synthetic owner. See `buffer_parameter_inputs!`.
     dm_input_windows::Dict{
         Symbol,
@@ -61,7 +61,7 @@ mutable struct HdfSimulationStore <: SimulationStore
     # A caller's own already-open `System` for a model's bundle (R30), keyed by system uuid.
     # Merged in from a `SimulationProblemOutputs`'s shared `system_registry` by
     # `_register_borrowed_stores!` (simulation_problem_outputs.jl) before a store read -- so
-    # this includes systems loaded through any sibling result from the same SimulationOutputs,
+    # this includes systems loaded through any sibling output from the same SimulationOutputs,
     # e.g. the Emulator borrowing a decision model's bundle (R31). When present for a uuid,
     # the parameter read path reads through it instead of opening a second handle to the same
     # sidecar (InfraStore allows only one) -- and never closes it, since it is owned by the
@@ -134,7 +134,7 @@ end
 """
 Construct and open an HdfSimulationStore.
 
-When reading or writing results in a program you should use the method that accepts a
+When reading or writing outputs in a program you should use the method that accepts a
 function in order to guarantee that the file handle gets closed.
 
 # Arguments
@@ -550,7 +550,7 @@ function _make_dataframe(data::Matrix{Float64}, columns::Tuple{Vector{String}})
 end
 
 """
-Return DataFrame, DenseAxisArray, or Array for a model result at a timestamp.
+Return DataFrame, DenseAxisArray, or Array for a model output at a timestamp.
 """
 function read_output(
     ::Type{DataFrames.DataFrame},
@@ -1298,7 +1298,7 @@ function _read_output(
 end
 
 """
-Write a decision model result for a timestamp to the store.
+Write a decision model output for a timestamp to the store.
 """
 function write_output!(
     store::HdfSimulationStore,
@@ -1331,7 +1331,7 @@ function write_output!(
 end
 
 """
-Write a decision model result for a timestamp to the store.
+Write a decision model output for a timestamp to the store.
 """
 function write_output!(
     store::HdfSimulationStore,
@@ -1370,7 +1370,7 @@ function write_output!(
 end
 
 """
-Write a decision-model result whose container is a `SparseAxisArray`. The
+Write a decision-model output whose container is a `SparseAxisArray`. The
 sparse container is flattened to a `(horizon × n_cols)` `Matrix{Float64}` via
 `to_matrix`, where columns are the unique non-time tuple keys (e.g. for
 post-contingency flows: `(outage_id, branch_name)`). Cache and HDF5 dataset
@@ -1399,7 +1399,7 @@ function write_output!(
 end
 
 """
-Write an emulation model result for an execution index value and the timestamp of the update
+Write an emulation model output for an execution index value and the timestamp of the update
 """
 function write_output!(
     store::HdfSimulationStore,
@@ -1663,7 +1663,7 @@ function _buffer_input_values!(
 end
 
 # A 3-D time-series parameter has no component-series shape; its multiplied values stay in
-# the result rows (POM's `write_model_inputs!` makes the same choice). Warns once per
+# the output rows (POM's `write_model_inputs!` makes the same choice). Warns once per
 # (model, key), not once per execution.
 function _buffer_input_values!(
     store::HdfSimulationStore,
@@ -1920,7 +1920,7 @@ end
 
 """
 Materialize the buffered parameter slabs into each model's bundle store. Runs once, when the
-simulation finishes writing results, before the store closes. Decision-model parameters become
+simulation finishes writing outputs, before the store closes. Decision-model parameters become
 forecast windows (one per execution); emulation-model parameters become one series per label
 over the executions. The raw input windows recast the same execution's values into
 component-owned series so the bundle's System can rebuild the model. Each model's sidecar is

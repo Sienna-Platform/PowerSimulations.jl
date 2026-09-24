@@ -211,15 +211,15 @@ function Base.show(io::IO, ::MIME"text/html", input::SimulationOutputs)
     )
 end
 
-function IOM._show_method(io::IO, results::SimulationOutputs, backend::Symbol; kwargs...)
+function IOM._show_method(io::IO, outputs::SimulationOutputs, backend::Symbol; kwargs...)
     header = ["Problem Name", "Initial Time", "Resolution", "Last Solution Timestamp"]
 
-    table = Matrix{Any}(undef, length(results.decision_problem_outputs), length(header))
-    for (ix, (key, result)) in enumerate(results.decision_problem_outputs)
+    table = Matrix{Any}(undef, length(outputs.decision_problem_outputs), length(header))
+    for (ix, (key, problem_output)) in enumerate(outputs.decision_problem_outputs)
         table[ix, 1] = key
-        table[ix, 2] = first(result.timestamps)
-        table[ix, 3] = Dates.canonicalize(result.resolution)
-        table[ix, 4] = last(result.timestamps)
+        table[ix, 2] = first(problem_output.timestamps)
+        table[ix, 3] = Dates.canonicalize(problem_output.resolution)
+        table[ix, 4] = last(problem_output.timestamps)
     end
     println(io)
     PrettyTables.pretty_table(
@@ -233,9 +233,9 @@ function IOM._show_method(io::IO, results::SimulationOutputs, backend::Symbol; k
 
     println(io)
     table = [
-        "Name" results.emulation_problem_outputs.problem
-        "Resolution" Dates.Minute(results.emulation_problem_outputs.resolution)
-        "Number of steps" length(results.emulation_problem_outputs.timestamps)
+        "Name" outputs.emulation_problem_outputs.problem
+        "Resolution" Dates.Minute(outputs.emulation_problem_outputs.resolution)
+        "Number of steps" length(outputs.emulation_problem_outputs.timestamps)
     ]
     PrettyTables.pretty_table(
         io,
@@ -265,15 +265,15 @@ end
 
 function IOM._show_method(
     io::IO,
-    results::SimulationProblemOutputs,
+    outputs::SimulationProblemOutputs,
     backend::Symbol;
     kwargs...,
 )
-    timestamps = get_timestamps(results)
+    timestamps = get_timestamps(outputs)
 
     # `get_resolution` returns `nothing` when there is a single timestamp (no
     # interval to diff), so guard against `Dates.Minute(nothing)`.
-    resolution = get_resolution(results)
+    resolution = get_resolution(outputs)
     resolution_str =
         isnothing(resolution) ? "N/A (single period)" :
         string(Dates.Minute(resolution))
@@ -289,14 +289,14 @@ function IOM._show_method(
     end
 
     values = Dict{String, Vector{String}}(
-        "Variables" => list_variable_names(results),
-        "Auxiliary variables" => list_aux_variable_names(results),
-        "Duals" => list_dual_names(results),
-        "Expressions" => list_expression_names(results),
-        "Parameters" => list_parameter_names(results),
+        "Variables" => list_variable_names(outputs),
+        "Auxiliary variables" => list_aux_variable_names(outputs),
+        "Duals" => list_dual_names(outputs),
+        "Expressions" => list_expression_names(outputs),
+        "Parameters" => list_parameter_names(outputs),
     )
 
-    name = results.problem
+    name = outputs.problem
 
     for (k, val) in values
         if !isempty(val)

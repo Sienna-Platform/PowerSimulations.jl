@@ -152,7 +152,7 @@ function _make_dataframe(
 end
 
 function get_realization(
-    results::Dict{OptimizationContainerKey, OutputsByTime{DataFrame}},
+    outputs::Dict{OptimizationContainerKey, OutputsByTime{DataFrame}},
     meta::RealizedMeta;
     table_format = TableFormat.LONG,
 )
@@ -160,8 +160,8 @@ function get_realization(
     lk = ReentrantLock()
     num_timestamps = length(meta.realized_timestamps)
     start = time()
-    Threads.@threads for key in collect(keys(results))
-        outputs_by_time = results[key]
+    Threads.@threads for key in collect(keys(outputs))
+        outputs_by_time = outputs[key]
         df = _make_dataframe(
             outputs_by_time,
             num_timestamps,
@@ -177,7 +177,7 @@ function get_realization(
     duration = time() - start
     if Threads.nthreads() == 1 && duration > 10.0
         @info "Time to read outputs: $duration seconds. You will likely get faster " *
-              "outputs by starting Julia with multiple threads."
+              "reads by starting Julia with multiple threads."
     end
     return realized_values
 end

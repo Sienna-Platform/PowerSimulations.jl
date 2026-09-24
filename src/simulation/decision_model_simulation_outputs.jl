@@ -268,8 +268,8 @@ Return the values for the requested variable. It keeps requests when performing 
 
   - `args`: Can be a string returned from [`list_variable_names`](@ref) or args that can be
     splatted into a VariableKey.
-  - `start_time::Dates.DateTime` : initial of the requested results
-  - `len::Int`: Number of results
+  - `start_time::Dates.DateTime` : initial of the requested outputs
+  - `len::Int`: Number of outputs
   - `store::SimulationStore`: a store that has been opened for reading
   - `table_format::TableFormat.Value`: Format of the table to be returned. Default is
     `TableFormat.LONG` where the columns are `DateTime`, `name`, and `value` when the data
@@ -281,9 +281,9 @@ Return the values for the requested variable. It keeps requests when performing 
 # Examples
 
 ```julia
-IOM.read_variable(results, ActivePowerVariable, ThermalStandard)
-IOM.read_variable(results, "ActivePowerVariable__ThermalStandard")
-IOM.read_variable(results, "ActivePowerVariable__ThermalStandard", table_format = TableFormat.WIDE)
+IOM.read_variable(outputs, ActivePowerVariable, ThermalStandard)
+IOM.read_variable(outputs, "ActivePowerVariable__ThermalStandard")
+IOM.read_variable(outputs, "ActivePowerVariable__ThermalStandard", table_format = TableFormat.WIDE)
 ```
 """
 function IOM.read_variable(
@@ -309,8 +309,8 @@ Return the values for the requested dual. It keeps requests when performing mult
 
   - `args`: Can be a string returned from [`list_dual_names`](@ref) or args that can be
     splatted into a ConstraintKey.
-  - `start_time::Dates.DateTime` : initial of the requested results
-  - `len::Int`: Number of results
+  - `start_time::Dates.DateTime` : initial of the requested outputs
+  - `len::Int`: Number of outputs
   - `store::SimulationStore`: a store that has been opened for reading
   - `table_format::TableFormat.Value`: Format of the table to be returned. Default is
     `TableFormat.LONG` where the columns are `DateTime`, `name`, and `value` when the data
@@ -342,8 +342,8 @@ Return the values for the requested parameter. It keeps requests when performing
 
   - `args`: Can be a string returned from [`list_parameter_names`](@ref) or args that can be
     splatted into a ParameterKey.
-  - `start_time::Dates.DateTime` : initial of the requested results
-  - `len::Int`: Number of results
+  - `start_time::Dates.DateTime` : initial of the requested outputs
+  - `len::Int`: Number of outputs
   - `table_format::TableFormat.Value`: Format of the table to be returned. Default is
     `TableFormat.LONG` where the columns are `DateTime`, `name`, and `value` when the data
     has two dimensions and `DateTime`, `name`, `name2`, and `value` when the data has three
@@ -374,8 +374,8 @@ Return the values for the requested auxillary variables. It keeps requests when 
 
   - `args`: Can be a string returned from [`list_aux_variable_names`](@ref) or args that can be
     splatted into a AuxVarKey.
-  - `start_time::Dates.DateTime` : initial of the requested results
-  - `len::Int`: Number of results
+  - `start_time::Dates.DateTime` : initial of the requested outputs
+  - `len::Int`: Number of outputs
 """
 function IOM.read_aux_variable(
     res::SimulationProblemOutputs{DecisionModelSimulationOutputs},
@@ -400,8 +400,8 @@ Return the values for the requested auxillary variables. It keeps requests when 
 
   - `args`: Can be a string returned from [`list_expression_names`](@ref) or args that can be
     splatted into a ExpressionKey.
-  - `start_time::Dates.DateTime` : initial of the requested results
-  - `len::Int`: Number of results
+  - `start_time::Dates.DateTime` : initial of the requested outputs
+  - `len::Int`: Number of outputs
 """
 function IOM.read_expression(
     res::SimulationProblemOutputs{DecisionModelSimulationOutputs},
@@ -444,7 +444,7 @@ function IOM.get_realized_timestamps(
     invalid_timestamps = setdiff(requested_range, available_range)
 
     if !isempty(invalid_timestamps)
-        msg = "Requested time does not match available results"
+        msg = "Requested time does not match available outputs"
         @error msg
         throw(IS.InvalidValue(msg))
     end
@@ -453,17 +453,17 @@ function IOM.get_realized_timestamps(
 end
 
 """
-High-level function to read a DataFrame of results.
+High-level function to read a DataFrame of outputs.
 
 # Arguments
 
-  - `res`: the results to read.
+  - `res`: the outputs to read.
   - `output_keys::Vector{<:OptimizationContainerKey}`: the keys to read. Output will be a
     `Dict{OptimizationContainerKey, DataFrame}` with these as the keys
   - `start_time::Union{Nothing, Dates.DateTime} = nothing`: the time at which the resulting
-    time series should begin; `nothing` indicates the first time in the results
+    time series should begin; `nothing` indicates the first time in the outputs
   - `len::Union{Int, Nothing} = nothing`: the number of steps in the resulting time series;
-    `nothing` indicates up to the end of the results
+    `nothing` indicates up to the end of the outputs
   - `cols::Union{Colon, Vector{String}} = (:)`: which columns to fetch; defaults to `:`,
     i.e., all the columns
 """

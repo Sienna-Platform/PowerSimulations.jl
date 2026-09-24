@@ -139,7 +139,7 @@ function _get_store_value(
     table_format = TableFormat.LONG,
 )
     base_power = res.base_power
-    results = Dict{OptimizationContainerKey, DataFrames.DataFrame}()
+    outputs = Dict{OptimizationContainerKey, DataFrames.DataFrame}()
     for key in container_keys
         start_time, _len, resolution = _check_offsets(res, key, store, start_time, len)
         start_index = (start_time - first(res.timestamps)) ÷ resolution + 1
@@ -151,10 +151,10 @@ function _get_store_value(
         # We could make an optimized version of this that reads Arrays
         # like decision_model_simulation_outputs
         timestamps = range(start_time; length = _len, step = res.resolution)
-        results[key] = to_outputs_dataframe(array, timestamps, Val(table_format))
+        outputs[key] = to_outputs_dataframe(array, timestamps, Val(table_format))
     end
 
-    return results
+    return outputs
 end
 
 function _check_offsets(
@@ -172,7 +172,7 @@ function _check_offsets(
     elseif start_time < first(res.timestamps) || start_time > last(res.timestamps)
         throw(
             IS.InvalidValue(
-                "start_time = $start_time is not in the results range $(res.timestamps)",
+                "start_time = $start_time is not in the outputs range $(res.timestamps)",
             ),
         )
     elseif (start_time - first(res.timestamps)) % resolution != Dates.Millisecond(0)
@@ -188,7 +188,7 @@ function _check_offsets(
     elseif start_time + resolution * len > last(res.timestamps) + res.resolution
         throw(
             IS.InvalidValue(
-                "len = $len resolution = $resolution exceeds the results range $(res.timestamps)",
+                "len = $len resolution = $resolution exceeds the outputs range $(res.timestamps)",
             ),
         )
     end

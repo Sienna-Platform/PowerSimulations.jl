@@ -7,7 +7,7 @@
 #    cleanup inside catch blocks are best-effort: guarded by one try/catch that logs and
 #    continues, and never allowed to replace the original exception.
 # 3. A missing partition status.json means that the partition job failed. Any other error
-#    while reading partition results (permissions, parse errors, wrong paths) indicates a
+#    while reading partition outputs (permissions, parse errors, wrong paths) indicates a
 #    problem with this process or environment and propagates instead of being reclassified
 #    as a partition failure. The one exception: with skip_failures = true, a partition
 #    store file that cannot be opened is skipped, because recovering from corrupted
@@ -49,38 +49,38 @@ Throw an exception if any partition job failed, unless `skip_failures` is `true`
 
   - `path::AbstractString`: Directory of the main simulation.
   - `skip_failures::Bool`: If `true`, log and skip the store files of the partition jobs
-    that failed or cannot be opened and merge the results of the successful jobs. The
+    that failed or cannot be opened and merge the outputs of the successful jobs. The
     status of the joined simulation is `RunStatus.FAILED` whenever any partition job
     failed, regardless of this setting.
 """
 function join_simulation(path::AbstractString; skip_failures = false)
-    results = SimulationPartitionOutputs(path)
-    return join_simulation(results; skip_failures = skip_failures)
+    outputs = SimulationPartitionOutputs(path)
+    return join_simulation(outputs; skip_failures = skip_failures)
 end
 
-function join_simulation(results::SimulationPartitionOutputs; skip_failures = false)
-    failed_partitions = _check_jobs(results)
+function join_simulation(outputs::SimulationPartitionOutputs; skip_failures = false)
+    failed_partitions = _check_jobs(outputs)
     if !isempty(failed_partitions) && !skip_failures
-        _try_serialize_failed_status(joinpath(results.path, OUTPUTS_DIR))
+        _try_serialize_failed_status(joinpath(outputs.path, OUTPUTS_DIR))
         error(
             "These partition jobs were not successful: $failed_partitions. " *
             "Refer to the log messages above for the affected simulation steps. " *
             "Pass skip_failures = true (--skip-failures on the command line) to skip the " *
-            "failed jobs and merge the results of the successful jobs.",
+            "failed jobs and merge the outputs of the successful jobs.",
         )
     end
 
     not_merged = try
-        _merge_store_files!(results, Set(failed_partitions), skip_failures)
+        _merge_store_files!(outputs, Set(failed_partitions), skip_failures)
     catch
         # Best effort to keep the outputs usable: record the failure and, because the
         # merge may have partially completed, recompute the store file hash so that
         # SimulationOutputs(path; ignore_status = true) still works. Nothing here may
         # mask the original exception.
         try
-            _complete(results, RunStatus.FAILED)
+            _complete(outputs, RunStatus.FAILED)
         catch cleanup_e
-            @error "Failed to finalize the results of the failed join" exception =
+            @error "Failed to finalize the outputs of the failed join" exception =
                 (cleanup_e, catch_backtrace())
         end
         rethrow()
@@ -91,7 +91,7 @@ function join_simulation(results::SimulationPartitionOutputs; skip_failures = fa
     else
         RunStatus.FAILED
     end
-    _complete(results, status)
+    _complete(outputs, status)
     return status
 end
 
@@ -123,10 +123,10 @@ end
 Return the indexes of the partition jobs that were not successful. Log an error message
 for each one of them.
 """
-function _check_jobs(results::SimulationPartitionOutputs)
+function _check_jobs(outputs::SimulationPartitionOutputs)
     failed_jobs = Int[]
-    for i in 1:get_num_partitions(results.partitions)
-        status_dir = joinpath(_partition_path(results, i), OUTPUTS_DIR)
+    for i in 1:get_num_partitions(outputs.partitions)
+        status_dir = joinpath(_partition_path(outputs, i), OUTPUTS_DIR)
         # A missing status file means that the job died before recording its status. Any
         # other error reading a status (permissions, parse errors) indicates a problem
         # with this process or environment, not with the partition job, and propagates
@@ -140,7 +140,7 @@ function _check_jobs(results::SimulationPartitionOutputs)
         end
         if status != RunStatus.SUCCESSFULLY_FINALIZED
             @error "Partition job index = $i was not successful: status = $status. " *
-                   "Results for steps = $(_valid_step_range(results, i)) will be invalid " *
+                   "Outputs for steps = $(_valid_step_range(outputs, i)) will be invalid " *
                    "in the merged store."
             push!(failed_jobs, i)
         end
@@ -158,51 +158,51 @@ the partitions whose store files cannot be opened; otherwise, propagate the exce
 Errors raised after a store file has been opened always propagate.
 """
 function _merge_store_files!(
-    results::SimulationPartitionOutputs,
+    outputs::SimulationPartitionOutputs,
     skip_indexes::Set{Int},
     skip_failures::Bool,
 )
     not_merged = Int[]
-    HDF5.h5open(_store_path(results), "r+") do dst
-        for i in 1:get_num_partitions(results.partitions)
+    HDF5.h5open(_store_path(outputs), "r+") do dst
+        for i in 1:get_num_partitions(outputs.partitions)
             if i in skip_indexes
                 @warn "Skip the store file of the failed partition job index = $i. " *
-                      "Results for steps = $(_valid_step_range(results, i)) will be " *
+                      "Outputs for steps = $(_valid_step_range(outputs, i)) will be " *
                       "invalid in the merged store."
                 push!(not_merged, i)
                 continue
             end
             src = try
-                HDF5.h5open(joinpath(_partition_path(results, i), _store_subpath()), "r")
+                HDF5.h5open(joinpath(_partition_path(outputs, i), _store_subpath()), "r")
             catch e
                 (!skip_failures || e isa InterruptException) && rethrow()
                 push!(not_merged, i)
                 @error "Failed to open the store file of partition job index = $i. " *
-                       "The file is missing or corrupted. Results for " *
-                       "steps = $(_valid_step_range(results, i)) will be invalid in " *
+                       "The file is missing or corrupted. Outputs for " *
+                       "steps = $(_valid_step_range(outputs, i)) will be invalid in " *
                        "the merged store." exception = (e, catch_backtrace())
                 continue
             end
             try
-                _copy_datasets!(results, i, src, dst)
+                _copy_datasets!(outputs, i, src, dst)
             finally
                 close(src)
             end
         end
     end
-    _merge_parameter_stores!(results, not_merged)
+    _merge_parameter_stores!(outputs, not_merged)
     return not_merged
 end
 
 function _copy_datasets!(
-    results::SimulationPartitionOutputs,
+    outputs::SimulationPartitionOutputs,
     index::Int,
     src::HDF5.File,
     dst::HDF5.File,
 )
     # A dataset present in only one of the stores means that the partition was built
     # differently than the main simulation; merging would silently produce incomplete
-    # results in one direction and leave a region of the destination unwritten in the
+    # outputs in one direction and leave a region of the destination unwritten in the
     # other.
     function check_matching_names(group_path)
         src_names = sort!(keys(src[group_path]))
@@ -220,7 +220,7 @@ function _copy_datasets!(
     function process_dataset(dst_dataset, merge_func)
         name = HDF5.name(dst_dataset)
         if !endswith(name, "__columns")
-            merge_func(results, index, src[name], dst_dataset)
+            merge_func(outputs, index, src[name], dst_dataset)
         end
     end
 
@@ -260,23 +260,23 @@ InfraStore, not an HDF5 dataset (Task 8+9) -- and the main simulation folder of 
 run never executes, so its bundle sidecars start with zero parameter rows. This reads every
 merged partition's bundle sidecar for every parameter key the model wrote, accumulates the
 disjoint per-step windows/values across partitions (each partition covers its own steps), and
-writes the combined result into the main bundle once per model. A skipped or failed partition
+writes the combined output into the main bundle once per model. A skipped or failed partition
 (`not_merged`, already warned about by `_merge_store_files!`) contributes nothing, exactly
 like its region of the HDF5 store is left invalid.
 """
 function _merge_parameter_stores!(
-    results::SimulationPartitionOutputs,
+    outputs::SimulationPartitionOutputs,
     not_merged::Vector{Int},
 )
-    merged_indexes = setdiff(1:get_num_partitions(results.partitions), not_merged)
+    merged_indexes = setdiff(1:get_num_partitions(outputs.partitions), not_merged)
     isempty(merged_indexes) && return nothing
 
-    open_store(HdfSimulationStore, joinpath(results.path, STORE_DIR), "r") do dst_store
+    open_store(HdfSimulationStore, joinpath(outputs.path, STORE_DIR), "r") do dst_store
         for model_name in keys(dst_store.params.decision_models_params)
-            _merge_decision_model_bundle!(results, dst_store, model_name, merged_indexes)
+            _merge_decision_model_bundle!(outputs, dst_store, model_name, merged_indexes)
         end
         isempty(dst_store.params.emulation_model_params) ||
-            _merge_emulation_model_bundle!(results, dst_store, merged_indexes)
+            _merge_emulation_model_bundle!(outputs, dst_store, merged_indexes)
     end
     return nothing
 end
@@ -322,7 +322,7 @@ Writing them is [`_write_decision_model_inputs!`](@ref); see that docstring for 
 write-once/warn behavior.
 """
 function _merge_decision_model_bundle!(
-    results::SimulationPartitionOutputs,
+    outputs::SimulationPartitionOutputs,
     dst_store::HdfSimulationStore,
     model_name::Symbol,
     merged_indexes::Vector{Int},
@@ -337,7 +337,7 @@ function _merge_decision_model_bundle!(
     accumulated_inputs =
         Dict{Tuple{Int64, String, String}, Dict{Dates.DateTime, Vector{Float64}}}()
     for index in merged_indexes
-        partition_dir = joinpath(_partition_path(results, index), STORE_DIR)
+        partition_dir = joinpath(_partition_path(outputs, index), STORE_DIR)
         sidecar_path = open_store(HdfSimulationStore, partition_dir, "r") do src_store
             params = get_decision_model_params(src_store, model_name)
             return _dm_sidecar_path(src_store, model_name, get_system_uuid(params))
@@ -445,12 +445,12 @@ Shared by the decision-model (window) and emulation-model (series) merges.
 function _new_rows_by_label(merged_by_label, existing_by_label)
     isempty(existing_by_label) && return merged_by_label
     existing_times = _existing_times(existing_by_label)
-    result = empty(merged_by_label)
+    output = empty(merged_by_label)
     for (label, by_time) in merged_by_label
         new_by_time = filter(p -> !(p.first in existing_times), by_time)
-        isempty(new_by_time) || (result[label] = new_by_time)
+        isempty(new_by_time) || (output[label] = new_by_time)
     end
-    return result
+    return output
 end
 
 """
@@ -496,7 +496,7 @@ never has a `problems/<name>/` directory of its own. Input rows are unioned as o
 [`_write_emulation_model_inputs!`](@ref).
 """
 function _merge_emulation_model_bundle!(
-    results::SimulationPartitionOutputs,
+    outputs::SimulationPartitionOutputs,
     dst_store::HdfSimulationStore,
     merged_indexes::Vector{Int},
 )
@@ -509,7 +509,7 @@ function _merge_emulation_model_bundle!(
         )
     accumulated_inputs = Dict{Tuple{Int64, String, String}, Dict{Dates.DateTime, Float64}}()
     for index in merged_indexes
-        partition_dir = joinpath(_partition_path(results, index), STORE_DIR)
+        partition_dir = joinpath(_partition_path(outputs, index), STORE_DIR)
         sidecar_path = open_store(HdfSimulationStore, partition_dir, "r") do src_store
             return _em_sidecar_path(src_store)
         end
@@ -597,7 +597,7 @@ owner id is not something IS exposes publicly (removal-and-rewrite is out of sco
 once a row exists for an `(owner, name)`, a later partition that contributes new
 windows/timestamps for that same `(owner, name)` -- e.g. one that transitioned from
 failed/skipped to successful between two `join_simulation` calls -- cannot be appended to it.
-The parameter *result* rows (under the synthetic owner) are unaffected; only the merged
+The parameter *output* rows (under the synthetic owner) are unaffected; only the merged
 System's recast input series omit these points.
 """
 function _warn_dropped_inputs(
@@ -610,7 +610,7 @@ function _warn_dropped_inputs(
           "input series whose merged-bundle row already exists for a different set of " *
           "$point_label than this join contributes ($(sum(last, dropped)) $point_label total, " *
           "e.g. $(first(dropped, 5))); write-once semantics keep the existing row, so the " *
-          "merged System's input series omit them for these owners. Results read from the " *
+          "merged System's input series omit them for these owners. Outputs read from the " *
           "parameter rows are unaffected."
     return nothing
 end
@@ -620,7 +620,7 @@ Diff `accumulated`'s decision-model input windows against what `pstore` already 
 to `Deterministic` rows only, so a `SingleTimeSeries` input row for the same `(owner_id, name)`
 (e.g. the Emulator aggregator's, in a bundle it borrows from this decision model) is a different
 series and neither blocks this write nor is mistaken for it -- and write every `(owner, name)`
-row (write-once: [`POM.write_input_forecast_row!`](@ref) is itself a no-op when the row already
+row (write-once: `POM.write_input_forecast_row!` is itself a no-op when the row already
 exists). Warns once via [`_warn_dropped_inputs`](@ref) when the accumulated windows for an
 already-existing row include some it lacks; see that docstring for why the row cannot simply be
 extended. The smallest real seam for testing the diff+write+warn behavior directly, without a
@@ -666,7 +666,7 @@ per-timestamp values against what `pstore` already holds -- scoped to `SingleTim
 only, so a `Deterministic` input row for the same `(owner_id, name)` (e.g. a decision model's, in
 the bundle this Emulator aggregator borrows) is a different series and neither blocks this write
 nor is mistaken for it -- and writes every `(owner, name)` row (write-once via
-[`POM.write_input_series_row!`](@ref)). Warns once via [`_warn_dropped_inputs`](@ref) on any
+`POM.write_input_series_row!`). Warns once via [`_warn_dropped_inputs`](@ref) on any
 already-existing row missing some of the accumulated timestamps.
 """
 function _write_emulation_model_inputs!(
@@ -706,22 +706,22 @@ the partition with the given index. `src_size` and `dst_size` are the sizes of t
 datasets in that dimension.
 """
 function _merge_ranges(
-    results::SimulationPartitionOutputs,
+    outputs::SimulationPartitionOutputs,
     index::Int,
     src_size::Int,
     dst_size::Int,
 )
-    step_range = get_absolute_step_range(results.partitions, index)
+    step_range = get_absolute_step_range(outputs.partitions, index)
     IS.@assert_op src_size % length(step_range) == 0
     per_step = src_size ÷ length(step_range)
     # Guarantees that the absolute destination offsets computed below are in bounds and
     # consistent across all partitions.
-    IS.@assert_op per_step * results.partitions.num_steps == dst_size
+    IS.@assert_op per_step * outputs.partitions.num_steps == dst_size
     # Compute both offsets from the same absolute range of valid steps so that they
     # cannot drift apart, and compute the destination offset from absolute steps rather
     # than from a running write position so that a skipped (corrupted) partition does
     # not shift the data of subsequent partitions.
-    valid_range = _valid_step_range(results, index)
+    valid_range = _valid_step_range(outputs, index)
     len = length(valid_range) * per_step
     src_start = 1 + per_step * (first(valid_range) - first(step_range))
     dst_start = (first(valid_range) - 1) * per_step + 1
@@ -730,13 +730,13 @@ end
 
 # Emulation model datasets grow along the first dimension; decision model datasets grow
 # along the last dimension.
-_merge_dataset_columns!(results::SimulationPartitionOutputs, index, src, dst) =
-    _merge_dataset!(results, index, src, dst, 1, (2,))
-_merge_dataset_rows!(results::SimulationPartitionOutputs, index, src, dst) =
-    _merge_dataset!(results, index, src, dst, ndims(dst), (2, 3))
+_merge_dataset_columns!(outputs::SimulationPartitionOutputs, index, src, dst) =
+    _merge_dataset!(outputs, index, src, dst, 1, (2,))
+_merge_dataset_rows!(outputs::SimulationPartitionOutputs, index, src, dst) =
+    _merge_dataset!(outputs, index, src, dst, ndims(dst), (2, 3))
 
 function _merge_dataset!(
-    results::SimulationPartitionOutputs,
+    outputs::SimulationPartitionOutputs,
     index,
     src,
     dst,
@@ -750,16 +750,16 @@ function _merge_dataset!(
         IS.@assert_op size(src)[dim] == size(dst)[dim]
     end
     src_range, dst_range =
-        _merge_ranges(results, index, size(src)[step_dim], size(dst)[step_dim])
+        _merge_ranges(outputs, index, size(src)[step_dim], size(dst)[step_dim])
     src_indexes = ntuple(d -> d == step_dim ? src_range : Colon(), ndims(dst))
     dst_indexes = ntuple(d -> d == step_dim ? dst_range : Colon(), ndims(dst))
     dst[dst_indexes...] = src[src_indexes...]
     return
 end
 
-function _complete(results::SimulationPartitionOutputs, status)
-    serialize_status(status, joinpath(results.path, OUTPUTS_DIR))
-    store_path = _store_path(results)
+function _complete(outputs::SimulationPartitionOutputs, status)
+    serialize_status(status, joinpath(outputs.path, OUTPUTS_DIR))
+    store_path = _store_path(outputs)
     # The store may not exist if the merge failed before it could be opened.
     isfile(store_path) && IS.compute_file_hash(dirname(store_path), basename(store_path))
     return

@@ -87,13 +87,13 @@ function SimulationOutputs(
         error("No valid simulation in $execution_path: execution = $execution")
     end
 
-    @info "Loading simulation results from $execution_path"
+    @info "Loading simulation outputs from $execution_path"
     status = deserialize_status(joinpath(execution_path, OUTPUTS_DIR))
     _check_status(status, ignore_status)
 
     if !check_folder_integrity(execution_path)
-        @warn "The results folder $(execution_path) is not consistent with the default folder structure. " *
-              "This can lead to errors or unwanted results."
+        @warn "The outputs folder $(execution_path) is not consistent with the default folder structure. " *
+              "This can lead to errors or unwanted outputs."
     end
 
     simulation_store_path = joinpath(execution_path, STORE_DIR)
@@ -104,7 +104,7 @@ function SimulationOutputs(
             Dict{String, SimulationProblemOutputs{DecisionModelSimulationOutputs}}()
         sim_params = get_params(store)
         container_key_lookup = get_container_key_lookup(store)
-        # Shared across every decision and emulation result below (R30/R31): one System
+        # Shared across every decision and emulation output below (R30/R31): one System
         # loaded through any of them becomes readable by all the others via
         # `_register_borrowed_stores!`.
         system_registry = Dict{Base.UUID, POM.ParameterTimeSeriesStore}()
@@ -159,7 +159,7 @@ function SimulationOutputs(sim::Simulation; ignore_status = false, kwargs...)
     sim_params = get_params(store)
     models = get_models(sim)
     container_key_lookup = get_container_key_lookup(store)
-    # Shared across every decision and emulation result below (R30/R31): one System
+    # Shared across every decision and emulation output below (R30/R31): one System
     # loaded through any of them becomes readable by all the others via
     # `_register_borrowed_stores!`. Constructed empty here -- the `system` kwarg below is
     # each model's live, in-memory System, which predates `finalize_parameters!` and is not
@@ -231,19 +231,19 @@ Return SimulationProblemOutputs corresponding to a SimulationOutputs
    value throws (requires `populate_system=true`)
 """
 function get_decision_problem_outputs(
-    results::SimulationOutputs,
+    outputs::SimulationOutputs,
     problem::String;
     populate_system::Bool = false,
     populate_units::Union{IS.UnitSystem.Value, String, Nothing} = nothing,
 )
-    if !haskey(results.decision_problem_outputs, problem)
+    if !haskey(outputs.decision_problem_outputs, problem)
         throw(IS.InvalidValue("$problem is not stored"))
     end
 
-    results = results.decision_problem_outputs[problem]
-    _populate_system_in_outputs!(results, populate_system, populate_units)
+    problem_outputs = outputs.decision_problem_outputs[problem]
+    _populate_system_in_outputs!(problem_outputs, populate_system, populate_units)
 
-    return results
+    return problem_outputs
 end
 
 """
@@ -258,23 +258,23 @@ Return SimulationProblemOutputs corresponding to a SimulationOutputs
    value throws (requires `populate_system=true`)
 """
 function get_emulation_problem_outputs(
-    results::SimulationOutputs;
+    outputs::SimulationOutputs;
     populate_system::Bool = false,
     populate_units::Union{IS.UnitSystem.Value, String, Nothing} = nothing,
 )
-    results = results.emulation_problem_outputs
-    _populate_system_in_outputs!(results, populate_system, populate_units)
-    return results
+    problem_outputs = outputs.emulation_problem_outputs
+    _populate_system_in_outputs!(problem_outputs, populate_system, populate_units)
+    return problem_outputs
 end
 
 function _populate_system_in_outputs!(
-    results::SimulationProblemOutputs,
+    output::SimulationProblemOutputs,
     populate_system::Bool,
     populate_units::Union{IS.UnitSystem.Value, String, Nothing},
 )
     if populate_system
         try
-            get_system!(results)
+            get_system!(output)
         catch e
             error("Can't find the system file or retrieve the system error=$e")
         end
@@ -304,15 +304,15 @@ end
 """
 Return the problem names in the simulation.
 """
-list_decision_problems(results::SimulationOutputs) =
-    collect(keys(results.decision_problem_outputs))
+list_decision_problems(outputs::SimulationOutputs) =
+    collect(keys(outputs.decision_problem_outputs))
 
 """
 Export outputs to files in the outputs directory.
 
 # Arguments
 
-  - `results::SimulationOutputs`: simulation outputs
+  - `outputs::SimulationOutputs`: simulation outputs
   - `exports`: SimulationOutputsExport or anything that can be passed to its constructor.
     (such as Dict or path to JSON file)
 
@@ -352,25 +352,25 @@ An example JSON file demonstrating possible options is below. Note that `start_t
 
 ```
 """
-function IOM.export_outputs(results::SimulationOutputs, exports)
-    _export_outputs_with_store(results, exports, results.store)
+function IOM.export_outputs(outputs::SimulationOutputs, exports)
+    _export_outputs_with_store(outputs, exports, outputs.store)
     return
 end
 
-_export_outputs_with_store(results, exports, store::InMemorySimulationStore) =
-    IOM.export_outputs(results, exports, store)
-function _export_outputs_with_store(results, exports, ::Union{Nothing, HdfSimulationStore})
-    _open_outputs_store(results.path) do store
-        IOM.export_outputs(results, exports, store)
+_export_outputs_with_store(outputs, exports, store::InMemorySimulationStore) =
+    IOM.export_outputs(outputs, exports, store)
+function _export_outputs_with_store(outputs, exports, ::Union{Nothing, HdfSimulationStore})
+    _open_outputs_store(outputs.path) do store
+        IOM.export_outputs(outputs, exports, store)
     end
     return
 end
 
-function IOM.export_outputs(results::SimulationOutputs, exports, store::SimulationStore)
-    exports = _as_outputs_export(exports, results.params)
+function IOM.export_outputs(outputs::SimulationOutputs, exports, store::SimulationStore)
+    exports = _as_outputs_export(exports, outputs.params)
     file_type = get_export_file_type(exports)
 
-    for problem_outputs in values(results.decision_problem_outputs)
+    for problem_outputs in values(outputs.decision_problem_outputs)
         problem_exports = get_problem_exports(exports, problem_outputs.problem)
         if isnothing(exports.path)
             path = problem_outputs.output_dir
@@ -429,7 +429,7 @@ function _check_status(status::RunStatus.Value, ignore_status)
     status == RunStatus.SUCCESSFULLY_FINALIZED && return
 
     if ignore_status
-        @warn "Simulation was not successful: $status. Results may not be valid."
+        @warn "Simulation was not successful: $status. Outputs may not be valid."
     else
         error(
             "Simulation was not successful: status = $status. Set ignore_status = true to override.",

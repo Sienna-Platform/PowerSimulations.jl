@@ -1,5 +1,5 @@
 # test/test_utils/smoke_simulation.jl — the fastest end-to-end check that a simulation builds,
-# executes, and reads results back. Not part of the test suite (no @includetests glob picks up
+# executes, and reads outputs back. Not part of the test suite (no @includetests glob picks up
 # files under test_utils/); run standalone with:
 #   julia --project=test test/test_utils/smoke_simulation.jl
 using PowerSimulations
@@ -59,8 +59,8 @@ build_out = build!(sim; console_level = Logging.Error)
 exec_out = execute!(sim; enable_progress_bar = false)
 @assert exec_out == PSI.RunStatus.SUCCESSFULLY_FINALIZED
 
-results = SimulationOutputs(sim)
-ed = get_decision_problem_outputs(results, "ED")
+outputs = SimulationOutputs(sim)
+ed = get_decision_problem_outputs(outputs, "ED")
 df = read_realized_variable(ed, "ActivePowerVariable__ThermalStandard")
 # c_sys5_ed's default load forecast carries 5-minute look-ahead points, so ED dispatches
 # (and realizes) every 5 minutes: 2 days * 24h * 12 (5-min steps/hour) = 576 timestamps,

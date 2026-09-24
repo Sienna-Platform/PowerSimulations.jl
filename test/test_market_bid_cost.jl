@@ -162,7 +162,7 @@ function cost_due_to_time_varying_startup_shutdown(
     gentype = multistart ? ThermalMultiStart : ThermalStandard
     start_vars = _read_start_vars(Val(multistart), res)
     stop_vars = read_variable_dict(res, PSI.StopVariable, gentype)
-    result = SortedDict{DateTime, DataFrame}()
+    output = SortedDict{DateTime, DataFrame}()
     IS.@assert_op Set(collect(keys(start_vars))) == Set(collect(keys(stop_vars)))
     for step_dt in keys(start_vars)
         start_df = start_vars[step_dt]
@@ -226,10 +226,10 @@ function cost_due_to_time_varying_startup_shutdown(
             )
         end
         if !isempty(dfs)
-            result[step_dt] = vcat(dfs...)
+            output[step_dt] = vcat(dfs...)
         end
     end
-    return result
+    return output
 end
 
 """
@@ -270,7 +270,7 @@ function run_startup_shutdown_obj_fun_test(
     if !all(isapprox.(all_decisions1, all_decisions2; atol = 1))
         @error all_decisions1
         @error all_decisions2
-        # Given the solver tolerance, this method can result in up to 1 change in the commitment result
+        # Given the solver tolerance, this method can result in up to 1 change in the commitment output
         @assert false "Decisions between constant and time-varying startup/shutdown do not match approximately"
     end
 
@@ -743,7 +743,7 @@ end
     # @test_throws "All time series names must be equal" PSI.build_impl!(model)  # see below re: build_impl!
 end
 
-@testset "Test 3d results" begin
+@testset "Test 3d outputs" begin
     # TODO: Test actual values
     varying = build_sys_incr(true, true, true)
     for in_memory_store in (false, true)

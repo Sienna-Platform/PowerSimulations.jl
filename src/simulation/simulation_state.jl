@@ -742,7 +742,7 @@ function update_system_state!(
     return
 end
 
-# Event parameters are exogenous state the models read, not results they produce. Copying
+# Event parameters are exogenous state the models read, not outputs they produce. Copying
 # the emulator's own values back over them resets the countdown every step, which is the
 # outage's memory: the device would be re-outaged forever and never recover.
 function update_system_state!(
