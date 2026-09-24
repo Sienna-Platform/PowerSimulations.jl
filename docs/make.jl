@@ -56,7 +56,7 @@ pages = OrderedDict(
         "Multi-stage Production Cost Simulation" => "tutorials/generated_pcm_simulation.md",
     ],
     "How to..." => Any[
-        "...read the simulation results" => "how_to/read_results.md",
+        "...read the simulation outputs" => "how_to/read_outputs.md",
         "...configure logging" => "how_to/logging.md",
         "...inspect simulation events using the recorder" => "how_to/simulation_recorder.md",
         "...run a parallel simulation" => "how_to/parallel_simulations.md",

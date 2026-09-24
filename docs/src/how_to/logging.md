@@ -47,7 +47,7 @@ The log file will be located at `<your-output-path>/<simulation-name>/<run-outpu
 Debug messages in PSI's own code are tagged with one of these log groups:
 
   - `LOG_GROUP_SIMULATION_STORE` — the `HdfSimulationStore`/`InMemorySimulationStore` cache and flush path
-  - `LOG_GROUP_OUTPUTS` — result reads and writes
+  - `LOG_GROUP_OUTPUTS` — output reads and writes
   - `LOG_GROUP_MODEL_STORE` — per-model store access during a simulation
   - `LOG_GROUP_BUILD_INITIAL_CONDITIONS` — initial-condition setup between solves
 

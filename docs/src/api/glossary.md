@@ -49,11 +49,13 @@ Changing the attributes between `true` or `false` can enable/disable multiple as
 
   - *Interval*: The amount of time between updates to the decision problem. For instance, Day-Ahead problems usually have a 24-hour intervals and Real-Time problems have 5-minute intervals. Check the time [Time Series Data Section in PowerSystems.jl](https://sienna-platform.github.io/PowerSystems.jl/stable/modeler_guide/time_series/)
 
+## O
+
+  - *Outputs vs Realized Outputs*: In `PowerSimulations.jl` the term *outputs* is used to refer to the solution of all optimization problems in a *Simulation* — PSI produces outputs; `PowerAnalytics.jl` turns those outputs into results. When using `read_variable(outputs, Variable)` in a `DecisionModel` of a simulation, the output is a dictionary with the values of such variable for every optimization problem solved, while `read_realized_variable(outputs, Variable)` will return the values of the specified interval and number of steps in the simulation. See the [Read Outputs page](@ref read_outputs) for more details.
+
 ## R
 
   - *Resolution*: The amount of time between time steps in a simulation. For instance 1-hour or 5-minutes. In Julia these are defined using the syntax `Hour(1)` and `Minute(5)`. Check the time [Time Series Data Section in PowerSystems.jl](https://sienna-platform.github.io/PowerSystems.jl/stable/modeler_guide/time_series/)
-
-  - *Results vs Realized Results*: In `PowerSimulations.jl` the term *results* is used to refer to the solution of all optimization problems in a *Simulation*. When using `read_variable(results, Variable)` in a `DecisionModel` of a simulation, the output is a dictionary with the values of such variable for every optimization problem solved, while `read_realized_variable(results, Variable)` will return the values of the specified interval and number of steps in the simulation. See the [Read Results page](@ref read_results) for more details.
 
 ## S
 

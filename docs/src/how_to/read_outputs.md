@@ -1,17 +1,17 @@
-# [Read results](@id read_results)
+# [Read outputs](@id read_outputs)
 
-Once a `DecisionModel` is solved via `solve!(model)` or a Simulation is executed (and solved) via `execute!(simulation)`, the results are stored and can be accessed directly in the REPL for result exploration and plotting.
+Once a `DecisionModel` is solved via `solve!(model)` or a Simulation is executed (and solved) via `execute!(simulation)`, the outputs are stored and can be accessed directly in the REPL for exploration and plotting.
 
-## Read results of a Decision Problem
+## Read outputs of a Decision Problem
 
-Once a `DecisionModel` is solved, results are accessed using `OptimizationProblemOutputs(model)` as follows:
+Once a `DecisionModel` is solved, outputs are accessed using `OptimizationProblemOutputs(model)` as follows:
 
 ```julia
 # The DecisionModel is already constructed
 build!(model; output_dir = mktempdir())
 solve!(model)
 
-results = OptimizationProblemOutputs(model)
+outputs = OptimizationProblemOutputs(model)
 ```
 
 The output will showcase the available expressions, parameters and variables to read. For example it will look like:
@@ -21,24 +21,24 @@ Start: 2020-01-01T00:00:00
 End: 2020-01-03T23:00:00
 Resolution: 60 minutes
 
-PowerSimulations Problem Auxiliary variables Results
+PowerSimulations Problem Auxiliary variables Outputs
 ┌────────────────────────────────┐
 │ TimeDurationOn__ThermalStandard │
 │ TimeDurationOff__ThermalStandard│
 └────────────────────────────────┘
 
-PowerSimulations Problem Expressions Results
+PowerSimulations Problem Expressions Outputs
 ┌─────────────────────────────────────────────┐
 │ ProductionCostExpression__RenewableDispatch │
 │ ProductionCostExpression__ThermalStandard   │
 └─────────────────────────────────────────────┘
 
-PowerSimulations Problem Duals Results
+PowerSimulations Problem Duals Outputs
 ┌──────────────────────────────────────┐
 │ CopperPlateBalanceConstraint__System │
 └──────────────────────────────────────┘
 
-PowerSimulations Problem Parameters Results
+PowerSimulations Problem Parameters Outputs
 ┌────────────────────────────────────────────────────────────────────┐
 │ ActivePowerTimeSeriesParameter__RenewableNonDispatch                │
 │ RequirementTimeSeriesParameter__OnlineReserve__ReserveUp__Spin_Up_R3│
@@ -50,7 +50,7 @@ PowerSimulations Problem Parameters Results
 │ RequirementTimeSeriesParameter__OnlineReserve__ReserveUp__Spin_Up_R2│
 └────────────────────────────────────────────────────────────────────┘
 
-PowerSimulations Problem Variables Results
+PowerSimulations Problem Variables Outputs
 ┌───────────────────────────────────────────────────────────────────┐
 │ ActivePowerReserveVariable__OnlineReserve__ReserveUp__Spin_Up_R1   │
 │ SystemBalanceSlackUp__System                                      │
@@ -67,42 +67,42 @@ PowerSimulations Problem Variables Results
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-Then the following code can be used to read results:
+Then the following code can be used to read outputs:
 
 ```julia
 # Read active power of Thermal Standard
-thermal_active_power = read_variable(results, "ActivePowerVariable__ThermalStandard")
+thermal_active_power = read_variable(outputs, "ActivePowerVariable__ThermalStandard")
 
 # Read max active power parameter of RenewableDispatch
 renewable_param =
-    read_parameter(results, "ActivePowerTimeSeriesParameter__RenewableDispatch")
+    read_parameter(outputs, "ActivePowerTimeSeriesParameter__RenewableDispatch")
 
 # Read cost expressions of ThermalStandard units
-cost_thermal = read_expression(results, "ProductionCostExpression__ThermalStandard")
+cost_thermal = read_expression(outputs, "ProductionCostExpression__ThermalStandard")
 
 # Read dual variables
-dual_balance_constraint = read_dual(results, "CopperPlateBalanceConstraint__System")
+dual_balance_constraint = read_dual(outputs, "CopperPlateBalanceConstraint__System")
 
 # Read auxiliary variables
-aux_var_result = read_aux_variable(results, "TimeDurationOn__ThermalStandard")
+aux_var_output = read_aux_variable(outputs, "TimeDurationOn__ThermalStandard")
 ```
 
-Results will be in the form of DataFrames that can be easily explored.
+Outputs will be in the form of DataFrames that can be easily explored.
 
-## Read results of a Simulation
+## Read outputs of a Simulation
 
 ```julia
 # The Simulation is already constructed
 build!(sim)
 execute!(sim; enable_progress_bar = true)
 
-results_sim = SimulationResults(sim)
+sim_outputs = SimulationOutputs(sim)
 ```
 
-As an example, the `SimulationResults` printing will look like:
+As an example, the `SimulationOutputs` printing will look like:
 
 ```raw
-Decision Problem Results
+Decision Problem Outputs
 ┌──────────────┬─────────────────────┬──────────────┬─────────────────────────┐
 │ Problem Name │ Initial Time        │ Resolution   │ Last Solution Timestamp │
 ├──────────────┼─────────────────────┼──────────────┼─────────────────────────┤
@@ -110,7 +110,7 @@ Decision Problem Results
 │ UC           │ 2020-10-02T00:00:00 │ 1440 minutes │ 2020-10-09T00:00:00     │
 └──────────────┴─────────────────────┴──────────────┴─────────────────────────┘
 
-Emulator Results
+Emulator Outputs
 ┌─────────────────┬───────────┐
 │ Name            │ Emulator  │
 │ Resolution      │ 5 minutes │
@@ -118,23 +118,23 @@ Emulator Results
 └─────────────────┴───────────┘
 ```
 
-With this, it is possible to obtain results of each `DecisionModel` and `EmulationModel` as follows:
+With this, it is possible to obtain the outputs of each `DecisionModel` and `EmulationModel` as follows:
 
 ```julia
 # Use the Problem Name for Decision Problems
-results_uc = get_decision_problem_results(results_sim, "UC")
-results_ed = get_decision_problem_results(results_sim, "ED")
-results_emulator = get_emulation_problem_results(results_sim)
+uc_outputs = get_decision_problem_outputs(sim_outputs, "UC")
+ed_outputs = get_decision_problem_outputs(sim_outputs, "ED")
+emulator_outputs = get_emulation_problem_outputs(sim_outputs)
 ```
 
-Once we have each decision (or emulation) problem results, we can explore directly using the approach for Decision Models, mentioned in the previous section.
+Once we have each decision (or emulation) problem's outputs, we can explore directly using the approach for Decision Models, mentioned in the previous section.
 
 ### Reading solutions for all simulation steps
 
 In this case, using `read_variable` (or read expression, parameter or dual), will return a dictionary of all steps (of that Decision Problem). For example, the following code:
 
 ```julia
-thermal_active_power = read_variable(results_uc, "ActivePowerVariable__ThermalStandard")
+thermal_active_power = read_variable(uc_outputs, "ActivePowerVariable__ThermalStandard")
 ```
 
 will return:
@@ -163,7 +163,7 @@ For example, the code:
 
 ```julia
 th_realized_power =
-    read_realized_variable(results_uc, "ActivePowerVariable__ThermalStandard")
+    read_realized_variable(uc_outputs, "ActivePowerVariable__ThermalStandard")
 ```
 
 will return:
@@ -189,4 +189,4 @@ will return:
                                                                                                               44 columns and 180 rows omitted
 ```
 
-In this case, the 8 simulation steps of 24 hours (192 hours), in a single DataFrame, to enable easy exploration of the realized results for the user.
+In this case, the 8 simulation steps of 24 hours (192 hours), in a single DataFrame, to enable easy exploration of the realized outputs for the user.
