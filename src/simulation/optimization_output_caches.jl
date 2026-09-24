@@ -1,15 +1,15 @@
 """
-Cache for all model results
+Cache for all model outputs
 """
 struct OptimizationOutputCaches
-    data::Dict{OptimizationResultCacheKey, OptimizationOutputCache}
+    data::Dict{OptimizationOutputCacheKey, OptimizationOutputCache}
     max_size::Int
     min_flush_size::Int
 end
 
 function OptimizationOutputCaches()
     return OptimizationOutputCaches(
-        Dict{OptimizationResultCacheKey, OptimizationOutputCache}(),
+        Dict{OptimizationOutputCacheKey, OptimizationOutputCache}(),
         0,
         0,
     )
@@ -17,7 +17,7 @@ end
 
 function OptimizationOutputCaches(rules::CacheFlushRules)
     return OptimizationOutputCaches(
-        Dict{OptimizationResultCacheKey, OptimizationOutputCache}(),
+        Dict{OptimizationOutputCacheKey, OptimizationOutputCache}(),
         rules.max_size,
         rules.min_flush_size,
     )
@@ -50,7 +50,7 @@ get_size(cache::OptimizationOutputCaches) =
 is_full(cache::OptimizationOutputCaches, cur_size) = cur_size >= cache.max_size * 0.95
 
 function add_output_cache!(cache::OptimizationOutputCaches, model_name, key, flush_rule)
-    cache_key = OptimizationResultCacheKey(model_name, key)
+    cache_key = OptimizationOutputCacheKey(model_name, key)
     cache.data[cache_key] = OptimizationOutputCache(cache_key, flush_rule)
     @debug "Added cache container for" LOG_GROUP_SIMULATION_STORE model_name key flush_rule
     return
@@ -69,7 +69,7 @@ function has_dirty(cache::OptimizationOutputCaches)
     return false
 end
 
-get_output_cache(cache::OptimizationOutputCaches, key::OptimizationResultCacheKey) =
+get_output_cache(cache::OptimizationOutputCaches, key::OptimizationOutputCacheKey) =
     cache.data[key]
 
 function get_output_cache(
@@ -77,7 +77,7 @@ function get_output_cache(
     model_name,
     key::OptimizationContainerKey,
 )
-    cache_key = OptimizationResultCacheKey(model_name, key)
+    cache_key = OptimizationOutputCacheKey(model_name, key)
     return get_output_cache(cache, cache_key)
 end
 
@@ -85,7 +85,7 @@ end
 Return true if the data for `timestamp` is stored in cache.
 """
 function is_cached(cache::OptimizationOutputCaches, model_name, key, index)
-    cache_key = OptimizationResultCacheKey(model_name, key)
+    cache_key = OptimizationOutputCacheKey(model_name, key)
     return is_cached(cache, cache_key, index)
 end
 
@@ -107,13 +107,13 @@ function log_cache_hit_percentages(cache::OptimizationOutputCaches)
 end
 
 """
-Read the result from cache. Callers must first call [`is_cached`](@ref) to check if the
+Read the output from cache. Callers must first call [`is_cached`](@ref) to check if the
 timestamp is present.
 """
-function read_result(cache::OptimizationOutputCaches, model_name, key, timestamp)
-    cache_key = OptimizationResultCacheKey(model_name, key)
-    return read_result(cache, cache_key, timestamp)
+function read_output(cache::OptimizationOutputCaches, model_name, key, timestamp)
+    cache_key = OptimizationOutputCacheKey(model_name, key)
+    return read_output(cache, cache_key, timestamp)
 end
 
-read_result(cache::OptimizationOutputCaches, key, timestamp) =
+read_output(cache::OptimizationOutputCaches, key, timestamp) =
     cache.data[key].data[timestamp]

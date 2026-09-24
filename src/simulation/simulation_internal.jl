@@ -5,7 +5,7 @@ mutable struct SimulationInternal
     logs_dir::String
     models_dir::String
     recorder_dir::String
-    results_dir::String
+    outputs_dir::String
     partitions_dir::String
     run_count::OrderedDict{Int, OrderedDict{Int, Int}}
     date_ref::OrderedDict{Int, Dates.DateTime}
@@ -56,7 +56,7 @@ function SimulationInternal(
     logs_dir = joinpath(simulation_dir, "logs")
     models_dir = joinpath(simulation_dir, "problems")
     recorder_dir = joinpath(simulation_dir, "recorder")
-    results_dir = joinpath(simulation_dir, RESULTS_DIR)
+    outputs_dir = joinpath(simulation_dir, OUTPUTS_DIR)
     partitions_dir = joinpath(simulation_dir, "simulation_partitions")
 
     unique_recorders = Set(REQUIRED_RECORDERS)
@@ -69,7 +69,7 @@ function SimulationInternal(
         logs_dir,
         models_dir,
         recorder_dir,
-        results_dir,
+        outputs_dir,
         partitions_dir,
         count_dict,
         OrderedDict{Int, Dates.DateTime}(),
@@ -89,7 +89,7 @@ end
 function make_dirs(internal::SimulationInternal)
     mkdir(dirname(internal.sim_files_dir))
     for field in
-        (:sim_files_dir, :store_dir, :logs_dir, :models_dir, :recorder_dir, :results_dir)
+        (:sim_files_dir, :store_dir, :logs_dir, :models_dir, :recorder_dir, :outputs_dir)
         mkdir(getproperty(internal, field))
     end
 end

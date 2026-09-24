@@ -2,8 +2,8 @@
 
 # get_components
 """
-Calling `get_components` on a `Results` is the same as calling
-[`get_available_components`] on the system attached to the results.
+Calling `get_components` on an `Outputs` is the same as calling
+[`get_available_components`] on the system attached to the outputs.
 """
 PSY.get_components(
     ::Type{T},
@@ -35,8 +35,8 @@ PSY.get_components(selector::IS.ComponentSelector, res::IS.Outputs) =
 
 # get_component
 """
-Calling `get_component` on a `Results` is the same as calling
-[`get_available_component`] on the system attached to the results.
+Calling `get_component` on an `Outputs` is the same as calling
+[`get_available_component`] on the system attached to the outputs.
 """
 PSY.get_component(res::IS.Outputs, uuid::Base.UUID) = IS.get_component(res, uuid)
 PSY.get_component(res::IS.Outputs, uuid::String) = IS.get_component(res, uuid)
@@ -60,8 +60,8 @@ PSY.get_component(selector::IS.SingularComponentSelector, res::IS.Outputs) =
 
 # get_groups
 """
-Calling `get_groups` on a `Results` is the same as calling [`get_available_groups`] on
-the system attached to the results.
+Calling `get_groups` on an `Outputs` is the same as calling [`get_available_groups`] on
+the system attached to the outputs.
 """
 PSY.get_groups(
     scope_limiter::Union{Function, Nothing},

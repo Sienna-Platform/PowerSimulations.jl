@@ -6,11 +6,11 @@ module PowerSimulations
 export Simulation
 export SimulationModels
 export SimulationSequence
-export SimulationResults
+export SimulationOutputs
 export SimulationPartitions
-export SimulationPartitionResults
-export SimulationResultsExport
-export SimulationProblemResults
+export SimulationPartitionOutputs
+export SimulationOutputsExport
+export SimulationProblemOutputs
 export InterProblemChronology
 export IntraProblemChronology
 export build!
@@ -21,16 +21,16 @@ export get_simulation_model
 export run_parallel_simulation
 export process_simulation_partition_cli_args
 export join_simulation
-export export_results
+export export_outputs
 export export_optimizer_stats
 export export_realized_outputs
-export get_decision_problem_results
-export get_emulation_problem_results
+export get_decision_problem_outputs
+export get_emulation_problem_outputs
 export get_system!
 export set_system!
 export list_decision_problems
 export list_supported_formats
-export load_results!
+export load_outputs!
 export read_realized_variable
 export read_realized_dual
 export read_realized_parameter
@@ -78,6 +78,7 @@ import InfrastructureOptimizationModels: COST_EPSILON
 # Unexported IOM surface PSI orchestrates with. Extend this block; never qualify at call sites.
 import InfrastructureOptimizationModels:
     get_store, get_status, set_status!, get_output_dir, set_output_dir!,
+    get_outputs_dir,
     get_run_status,
     is_synchronized, set_synchronized_status!, get_store_params,
     advance_execution_count!, get_execution_count, get_executions, set_executions!,
@@ -202,19 +203,19 @@ include("simulation/simulation_store_params.jl")
 include("simulation/hdf_simulation_store.jl")
 include("simulation/in_memory_simulation_store.jl")
 include("simulation/simulation_store_common.jl")
-include("simulation/simulation_problem_results.jl")
+include("simulation/simulation_problem_outputs.jl")
 include("simulation/get_components_interface.jl")
-include("simulation/decision_model_simulation_results.jl")
-include("simulation/emulation_model_simulation_results.jl")
+include("simulation/decision_model_simulation_outputs.jl")
+include("simulation/emulation_model_simulation_outputs.jl")
 include("simulation/realized_meta.jl")
 include("simulation/simulation_partitions.jl")
-include("simulation/simulation_partition_results.jl")
+include("simulation/simulation_partition_outputs.jl")
 include("simulation/simulation_sequence.jl")
 include("simulation/simulation_internal.jl")
 include("simulation/simulation.jl")
 include("simulation/simulation_events.jl")
-include("simulation/simulation_results_export.jl")
-include("simulation/simulation_results.jl")
+include("simulation/simulation_outputs_export.jl")
+include("simulation/simulation_outputs.jl")
 include("operation/operation_model_simulation_interface.jl")
 include("parameters/update_container_parameter_values.jl")
 include("parameters/update_cost_parameters.jl")

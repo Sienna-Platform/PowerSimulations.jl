@@ -69,7 +69,7 @@ end
 
 @testset "Test export from JSON" begin
     params = _make_params()
-    exports = SimulationResultsExport(joinpath(DATA_DIR, "results_export.json"), params)
+    exports = SimulationOutputsExport(joinpath(DATA_DIR, "outputs_export.json"), params)
 
     valid = Dates.DateTime("2020-01-01T06:00:00")
     valid2 = Dates.DateTime("2020-01-02T23:00:00")
@@ -146,7 +146,7 @@ end
 
     @test exports.path == "export_path"
     @test exports.format == "csv"
-    @test "csv" in list_supported_formats(SimulationResultsExport)
+    @test "csv" in list_supported_formats(SimulationOutputsExport)
 end
 
 @testset "Invalid exports" begin
@@ -155,25 +155,25 @@ end
     invalid = Dates.DateTime("2020-01-03T00:00:00")
 
     # Invalid start_time
-    @test_throws IS.InvalidValue SimulationResultsExport(
+    @test_throws IS.InvalidValue SimulationOutputsExport(
         Dict("start_time" => invalid, "models" => [Dict("name" => "ED")]),
         params,
     )
 
     # Invalid end_time
-    @test_throws IS.InvalidValue SimulationResultsExport(
+    @test_throws IS.InvalidValue SimulationOutputsExport(
         Dict("end_time" => invalid, "models" => [Dict("name" => "ED")]),
         params,
     )
 
     # Invalid format
-    @test_throws IS.InvalidValue SimulationResultsExport(
+    @test_throws IS.InvalidValue SimulationOutputsExport(
         Dict("format" => "invalid", "models" => [Dict("name" => "ED")]),
         params,
     )
 
     # Missing name
-    @test_throws IS.InvalidValue SimulationResultsExport(
+    @test_throws IS.InvalidValue SimulationOutputsExport(
         Dict("models" => [Dict("variables" => ["ActivePowerVariable__ThermalStandard"])]),
         params,
     )

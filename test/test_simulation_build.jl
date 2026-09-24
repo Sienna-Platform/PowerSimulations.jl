@@ -328,7 +328,7 @@ end
 # (device_name, time), so `attach_feedforward!(::ServiceModel, ff)` errors loudly. Re-add
 # once POM re-keys that path.
 
-@testset "Build with store_systems_in_results option" begin
+@testset "Build writes system bundles" begin
     models = create_simulation_build_test_problems(get_template_basic_uc_simulation())
     sequence = SimulationSequence(;
         models = models,
@@ -344,7 +344,6 @@ end
         ini_cond_chronology = InterProblemChronology(),
     )
 
-    # Test store_systems_in_results = true (default)
     sim_with = Simulation(;
         name = "test_with_systems",
         steps = 1,
@@ -352,40 +351,65 @@ end
         sequence = sequence,
         simulation_folder = mktempdir(; cleanup = true),
     )
-    build_out = build!(sim_with; store_systems_in_results = true)
+    build_out = build!(sim_with)
     @test build_out == PSI.SimulationBuildStatus.BUILT
-    PSI.open_store(PSI.HdfSimulationStore, PSI.get_store_dir(sim_with), "r") do store
-        root = store.file["simulation"]
-        @test haskey(root, "systems")
-        @test length(keys(root["systems"])) > 0
+    for model in PSI.get_all_models(models)
+        bundle =
+            joinpath(IOM.get_output_dir(model), IOM.make_system_dirname(get_system(model)))
+        @test isdir(bundle)
+        @test !isempty(readdir(bundle))
     end
-
-    # Test store_systems_in_results = false
-    models2 = create_simulation_build_test_problems(get_template_basic_uc_simulation())
-    sequence2 = SimulationSequence(;
-        models = models2,
-        feedforwards = Dict(
-            "ED" => [
-                SemiContinuousFeedforward(;
-                    component_type = ThermalStandard,
-                    source = OnVariable,
-                    affected_values = [ActivePowerVariable],
-                ),
-            ],
-        ),
-        ini_cond_chronology = InterProblemChronology(),
-    )
-    sim_without = Simulation(;
-        name = "test_without_systems",
-        steps = 1,
-        models = models2,
-        sequence = sequence2,
-        simulation_folder = mktempdir(; cleanup = true),
-    )
-    build_out = build!(sim_without; store_systems_in_results = false)
-    @test build_out == PSI.SimulationBuildStatus.BUILT
-    PSI.open_store(PSI.HdfSimulationStore, PSI.get_store_dir(sim_without), "r") do store
+    PSI.open_store(PSI.HdfSimulationStore, PSI.get_store_dir(sim_with), "r") do store
         root = store.file["simulation"]
         @test !haskey(root, "systems")
     end
+end
+
+@testset "Parameters are written to the bundle's InfraStore as forecast windows" begin
+    c_sys5_hy_uc = PSB.build_system(PSITestSystems, "c_sys5_hy_uc")
+    c_sys5_hy_ed = PSB.build_system(PSITestSystems, "c_sys5_hy_ed")
+    sim = run_simulation(
+        c_sys5_hy_uc,
+        c_sys5_hy_ed,
+        mktempdir(; cleanup = true),
+        mktempdir(; cleanup = true);
+        in_memory = false,
+    )
+    folder = PSI.get_simulation_dir(sim)
+    uc_dir = joinpath(folder, "problems", "UC")
+    bundle = joinpath(uc_dir, only(filter(startswith("system-"), readdir(uc_dir))))
+    sidecar = joinpath(bundle, PSY.TIME_SERIES_FILE)
+    @test isfile(sidecar)
+
+    store_dir = joinpath(folder, "data_store")
+    num_executions, num_steps, horizon_count = PSI.open_store(
+        PSI.HdfSimulationStore,
+        store_dir,
+        "r",
+    ) do store
+        params = PSI.get_decision_model_params(store, :UC)
+        @test !haskey(
+            store.file["simulation/decision_models/UC"],
+            "parameters",
+        )
+        (
+            IOM.get_num_executions(params),
+            store.params.num_steps,
+            IOM.get_horizon_count(params),
+        )
+    end
+    expected_executions = num_executions * num_steps
+
+    key = IOM.ParameterKey(POM.ActivePowerTimeSeriesParameter, PSY.PowerLoad)
+    pstore = POM.open_parameter_store(sidecar)
+    windows = POM.read_parameter_windows(
+        pstore,
+        key;
+        extra_features = Dict{String, Any}("model" => "UC"),
+    )
+    POM.close_parameter_store!(pstore)
+    @test !isempty(windows)
+    label, per_time = first(windows)
+    @test length(per_time) == expected_executions
+    @test all(length(v) == horizon_count for v in values(per_time))
 end

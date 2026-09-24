@@ -3,7 +3,7 @@ Cache for a single parameter/variable/dual.
 Stores arrays chronologically by simulation timestamp.
 """
 mutable struct OptimizationOutputCache
-    key::OptimizationResultCacheKey
+    key::OptimizationOutputCacheKey
     "Contains both clean and dirty entries. Any key in data that is earlier than the first
     dirty timestamp must be clean."
     data::OrderedDict{Dates.DateTime, Array}
@@ -55,9 +55,9 @@ function Base.empty!(cache::OptimizationOutputCache)
 end
 
 """
-Add result to the cache.
+Add output to the cache.
 """
-function add_result!(cache::OptimizationOutputCache,
+function add_output!(cache::OptimizationOutputCache,
     timestamp::Dates.DateTime,
     array::Array{Float64},
     system_cache_is_full::Bool)
@@ -65,7 +65,7 @@ function add_result!(cache::OptimizationOutputCache,
         cache.size_per_entry = length(array) * sizeof(first(array))
     end
 
-    @debug "add_result!" cache.key timestamp get_size(cache)
+    @debug "add_output!" cache.key timestamp get_size(cache)
     if haskey(cache.data, timestamp)
         throw(IS.InvalidValue("$timestamp is already stored in $(cache.key)"))
     end
@@ -81,11 +81,11 @@ function add_result!(cache::OptimizationOutputCache,
         end
     end
 
-    _add_result!(cache, timestamp, array)
+    _add_output!(cache, timestamp, array)
     return cache.size_per_entry
 end
 
-function _add_result!(
+function _add_output!(
     cache::OptimizationOutputCache,
     timestamp::Dates.DateTime,
     data::Array{Float64},
@@ -95,7 +95,7 @@ function _add_result!(
     return
 end
 
-function discard_results!(cache::OptimizationOutputCache, timestamps)
+function discard_outputs!(cache::OptimizationOutputCache, timestamps)
     for timestamp in timestamps
         pop!(cache.data, timestamp)
     end

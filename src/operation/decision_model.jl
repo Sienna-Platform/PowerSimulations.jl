@@ -24,7 +24,7 @@ function POM.solve!(
     solve_model!(model)
     IS.@assert_op get_current_time(model) == start_time
     if get_run_status(model) == RunStatus.SUCCESSFULLY_FINALIZED
-        write_results!(store, model, start_time, start_time; exports = exports)
+        write_outputs!(store, model, start_time, start_time; exports = exports)
         write_optimizer_stats!(store, model, start_time)
         advance_execution_count!(model)
     end

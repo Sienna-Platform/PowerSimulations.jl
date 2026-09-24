@@ -1,0 +1,1319 @@
+using Base: COMPILETIME_PREFERENCES
+# Read the actual data of an output to see what the timestamps are
+actual_timestamps(output) = output |> values |> first |> x -> x.data |> keys |> collect
+
+# Test that a particular call to _read_outputs reads from outside the cache; pass through the outputs
+macro test_no_cache(expr)
+    :(@test_logs(
+        match_mode = :any,
+        (:debug, r"reading outputs from data store"),
+        min_level = Logging.Debug,
+        $(esc(expr))))
+end
+@test_no_cache((@debug "reading outputs from data store"; @debug "msg 2"))
+
+# Test that a particular call to _read_outputs reads from the cache; pass through the outputs
+macro test_yes_cache(expr)
+    :(@test_logs(
+        match_mode = :any,
+        (:debug, r"reading outputs from SimulationsOutputs cache"),
+        min_level = Logging.Debug,
+        $(esc(expr))))
+end
+@test_yes_cache((@debug "reading outputs from SimulationsOutputs cache"; @debug "msg 2"))
+
+ED_EXPECTED_VARS = [
+    "ActivePowerVariable__HydroTurbine",
+    "EnergyVariable__HydroReservoir",
+    "WaterSpillageVariable__HydroReservoir",
+    "HydroEnergySurplusVariable__HydroReservoir",
+    "HydroEnergyShortageVariable__HydroReservoir",
+    "ActivePowerVariable__RenewableDispatch",
+    "ActivePowerVariable__ThermalStandard",
+    "SystemBalanceSlackDown__System",
+    "SystemBalanceSlackUp__System",
+]
+
+UC_EXPECTED_VARS = [
+    "ActivePowerVariable__HydroTurbine",
+    "EnergyVariable__HydroReservoir",
+    "WaterSpillageVariable__HydroReservoir",
+    "HydroEnergySurplusVariable__HydroReservoir",
+    "HydroEnergyShortageVariable__HydroReservoir",
+    "ActivePowerVariable__RenewableDispatch",
+    "ActivePowerVariable__ThermalStandard",
+    "OnVariable__ThermalStandard",
+    "StartVariable__ThermalStandard",
+    "StopVariable__ThermalStandard",
+]
+
+function verify_export_outputs(outputs, export_path)
+    exports = SimulationOutputsExport(
+        make_export_all(keys(outputs.decision_problem_outputs)),
+        outputs.params,
+    )
+    IOM.export_outputs(outputs, exports)
+
+    for problem_outputs in values(outputs.decision_problem_outputs)
+        rpath = problem_outputs.output_dir
+        problem = problem_outputs.problem
+        for timestamp in get_timestamps(problem_outputs)
+            for name in list_dual_names(problem_outputs)
+                @test compare_outputs(rpath, export_path, problem, "duals", name, timestamp)
+            end
+            for name in list_parameter_names(problem_outputs)
+                @test compare_outputs(
+                    rpath,
+                    export_path,
+                    problem,
+                    "parameters",
+                    name,
+                    timestamp,
+                )
+            end
+            for name in list_variable_names(problem_outputs)
+                @test compare_outputs(
+                    rpath,
+                    export_path,
+                    problem,
+                    "variables",
+                    name,
+                    timestamp,
+                )
+            end
+
+            for name in list_aux_variable_names(problem_outputs)
+                @test compare_outputs(
+                    rpath,
+                    export_path,
+                    problem,
+                    "aux_variables",
+                    name,
+                    timestamp,
+                )
+            end
+        end
+
+        # This file is not currently exported during the simulation.
+        @test isfile(
+            joinpath(
+                problem_outputs.output_dir,
+                problem_outputs.problem,
+                "optimizer_stats.csv",
+            ),
+        )
+    end
+end
+
+NATURAL_UNITS_VALUES = [
+    "ActivePowerVariable__HydroTurbine",
+    "ActivePowerVariable__RenewableDispatch",
+    "ActivePowerVariable__ThermalStandard",
+    "EnergyVariable__HydroReservoir",
+    "ActivePowerTimeSeriesParameter__PowerLoad",
+    "ActivePowerTimeSeriesParameter__HydroTurbine",
+    "ActivePowerTimeSeriesParameter__RenewableDispatch",
+    "ActivePowerTimeSeriesParameter__InterruptiblePowerLoad",
+    "SystemBalanceSlackDown__System",
+    "SystemBalanceSlackUp__System",
+]
+
+function compare_outputs(rpath, epath, model, field, name, timestamp)
+    filename = string(name) * "_" * IS.convert_for_path(timestamp) * ".csv"
+    rp = joinpath(rpath, model, field, filename)
+    ep = joinpath(epath, model, field, filename)
+    df1 = PSI.read_dataframe(rp)
+    df2 = PSI.read_dataframe(ep)
+    # TODO: Store the tables in the same format.
+    measure_vars = [x for x in names(df2) if x != "DateTime"]
+    df2_long = DataFrames.stack(
+        df2,
+        measure_vars;
+        variable_name = :name,
+        value_name = :value,
+    )
+
+    if name ∈ NATURAL_UNITS_VALUES
+        df2_long[!, :value] .*= 100.0
+    end
+
+    names1 = names(df1)
+    names2 = names(df2_long)
+    names1 != names2 && return false
+    size(df1) != size(df2_long) && return false
+
+    # Row order is an implementation detail of whichever export path wrote each file, not
+    # part of what these two exports need to agree on -- sort both the same way before
+    # comparing values position-wise.
+    df1 = DataFrames.sort(df1, [:name, :DateTime])
+    df2_long = DataFrames.sort(df2_long, [:name, :DateTime])
+
+    if !isapprox(df1.value, df2_long.value)
+        @error "File mismatch" rp ep df1 df2_long
+        return false
+    end
+
+    return true
+end
+
+function make_export_all(problems)
+    return [
+        OptimizationProblemOutputsExport(
+            x;
+            store_all_duals = true,
+            store_all_variables = true,
+            store_all_aux_variables = true,
+            store_all_parameters = true,
+        ) for x in problems
+    ]
+end
+
+function test_simulation_outputs_run(
+    file_path::String,
+    export_path;
+    in_memory = false,
+)
+    @testset "Test simulation outputs in_memory = $in_memory" begin
+        c_sys5_hy_uc = PSB.build_system(PSITestSystems, "c_sys5_hy_uc")
+        c_sys5_hy_ed = PSB.build_system(PSITestSystems, "c_sys5_hy_ed")
+        sim = run_simulation(
+            c_sys5_hy_uc,
+            c_sys5_hy_ed,
+            file_path,
+            export_path;
+            in_memory = in_memory,
+        )
+        outputs = SimulationOutputs(sim)
+        test_decision_problem_outputs(outputs, c_sys5_hy_ed, c_sys5_hy_uc, in_memory)
+        if !in_memory
+            test_decision_problem_outputs_kwargs_handling(
+                dirname(outputs.path),
+                c_sys5_hy_ed,
+                c_sys5_hy_uc,
+            )
+        end
+        test_emulation_problem_outputs(outputs, in_memory)
+
+        outputs_ed = get_decision_problem_outputs(outputs, "ED")
+        @test !isempty(outputs_ed)
+        @test !isempty(outputs)
+        empty!(outputs)
+        @test isempty(outputs_ed)
+        @test isempty(outputs)
+
+        verify_export_outputs(outputs, export_path)
+        exported = readdir(export_realized_outputs(outputs_ed))
+        @test length(exported) >= 22
+        @test any(contains.(exported, "ProductionCostExpression"))
+        @test any(contains.(exported, "FuelCostExpression"))
+        @test any(contains.(exported, "StartUpCostExpression"))
+
+        # Test that you can't read a failed simulation.
+        PSI.set_simulation_status!(sim, PSI.RunStatus.FAILED)
+        PSI.serialize_status(sim)
+        @test PSI.deserialize_status(sim) == PSI.RunStatus.FAILED
+        @test_throws ErrorException SimulationOutputs(sim)
+        @test_logs(
+            match_mode = :any,
+            (:warn, r"Outputs may not be valid"),
+            SimulationOutputs(sim, ignore_status = true),
+        )
+
+        if in_memory
+            @test !isempty(
+                sim.internal.store.dm_data[:ED].variables[PSI.VariableKey(
+                    ActivePowerVariable,
+                    ThermalStandard,
+                )],
+            )
+            @test !isempty(sim.internal.store.dm_data[:ED].optimizer_stats)
+            empty!(sim.internal.store)
+            @test isempty(sim.internal.store.dm_data[:ED].variables)
+            @test isempty(sim.internal.store.dm_data[:ED].optimizer_stats)
+        end
+    end
+end
+
+function test_decision_problem_outputs_values(
+    outputs_ed,
+    outputs_uc,
+    c_sys5_hy_ed,
+    c_sys5_hy_uc,
+)
+    @test PSY.get_system_uuid(get_system(outputs_uc)) === PSY.get_system_uuid(c_sys5_hy_uc)
+    @test PSY.get_system_uuid(get_system(outputs_ed)) === PSY.get_system_uuid(c_sys5_hy_ed)
+
+    # Temporarily mark some stuff unavailable
+    unav_uc = first(PSY.get_available_components(ThermalStandard, get_system(outputs_uc)))
+    PSY.set_available!(unav_uc, false)
+    unav_ed = first(PSY.get_available_components(ThermalStandard, get_system(outputs_ed)))
+    PSY.set_available!(unav_ed, false)
+    sel = PSY.make_selector(ThermalStandard; groupby = :each)
+    @test collect(get_components(ThermalStandard, outputs_uc)) ==
+          collect(PSY.get_available_components(ThermalStandard, get_system(outputs_uc)))
+    @test collect(get_components(ThermalStandard, outputs_ed)) ==
+          collect(PSY.get_available_components(ThermalStandard, get_system(outputs_ed)))
+    @test collect(get_groups(sel, outputs_uc)) ==
+          collect(get_available_groups(sel, get_system(outputs_uc)))
+    @test collect(get_groups(sel, outputs_ed)) ==
+          collect(get_available_groups(sel, get_system(outputs_ed)))
+    PSY.set_available!(unav_uc, true)
+    PSY.set_available!(unav_ed, true)
+
+    @test isempty(setdiff(UC_EXPECTED_VARS, list_variable_names(outputs_uc)))
+    @test isempty(setdiff(ED_EXPECTED_VARS, list_variable_names(outputs_ed)))
+
+    p_thermal_standard_ed = read_variable(outputs_ed, ActivePowerVariable, ThermalStandard)
+    @test length(keys(p_thermal_standard_ed)) == 48
+    for v in values(p_thermal_standard_ed)
+        @test length(unique(v.DateTime)) == 12
+        @test length(unique(v.name)) == 5
+    end
+    p_thermal_standard_ed_wide = read_variable(
+        outputs_ed,
+        ActivePowerVariable,
+        ThermalStandard;
+        table_format = TableFormat.WIDE,
+    )
+    @test length(keys(p_thermal_standard_ed)) == 48
+    for v in values(p_thermal_standard_ed_wide)
+        @test size(v) == (12, 6)
+    end
+
+    ren_dispatch_params =
+        read_parameter(outputs_ed, ActivePowerTimeSeriesParameter, RenewableDispatch)
+    @test length(keys(ren_dispatch_params)) == 48
+    for v in values(ren_dispatch_params)
+        @test length(unique(v.DateTime)) == 12
+        @test length(unique(v.name)) == 3
+    end
+
+    network_duals = read_dual(outputs_ed, CopperPlateBalanceConstraint, PSY.System)
+    @test length(keys(network_duals)) == 48
+    for v in values(network_duals)
+        @test length(unique(v.DateTime)) == 12
+        @test length(unique(v.name)) == 1
+    end
+
+    expression = read_expression(outputs_ed, PSI.ProductionCostExpression, ThermalStandard)
+    @test length(keys(expression)) == 48
+    for v in values(expression)
+        @test length(unique(v.DateTime)) == 12
+        @test length(unique(v.name)) == 5
+    end
+
+    for var_key in
+        ((ActivePowerVariable, RenewableDispatch), (ActivePowerVariable, ThermalStandard))
+        variable_by_initial_time = read_variable(outputs_uc, var_key...)
+        for df in values(variable_by_initial_time)
+            @test length(unique(df.DateTime)) == 24
+        end
+    end
+
+    realized_variable_uc = read_realized_variables(outputs_uc)
+    @test length(keys(realized_variable_uc)) == length(UC_EXPECTED_VARS)
+    for var in values(realized_variable_uc)
+        @test length(unique(var.DateTime)) == 48
+    end
+    compare_long_and_wide_realized_outputs_2d(read_realized_variables, outputs_uc)
+
+    realized_variable_uc =
+        read_realized_variables(outputs_uc, [(ActivePowerVariable, ThermalStandard)])
+    @test realized_variable_uc ==
+          read_realized_variables(outputs_uc, ["ActivePowerVariable__ThermalStandard"])
+    @test length(keys(realized_variable_uc)) == 1
+    for var in values(realized_variable_uc)
+        @test length(unique(var.DateTime)) == 48
+    end
+
+    # Test custom indexing.
+    realized_variable_uc2 =
+        read_realized_variables(
+            outputs_uc,
+            [(ActivePowerVariable, ThermalStandard)];
+            start_time = Dates.DateTime("2024-01-01T01:00:00"),
+            len = 47,
+        )
+    @test unique(realized_variable_uc["ActivePowerVariable__ThermalStandard"].DateTime)[2:end] ==
+          unique(realized_variable_uc2["ActivePowerVariable__ThermalStandard"].DateTime)
+    @test realized_variable_uc2["ActivePowerVariable__ThermalStandard"] ==
+          @rsubset(
+        realized_variable_uc["ActivePowerVariable__ThermalStandard"],
+        :DateTime > Dates.DateTime("2024-01-01T00:00:00")
+    )
+    compare_long_and_wide_realized_outputs_2d(
+        read_realized_variables,
+        outputs_uc,
+        [(ActivePowerVariable, ThermalStandard)];
+        start_time = Dates.DateTime("2024-01-01T01:00:00"),
+        len = 47,
+    )
+    compare_long_and_wide_realized_outputs_2d(
+        read_realized_variables,
+        outputs_uc,
+        [(ActivePowerVariable, ThermalStandard)];
+        start_time = Dates.DateTime("2024-01-02T12:00:00"),
+        len = 10,
+    )
+
+    realized_param_uc = read_realized_parameters(outputs_uc)
+    @test length(keys(realized_param_uc)) == 3
+    for param in values(realized_param_uc)
+        @test length(unique(param.DateTime)) == 48
+    end
+    compare_long_and_wide_realized_outputs_2d(read_realized_parameters, outputs_uc)
+
+    realized_param_uc = read_realized_parameters(
+        outputs_uc,
+        [(ActivePowerTimeSeriesParameter, RenewableDispatch)],
+    )
+    compare_long_and_wide_realized_outputs_2d(
+        read_realized_parameters,
+        outputs_uc,
+        [(ActivePowerTimeSeriesParameter, RenewableDispatch)],
+    )
+    @test realized_param_uc == read_realized_parameters(
+        outputs_uc,
+        ["ActivePowerTimeSeriesParameter__RenewableDispatch"],
+    )
+    @test length(keys(realized_param_uc)) == 1
+    for param in values(realized_param_uc)
+        @test length(unique(param.DateTime)) == 48
+    end
+
+    realized_duals_ed = read_realized_duals(outputs_ed)
+    @test length(keys(realized_duals_ed)) == 1
+    for param in values(realized_duals_ed)
+        @test size(param)[1] == 576
+    end
+
+    realized_duals_ed =
+        read_realized_duals(outputs_ed, [(CopperPlateBalanceConstraint, System)])
+    @test realized_duals_ed ==
+          read_realized_duals(outputs_ed, ["CopperPlateBalanceConstraint__System"])
+    @test length(keys(realized_duals_ed)) == 1
+    for param in values(realized_duals_ed)
+        @test size(param)[1] == 576
+    end
+
+    realized_duals_uc =
+        read_realized_duals(outputs_uc, [(CopperPlateBalanceConstraint, System)])
+    @test length(keys(realized_duals_uc)) == 1
+    for param in values(realized_duals_uc)
+        @test size(param)[1] == 48
+    end
+
+    realized_expressions = read_realized_expressions(
+        outputs_uc,
+        [(PSI.ProductionCostExpression, RenewableDispatch)],
+    )
+    @test realized_expressions == read_realized_expressions(
+        outputs_uc,
+        ["ProductionCostExpression__RenewableDispatch"],
+    )
+    @test length(keys(realized_expressions)) == 1
+    for exp in values(realized_expressions)
+        @test length(unique(exp.DateTime)) == 48
+        @test length(unique(exp.name)) == 3
+    end
+
+    #request non sync data
+    @test_logs(
+        (:error, r"Requested time does not match available outputs"),
+        match_mode = :any,
+        @test_throws IS.InvalidValue read_realized_variables(
+            outputs_ed,
+            [(ActivePowerVariable, ThermalStandard)];
+            start_time = DateTime("2024-01-01T02:12:00"),
+            len = 3,
+        )
+    )
+
+    # request good window
+    @test length(
+        unique(
+            read_realized_variables(
+                outputs_ed,
+                [(ActivePowerVariable, ThermalStandard)];
+                start_time = DateTime("2024-01-02T23:10:00"),
+                len = 10,
+            )["ActivePowerVariable__ThermalStandard"].DateTime),
+    ) == 10
+
+    # request bad window
+    @test_logs(
+        (:error, r"Requested time does not match available outputs"),
+        (@test_throws IS.InvalidValue read_realized_variables(
+            outputs_ed,
+            [(ActivePowerVariable, ThermalStandard)];
+            start_time = DateTime("2024-01-02T23:10:00"),
+            len = 11,
+        ))
+    )
+
+    # request bad window
+    @test_logs(
+        (:error, r"Requested time does not match available outputs"),
+        (@test_throws IS.InvalidValue read_realized_variables(
+            outputs_ed,
+            [(ActivePowerVariable, ThermalStandard)];
+            start_time = DateTime("2024-01-02T23:10:00"),
+            len = 12,
+        ))
+    )
+
+    load_outputs!(
+        outputs_ed,
+        3;
+        initial_time = DateTime("2024-01-01T00:00:00"),
+        variables = [(ActivePowerVariable, ThermalStandard)],
+    )
+
+    @test !isempty(
+        PSI.get_cached_variables(outputs_ed)[PSI.VariableKey(
+            ActivePowerVariable,
+            ThermalStandard,
+        )].data,
+    )
+    @test length(
+        PSI.get_cached_variables(outputs_ed)[PSI.VariableKey(
+            ActivePowerVariable,
+            ThermalStandard,
+        )].data,
+    ) == 3
+    @test length(outputs_ed) == 3
+
+    @test_throws(ErrorException, read_parameter(outputs_ed, "invalid"))
+    @test_throws(ErrorException, read_variable(outputs_ed, "invalid"))
+    @test_logs(
+        (:error, r"not stored"),
+        @test_throws(
+            IS.InvalidValue,
+            read_variable(
+                outputs_uc,
+                ActivePowerVariable,
+                ThermalStandard;
+                start_time = now(),
+            )
+        )
+    )
+    @test_logs(
+        (:error, r"not stored"),
+        @test_throws(
+            IS.InvalidValue,
+            read_variable(outputs_uc, ActivePowerVariable, ThermalStandard; len = 25)
+        )
+    )
+
+    empty!(outputs_ed)
+    @test !haskey(
+        PSI.get_cached_variables(outputs_ed),
+        PSI.VariableKey(ActivePowerVariable, ThermalStandard),
+    )
+
+    initial_time = DateTime("2024-01-01T00:00:00")
+    load_outputs!(
+        outputs_ed,
+        3;
+        initial_time = initial_time,
+        variables = [(ActivePowerVariable, ThermalStandard)],
+        duals = [(CopperPlateBalanceConstraint, System)],
+        parameters = [(ActivePowerTimeSeriesParameter, RenewableDispatch)],
+    )
+
+    @test !isempty(
+        PSI.get_cached_variables(outputs_ed)[PSI.VariableKey(
+            ActivePowerVariable,
+            ThermalStandard,
+        )].data,
+    )
+    @test !isempty(
+        PSI.get_cached_duals(outputs_ed)[PSI.ConstraintKey(
+            CopperPlateBalanceConstraint,
+            System,
+        )].data,
+    )
+    @test !isempty(
+        PSI.get_cached_parameters(outputs_ed)[PSI.ParameterKey{
+            ActivePowerTimeSeriesParameter,
+            RenewableDispatch,
+        }(
+            "",
+        )].data,
+    )
+
+    # Inspired by https://github.com/Sienna-Platform/PowerSimulations.jl/issues/1072
+    @testset "Test cache behavior" begin
+        myres = deepcopy(outputs_ed)
+        initial_time = DateTime("2024-01-01T00:00:00")
+        timestamps = PSI._process_timestamps(myres, initial_time, 3)
+        variable_tuple = (ActivePowerVariable, ThermalStandard)
+        variable_key = PSI.VariableKey(variable_tuple...)
+
+        empty!(myres)
+        @test isempty(PSI.get_cached_variables(myres))
+
+        # With nothing cached, all reads should be from outside the cache
+        read = @test_no_cache PSI._read_outputs(myres, [variable_key], timestamps, nothing)
+        @test actual_timestamps(read) == timestamps
+
+        # With 2 output windows cached, reading 2 windows should come from cache and reading 3 should come from outside
+        load_outputs!(myres, 2; initial_time = initial_time, variables = [variable_tuple])
+        @test haskey(PSI.get_cached_variables(myres), variable_key)
+        read = @test_yes_cache PSI._read_outputs(
+            myres,
+            [variable_key],
+            timestamps[1:2],
+            nothing,
+        )
+        @test actual_timestamps(read) == timestamps[1:2]
+        read = @test_no_cache PSI._read_outputs(myres, [variable_key], timestamps, nothing)
+        @test actual_timestamps(read) == timestamps
+
+        # With 3 output windows cached, reading 2 and 3 windows should both come from cache
+        load_outputs!(myres, 3; initial_time = initial_time, variables = [variable_tuple])
+        read = @test_yes_cache PSI._read_outputs(
+            myres,
+            [variable_key],
+            timestamps[1:2],
+            nothing,
+        )
+        @test actual_timestamps(read) == timestamps[1:2]
+        read = @test_yes_cache PSI._read_outputs(myres, [variable_key], timestamps, nothing)
+        @test actual_timestamps(read) == timestamps
+
+        # Caching an additional variable should incur an additional read but not evict the old variable
+        @test_no_cache load_outputs!(
+            myres,
+            3;
+            initial_time = initial_time,
+            variables = [(ActivePowerVariable, RenewableDispatch)],
+        )
+        @test haskey(PSI.get_cached_variables(myres), variable_key)
+        @test haskey(
+            PSI.get_cached_variables(myres),
+            PSI.VariableKey(ActivePowerVariable, RenewableDispatch),
+        )
+
+        # Reset back down to 2 windows
+        empty!(myres)
+        @test_no_cache load_outputs!(
+            myres,
+            2;
+            initial_time = initial_time,
+            variables = [variable_tuple],
+        )
+
+        # Loading a subset of what has already been loaded should not incur additional reads from outside the cache
+        @test_yes_cache load_outputs!(
+            myres,
+            2;
+            initial_time = initial_time,
+            variables = [variable_tuple],
+        )
+        @test_yes_cache load_outputs!(
+            myres,
+            1;
+            initial_time = initial_time,
+            variables = [variable_tuple],
+        )
+        # But loading a superset should
+        @test_no_cache load_outputs!(
+            myres,
+            3;
+            initial_time = initial_time,
+            variables = [variable_tuple],
+        )
+        empty!(myres)
+
+        # With windows 2-3 cached, reading 2-3 and 3-3 should be from cache, reading 1-2 should be from outside cache
+        @test_no_cache load_outputs!(
+            myres,
+            2;
+            initial_time = timestamps[2],
+            variables = [variable_tuple],
+        )
+        read = @test_yes_cache PSI._read_outputs(
+            myres,
+            [variable_key],
+            timestamps[2:3],
+            nothing,
+        )
+        @test actual_timestamps(read) == timestamps[2:3]
+        read = @test_yes_cache PSI._read_outputs(
+            myres,
+            [variable_key],
+            timestamps[3:3],
+            nothing,
+        )
+        @test actual_timestamps(read) == timestamps[3:3]
+        read = @test_no_cache PSI._read_outputs(
+            myres,
+            [variable_key],
+            timestamps[1:2],
+            nothing,
+        )
+        @test actual_timestamps(read) == timestamps[1:2]
+
+        empty!(myres)
+        @test isempty(PSI.get_cached_variables(myres))
+    end
+
+    @testset "Test read_outputs_with_keys" begin
+        myres = deepcopy(outputs_ed)
+        initial_time = DateTime("2024-01-01T00:00:00")
+        timestamps = PSI._process_timestamps(myres, initial_time, 3)
+        output_keys = [PSI.VariableKey(ActivePowerVariable, ThermalStandard)]
+
+        res1 =
+            IOM.read_outputs_with_keys(myres, output_keys; table_format = TableFormat.WIDE)
+        @test Set(keys(res1)) == Set(output_keys)
+        res1_df = res1[first(output_keys)]
+        @test size(res1_df) == (576, 6)
+        @test first(names(res1_df)) == "DateTime"
+        @test Set(names(res1_df)[2:end]) ==
+              Set(["Solitude", "Park City", "Alta", "Brighton", "Sundance"])
+        @test first(eltype.(eachcol(res1_df))) === DateTime
+
+        res2 =
+            IOM.read_outputs_with_keys(
+                myres,
+                output_keys;
+                cols = ["Park City", "Brighton"],
+                table_format = TableFormat.WIDE,
+            )
+        @test Set(keys(res2)) == Set(output_keys)
+        res2_df = res2[first(output_keys)]
+        @test size(res2_df) == (576, 3)
+        @test names(res2_df) ==
+              ["DateTime", "Park City", "Brighton"]
+        @test first(eltype.(eachcol(res2_df))) === DateTime
+        compare_long_and_wide_realized_outputs_2d(
+            IOM.read_outputs_with_keys,
+            myres,
+            output_keys;
+            cols = ["Park City", "Brighton"],
+        )
+
+        res3_df =
+            IOM.read_outputs_with_keys(
+                myres,
+                output_keys;
+                start_time = timestamps[2],
+                table_format = TableFormat.WIDE,
+            )[first(
+                output_keys,
+            )]
+        @test res3_df[1, "DateTime"] == timestamps[2]
+
+        res4_df =
+            IOM.read_outputs_with_keys(
+                myres,
+                output_keys;
+                len = 2,
+                table_format = TableFormat.WIDE,
+            )[first(output_keys)]
+        @test size(res4_df) == (2, 6)
+    end
+end
+
+function test_decision_problem_outputs(
+    outputs::SimulationOutputs,
+    c_sys5_hy_ed,
+    c_sys5_hy_uc,
+    in_memory;
+    skip_from_file_check = false,
+)
+    @test list_decision_problems(outputs) == ["ED", "UC"]
+    outputs_uc = get_decision_problem_outputs(outputs, "UC")
+    outputs_ed = get_decision_problem_outputs(outputs, "ED")
+
+    test_decision_problem_outputs_values(outputs_ed, outputs_uc, c_sys5_hy_ed, c_sys5_hy_uc)
+    if !in_memory && !skip_from_file_check
+        test_simulation_outputs_from_file(dirname(outputs.path), c_sys5_hy_ed, c_sys5_hy_uc)
+    end
+end
+
+function test_emulation_problem_outputs(outputs::SimulationOutputs, in_memory)
+    outputs_em = get_emulation_problem_outputs(outputs)
+
+    read_realized_aux_variables(outputs_em)
+
+    duals_keys = collect(keys(read_realized_duals(outputs_em)))
+    @test length(duals_keys) == 1
+    @test duals_keys[1] == "CopperPlateBalanceConstraint__System"
+    duals_inputs =
+        (["CopperPlateBalanceConstraint__System"], [(CopperPlateBalanceConstraint, System)])
+    for input in duals_inputs
+        duals_value = first(values(read_realized_duals(outputs_em, input)))
+        @test duals_value isa DataFrames.DataFrame
+        @test length(unique(duals_value.DateTime)) == 576
+    end
+
+    expressions_keys = collect(keys(read_realized_expressions(outputs_em)))
+    @test length(expressions_keys) == 12
+    expressions_inputs = (
+        [
+            # "ProductionCostExpression__HydroEnergyReservoir",
+            "ProductionCostExpression__ThermalStandard",
+        ],
+        [
+            # (ProductionCostExpression, HydroEnergyReservoir),
+            (ProductionCostExpression, ThermalStandard),
+        ],
+    )
+    for input in expressions_inputs
+        expressions_value = first(values(read_realized_expressions(outputs_em, input)))
+        @test expressions_value isa DataFrames.DataFrame
+        @test length(unique(expressions_value.DateTime)) == 576
+    end
+
+    @test length(
+        unique(
+            read_realized_expression(
+                outputs_em,
+                "ProductionCostExpression__ThermalStandard",
+            ).DateTime,
+        ),
+    ) == 576
+    @test length(
+        unique(
+            read_realized_expression(
+                outputs_em,
+                ProductionCostExpression,
+                ThermalStandard;
+                len = 10,
+            ).DateTime),
+    ) == 10
+
+    parameters_keys = collect(keys(read_realized_parameters(outputs_em)))
+    @test length(parameters_keys) == 5
+    parameters_inputs = (
+        [
+            "ActivePowerTimeSeriesParameter__PowerLoad",
+            "ActivePowerTimeSeriesParameter__RenewableDispatch",
+        ],
+        [
+            (ActivePowerTimeSeriesParameter, PowerLoad),
+            (ActivePowerTimeSeriesParameter, RenewableDispatch),
+        ],
+    )
+    for input in parameters_inputs
+        parameters_value = first(values(read_realized_parameters(outputs_em, input)))
+        @test parameters_value isa DataFrames.DataFrame
+        @test length(unique(parameters_value.DateTime)) == 576
+    end
+
+    @test length(
+        unique(
+            read_realized_parameter(
+                outputs_em,
+                "ActivePowerTimeSeriesParameter__RenewableDispatch";
+                len = 10,
+            ).DateTime),
+    ) == 10
+
+    expected_vars = union(Set(ED_EXPECTED_VARS), UC_EXPECTED_VARS)
+    @test isempty(setdiff(list_variable_names(outputs_em), expected_vars))
+    all_vars = Set(keys(read_realized_variables(outputs_em)))
+    @test isempty(setdiff(all_vars, expected_vars))
+
+    variables_inputs = (
+        ["ActivePowerVariable__ThermalStandard", "ActivePowerVariable__RenewableDispatch"],
+        [(ActivePowerVariable, ThermalStandard), (ActivePowerVariable, RenewableDispatch)],
+    )
+    for input in variables_inputs
+        vars = read_realized_variables(outputs_em, input; table_format = TableFormat.WIDE)
+        var_keys = collect(keys(vars))
+        @test length(var_keys) == 2
+        @test first(var_keys) == "ActivePowerVariable__ThermalStandard"
+        @test last(var_keys) == "ActivePowerVariable__RenewableDispatch"
+        for val in values(vars)
+            @test val isa DataFrames.DataFrame
+            @test DataFrames.nrow(val) == 576
+        end
+    end
+
+    start_time = first(outputs_em.timestamps) + Dates.Hour(1)
+    len = 12
+    @test DataFrames.nrow(
+        read_realized_variable(
+            outputs_em,
+            ActivePowerVariable,
+            ThermalStandard;
+            start_time = start_time,
+            len = len,
+            table_format = TableFormat.WIDE,
+        ),
+    ) == len
+
+    vars = read_realized_variables(
+        outputs_em,
+        variables_inputs[1];
+        start_time = start_time,
+        len = len,
+        table_format = TableFormat.WIDE,
+    )
+    df = first(values(vars))
+    @test length(unique(df.DateTime)) == len
+    @test df[!, "DateTime"][1] == start_time
+
+    @test_throws IS.InvalidValue read_realized_variables(
+        outputs_em,
+        variables_inputs[1],
+        start_time = start_time,
+        len = 100000,
+        table_format = TableFormat.WIDE,
+    )
+    @test_throws IS.InvalidValue read_realized_variables(
+        outputs_em,
+        variables_inputs[1],
+        start_time = start_time + Dates.Second(1),
+        table_format = TableFormat.WIDE,
+    )
+    @test_throws IS.InvalidValue read_realized_variables(
+        outputs_em,
+        variables_inputs[1],
+        start_time = start_time - Dates.Hour(1000),
+        table_format = TableFormat.WIDE,
+    )
+    @test_throws IS.InvalidValue read_realized_variables(
+        outputs_em,
+        variables_inputs[1],
+        len = 100000,
+        table_format = TableFormat.WIDE,
+    )
+
+    @test isempty(outputs_em)
+    load_outputs!(
+        outputs_em;
+        duals = duals_inputs[2],
+        expressions = expressions_inputs[2],
+        parameters = parameters_inputs[2],
+        variables = variables_inputs[2],
+    )
+    @test !isempty(outputs_em)
+    @test length(outputs_em) ==
+          length(duals_inputs[2]) +
+          length(expressions_inputs[2]) +
+          length(parameters_inputs[2]) +
+          length(variables_inputs[2])
+
+    # Test that table_format is applied when reading from cache (regression test for GH issue)
+    vars_wide_from_cache = read_realized_variables(
+        outputs_em,
+        variables_inputs[2];
+        table_format = TableFormat.WIDE,
+    )
+    for val in values(vars_wide_from_cache)
+        @test val isa DataFrames.DataFrame
+        @test DataFrames.nrow(val) == 576
+        @test :DateTime in propertynames(val)
+        @test :name ∉ propertynames(val)
+        @test :value ∉ propertynames(val)
+        @test DataFrames.ncol(val) > 1  # DateTime + at least one component column
+    end
+
+    empty!(outputs_em)
+    @test isempty(outputs_em)
+
+    export_path = mktempdir(; cleanup = true)
+    export_realized_outputs(outputs_em, export_path)
+
+    var_name = "ActivePowerVariable__ThermalStandard"
+    df = read_realized_variable(outputs_em, var_name)
+    export_active_power_file = joinpath(export_path, "$(var_name).csv")
+    export_df = PSI.read_dataframe(export_active_power_file)
+    # TODO: outputs A bug in the code produces NaN after index 48.
+    # DataFrames.jl defines no `isapprox` for DataFrameRow (mixed DateTime/String/Float64
+    # columns); compare the numeric `:value` column, which is what this check exercises.
+    @test isapprox(df[48, :value], export_df[48, :value])
+end
+
+"""Close the sidecar store a `get_system!`-loaded bundle system holds open, so a later
+independent read of the same on-disk bundle (InfraStore allows only one handle per file per
+process) does not hit "already open in this process"."""
+_close_sidecar_store!(sys::PSY.System) =
+    IS.close!(IS.get_data_store(sys.data.time_series_manager))
+
+function test_simulation_outputs_from_file(path::AbstractString, c_sys5_hy_ed, c_sys5_hy_uc)
+    outputs = SimulationOutputs(path, "no_cache")
+    @test list_decision_problems(outputs) == ["ED", "UC"]
+    outputs_uc = get_decision_problem_outputs(outputs, "UC")
+    outputs_ed = get_decision_problem_outputs(outputs, "ED")
+
+    loaded_uc = get_system!(outputs_uc)
+    @test !isnothing(loaded_uc)
+    @test length(read_realized_variables(outputs_uc)) == length(UC_EXPECTED_VARS)
+
+    @test_throws IS.InvalidValue set_system!(outputs_uc, c_sys5_hy_ed)
+    _close_sidecar_store!(loaded_uc)
+    set_system!(outputs_ed, c_sys5_hy_ed)
+    set_system!(outputs_uc, c_sys5_hy_uc)
+
+    test_decision_problem_outputs_values(outputs_ed, outputs_uc, c_sys5_hy_ed, c_sys5_hy_uc)
+end
+
+function test_decision_problem_outputs_kwargs_handling(
+    path::AbstractString,
+    c_sys5_hy_ed,
+    c_sys5_hy_uc,
+)
+    outputs = SimulationOutputs(path, "no_cache")
+    @test list_decision_problems(outputs) == ["ED", "UC"]
+    outputs_uc = get_decision_problem_outputs(outputs, "UC")
+    outputs_ed = get_decision_problem_outputs(outputs, "ED")
+
+    loaded_uc = get_system!(outputs_uc)
+    loaded_ed = get_system!(outputs_ed)
+    @test !isnothing(loaded_uc)
+    @test !isnothing(loaded_ed)
+
+    outputs_ed = get_decision_problem_outputs(outputs, "ED"; populate_system = true)
+    @test !isnothing(get_system(outputs_ed))
+
+    @test_throws IS.InvalidValue set_system!(outputs_uc, c_sys5_hy_ed)
+
+    _close_sidecar_store!(loaded_uc)
+    _close_sidecar_store!(loaded_ed)
+    set_system!(outputs_ed, c_sys5_hy_ed)
+    set_system!(outputs_uc, c_sys5_hy_uc)
+
+    # PowerSystems (psy6) has no system-wide unit base (`set_units_base_system!`/
+    # `get_units_base` are gone; getters take an explicit unit system per call), so
+    # `populate_units` is unsupported and errors regardless of `populate_system`.
+    @test_throws ErrorException get_decision_problem_outputs(
+        outputs,
+        "ED";
+        populate_system = true,
+        populate_units = IS.UnitSystem.DEVICE_BASE,
+    )
+
+    @test_throws ArgumentError get_decision_problem_outputs(
+        outputs,
+        "ED";
+        populate_system = false,
+        populate_units = IS.UnitSystem.DEVICE_BASE,
+    )
+
+    test_decision_problem_outputs_values(outputs_ed, outputs_uc, c_sys5_hy_ed, c_sys5_hy_uc)
+end
+
+function compare_long_and_wide_realized_outputs_2d(func, args...; kwargs...)
+    long_outputs = func(args...; table_format = TableFormat.LONG, kwargs...)
+    wide_outputs = func(args...; table_format = TableFormat.WIDE, kwargs...)
+    @test sort!(collect(keys(long_outputs))) == sort!(collect(keys(wide_outputs)))
+    for (key, long_value) in long_outputs
+        wide_value = wide_outputs[key]
+        measure_vars = [x for x in names(wide_value) if x != "DateTime"]
+        wide_converted = DataFrames.stack(
+            wide_value,
+            measure_vars;
+            variable_name = :name,
+            value_name = :value,
+        )
+        @test @orderby(wide_converted, :DateTime, :name) ==
+              @orderby(long_value, :DateTime, :name)
+    end
+end
+
+@testset "Test simulation outputs" begin
+    for in_memory in (false, true)
+        file_path = mktempdir(; cleanup = true)
+        export_path = mktempdir(; cleanup = true)
+        test_simulation_outputs_run(file_path, export_path; in_memory = in_memory)
+    end
+end
+
+@testset "Test simulation outputs with system from store" begin
+    file_path = mktempdir(; cleanup = true)
+    export_path = mktempdir(; cleanup = true)
+    c_sys5_hy_uc = PSB.build_system(PSITestSystems, "c_sys5_hy_uc")
+    c_sys5_hy_ed = PSB.build_system(PSITestSystems, "c_sys5_hy_ed")
+    in_memory = false
+    sim = run_simulation(
+        c_sys5_hy_uc,
+        c_sys5_hy_ed,
+        file_path,
+        export_path;
+        in_memory = in_memory,
+    )
+    outputs = SimulationOutputs(PSI.get_simulation_folder(sim))
+    uc = get_decision_problem_outputs(outputs, "UC")
+    ed = get_decision_problem_outputs(outputs, "ED")
+    sys_uc = get_system!(uc)
+    sys_ed = get_system!(ed)
+    # This testset already loaded UC/ED from the on-disk bundle above; skip
+    # test_decision_problem_outputs' own from-file re-check, which would otherwise
+    # independently reopen the same bundle while sys_uc/sys_ed (and their still-open
+    # sidecar stores, needed later for deepcopy) are alive -- InfraStore allows only one
+    # open handle per store file per process.
+    test_decision_problem_outputs(
+        outputs,
+        sys_ed,
+        sys_uc,
+        in_memory;
+        skip_from_file_check = true,
+    )
+    test_emulation_problem_outputs(outputs, in_memory)
+end
+
+@testset "The System rebuilt from outputs reads a time-series-backed cost" begin
+    sys = deepcopy(PSB.build_system(PSITestSystems, "c_sys5_uc"))
+    thermal = first(PSY.get_components(PSY.ThermalStandard, sys))
+
+    load = first(PSY.get_components(PSY.PowerLoad, sys))
+    load_ts = PSY.get_time_series(PSY.Deterministic, load, "max_active_power")
+    windows = collect(pairs(get_data(load_ts)))
+    horizon_count = length(last(first(windows)))
+
+    fuel_cost_data = OrderedDict{DateTime, Vector{Float64}}(
+        dt => Float64.((100 * step_ix) .+ (1:horizon_count))
+        for (step_ix, (dt, _)) in enumerate(windows)
+    )
+    fuel_ts = PSY.Deterministic(;
+        name = "fuel_cost",
+        data = fuel_cost_data,
+        resolution = IS.get_resolution(load_ts),
+        interval = IS.get_interval(load_ts),
+    )
+    fuel_key = PSY.add_time_series!(sys, thermal, fuel_ts)
+
+    old_cost = PSY.get_operation_cost(thermal)
+    PSY.set_operation_cost!(
+        thermal,
+        PSY.ThermalGenerationCost(;
+            variable_operation_cost = PSY.FuelCurve(PSY.LinearCurve(0.0, 5.0), fuel_key),
+            fixed = PSY.get_fixed(old_cost),
+            start_up = PSY.get_start_up(old_cost),
+            shut_down = PSY.get_shut_down(old_cost),
+        ),
+    )
+
+    template = test_template_unit_commitment(CopperPlateNetworkModel)
+    model = DecisionModel(template, sys; name = "UC", optimizer = HiGHS_optimizer_small_gap)
+    models = SimulationModels(; decision_models = [model])
+    sequence = SimulationSequence(;
+        models = models,
+        feedforwards = Dict(),
+        ini_cond_chronology = InterProblemChronology(),
+    )
+    sim = Simulation(;
+        name = "system_bundle_cost_sim",
+        steps = length(windows),
+        models = models,
+        sequence = sequence,
+        initial_time = first(first(windows)),
+        simulation_folder = mktempdir(; cleanup = true),
+    )
+
+    @test build!(sim; console_level = Logging.Error) == PSI.SimulationBuildStatus.BUILT
+    @test execute!(sim; enable_progress_bar = false) ==
+          PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    outputs = SimulationOutputs(PSI.get_simulation_folder(sim))
+    uc = get_decision_problem_outputs(outputs, "UC")
+    restored = get_system!(uc)
+    gen = get_component(PSY.ThermalStandard, restored, PSY.get_name(thermal))
+    cost_ts = PSY.get_fuel_cost(gen)
+    expected_values = fuel_cost_data[first(first(windows))]
+    @test length(TimeSeries.values(cost_ts)) > 0
+    @test TimeSeries.values(cost_ts) == expected_values
+end
+
+@testset "The outputs bundle System carries the executed input windows and rebuilds the run" begin
+    c_sys5_hy_uc = PSB.build_system(PSITestSystems, "c_sys5_hy_uc")
+    c_sys5_hy_ed = PSB.build_system(PSITestSystems, "c_sys5_hy_ed")
+    file_path = mktempdir(; cleanup = true)
+    export_path = mktempdir(; cleanup = true)
+    sim = run_simulation(
+        c_sys5_hy_uc,
+        c_sys5_hy_ed,
+        file_path,
+        export_path;
+        in_memory = false,
+    )
+    outputs = SimulationOutputs(PSI.get_simulation_folder(sim))
+    uc = get_decision_problem_outputs(outputs, "UC")
+    restored = get_system!(uc)
+
+    ren = first(get_components(PSY.RenewableDispatch, c_sys5_hy_uc))
+    ren2 = get_component(PSY.RenewableDispatch, restored, PSY.get_name(ren))
+    rows = IS.list_time_series_metadata(ren2; name = "max_active_power")
+    @test length(rows) == 1
+    @test IS.get_features(only(rows))["source"] == "parameter"
+    executions = collect(uc.timestamps)   # one initial time per UC execution
+    fc = PSY.get_time_series(PSY.Deterministic, ren2, "max_active_power")
+    @test sort(collect(keys(IS.get_data(fc)))) == executions
+    horizon_count = length(first(values(IS.get_data(fc))))
+    for t in executions
+        @test IS.get_data(fc)[t] == PSY.get_time_series_values(
+            PSY.Deterministic, ren, "max_active_power"; start_time = t, len = horizon_count,
+        )
+    end
+
+    # A decision model rebuilt from the restored System at the first execution's time reads
+    # the same parameters as one built from the original System.
+    uc_model = first(PSI.get_decision_models(PSI.get_models(sim)))
+    template = POM.get_template(uc_model)
+    t1 = first(executions)
+    from_original = DecisionModel(
+        template, c_sys5_hy_uc; optimizer = HiGHS_optimizer, initial_time = t1,
+    )
+    from_restored =
+        DecisionModel(template, restored; optimizer = HiGHS_optimizer, initial_time = t1)
+    @test build!(from_original; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+    @test build!(from_restored; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+    p_orig = IOM.read_parameters(IOM.get_optimization_container(from_original))
+    p_rest = IOM.read_parameters(IOM.get_optimization_container(from_restored))
+    input_keys = [
+        k for
+        (k, pc) in IOM.get_parameters(IOM.get_optimization_container(from_original)) if
+        POM.is_input_parameter(k, pc)
+    ]
+    @test !isempty(input_keys)
+    for k in input_keys
+        @test haskey(p_rest, k)
+        @test p_rest[k].data == p_orig[k].data
+    end
+    @test solve!(from_original) == IOM.RunStatus.SUCCESSFULLY_FINALIZED
+    @test solve!(from_restored) == IOM.RunStatus.SUCCESSFULLY_FINALIZED
+    # Not `JuMP.objective_value(IOM.get_jump_model(...))`: this template's MILP (binary
+    # commitment) triggers IOM's post-solve dual re-solve (`calculate_dual_variables!`,
+    # `is_milp(container)` branch in `execute_optimizer!`), which replaces the container's
+    # JuMP model with the dual-computation one, so `get_jump_model` afterward reads
+    # `OPTIMIZE_NOT_CALLED`. `optimizer_stats.objective_value` is captured before that swap
+    # (`write_optimizer_stats!` runs first, "to avoid issues when getting duals from MILPs"),
+    # so `IOM.get_objective_value` on a fresh `OptimizationProblemOutputs` is the robust read.
+    @test isapprox(
+        IOM.get_objective_value(IOM.OptimizationProblemOutputs(from_restored)),
+        IOM.get_objective_value(IOM.OptimizationProblemOutputs(from_original));
+        rtol = 1e-6,
+    )
+    _close_sidecar_store!(restored)
+end
+
+@testset "The outputs HDF5 store carries no systems group" begin
+    file_path = mktempdir(; cleanup = true)
+    export_path = mktempdir(; cleanup = true)
+    c_sys5_hy_uc = PSB.build_system(PSITestSystems, "c_sys5_hy_uc")
+    c_sys5_hy_ed = PSB.build_system(PSITestSystems, "c_sys5_hy_ed")
+    sim = run_simulation(
+        c_sys5_hy_uc,
+        c_sys5_hy_ed,
+        file_path,
+        export_path;
+        in_memory = false,
+    )
+    store_path = joinpath(PSI.get_store_dir(sim), PSI.HDF_FILENAME)
+    PSI.HDF5.h5open(store_path, "r") do file
+        @test !haskey(file["simulation"], "systems")
+    end
+    bundle_parent = joinpath(PSI.get_models_dir(sim), "UC")
+    @test any(startswith("system-"), readdir(bundle_parent))
+end
+
+function read_output_names(outputs, key::PSI.OptimizationContainerKey)
+    output_data = IOM.read_outputs_with_keys(
+        outputs,
+        [key];
+        table_format = TableFormat.LONG,
+    )
+    first_output = only(values(output_data))
+    columns_without_datetime = first_output[!, Not(:DateTime)]
+    return Set(names(columns_without_datetime))
+end
+
+@testset "Test system is populated from the outputs bundle on file deserialization" begin
+    file_path = mktempdir(; cleanup = true)
+    export_path = mktempdir(; cleanup = true)
+    c_sys5_hy_uc = PSB.build_system(PSITestSystems, "c_sys5_hy_uc")
+    c_sys5_hy_ed = PSB.build_system(PSITestSystems, "c_sys5_hy_ed")
+    sim = run_simulation(
+        c_sys5_hy_uc,
+        c_sys5_hy_ed,
+        file_path,
+        export_path;
+        in_memory = false,
+    )
+
+    outputs = SimulationOutputs(PSI.get_simulation_folder(sim))
+    outputs_uc = get_decision_problem_outputs(outputs, "UC")
+    outputs_ed = get_decision_problem_outputs(outputs, "ED")
+    outputs_em = get_emulation_problem_outputs(outputs)
+
+    sys_uc = get_system!(outputs_uc)
+    sys_ed = get_system!(outputs_ed)
+    @test !isnothing(sys_uc)
+    @test !isnothing(sys_ed)
+
+    # This simulation has no real EmulationModel, so its outputs carry a placeholder
+    # "Emulator" entry (`simulation.jl`'s `emulation_model_store_params`) that borrows a
+    # decision model's system UUID but has no bundle of its own at `problems/Emulator/`.
+    @test_throws ErrorException get_system!(outputs_em)
+
+    @test PSY.get_system_uuid(sys_uc) == PSY.get_system_uuid(c_sys5_hy_uc)
+    @test PSY.get_system_uuid(sys_ed) == PSY.get_system_uuid(c_sys5_hy_ed)
+
+    # Neither test system carries a time-series-backed cost, so no *component* should see
+    # any time series of its own; the sidecar's catalog also holds the run's realized
+    # parameter forecasts, but those are written under a synthetic owner
+    # (`POM.PARAMETER_ROW_OWNER`) no component is ever attached to, so a System-level
+    # `PSY.get_time_series_counts` count is not the right assertion any more.
+    @test all(
+        !PSY.has_time_series(c) for c in PSY.get_components(PSY.ThermalStandard, sys_uc)
+    )
+end
+
+@testset "read_realized_parameters keeps its shape across the storage move" begin
+    c_sys5_hy_uc = PSB.build_system(PSITestSystems, "c_sys5_hy_uc")
+    c_sys5_hy_ed = PSB.build_system(PSITestSystems, "c_sys5_hy_ed")
+    sim = run_simulation(
+        c_sys5_hy_uc,
+        c_sys5_hy_ed,
+        mktempdir(; cleanup = true),
+        mktempdir(; cleanup = true);
+        in_memory = false,
+    )
+    outputs = SimulationOutputs(PSI.get_simulation_folder(sim))
+    uc = get_decision_problem_outputs(outputs, "UC")
+    params = read_realized_parameters(uc)
+    @test !isempty(params)
+    df = params["ActivePowerTimeSeriesParameter__RenewableDispatch"]
+    @test df isa DataFrames.DataFrame
+    @test names(df) == ["DateTime", "name", "value"]
+
+    # The values are the System's own "max_active_power" forecast realized over the run:
+    # compare one device's realized column against the source time series directly. Uses
+    # the original in-memory system, not `get_system!(uc)`'s reloaded one -- the outputs
+    # bundle's document does not carry every input forecast (only the structural/cost data
+    # `run_simulation`'s own tests check), so the reloaded System's "max_active_power" is
+    # not guaranteed to round-trip; the original system's own copy is unaffected either way.
+    # UC's realized range (48 hourly rows) spans two non-overlapping 24-step executions of
+    # a source forecast whose own windows are 24 steps each -- compare only the first
+    # execution's worth, which is exactly the source forecast's first window.
+    label = first(sort(unique(df.name)))
+    label_df = DataFrames.sort(df[df.name .== label, :], :DateTime)
+    component = PSY.get_component(PSY.RenewableDispatch, c_sys5_hy_uc, label)
+    source_ts = PSY.get_time_series(PSY.Deterministic, component, "max_active_power")
+    horizon_count = length(first(values(IS.get_data(source_ts))))
+    first_window = first(label_df, horizon_count)
+    # ActivePowerTimeSeriesParameter is a natural-units (MW) read; the source forecast is a
+    # per-unit availability multiplier (on the device's own rating, not the system base),
+    # so the realized column is a constant scalar multiple of the source series rather than
+    # an exact match -- checking that constant holds is still a real, non-degenerate
+    # correctness check on the values themselves, without hardcoding POM's own unit math.
+    source_values = PSY.get_time_series_values(
+        PSY.Deterministic,
+        component,
+        "max_active_power";
+        start_time = first_window[1, :DateTime],
+        len = horizon_count,
+    )
+    nonzero = source_values .!= 0
+    @test !isempty(source_values[nonzero])
+    ratios = first_window.value[nonzero] ./ source_values[nonzero]
+    @test all(r -> isapprox(r, first(ratios)), ratios)
+end

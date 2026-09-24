@@ -88,8 +88,8 @@ end
     )
     @test execute_simulation(regular_sim) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
 
-    regular_results = SimulationResults(sim_dir, regular_name)
-    partitioned_results = SimulationResults(sim_dir, partition_name)
+    regular_outputs = SimulationOutputs(sim_dir, regular_name)
+    partitioned_outputs = SimulationOutputs(sim_dir, partition_name)
 
     functions = (
         read_realized_aux_variables,
@@ -99,12 +99,12 @@ end
     )
     key_strings_to_skip = ("Flow", "On", "Off", "Shut", "Start", "Stop")
     for name in ("ED", "UC")
-        regular_model_results = get_decision_problem_results(regular_results, name)
-        partitioned_model_results = get_decision_problem_results(partitioned_results, name)
+        regular_model_outputs = get_decision_problem_outputs(regular_outputs, name)
+        partitioned_model_outputs = get_decision_problem_outputs(partitioned_outputs, name)
 
         for func in functions
-            regular = func(regular_model_results; table_format = TableFormat.WIDE)
-            partitioned = func(partitioned_model_results; table_format = TableFormat.WIDE)
+            regular = func(regular_model_outputs; table_format = TableFormat.WIDE)
+            partitioned = func(partitioned_model_outputs; table_format = TableFormat.WIDE)
             @test sort(collect(keys(regular))) == sort(collect(keys(partitioned)))
             for key in keys(regular)
                 t_start = regular[key][1, 1]
@@ -145,14 +145,29 @@ end
         end
     end
 
+    # The merged bundle's System carries the input windows of every partition.
+    uc_joined = get_decision_problem_outputs(partitioned_outputs, "UC")
+    restored = get_system!(uc_joined)
+    ren = first(get_components(PSY.RenewableDispatch, restored))
+    fc = PSY.get_time_series(PSY.Deterministic, ren, "max_active_power")
+    @test sort(collect(keys(IS.get_data(fc)))) == collect(uc_joined.timestamps)
+    # InfraStore allows only one open handle per file per process; the sabotage tests below
+    # reopen this same bundle for writing, so this read-only handle must not outlive this check.
+    IS.close!(IS.get_data_store(restored.data))
+
     base_dir = joinpath(sim_dir, partition_name)
-    partition_results = PSI.SimulationPartitionResults(base_dir)
-    num_partitions = get_num_partitions(partition_results.partitions)
+    partition_outputs = PSI.SimulationPartitionOutputs(base_dir)
+    num_partitions = get_num_partitions(partition_outputs.partitions)
+
+    # Parameters have no HDF5-backed dataset to compare here (Task 8+9): they live in each
+    # model's bundle InfraStore sidecar, already compared above via read_realized_parameters.
+    dataset_output_types =
+        string.(filter(!=(PSI.STORE_CONTAINER_PARAMETERS), PSI.STORE_CONTAINERS))
 
     function compare_store_dataset(index, src_dataset, dst_dataset, step_dim)
-        step_range = PSI.get_absolute_step_range(partition_results.partitions, index)
+        step_range = PSI.get_absolute_step_range(partition_outputs.partitions, index)
         per_step = size(src_dataset, step_dim) ÷ length(step_range)
-        valid_range = PSI._valid_step_range(partition_results, index)
+        valid_range = PSI._valid_step_range(partition_outputs, index)
         len = length(valid_range) * per_step
         src_start = 1 + per_step * (first(valid_range) - first(step_range))
         dst_start = 1 + per_step * (first(valid_range) - 1)
@@ -178,11 +193,11 @@ end
         end
     end
 
-    PSI.HDF5.h5open(PSI._store_path(partition_results), "r") do merged_store
+    PSI.HDF5.h5open(PSI._store_path(partition_outputs), "r") do merged_store
         for index in 1:num_partitions
             PSI.HDF5.h5open(
                 joinpath(
-                    PSI._partition_path(partition_results, index),
+                    PSI._partition_path(partition_outputs, index),
                     PSI._store_subpath(),
                 ),
                 "r",
@@ -191,7 +206,7 @@ end
                       sort(collect(keys(merged_store["simulation/decision_models"])))
                 for merged_group in merged_store["simulation/decision_models"]
                     group_path = PSI.HDF5.name(merged_group)
-                    for output_type in string.(PSI.STORE_CONTAINERS)
+                    for output_type in dataset_output_types
                         compare_store_group(
                             index,
                             partition_store,
@@ -207,7 +222,7 @@ end
                         ndims(merged_store["$group_path/optimizer_stats"]),
                     )
                 end
-                for output_type in string.(PSI.STORE_CONTAINERS)
+                for output_type in dataset_output_types
                     compare_store_group(
                         index,
                         partition_store,
@@ -220,20 +235,20 @@ end
         end
     end
 
-    # TODO: Can emulation model results be validated through the public results APIs?
+    # TODO: Can emulation model outputs be validated through the public outputs APIs?
 
     # The checks below sabotage the partition outputs and so must be last.
-    joined_status_path = joinpath(base_dir, PSI.RESULTS_DIR)
+    joined_status_path = joinpath(base_dir, PSI.OUTPUTS_DIR)
     partition_status_path(index) =
-        joinpath(PSI._partition_path(partition_results, index), PSI.RESULTS_DIR)
-    read_realized(results) = Dict(
+        joinpath(PSI._partition_path(partition_outputs, index), PSI.OUTPUTS_DIR)
+    read_realized(outputs) = Dict(
         name => read_realized_variables(
-            get_decision_problem_results(results, name);
+            get_decision_problem_outputs(outputs, name);
             table_format = TableFormat.WIDE,
         ) for name in ("UC", "ED")
     )
 
-    pre_join_variables = read_realized(partitioned_results)
+    pre_join_variables = read_realized(partitioned_outputs)
     failed_index = 2
 
     # Joining a simulation with a failed partition must fail and record the failure.
@@ -247,7 +262,7 @@ end
     sentinel = -9999.0
     PSI.HDF5.h5open(joinpath(base_dir, "data_store", "simulation_store.h5"), "r+") do store
         for group in store["simulation/decision_models"]
-            for output_type in string.(PSI.STORE_CONTAINERS)
+            for output_type in dataset_output_types
                 for dataset in group[output_type]
                     endswith(PSI.HDF5.name(dataset), "__columns") && continue
                     if ndims(dataset) == 2
@@ -261,28 +276,28 @@ end
             end
         end
     end
-    # The results are read through the same conversions as any other results, so record
+    # The outputs are read through the same conversions as any other outputs, so record
     # what the sentinel looks like after them instead of assuming that it is unchanged.
     store_dir = joinpath(base_dir, "data_store")
     PSI.IS.compute_file_hash(store_dir, "simulation_store.h5")
     sentinel_variables =
-        read_realized(SimulationResults(sim_dir, partition_name; ignore_status = true))
+        read_realized(SimulationOutputs(sim_dir, partition_name; ignore_status = true))
 
     @test PSI.join_simulation(base_dir; skip_failures = true) == PSI.RunStatus.FAILED
     @test PSI.deserialize_status(joined_status_path) == PSI.RunStatus.FAILED
-    # The results of the successful partitions must still be readable.
-    post_join_results = SimulationResults(sim_dir, partition_name; ignore_status = true)
-    post_join_variables = read_realized(post_join_results)
+    # The outputs of the successful partitions must still be readable.
+    post_join_outputs = SimulationOutputs(sim_dir, partition_name; ignore_status = true)
+    post_join_variables = read_realized(post_join_outputs)
     for (model_name, pre_variables) in pre_join_variables
         post_variables = post_join_variables[model_name]
         @test sort(collect(keys(pre_variables))) == sort(collect(keys(post_variables)))
         for (key, pre_df) in pre_variables
             post_df = post_variables[key]
             @test nrow(post_df) == nrow(pre_df)
-            num_steps = partition_results.partitions.num_steps
+            num_steps = partition_outputs.partitions.num_steps
             @test nrow(pre_df) % num_steps == 0
             rows_per_step = nrow(pre_df) ÷ num_steps
-            skipped_steps = PSI._valid_step_range(partition_results, failed_index)
+            skipped_steps = PSI._valid_step_range(partition_outputs, failed_index)
             skipped_rows =
                 (rows_per_step * (first(skipped_steps) - 1) + 1):(rows_per_step * last(
                     skipped_steps,
@@ -307,7 +322,7 @@ end
     )
     @test PSI.deserialize_status(joined_status_path) == PSI.RunStatus.FAILED
     # The command must fail even with --skip-failures so that scripts detect the failure,
-    # but only after merging the results of the successful jobs.
+    # but only after merging the outputs of the successful jobs.
     @test_throws ErrorException PSI.process_simulation_partition_cli_args(
         build_simulation,
         execute_simulation,
@@ -354,7 +369,7 @@ end
     # reported success.
     corrupted_index = num_partitions
     store_file = joinpath(
-        PSI._partition_path(partition_results, corrupted_index),
+        PSI._partition_path(partition_outputs, corrupted_index),
         "data_store",
         "simulation_store.h5",
     )
@@ -393,4 +408,63 @@ end
     @test PSI.join_simulation(base_dir) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
     @test PSI.deserialize_status(joined_status_path) ==
           PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    # The Emulator aggregator borrows one decision model's bundle (it has none of its own); that
+    # bundle must carry both a Deterministic input row (the decision model's own) and a
+    # SingleTimeSeries input row (the Emulator's) for devices both templates read -- proof that
+    # the type-scoped write-once fix (POM `_input_row_exists`) lets the two coexist instead of
+    # one silently blocking the other. Find which decision model that is rather than assuming.
+    emulator_model_name = PSI.open_store(
+        PSI.HdfSimulationStore,
+        joinpath(base_dir, PSI.STORE_DIR),
+        "r",
+    ) do store
+        em_bundle = PSI._emulation_bundle_dir(store)
+        for name in keys(store.params.decision_models_params)
+            params = PSI.get_decision_model_params(store, name)
+            PSI._bundle_dir(store, name, PSI.get_system_uuid(params)) == em_bundle &&
+                return name
+        end
+        return nothing
+    end
+    @test emulator_model_name !== nothing
+    final_outputs = SimulationOutputs(sim_dir, partition_name)
+    restored = get_system!(
+        get_decision_problem_outputs(final_outputs, string(emulator_model_name)),
+    )
+    input_rows = POM.list_input_series(POM.parameter_store_of(restored))
+    @test any(md -> IS.get_time_series_type(md) <: PSY.Deterministic, input_rows)
+    @test any(md -> IS.get_time_series_type(md) <: PSY.SingleTimeSeries, input_rows)
+    IS.close!(IS.get_data_store(restored.data))
+end
+
+@testset "_write_decision_model_inputs! warns instead of silently dropping new windows" begin
+    store = POM.ParameterTimeSeriesStore()
+    t0 = Dates.DateTime(2024, 1, 1)
+    resolution = Dates.Hour(1)
+    interval = Dates.Hour(24)
+    # Seed the destination with one window, as an earlier partial join would have written.
+    POM.write_input_forecast_row!(
+        store, 7, "RenewableDispatch", "max_active_power",
+        Dict(t0 => collect(1.0:24.0)), resolution, interval,
+    )
+    # This merge's accumulated data holds a second window the existing row lacks.
+    accumulated = Dict{Tuple{Int64, String, String}, Dict{Dates.DateTime, Vector{Float64}}}(
+        (7, "RenewableDispatch", "max_active_power") =>
+            Dict{Dates.DateTime, Vector{Float64}}(
+                t0 => collect(2.0:25.0),
+                t0 + interval => collect(3.0:26.0),
+            ),
+    )
+    @test_logs(
+        (:warn, r"input series whose merged-bundle row already exists"),
+        match_mode = :any,
+        PSI._write_decision_model_inputs!(store, accumulated, :UC, resolution, interval),
+    )
+    # Write-once: the existing row is left exactly as it was, neither extended nor overwritten.
+    row = only(POM.list_input_series(store))
+    ts = POM.read_input_time_series(store, row)
+    @test collect(keys(IS.get_data(ts))) == [t0]
+    @test IS.get_data(ts)[t0] == collect(1.0:24.0)
+    POM.close_parameter_store!(store)
 end

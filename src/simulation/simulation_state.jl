@@ -285,9 +285,9 @@ function update_decision_state!(
         state_data_index = find_timestamp_index(state_timestamps, simulation_time)
     end
     offset = resolution_ratio - 1
-    result_time_index = axes(store_data)[2]
+    output_time_index = axes(store_data)[2]
     set_update_timestamp!(state_data, simulation_time)
-    for t in result_time_index
+    for t in output_time_index
         state_range = state_data_index:(state_data_index + offset)
         for name in column_names
             # One countdown step per state step inside the model's interval.
@@ -333,9 +333,9 @@ function update_decision_state!(
     end
 
     offset = resolution_ratio - 1
-    result_time_index = axes(store_data)[2]
+    output_time_index = axes(store_data)[2]
     set_update_timestamp!(state_data, simulation_time)
-    for t in result_time_index
+    for t in output_time_index
         state_range = state_data_index:(state_data_index + offset)
         for name in column_names, i in state_range
             state_data.values[name, i] =
@@ -404,9 +404,9 @@ function update_decision_state!(
     end
 
     offset = resolution_ratio - 1
-    result_time_index = axes(store_data)[2]
+    output_time_index = axes(store_data)[2]
     set_update_timestamp!(state_data, simulation_time)
-    for t in result_time_index
+    for t in output_time_index
         state_range = state_data_index:(state_data_index + offset)
         for name in column_names, i in state_range
             # TODO: We could also interpolate here
@@ -591,9 +591,9 @@ function update_decision_state!(
     end
 
     offset = resolution_ratio - 1
-    result_time_index = axes(store_data)[3]
+    output_time_index = axes(store_data)[3]
     set_update_timestamp!(state_data, simulation_time)
-    for t in result_time_index
+    for t in output_time_index
         state_range = state_data_index:(state_data_index + offset)
         for name in axes(store_data)[2], i in state_range
             #loop pelo -outages, names t
@@ -634,7 +634,7 @@ function update_decision_state!(
     end
 
     offset = resolution_ratio - 1
-    result_time_index = axes(store_data)[2]
+    output_time_index = axes(store_data)[2]
     set_update_timestamp!(state_data, simulation_time)
 
     if isone(resolution_ratio)
@@ -646,7 +646,7 @@ function update_decision_state!(
     end
 
     column_names = axes(state_data.values)[1]
-    for t in result_time_index
+    for t in output_time_index
         state_range = state_data_index:(state_data_index + offset)
         @assert_op state_range[end] <= get_num_rows(state_data)
         for name in column_names, i in state_range
@@ -734,7 +734,7 @@ function update_system_state!(
 )
     em_data = get_em_data(store)
     ix = get_last_recorded_row(em_data, key)
-    res = read_result(DenseAxisArray, store, model_name, key, ix)
+    res = read_output(DenseAxisArray, store, model_name, key, ix)
     dataset = get_dataset(state, key)
     set_update_timestamp!(dataset, simulation_time)
     set_dataset_values!(state, key, 1, _last_recorded_state_value(store, res, ix))
@@ -742,7 +742,7 @@ function update_system_state!(
     return
 end
 
-# Event parameters are exogenous state the models read, not results they produce. Copying
+# Event parameters are exogenous state the models read, not outputs they produce. Copying
 # the emulator's own values back over them resets the countdown every step, which is the
 # outage's memory: the device would be re-outaged forever and never recover.
 function update_system_state!(

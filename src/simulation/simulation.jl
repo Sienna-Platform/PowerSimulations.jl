@@ -16,7 +16,7 @@ Construct the `Simulation` structure to run the sequence of decision and emulati
   - `name::String`: Name of the Simulation
   - `steps::Int`: Number of steps on which the sequence of models will be executed
   - `models::SimulationModels`: List of Decision and Emulation Models
-  - `simulation_folder::String`: Folder on which results will be stored
+  - `simulation_folder::String`: Folder on which outputs will be stored
   - `initial_time::Union{Nothing, Dates.DateTime} = nothing`: Initial time of which the
     simulation starts. If nothing it will default to the first timestamp of time series of the system.
 
@@ -115,7 +115,7 @@ get_simulation_build_status(sim::Simulation) = sim.internal.build_status
 get_simulation_state(sim::Simulation) = sim.internal.simulation_state
 set_simulation_store!(sim::Simulation, store) = sim.internal.store = store
 get_simulation_store(sim::Simulation) = sim.internal.store
-get_results_dir(sim::Simulation) = sim.internal.results_dir
+get_outputs_dir(sim::Simulation) = sim.internal.outputs_dir
 get_models_dir(sim::Simulation) = sim.internal.models_dir
 
 IOM.get_interval(sim::Simulation, name::Symbol) = get_interval(sim.sequence, name)
@@ -525,7 +525,6 @@ end
 
 function _build!(
     sim::Simulation;
-    store_systems_in_results = true,
     setup_simulation_partitions = false,
     partitions = nothing,
     index = nothing,
@@ -571,14 +570,12 @@ function _build!(
         _check_steps(sim, problem_initial_times)
     end
 
-    if store_systems_in_results
-        # Spawn system serialization (JSON conversion) in parallel with model builds.
-        # Systems are read-only during building, so this is safe.
-        serialization_task = Threads.@spawn _serialize_systems_to_json(sim)
-    end
-
     _build_decision_models!(sim)
     _build_emulation_model!(sim)
+
+    TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "Serialize Systems" begin
+        _write_system_bundles!(sim)
+    end
 
     TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "Initialize Simulation State" begin
         _initialize_simulation_state!(sim)
@@ -589,13 +586,6 @@ function _build!(
             set_simulation_store!(sim, store)
             try
                 _initialize_problem_storage!(sim)
-                if store_systems_in_results
-                    # Fetch pre-computed JSON from the parallel task and write to HDF5 store.
-                    serialized = fetch(serialization_task)
-                    for (uuid, json_text) in serialized
-                        write_system_json!(store, uuid, json_text)
-                    end
-                end
             finally
                 set_simulation_store!(sim, nothing)
             end
@@ -647,7 +637,6 @@ Build the Simulation, problems and the related folder structure.
 
   - `sim::Simulation`: simulation object
   - `recorders::Vector{Symbol} = []`: recorder names to register
-  - `store_systems_in_results::Bool = true`: stores the systems as JSON in the results HDF5 file
   - `console_level = Logging.Error`:
   - `file_level = Logging.Info`:
 """
@@ -656,7 +645,6 @@ function POM.build!(
     recorders = [],
     console_level = Logging.Error,
     file_level = Logging.Info,
-    store_systems_in_results = true,
     partitions::Union{Nothing, SimulationPartitions} = nothing,
     index = nothing,
 )
@@ -678,7 +666,6 @@ function POM.build!(
                 try
                     _build!(
                         sim;
-                        store_systems_in_results = store_systems_in_results,
                         setup_simulation_partitions = setup_simulation_partitions,
                         partitions = partitions,
                         index = index,
@@ -704,7 +691,7 @@ end
 function _apply_warm_start!(model::IOM.AbstractOptimizationModel)
     container = get_optimization_container(model)
     # If the model was used to retrieve duals from an MILP the logic has to be different and
-    # the results need to be read from the primal cache
+    # the output values need to be read from the primal cache
     if isempty(container.primal_values_cache)
         jump_model = get_jump_model(container)
         all_vars = JuMP.all_variables(jump_model)
@@ -790,7 +777,7 @@ end
 
 function _update_simulation_state!(sim::Simulation, model::EmulationModel)
     # Order of these operations matters. Do not reverse.
-    # This will update the state with the results of the store first and then fill
+    # This will update the state with the outputs of the store first and then fill
     # the remaning values with the decision state.
     _update_system_state!(sim, model)
     _update_system_state!(sim, get_name(model))
@@ -814,7 +801,7 @@ function _update_decision_state_from_store!(sim::Simulation, model_name::Symbol,
     model_params = get_decision_model_params(store, model_name)
     for key in keys
         !has_dataset(get_decision_states(state), key) && continue
-        res = read_result(DenseAxisArray, store, model_name, key, simulation_time)
+        res = read_output(DenseAxisArray, store, model_name, key, simulation_time)
         update_decision_state!(state, key, res, simulation_time, model_params)
     end
     return
@@ -878,13 +865,57 @@ function _write_state_to_store!(store::SimulationStore, sim::Simulation)
     em_store = get_em_data(store)
     simulation_time = get_current_time(sim)
     for key in get_dataset_keys(system_state)
-        # The store can never be ahead of the clock while the step loop is writing. (After the
-        # last step it legitimately is: a single-model sequence holds the state through the
-        # end of its interval, so this check does not apply to the trailing flush.)
-        @assert get_last_updated_timestamp(em_store, key) <= simulation_time
-        _write_state_rows!(store, sim, key, get_update_timestamp(system_state, key))
+        _check_and_write_state_row!(
+            store,
+            sim,
+            em_store,
+            system_state,
+            key,
+            simulation_time,
+        )
     end
     return
+end
+
+"""
+`em_store` has no entry for a `ParameterKey` — a parameter is buffered directly into
+`em_parameter_values` (see `finalize_parameters!`) rather than backfilled through an HDF5
+dataset (R31). These two helpers substitute the buffer's own bookkeeping
+(`_last_em_parameter_row`/`_last_em_parameter_update_time`) for the generic `em_store`-indexed
+lookups whenever `key` is a `ParameterKey` on a `HdfSimulationStore`; `InMemorySimulationStore`
+never moved parameters out of normal per-key storage (R19), so it always falls through to the
+generic method.
+"""
+function _last_state_row(::SimulationStore, em_store, key::OptimizationContainerKey)
+    return get_last_recorded_row(em_store, key)
+end
+
+function _last_state_row(store::HdfSimulationStore, em_store, key::IOM.ParameterKey)
+    return _last_em_parameter_row(store, key)
+end
+
+function _last_state_update_time(::SimulationStore, em_store, key::OptimizationContainerKey)
+    return get_last_updated_timestamp(em_store, key)
+end
+
+function _last_state_update_time(store::HdfSimulationStore, em_store, key::IOM.ParameterKey)
+    return _last_em_parameter_update_time(store, key)
+end
+
+function _check_and_write_state_row!(
+    store::SimulationStore,
+    sim::Simulation,
+    em_store,
+    system_state,
+    key::OptimizationContainerKey,
+    simulation_time::Dates.DateTime,
+)
+    # The store can never be ahead of the clock while the step loop is writing. (After the
+    # last step it legitimately is: a single-model sequence holds the state through the
+    # end of its interval, so this check does not apply to the trailing flush.)
+    @assert _last_state_update_time(store, em_store, key) <= simulation_time
+    _write_state_rows!(store, sim, key, get_update_timestamp(system_state, key))
+    return nothing
 end
 
 # A key coarser than the state grid last updates at its final aligned boundary, so the step
@@ -913,7 +944,7 @@ function _write_state_rows!(
     em_store = get_em_data(store)
     sim_ini_time = get_initial_time(sim)
     state_resolution = get_system_states_resolution(sim_state)
-    store_update_time = get_last_updated_timestamp(em_store, key)
+    store_update_time = _last_state_update_time(store, em_store, key)
     store_update_time >= until && return
     # A key's own decision-state resolution can be coarser than the simulation-wide
     # `state_resolution` (the finest resolution across all models) whenever the key
@@ -936,14 +967,14 @@ function _write_state_rows!(
             # straggling sub-tick could be flushed. The held value hasn't changed
             # since the last row actually written to the store, so reuse it instead
             # of `decision_states`, whose window no longer covers `aligned_timestamp`.
-            last_row = get_last_recorded_row(em_store, key)
-            raw_state_values = read_result(DenseAxisArray, store, model_name, key, last_row)
+            last_row = _last_state_row(store, em_store, key)
+            raw_state_values = read_output(DenseAxisArray, store, model_name, key, last_row)
             state_values = _last_recorded_state_value(store, raw_state_values, last_row)
         else
             state_values = get_decision_state_value(sim_state, key, aligned_timestamp)
         end
-        ix = get_last_recorded_row(em_store, key) + 1
-        write_result!(store, model_name, key, ix, _update_timestamp, state_values)
+        ix = _last_state_row(store, em_store, key) + 1
+        write_output!(store, model_name, key, ix, _update_timestamp, state_values)
         _update_timestamp += state_resolution
     end
     return
@@ -1002,7 +1033,7 @@ function _execute!(
     exports = nothing,
     enable_progress_bar = progress_meter_enabled(),
     disable_timer_outputs = false,
-    results_channel = nothing,
+    outputs_channel = nothing,
 )
     @assert !isnothing(sim.internal)
 
@@ -1014,9 +1045,9 @@ function _execute!(
     _prepare_execution_store!(sim, store, cache_size_mib, min_cache_flush_size_mib)
     store_params = get_params(store)
     if !isnothing(exports)
-        exports = _as_results_export(exports, store_params)
+        exports = _as_outputs_export(exports, store_params)
         if isnothing(exports.path)
-            exports.path = get_results_dir(sim)
+            exports.path = get_outputs_dir(sim)
         end
     end
     sequence = get_sequence(sim)
@@ -1121,8 +1152,8 @@ function _execute!(
                 )
             end #execution problem timer
             progress_event.exec_time_s = time() - start_time
-            if !isnothing(results_channel)
-                put!(results_channel, SimulationIntermediateResult(progress_event))
+            if !isnothing(outputs_channel)
+                put!(outputs_channel, SimulationIntermediateOutput(progress_event))
             end
         end # execution order for loop
 
@@ -1143,7 +1174,7 @@ Solves the simulation model for sequential Simulations.
 
   - `sim::Simulation=sim`: simulation object created by Simulation()
 
-The optional keyword argument `exports` controls exporting of results to CSV files as
+The optional keyword argument `exports` controls exporting of outputs to CSV files as
 the simulation runs.
 
 # Example
@@ -1190,6 +1221,7 @@ function execute!(sim::Simulation; kwargs...)
                     @info ("\n$(RUN_SIMULATION_TIMER)\n")
                     set_simulation_status!(sim, RunStatus.SUCCESSFULLY_FINALIZED)
                     log_cache_hit_percentages(store)
+                    finalize_parameters!(store)
                 catch e
                     set_simulation_status!(sim, RunStatus.FAILED)
                     @error "simulation failed" exception = (e, catch_backtrace())
@@ -1218,28 +1250,63 @@ function _empty_problem_caches!(sim::Simulation)
     return
 end
 
-function _serialize_systems_to_json(sim::Simulation)
-    simulation_models = get_models(sim)
-    results = Dict{String, String}()
-    @debug Threads.threadid() "Serializing systems to JSON in parallel with model building"
-    for model in get_all_models(simulation_models)
+"""
+Write each model's System as a bundle beside its simulation outputs — the document plus a store
+holding the series its costs reference — so `get_system!` rebuilds a System whose costs
+resolve. Models sharing a System still get one bundle each, because the read side
+(`locate_system_bundle`) looks under the model's own `problems/<model>/` directory. The
+parameter and input rows are added to this same store when the simulation finishes.
+"""
+function _write_system_bundles!(sim::Simulation)
+    for model in get_all_models(get_models(sim))
         sys = get_system(model)
-        get!(results, string(get_system_uuid(sys))) do
-            PSY.to_json(sys)
-        end
+        bundle_dir = joinpath(IOM.get_output_dir(model), IOM.make_system_dirname(sys))
+        ispath(bundle_dir) && continue
+        store = POM.ParameterTimeSeriesStore()
+        key_map = POM.copy_cost_time_series!(store, sys, _planned_run_windows(sim, model))
+        POM.write_outputs_system_bundle!(sys, store, key_map, bundle_dir)
+        POM.close_parameter_store!(store)
     end
-    return results
+    return
+end
+
+"""
+The forecast grid this run will realize for `model`: every execution's initial time, the model's
+horizon in steps, its resolution and interval. Cost copies take this shape at build so the
+parameter and input rows written at finalize share it (InfraStore requires every forecast of one
+`(resolution, interval)` to agree on count, initial time and horizon).
+"""
+function _planned_run_windows(sim::Simulation, model::DecisionModel)
+    resolution = get_resolution(model)
+    return POM.RunWindows(
+        get_initial_time(sim),
+        get_steps(sim) * get_executions(model),
+        get_horizon(model) ÷ resolution,
+        resolution,
+        IOM.get_interval(sim, get_name(model)),
+    )
+end
+
+function _planned_run_windows(sim::Simulation, model::EmulationModel)
+    resolution = get_resolution(model)
+    return POM.RunWindows(
+        get_initial_time(sim),
+        get_steps(sim) * get_executions(model),
+        1,
+        resolution,
+        resolution,
+    )
 end
 
 function serialize_status(sim::Simulation)
-    serialize_status(get_simulation_status(sim), get_results_dir(sim))
+    serialize_status(get_simulation_status(sim), get_outputs_dir(sim))
 end
 
-_status_file_path(results_dir::AbstractString) = joinpath(results_dir, "status.json")
+_status_file_path(outputs_dir::AbstractString) = joinpath(outputs_dir, "status.json")
 
-function serialize_status(status::RunStatus.Value, results_dir::AbstractString)
+function serialize_status(status::RunStatus.Value, outputs_dir::AbstractString)
     data = Dict("run_status" => string(status))
-    open(_status_file_path(results_dir), "w") do io
+    open(_status_file_path(outputs_dir), "w") do io
         JSON3.write(io, data)
     end
 
@@ -1247,30 +1314,30 @@ function serialize_status(status::RunStatus.Value, results_dir::AbstractString)
 end
 
 """
-Record RunStatus.FAILED in `results_dir` without throwing. Failure paths call this from
+Record RunStatus.FAILED in `outputs_dir` without throwing. Failure paths call this from
 catch blocks so that an IO error while recording the status cannot mask the exception
 that caused the failure.
 """
-function _try_serialize_failed_status(results_dir::AbstractString)
+function _try_serialize_failed_status(outputs_dir::AbstractString)
     try
         # The directory may not exist if the failure occurred before the simulation
         # created its output directories.
-        mkpath(results_dir)
-        serialize_status(RunStatus.FAILED, results_dir)
+        mkpath(outputs_dir)
+        serialize_status(RunStatus.FAILED, outputs_dir)
     catch e
         e isa InterruptException && rethrow()
-        @error "Failed to record RunStatus.FAILED" results_dir exception =
+        @error "Failed to record RunStatus.FAILED" outputs_dir exception =
             (e, catch_backtrace())
     end
     return
 end
 
 function deserialize_status(sim::Simulation)
-    return deserialize_status(get_results_dir(sim))
+    return deserialize_status(get_outputs_dir(sim))
 end
 
-function deserialize_status(results_path::AbstractString)
-    filename = _status_file_path(results_path)
+function deserialize_status(outputs_path::AbstractString)
+    filename = _status_file_path(outputs_path)
     if !isfile(filename)
         error("run status file $filename does not exist")
     end
@@ -1283,7 +1350,7 @@ function deserialize_status(results_path::AbstractString)
 end
 
 # The next two structs allow a parent process to monitor the simulation progress.
-# They may eventually be extended to pass result data back to the parent.
+# They may eventually be extended to pass output data back to the parent.
 
 Base.@kwdef mutable struct SimulationProgressEvent
     model_name::String
@@ -1294,6 +1361,6 @@ Base.@kwdef mutable struct SimulationProgressEvent
     exec_time_s::Float64
 end
 
-struct SimulationIntermediateResult
+struct SimulationIntermediateOutput
     progress_event::SimulationProgressEvent
 end
