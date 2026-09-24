@@ -352,6 +352,7 @@ end
                 BranchRatingTimeSeriesParameter => "branch_rating",
             ),
             use_slacks = slack_flag,
+            attributes = PARALLEL_RATING,
         )
         for (ix, add_parallel_line_name) in enumerate(parallel_lines_names_to_add)
             sys = PSB.build_system(PSITestSystems, "c_sys5")

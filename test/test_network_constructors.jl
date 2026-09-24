@@ -1024,7 +1024,10 @@ end
             NetworkModel(network_formulation; duals = [CopperPlateBalanceConstraint]),
         )
         set_device_model!(template, AreaInterchange, StaticBranch)
-        set_device_model!(template, Line, StaticBranch)
+        set_device_model!(
+            template,
+            DeviceModel(Line, StaticBranch; attributes = PARALLEL_RATING),
+        )
         ps_model =
             DecisionModel(
                 template,
@@ -1347,8 +1350,14 @@ end
             ),
             use_slacks = false),
     )
-    set_device_model!(template, Line, StaticBranch)
-    set_device_model!(template, Transformer2W, StaticBranch)
+    set_device_model!(
+        template,
+        DeviceModel(Line, StaticBranch; attributes = PARALLEL_RATING),
+    )
+    set_device_model!(
+        template,
+        DeviceModel(Transformer2W, StaticBranch; attributes = PARALLEL_RATING),
+    )
     ps_model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
     @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
           PSI.ModelBuildStatus.BUILT
@@ -1375,8 +1384,14 @@ end
             ),
             use_slacks = false),
     )
-    set_device_model!(template, Line, StaticBranch)
-    set_device_model!(template, Transformer2W, StaticBranch)
+    set_device_model!(
+        template,
+        DeviceModel(Line, StaticBranch; attributes = PARALLEL_RATING),
+    )
+    set_device_model!(
+        template,
+        DeviceModel(Transformer2W, StaticBranch; attributes = PARALLEL_RATING),
+    )
     ps_model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
     @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
           PSI.ModelBuildStatus.BUILT
@@ -1403,8 +1418,14 @@ end
             ),
             use_slacks = false),
     )
-    set_device_model!(template, Line, StaticBranch)
-    set_device_model!(template, Transformer2W, StaticBranch)
+    set_device_model!(
+        template,
+        DeviceModel(Line, StaticBranch; attributes = PARALLEL_RATING),
+    )
+    set_device_model!(
+        template,
+        DeviceModel(Transformer2W, StaticBranch; attributes = PARALLEL_RATING),
+    )
     ps_model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
     @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
           PSI.ModelBuildStatus.BUILT
@@ -1440,8 +1461,14 @@ end
             ),
             use_slacks = false),
     )
-    set_device_model!(template, Line, StaticBranch)
-    set_device_model!(template, Transformer2W, StaticBranch)
+    set_device_model!(
+        template,
+        DeviceModel(Line, StaticBranch; attributes = PARALLEL_RATING),
+    )
+    set_device_model!(
+        template,
+        DeviceModel(Transformer2W, StaticBranch; attributes = PARALLEL_RATING),
+    )
     ps_model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
     @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
           PSI.ModelBuildStatus.BUILT
@@ -1469,8 +1496,14 @@ end
             ),
             use_slacks = false),
     )
-    set_device_model!(template, Line, StaticBranchBounds)
-    set_device_model!(template, Transformer2W, StaticBranchBounds)
+    set_device_model!(
+        template,
+        DeviceModel(Line, StaticBranchBounds; attributes = PARALLEL_RATING),
+    )
+    set_device_model!(
+        template,
+        DeviceModel(Transformer2W, StaticBranchBounds; attributes = PARALLEL_RATING),
+    )
     ps_model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
     @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
           PSI.ModelBuildStatus.BUILT
@@ -1503,8 +1536,14 @@ end
             ),
             use_slacks = false),
     )
-    set_device_model!(template, Line, StaticBranchBounds)
-    set_device_model!(template, Transformer2W, StaticBranchBounds)
+    set_device_model!(
+        template,
+        DeviceModel(Line, StaticBranchBounds; attributes = PARALLEL_RATING),
+    )
+    set_device_model!(
+        template,
+        DeviceModel(Transformer2W, StaticBranchBounds; attributes = PARALLEL_RATING),
+    )
     ps_model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
     @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
           PSI.ModelBuildStatus.BUILT
@@ -1531,8 +1570,14 @@ end
             ),
             use_slacks = false),
     )
-    set_device_model!(template, Line, StaticBranchBounds)
-    set_device_model!(template, Transformer2W, StaticBranchBounds)
+    set_device_model!(
+        template,
+        DeviceModel(Line, StaticBranchBounds; attributes = PARALLEL_RATING),
+    )
+    set_device_model!(
+        template,
+        DeviceModel(Transformer2W, StaticBranchBounds; attributes = PARALLEL_RATING),
+    )
     ps_model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
     @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
           PSI.ModelBuildStatus.BUILT
@@ -1585,8 +1630,14 @@ end
             ),
             use_slacks = false),
     )
-    set_device_model!(template, Line, StaticBranchBounds)
-    set_device_model!(template, Transformer2W, StaticBranchBounds)
+    set_device_model!(
+        template,
+        DeviceModel(Line, StaticBranchBounds; attributes = PARALLEL_RATING),
+    )
+    set_device_model!(
+        template,
+        DeviceModel(Transformer2W, StaticBranchBounds; attributes = PARALLEL_RATING),
+    )
     ps_model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
     @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
           PSI.ModelBuildStatus.BUILT
@@ -1619,8 +1670,14 @@ end
             ),
             use_slacks = false),
     )
-    set_device_model!(template, Line, StaticBranch)
-    set_device_model!(template, Transformer2W, StaticBranch)
+    set_device_model!(
+        template,
+        DeviceModel(Line, StaticBranch; attributes = PARALLEL_RATING),
+    )
+    set_device_model!(
+        template,
+        DeviceModel(Transformer2W, StaticBranch; attributes = PARALLEL_RATING),
+    )
     ps_model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
     @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
           PSI.ModelBuildStatus.BUILT
@@ -1641,7 +1698,10 @@ end
             ),
             use_slacks = false),
     )
-    set_device_model!(template, DeviceModel(Line, StaticBranch))
+    set_device_model!(
+        template,
+        DeviceModel(Line, StaticBranch; attributes = PARALLEL_RATING),
+    )
     modeled_transformer_names = ["9-5-i_1"]
     set_device_model!(
         template,
@@ -1697,6 +1757,7 @@ end
             attributes = Dict(
                 "filter_function" =>
                     x -> PSY.get_base_voltage(PSY.get_from(PSY.get_arc(x))) >= 230.0,
+                "parallel_branch_max_rating_method" => "single_element_contingency",
             ),
         ),
     )
@@ -1733,8 +1794,14 @@ end
             ),
             use_slacks = false),
     )
-    set_device_model!(template, Line, StaticBranchBounds)
-    set_device_model!(template, Transformer2W, StaticBranchBounds)
+    set_device_model!(
+        template,
+        DeviceModel(Line, StaticBranchBounds; attributes = PARALLEL_RATING),
+    )
+    set_device_model!(
+        template,
+        DeviceModel(Transformer2W, StaticBranchBounds; attributes = PARALLEL_RATING),
+    )
     ps_model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
     @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
           PSI.ModelBuildStatus.BUILT
@@ -1771,8 +1838,14 @@ end
                     reduce_degree_two_branches = false,
                     use_slacks = false),
             )
-            set_device_model!(template, Line, StaticBranch)
-            set_device_model!(template, Transformer2W, StaticBranch)
+            set_device_model!(
+                template,
+                DeviceModel(Line, StaticBranch; attributes = PARALLEL_RATING),
+            )
+            set_device_model!(
+                template,
+                DeviceModel(Transformer2W, StaticBranch; attributes = PARALLEL_RATING),
+            )
             ps_model = DecisionModel(template, sys; optimizer = optimizer)
             @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
                   PSI.ModelBuildStatus.BUILT
@@ -1786,8 +1859,14 @@ end
                     reduce_degree_two_branches = false,
                     use_slacks = false),
             )
-            set_device_model!(template, Line, StaticBranch)
-            set_device_model!(template, Transformer2W, StaticBranch)
+            set_device_model!(
+                template,
+                DeviceModel(Line, StaticBranch; attributes = PARALLEL_RATING),
+            )
+            set_device_model!(
+                template,
+                DeviceModel(Transformer2W, StaticBranch; attributes = PARALLEL_RATING),
+            )
             ps_model = DecisionModel(template, sys; optimizer = optimizer)
             @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
                   PSI.ModelBuildStatus.BUILT
@@ -1801,8 +1880,14 @@ end
                     reduce_degree_two_branches = true,
                     use_slacks = false),
             )
-            set_device_model!(template, Line, StaticBranch)
-            set_device_model!(template, Transformer2W, StaticBranch)
+            set_device_model!(
+                template,
+                DeviceModel(Line, StaticBranch; attributes = PARALLEL_RATING),
+            )
+            set_device_model!(
+                template,
+                DeviceModel(Transformer2W, StaticBranch; attributes = PARALLEL_RATING),
+            )
             ps_model = DecisionModel(template, sys; optimizer = optimizer)
             @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
                   PSI.ModelBuildStatus.BUILT
@@ -1827,11 +1912,21 @@ end
             )
             set_device_model!(
                 template,
-                DeviceModel(Line, StaticBranch; use_slacks = true),
+                DeviceModel(
+                    Line,
+                    StaticBranch;
+                    use_slacks = true,
+                    attributes = PARALLEL_RATING,
+                ),
             )
             set_device_model!(
                 template,
-                DeviceModel(Transformer2W, StaticBranch; use_slacks = true),
+                DeviceModel(
+                    Transformer2W,
+                    StaticBranch;
+                    use_slacks = true,
+                    attributes = PARALLEL_RATING,
+                ),
             )
             ps_model = DecisionModel(template, sys; optimizer = optimizer)
             @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
