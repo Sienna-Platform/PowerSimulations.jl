@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Dynamic Line Ratings · PowerSimulations.jl</title><meta name="title" content="Dynamic Line Ratings · PowerSimulations.jl"/><meta property="og:title" content="Dynamic Line Ratings · PowerSimulations.jl"/><meta property="twitter:title" content="Dynamic Line Ratings · PowerSimulations.jl"/><meta name="description" content="Documentation for PowerSimulations.jl."/><meta property="og:description" content="Documentation for PowerSimulations.jl."/><meta property="twitter:description" content="Documentation for PowerSimulations.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.63.2/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="PowerSimulations.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">PowerSimulations.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Welcome Page</a></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../generated_decision_problem/">Single-step Problem</a></li><li><a class="tocitem" href="../generated_pcm_simulation/">Multi-stage Production Cost Simulation</a></li><li class="is-active"><a class="tocitem" href>Dynamic Line Ratings</a><ul class="internal"><li><a class="tocitem" href="#Introduction"><span>Introduction</span></a></li><li><a class="tocitem" href="#Data"><span>Data</span></a></li><li><a class="tocitem" href="#Preparing-DLR-Time-Series"><span>Preparing DLR Time Series</span></a></li><li><a class="tocitem" href="#Define-the-Problem-Template"><span>Define the Problem Template</span></a></li><li><a class="tocitem" href="#Build-and-Run-a-Simulation"><span>Build and Run a Simulation</span></a></li><li><a class="tocitem" href="#Inspecting-Results"><span>Inspecting Results</span></a></li></ul></li><li><a class="tocitem" href="../generated_uc_power_flow_in_the_loop/">Running Power Flow In The Loop with Unit Commitment</a></li><li><a class="tocitem" href="../generated_security_constrained_reserves/">G-1 Security-Constrained Reserves</a></li></ul></li><li><span class="tocitem">How to...</span><ul><li><a class="tocitem" href="../../how_to/register_variable/">...register a variable in a custom operation model</a></li><li><a class="tocitem" href="../../how_to/problem_templates/">...create a problem template</a></li><li><a class="tocitem" href="../../how_to/read_results/">...read the simulation results</a></li><li><a class="tocitem" href="../../how_to/debugging_infeasible_models/">...debug an infeasible model</a></li><li><a class="tocitem" href="../../how_to/security_constrained_models/">...run security-constrained (N-1) models</a></li><li><a class="tocitem" href="../../how_to/logging/">...configure logging</a></li><li><a class="tocitem" href="../../how_to/simulation_recorder/">...inspect simulation events using the recorder</a></li><li><a class="tocitem" href="../../how_to/parallel_simulations/">...run a parallel simulation</a></li></ul></li><li><span class="tocitem">Explanation</span><ul><li><a class="tocitem" href="../../explanation/psi_structure/">PowerSimulations.jl Modeling Structure</a></li><li><a class="tocitem" href="../../explanation/feedforward/">Feedforward</a></li><li><a class="tocitem" href="../../explanation/chronologies/">Chronologies</a></li><li><a class="tocitem" href="../../explanation/sequencing/">Sequencing</a></li><li><a class="tocitem" href="../../explanation/branch_rating_limits/">Branch Rating Limits</a></li></ul></li><li><span class="tocitem">Reference</span><ul><li><a class="tocitem" href="../../api/glossary/">Glossary and Acronyms</a></li><li><a class="tocitem" href="../../api/PowerSimulations/">Public API</a></li><li><input class="collapse-toggle" id="menuitem-5-3" type="checkbox"/><label class="tocitem" for="menuitem-5-3"><span class="docs-label">Developers</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../../api/developer/">Developer Guidelines</a></li><li><a class="tocitem" href="../../api/internal/">Internals</a></li></ul></li></ul></li><li><span class="tocitem">Formulation Library</span><ul><li><a class="tocitem" href="../../formulation_library/Introduction/">Introduction</a></li><li><a class="tocitem" href="../../formulation_library/General/">General</a></li><li><a class="tocitem" href="../../formulation_library/Network/">Network</a></li><li><a class="tocitem" href="../../formulation_library/ThermalGen/">Thermal Generation</a></li><li><a class="tocitem" href="../../formulation_library/RenewableGen/">Renewable Generation</a></li><li><a class="tocitem" href="../../formulation_library/Load/">Load</a></li><li><a class="tocitem" href="../../formulation_library/Branch/">Branch</a></li><li><a class="tocitem" href="../../formulation_library/Source/">Source</a></li><li><a class="tocitem" href="../../formulation_library/Service/">Services</a></li><li><a class="tocitem" href="../../formulation_library/Feedforward/">Feedforwards</a></li><li><a class="tocitem" href="../../formulation_library/Piecewise/">Piecewise Linear Cost</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>Dynamic Line Ratings</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Dynamic Line Ratings</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/Sienna-Platform/PowerSimulations.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/Sienna-Platform/PowerSimulations.jl/blob/main/docs/src/tutorials/dynamic_line_ratings.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Dynamic-Line-Ratings-(DLR)"><a class="docs-heading-anchor" href="#Dynamic-Line-Ratings-(DLR)">Dynamic Line Ratings (DLR)</a><a id="Dynamic-Line-Ratings-(DLR)-1"></a><a class="docs-heading-anchor-permalink" href="#Dynamic-Line-Ratings-(DLR)" title="Permalink"></a></h1><p><em>To follow along, you can download this tutorial as a <a href="https://sienna-platform.github.io/PowerSimulations.jl/dev/tutorials/dynamic_line_ratings.jl">Julia script (.jl)</a> or <a href="https://sienna-platform.github.io/PowerSimulations.jl/dev/tutorials/generated_dynamic_line_ratings.ipynb">Jupyter notebook (.ipynb)</a>.</em></p><h2 id="Introduction"><a class="docs-heading-anchor" href="#Introduction">Introduction</a><a id="Introduction-1"></a><a class="docs-heading-anchor-permalink" href="#Introduction" title="Permalink"></a></h2><p>Static branch ratings use a fixed thermal limit <span>$R^\text{max}$</span> for each transmission line. <strong>Dynamic Line Ratings (DLR)</strong> replace this fixed limit with a time-varying parameter <span>$R^\text{max}_t$</span>, allowing the optimizer to exploit periods when ambient conditions (wind, temperature) permit higher line flows. This reduces curtailment and can lower total generation cost compared to conservative static limits.</p><p>This tutorial demonstrates how to:</p><ol><li>Attach a DLR time series to transmission branches in a <code>PowerSystems.System</code>.</li><li>Build a <code>PTDFPowerModel</code> template that activates the DLR constraints.</li><li>Run a multi-step simulation and read the resulting line flows and DLR parameters.</li></ol><div class="admonition is-info" id="Note-c22b5ed7b8566d68"><header class="admonition-header">Note<a class="admonition-anchor" href="#Note-c22b5ed7b8566d68" title="Permalink"></a></header><div class="admonition-body"><p>Dynamic Line Ratings are supported for the <code>StaticBranch</code> (or <code>SecurityConstrainedStaticBranch</code>) formulation combined with a <code>PTDFPowerModel</code> (or any <code>AbstractPTDFModel</code>), a DC power flow (<code>DCPPowerModel</code> / any <code>PM.AbstractActivePowerModel</code>), or full AC (<code>ACPPowerModel</code> / any <code>PM.AbstractPowerModel</code>) network model. With <code>StaticBranchUnbounded</code> the formulation does not enforce flow limits, so a time-varying rating would have no effect: template validation emits a warning and the branch rating time series is ignored (the model still builds).</p></div></div><h3 id="Load-packages"><a class="docs-heading-anchor" href="#Load-packages">Load packages</a><a id="Load-packages-1"></a><a class="docs-heading-anchor-permalink" href="#Load-packages" title="Permalink"></a></h3><pre><code class="language-julia hljs">using PowerSystems
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Dynamic Line Ratings · PowerSimulations.jl</title><meta name="title" content="Dynamic Line Ratings · PowerSimulations.jl"/><meta property="og:title" content="Dynamic Line Ratings · PowerSimulations.jl"/><meta property="twitter:title" content="Dynamic Line Ratings · PowerSimulations.jl"/><meta name="description" content="Documentation for PowerSimulations.jl."/><meta property="og:description" content="Documentation for PowerSimulations.jl."/><meta property="twitter:description" content="Documentation for PowerSimulations.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.63.2/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="PowerSimulations.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">PowerSimulations.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Welcome Page</a></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../generated_decision_problem/">Single-step Problem</a></li><li><a class="tocitem" href="../generated_pcm_simulation/">Multi-stage Production Cost Simulation</a></li><li class="is-active"><a class="tocitem" href>Dynamic Line Ratings</a><ul class="internal"><li><a class="tocitem" href="#Introduction"><span>Introduction</span></a></li><li><a class="tocitem" href="#Data"><span>Data</span></a></li><li><a class="tocitem" href="#Preparing-DLR-Time-Series"><span>Preparing DLR Time Series</span></a></li><li><a class="tocitem" href="#Define-the-Problem-Template"><span>Define the Problem Template</span></a></li><li><a class="tocitem" href="#Build-and-Run-a-Simulation"><span>Build and Run a Simulation</span></a></li><li><a class="tocitem" href="#Inspecting-Results"><span>Inspecting Results</span></a></li></ul></li><li><a class="tocitem" href="../generated_uc_power_flow_in_the_loop/">Running Power Flow In The Loop with Unit Commitment</a></li><li><a class="tocitem" href="../generated_security_constrained_reserves/">G-1 Security-Constrained Reserves</a></li></ul></li><li><span class="tocitem">How to...</span><ul><li><a class="tocitem" href="../../how_to/register_variable/">...register a variable in a custom operation model</a></li><li><a class="tocitem" href="../../how_to/problem_templates/">...create a problem template</a></li><li><a class="tocitem" href="../../how_to/read_results/">...read the simulation results</a></li><li><a class="tocitem" href="../../how_to/debugging_infeasible_models/">...debug an infeasible model</a></li><li><a class="tocitem" href="../../how_to/security_constrained_models/">...run security-constrained (N-1) models</a></li><li><a class="tocitem" href="../../how_to/logging/">...configure logging</a></li><li><a class="tocitem" href="../../how_to/simulation_recorder/">...inspect simulation events using the recorder</a></li><li><a class="tocitem" href="../../how_to/parallel_simulations/">...run a parallel simulation</a></li></ul></li><li><span class="tocitem">Explanation</span><ul><li><a class="tocitem" href="../../explanation/psi_structure/">PowerSimulations.jl Modeling Structure</a></li><li><a class="tocitem" href="../../explanation/feedforward/">Feedforward</a></li><li><a class="tocitem" href="../../explanation/chronologies/">Chronologies</a></li><li><a class="tocitem" href="../../explanation/sequencing/">Sequencing</a></li><li><a class="tocitem" href="../../explanation/branch_rating_limits/">Branch Rating Limits</a></li></ul></li><li><span class="tocitem">Reference</span><ul><li><a class="tocitem" href="../../api/glossary/">Glossary and Acronyms</a></li><li><a class="tocitem" href="../../api/PowerSimulations/">Public API</a></li><li><input class="collapse-toggle" id="menuitem-5-3" type="checkbox"/><label class="tocitem" for="menuitem-5-3"><span class="docs-label">Developers</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../../api/developer/">Developer Guidelines</a></li><li><a class="tocitem" href="../../api/internal/">Internals</a></li></ul></li></ul></li><li><span class="tocitem">Formulation Library</span><ul><li><a class="tocitem" href="../../formulation_library/Introduction/">Introduction</a></li><li><a class="tocitem" href="../../formulation_library/General/">General</a></li><li><a class="tocitem" href="../../formulation_library/Network/">Network</a></li><li><a class="tocitem" href="../../formulation_library/ThermalGen/">Thermal Generation</a></li><li><a class="tocitem" href="../../formulation_library/RenewableGen/">Renewable Generation</a></li><li><a class="tocitem" href="../../formulation_library/Load/">Load</a></li><li><a class="tocitem" href="../../formulation_library/Branch/">Branch</a></li><li><a class="tocitem" href="../../formulation_library/Source/">Source</a></li><li><a class="tocitem" href="../../formulation_library/Service/">Services</a></li><li><a class="tocitem" href="../../formulation_library/Feedforward/">Feedforwards</a></li><li><a class="tocitem" href="../../formulation_library/Piecewise/">Piecewise Linear Cost</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>Dynamic Line Ratings</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Dynamic Line Ratings</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/Sienna-Platform/PowerSimulations.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/Sienna-Platform/PowerSimulations.jl/blob/main/docs/src/tutorials/dynamic_line_ratings.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Dynamic-Line-Ratings-(DLR)"><a class="docs-heading-anchor" href="#Dynamic-Line-Ratings-(DLR)">Dynamic Line Ratings (DLR)</a><a id="Dynamic-Line-Ratings-(DLR)-1"></a><a class="docs-heading-anchor-permalink" href="#Dynamic-Line-Ratings-(DLR)" title="Permalink"></a></h1><p><em>To follow along, you can download this tutorial as a <a href="https://sienna-platform.github.io/PowerSimulations.jl/dev/tutorials/dynamic_line_ratings.jl">Julia script (.jl)</a> or <a href="https://sienna-platform.github.io/PowerSimulations.jl/dev/tutorials/generated_dynamic_line_ratings.ipynb">Jupyter notebook (.ipynb)</a>.</em></p><h2 id="Introduction"><a class="docs-heading-anchor" href="#Introduction">Introduction</a><a id="Introduction-1"></a><a class="docs-heading-anchor-permalink" href="#Introduction" title="Permalink"></a></h2><p>Static branch ratings use a fixed thermal limit <span>$R^\text{max}$</span> for each transmission line. <strong>Dynamic Line Ratings (DLR)</strong> replace this fixed limit with a time-varying parameter <span>$R^\text{max}_t$</span>, allowing the optimizer to exploit periods when ambient conditions (wind, temperature) permit higher line flows. This reduces curtailment and can lower total generation cost compared to conservative static limits.</p><p>This tutorial demonstrates how to:</p><ol><li>Attach a DLR time series to transmission branches in a <code>PowerSystems.System</code>.</li><li>Build a <code>PTDFPowerModel</code> template that activates the DLR constraints.</li><li>Run a multi-step simulation and read the resulting line flows and DLR parameters.</li></ol><div class="admonition is-info" id="Note-ac59727e7dad7b0e"><header class="admonition-header">Note<a class="admonition-anchor" href="#Note-ac59727e7dad7b0e" title="Permalink"></a></header><div class="admonition-body"><p>Dynamic Line Ratings are supported for the <code>StaticBranch</code> (or <code>SecurityConstrainedStaticBranch</code>) formulation combined with a <code>PTDFPowerModel</code> (or any <code>AbstractPTDFModel</code>), a DC power flow (<code>DCPPowerModel</code> / any <code>PM.AbstractActivePowerModel</code>), or full AC (<code>ACPPowerModel</code> / any <code>PM.AbstractPowerModel</code>) network model. With <code>StaticBranchUnbounded</code> the formulation does not enforce flow limits, so a time-varying rating would have no effect: template validation emits a warning and the branch rating time series is ignored (the model still builds).</p></div></div><h3 id="Load-packages"><a class="docs-heading-anchor" href="#Load-packages">Load packages</a><a id="Load-packages-1"></a><a class="docs-heading-anchor-permalink" href="#Load-packages" title="Permalink"></a></h3><pre><code class="language-julia hljs">using PowerSystems
 using PowerSimulations
 using HydroPowerSimulations
 using PowerNetworkMatrices
 using PowerSystemCaseBuilder
 using HiGHS
 using Dates
-using TimeSeries</code></pre><h3 id="Optimizer"><a class="docs-heading-anchor" href="#Optimizer">Optimizer</a><a id="Optimizer-1"></a><a class="docs-heading-anchor-permalink" href="#Optimizer" title="Permalink"></a></h3><pre><code class="language-julia hljs">solver = optimizer_with_attributes(HiGHS.Optimizer, &quot;mip_rel_gap&quot; =&gt; 0.01)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">MathOptInterface.OptimizerWithAttributes(HiGHS.Optimizer, Pair{MathOptInterface.AbstractOptimizerAttribute, Any}[MathOptInterface.RawOptimizerAttribute(&quot;mip_rel_gap&quot;) =&gt; 0.01])</code></pre><h2 id="Data"><a class="docs-heading-anchor" href="#Data">Data</a><a id="Data-1"></a><a class="docs-heading-anchor-permalink" href="#Data" title="Permalink"></a></h2><div class="admonition is-info" id="Note-cd904d3e0fb4bef3"><header class="admonition-header">Note<a class="admonition-anchor" href="#Note-cd904d3e0fb4bef3" title="Permalink"></a></header><div class="admonition-body"><p><a href="https://github.com/Sienna-Platform/PowerSystemCaseBuilder.jl">PowerSystemCaseBuilder.jl</a> is a helper library that makes it easier to reproduce examples in the documentation and tutorials. Normally you would pass your local files to create the system data instead of calling <code>build_system</code>. For more details visit <a href="https://sienna-platform.github.io/PowerSystems.jl/stable/how_to/powersystembuilder/">PowerSystemCaseBuilder Documentation</a></p></div></div><pre><code class="language-julia hljs">sys = build_system(PSISystems, &quot;modified_RTS_GMLC_DA_sys&quot;)</code></pre><table>
+using TimeSeries</code></pre><h3 id="Optimizer"><a class="docs-heading-anchor" href="#Optimizer">Optimizer</a><a id="Optimizer-1"></a><a class="docs-heading-anchor-permalink" href="#Optimizer" title="Permalink"></a></h3><pre><code class="language-julia hljs">solver = optimizer_with_attributes(HiGHS.Optimizer, &quot;mip_rel_gap&quot; =&gt; 0.01)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">MathOptInterface.OptimizerWithAttributes(HiGHS.Optimizer, Pair{MathOptInterface.AbstractOptimizerAttribute, Any}[MathOptInterface.RawOptimizerAttribute(&quot;mip_rel_gap&quot;) =&gt; 0.01])</code></pre><h2 id="Data"><a class="docs-heading-anchor" href="#Data">Data</a><a id="Data-1"></a><a class="docs-heading-anchor-permalink" href="#Data" title="Permalink"></a></h2><div class="admonition is-info" id="Note-442b4908f047d234"><header class="admonition-header">Note<a class="admonition-anchor" href="#Note-442b4908f047d234" title="Permalink"></a></header><div class="admonition-body"><p><a href="https://github.com/Sienna-Platform/PowerSystemCaseBuilder.jl">PowerSystemCaseBuilder.jl</a> is a helper library that makes it easier to reproduce examples in the documentation and tutorials. Normally you would pass your local files to create the system data instead of calling <code>build_system</code>. For more details visit <a href="https://sienna-platform.github.io/PowerSystems.jl/stable/how_to/powersystembuilder/">PowerSystemCaseBuilder Documentation</a></p></div></div><pre><code class="language-julia hljs">sys = build_system(PSISystems, &quot;modified_RTS_GMLC_DA_sys&quot;)</code></pre><table>
   <thead>
     <tr class = "title">
       <td colspan = "2" style = "font-size: x-large; font-weight: bold; text-align: center;">System</td>
@@ -396,7 +396,7 @@ dlr_factor_ts = repeat(dlr_factors_daily, data_days)</code></pre><pre class="doc
     &quot;A7&quot;, &quot;A17&quot;, &quot;B14&quot;, &quot;B15&quot;, &quot;C7&quot;, &quot;C17&quot;,
 ]
 
-add_dlr_to_system_branches!(sys, branches_dlr, data_days, dlr_factor_ts; initial_date)</code></pre><p>Because the simulation uses a rolling horizon of 48 hours (2 days), we transform the <code>SingleTimeSeries</code> into <code>Deterministic</code> forecasts with a 48-hour horizon and a 24-hour interval between forecast windows.</p><pre><code class="language-julia hljs">transform_single_time_series!(sys, Hour(48), Day(1))</code></pre><h2 id="Define-the-Problem-Template"><a class="docs-heading-anchor" href="#Define-the-Problem-Template">Define the Problem Template</a><a id="Define-the-Problem-Template-1"></a><a class="docs-heading-anchor-permalink" href="#Define-the-Problem-Template" title="Permalink"></a></h2><p>The template must use <code>PTDFPowerModel</code> to enable DLR constraints. The key step is constructing <code>DeviceModel</code> with <code>time_series_names</code> that maps <code>BranchRatingTimeSeriesParameter</code> to the time series name <code>&quot;dynamic_line_ratings&quot;</code> attached to the branches above.</p><div class="admonition is-success" id="Tip-66273905b8aee15b"><header class="admonition-header">Tip<a class="admonition-anchor" href="#Tip-66273905b8aee15b" title="Permalink"></a></header><div class="admonition-body"><p>Any branch type that has the <code>&quot;dynamic_line_ratings&quot;</code> time series attached and is configured with <code>BranchRatingTimeSeriesParameter</code> in <code>time_series_names</code> will have time-varying flow limits. Branches without the time series attached will fall back to static limits automatically.</p></div></div><pre><code class="language-julia hljs">template_uc = ProblemTemplate(
+add_dlr_to_system_branches!(sys, branches_dlr, data_days, dlr_factor_ts; initial_date)</code></pre><p>Because the simulation uses a rolling horizon of 48 hours (2 days), we transform the <code>SingleTimeSeries</code> into <code>Deterministic</code> forecasts with a 48-hour horizon and a 24-hour interval between forecast windows.</p><pre><code class="language-julia hljs">transform_single_time_series!(sys, Hour(48), Day(1))</code></pre><h2 id="Define-the-Problem-Template"><a class="docs-heading-anchor" href="#Define-the-Problem-Template">Define the Problem Template</a><a id="Define-the-Problem-Template-1"></a><a class="docs-heading-anchor-permalink" href="#Define-the-Problem-Template" title="Permalink"></a></h2><p>The template must use <code>PTDFPowerModel</code> to enable DLR constraints. The key step is constructing <code>DeviceModel</code> with <code>time_series_names</code> that maps <code>BranchRatingTimeSeriesParameter</code> to the time series name <code>&quot;dynamic_line_ratings&quot;</code> attached to the branches above.</p><div class="admonition is-success" id="Tip-e709ba90fbbc518c"><header class="admonition-header">Tip<a class="admonition-anchor" href="#Tip-e709ba90fbbc518c" title="Permalink"></a></header><div class="admonition-body"><p>Any branch type that has the <code>&quot;dynamic_line_ratings&quot;</code> time series attached and is configured with <code>BranchRatingTimeSeriesParameter</code> in <code>time_series_names</code> will have time-varying flow limits. Branches without the time series attached will fall back to static limits automatically.</p></div></div><pre><code class="language-julia hljs">template_uc = ProblemTemplate(
     NetworkModel(
         PTDFPowerModel;
         reduce_radial_branches = false,
@@ -559,183 +559,183 @@ transformer_flows = read_realized_expression(
   <tbody>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T00:00:00</td>
-      <td style = "text-align: right;">-48.3606077627944</td>
-      <td style = "text-align: right;">-29.371056047786066</td>
-      <td style = "text-align: right;">-82.94584382801301</td>
-      <td style = "text-align: right;">-63.67565893814503</td>
-      <td style = "text-align: right;">-156.65665791422828</td>
-      <td style = "text-align: right;">-52.00129084819124</td>
-      <td style = "text-align: right;">-76.15536179361266</td>
-      <td style = "text-align: right;">-89.86149197857307</td>
-      <td style = "text-align: right;">-114.37251888150873</td>
-      <td style = "text-align: right;">-83.4650073624571</td>
-      <td style = "text-align: right;">44.38323581534968</td>
-      <td style = "text-align: right;">49.177456954112344</td>
-      <td style = "text-align: right;">-76.94192117275449</td>
-      <td style = "text-align: right;">-72.07684962533871</td>
-      <td style = "text-align: right;">80.24173611870684</td>
+      <td style = "text-align: right;">-49.20309294925214</td>
+      <td style = "text-align: right;">-27.41748206495554</td>
+      <td style = "text-align: right;">-84.97276405834943</td>
+      <td style = "text-align: right;">-62.865199015235895</td>
+      <td style = "text-align: right;">-163.09083521394118</td>
+      <td style = "text-align: right;">-50.99670854736501</td>
+      <td style = "text-align: right;">-71.43337122793393</td>
+      <td style = "text-align: right;">-90.39681433683499</td>
+      <td style = "text-align: right;">-111.13549602331068</td>
+      <td style = "text-align: right;">-85.35373191813072</td>
+      <td style = "text-align: right;">19.861496523747647</td>
+      <td style = "text-align: right;">20.626605396740604</td>
+      <td style = "text-align: right;">-87.41696998485031</td>
+      <td style = "text-align: right;">-86.64055410812385</td>
+      <td style = "text-align: right;">10.789578724030493</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T01:00:00</td>
-      <td style = "text-align: right;">-47.75831951074486</td>
-      <td style = "text-align: right;">-30.69817317995226</td>
-      <td style = "text-align: right;">-81.54115700404878</td>
-      <td style = "text-align: right;">-64.2288908180731</td>
-      <td style = "text-align: right;">-152.27672349835058</td>
-      <td style = "text-align: right;">-51.519269288297686</td>
-      <td style = "text-align: right;">-77.4927070849616</td>
-      <td style = "text-align: right;">-87.79507797260668</td>
-      <td style = "text-align: right;">-114.15235886468889</td>
-      <td style = "text-align: right;">-80.3166252851978</td>
-      <td style = "text-align: right;">46.38736756280472</td>
-      <td style = "text-align: right;">53.332646123100844</td>
-      <td style = "text-align: right;">-72.423074564651</td>
-      <td style = "text-align: right;">-65.37515663709075</td>
-      <td style = "text-align: right;">83.86746371560166</td>
+      <td style = "text-align: right;">-47.663077868624946</td>
+      <td style = "text-align: right;">-31.429448637998124</td>
+      <td style = "text-align: right;">-81.18938337974089</td>
+      <td style = "text-align: right;">-64.71584880648905</td>
+      <td style = "text-align: right;">-150.88603797931052</td>
+      <td style = "text-align: right;">-51.62230651999692</td>
+      <td style = "text-align: right;">-77.82026907989007</td>
+      <td style = "text-align: right;">-87.78273127107089</td>
+      <td style = "text-align: right;">-114.36785501930449</td>
+      <td style = "text-align: right;">-80.30234394449639</td>
+      <td style = "text-align: right;">46.27752882917258</td>
+      <td style = "text-align: right;">53.44248485673305</td>
+      <td style = "text-align: right;">-72.5345365273622</td>
+      <td style = "text-align: right;">-65.26369467437954</td>
+      <td style = "text-align: right;">83.27416799510989</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T02:00:00</td>
-      <td style = "text-align: right;">-48.36306976865551</td>
-      <td style = "text-align: right;">-32.713293863509435</td>
-      <td style = "text-align: right;">-82.0554092642729</td>
-      <td style = "text-align: right;">-66.17435637249677</td>
-      <td style = "text-align: right;">-151.27813301229753</td>
-      <td style = "text-align: right;">-51.89771608193817</td>
-      <td style = "text-align: right;">-78.36190107081815</td>
-      <td style = "text-align: right;">-87.66324089850558</td>
-      <td style = "text-align: right;">-114.51852138900452</td>
-      <td style = "text-align: right;">-80.89113877402146</td>
-      <td style = "text-align: right;">50.97955453647249</td>
-      <td style = "text-align: right;">58.3631874227119</td>
-      <td style = "text-align: right;">-69.1894082873943</td>
-      <td style = "text-align: right;">-61.69665790486225</td>
-      <td style = "text-align: right;">90.99880266036703</td>
+      <td style = "text-align: right;">-48.267828126535626</td>
+      <td style = "text-align: right;">-33.4445693215554</td>
+      <td style = "text-align: right;">-81.70363563996496</td>
+      <td style = "text-align: right;">-66.66131436091275</td>
+      <td style = "text-align: right;">-149.8874474932573</td>
+      <td style = "text-align: right;">-52.0007533136374</td>
+      <td style = "text-align: right;">-78.68946306574661</td>
+      <td style = "text-align: right;">-87.6508941969698</td>
+      <td style = "text-align: right;">-114.7340175436201</td>
+      <td style = "text-align: right;">-80.87685743332003</td>
+      <td style = "text-align: right;">50.86971580284032</td>
+      <td style = "text-align: right;">58.47302615634409</td>
+      <td style = "text-align: right;">-69.3008702501055</td>
+      <td style = "text-align: right;">-61.58519594215102</td>
+      <td style = "text-align: right;">90.40550693987517</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T03:00:00</td>
-      <td style = "text-align: right;">-50.838767228977034</td>
-      <td style = "text-align: right;">-31.381601402624742</td>
-      <td style = "text-align: right;">-86.95657660797124</td>
-      <td style = "text-align: right;">-67.2118670680249</td>
-      <td style = "text-align: right;">-163.35443893495366</td>
-      <td style = "text-align: right;">-46.48678657693006</td>
-      <td style = "text-align: right;">-67.27403086150339</td>
-      <td style = "text-align: right;">-80.68850257972446</td>
-      <td style = "text-align: right;">-101.78294686815835</td>
-      <td style = "text-align: right;">-77.26923465721234</td>
-      <td style = "text-align: right;">9.926172218651454</td>
-      <td style = "text-align: right;">11.010402763560158</td>
-      <td style = "text-align: right;">-85.75061056756026</td>
-      <td style = "text-align: right;">-84.65035694508438</td>
-      <td style = "text-align: right;">-26.262530260461254</td>
+      <td style = "text-align: right;">-50.21909940875792</td>
+      <td style = "text-align: right;">-35.11349045032291</td>
+      <td style = "text-align: right;">-84.76032763885422</td>
+      <td style = "text-align: right;">-69.4314835528178</td>
+      <td style = "text-align: right;">-154.7903342881297</td>
+      <td style = "text-align: right;">-52.21367866400539</td>
+      <td style = "text-align: right;">-78.53464002924463</td>
+      <td style = "text-align: right;">-87.72986699050105</td>
+      <td style = "text-align: right;">-114.43980725656631</td>
+      <td style = "text-align: right;">-82.01202435188026</td>
+      <td style = "text-align: right;">45.785185661781455</td>
+      <td style = "text-align: right;">52.62846050186186</td>
+      <td style = "text-align: right;">-70.39649937207015</td>
+      <td style = "text-align: right;">-63.45209260567424</td>
+      <td style = "text-align: right;">75.4575651867329</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T04:00:00</td>
-      <td style = "text-align: right;">-51.47571239302915</td>
-      <td style = "text-align: right;">-32.927354013480034</td>
-      <td style = "text-align: right;">-87.22184881974047</td>
-      <td style = "text-align: right;">-68.39937735007703</td>
-      <td style = "text-align: right;">-165.82985874330777</td>
-      <td style = "text-align: right;">-47.98016883280374</td>
-      <td style = "text-align: right;">-71.90475883034996</td>
-      <td style = "text-align: right;">-80.97236732046908</td>
-      <td style = "text-align: right;">-105.25052193865446</td>
-      <td style = "text-align: right;">-77.56020219045048</td>
-      <td style = "text-align: right;">27.143793336477255</td>
-      <td style = "text-align: right;">29.794716110003467</td>
-      <td style = "text-align: right;">-78.25817329063582</td>
-      <td style = "text-align: right;">-75.56807440145377</td>
-      <td style = "text-align: right;">30.22993486099741</td>
+      <td style = "text-align: right;">-51.89381251464451</td>
+      <td style = "text-align: right;">-34.39151361358803</td>
+      <td style = "text-align: right;">-87.44452000912015</td>
+      <td style = "text-align: right;">-69.68356699228153</td>
+      <td style = "text-align: right;">-164.76569883707805</td>
+      <td style = "text-align: right;">-53.32982089086274</td>
+      <td style = "text-align: right;">-78.58688793864698</td>
+      <td style = "text-align: right;">-89.95003342983372</td>
+      <td style = "text-align: right;">-115.58035683562133</td>
+      <td style = "text-align: right;">-85.89595937068522</td>
+      <td style = "text-align: right;">38.402312574594106</td>
+      <td style = "text-align: right;">42.54831486161989</td>
+      <td style = "text-align: right;">-73.35250425760663</td>
+      <td style = "text-align: right;">-69.14523113058193</td>
+      <td style = "text-align: right;">62.538249901448374</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T05:00:00</td>
-      <td style = "text-align: right;">-43.34590031083452</td>
-      <td style = "text-align: right;">-28.550372975467564</td>
-      <td style = "text-align: right;">-74.11079918916123</td>
-      <td style = "text-align: right;">-59.096619203528455</td>
-      <td style = "text-align: right;">-152.27156293142613</td>
-      <td style = "text-align: right;">-47.780242206443866</td>
-      <td style = "text-align: right;">-72.21524174564853</td>
-      <td style = "text-align: right;">-84.56182021815732</td>
-      <td style = "text-align: right;">-109.35792736017913</td>
-      <td style = "text-align: right;">-74.09197762700774</td>
-      <td style = "text-align: right;">27.335966730931823</td>
-      <td style = "text-align: right;">31.733829916385343</td>
-      <td style = "text-align: right;">-79.36783004726419</td>
-      <td style = "text-align: right;">-74.90497394745165</td>
-      <td style = "text-align: right;">59.443690804240866</td>
+      <td style = "text-align: right;">-52.85947391417416</td>
+      <td style = "text-align: right;">-40.11170514338421</td>
+      <td style = "text-align: right;">-89.00682540793213</td>
+      <td style = "text-align: right;">-76.0706663646275</td>
+      <td style = "text-align: right;">-164.67604810345617</td>
+      <td style = "text-align: right;">-55.44712216207649</td>
+      <td style = "text-align: right;">-77.27163926951887</td>
+      <td style = "text-align: right;">-95.70321932464473</td>
+      <td style = "text-align: right;">-117.85026555850125</td>
+      <td style = "text-align: right;">-90.38549851953915</td>
+      <td style = "text-align: right;">27.296258142569584</td>
+      <td style = "text-align: right;">31.827413933748822</td>
+      <td style = "text-align: right;">-79.4227525093755</td>
+      <td style = "text-align: right;">-74.82463396654506</td>
+      <td style = "text-align: right;">59.36439785644434</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T06:00:00</td>
-      <td style = "text-align: right;">-40.8192438132006</td>
-      <td style = "text-align: right;">-28.390705322128284</td>
-      <td style = "text-align: right;">-71.82334184263858</td>
-      <td style = "text-align: right;">-59.21113075792318</td>
-      <td style = "text-align: right;">-150.45033320761604</td>
-      <td style = "text-align: right;">-44.9484218978138</td>
-      <td style = "text-align: right;">-69.20000578790489</td>
-      <td style = "text-align: right;">-83.47747155140405</td>
-      <td style = "text-align: right;">-108.08745247395741</td>
-      <td style = "text-align: right;">-67.16470909017768</td>
-      <td style = "text-align: right;">-2.607617820004134</td>
-      <td style = "text-align: right;">-11.096778539159102</td>
-      <td style = "text-align: right;">-95.80847489294511</td>
-      <td style = "text-align: right;">-104.42309092353999</td>
-      <td style = "text-align: right;">13.983257312490604</td>
+      <td style = "text-align: right;">-47.412811193897284</td>
+      <td style = "text-align: right;">-35.42674090682909</td>
+      <td style = "text-align: right;">-83.98377251450462</td>
+      <td style = "text-align: right;">-71.82056855892063</td>
+      <td style = "text-align: right;">-163.92175157622518</td>
+      <td style = "text-align: right;">-53.4270049268453</td>
+      <td style = "text-align: right;">-76.54264638892789</td>
+      <td style = "text-align: right;">-99.46973785385545</td>
+      <td style = "text-align: right;">-122.92698905743038</td>
+      <td style = "text-align: right;">-79.38712616732856</td>
+      <td style = "text-align: right;">-2.5666563528235975</td>
+      <td style = "text-align: right;">-11.914931313217386</td>
+      <td style = "text-align: right;">-95.55590252662066</td>
+      <td style = "text-align: right;">-105.04232904114107</td>
+      <td style = "text-align: right;">15.127114370645003</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T07:00:00</td>
-      <td style = "text-align: right;">-21.225359423152508</td>
-      <td style = "text-align: right;">-14.5717308869468</td>
-      <td style = "text-align: right;">-41.164947895247636</td>
-      <td style = "text-align: right;">-34.41299008152782</td>
-      <td style = "text-align: right;">-80.31166381961596</td>
-      <td style = "text-align: right;">-46.249791772337495</td>
-      <td style = "text-align: right;">-59.01578986776401</td>
-      <td style = "text-align: right;">-84.880197679514</td>
-      <td style = "text-align: right;">-97.83485544577081</td>
-      <td style = "text-align: right;">-93.37257268710847</td>
-      <td style = "text-align: right;">-33.69653860967156</td>
-      <td style = "text-align: right;">-62.01721576234544</td>
-      <td style = "text-align: right;">-109.30696323265711</td>
-      <td style = "text-align: right;">-138.0461716736314</td>
-      <td style = "text-align: right;">-88.98784347958912</td>
+      <td style = "text-align: right;">-31.228977428767546</td>
+      <td style = "text-align: right;">-24.29948340398575</td>
+      <td style = "text-align: right;">-57.47700759420534</td>
+      <td style = "text-align: right;">-50.44510747066289</td>
+      <td style = "text-align: right;">-97.74813551165887</td>
+      <td style = "text-align: right;">-57.30285166922101</td>
+      <td style = "text-align: right;">-69.53205627038601</td>
+      <td style = "text-align: right;">-101.9243912645311</td>
+      <td style = "text-align: right;">-114.33432264454461</td>
+      <td style = "text-align: right;">-112.74756645602235</td>
+      <td style = "text-align: right;">-80.37997871538329</td>
+      <td style = "text-align: right;">-81.15593044716938</td>
+      <td style = "text-align: right;">-111.28456697815099</td>
+      <td style = "text-align: right;">-112.07198595262389</td>
+      <td style = "text-align: right;">-131.92737064824104</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T08:00:00</td>
-      <td style = "text-align: right;">-8.354088819392924</td>
-      <td style = "text-align: right;">-4.770720128147761</td>
-      <td style = "text-align: right;">-25.134340070657014</td>
-      <td style = "text-align: right;">-21.498015304007424</td>
-      <td style = "text-align: right;">-41.934601298436505</td>
-      <td style = "text-align: right;">-42.5967783217522</td>
-      <td style = "text-align: right;">-46.22685151696958</td>
-      <td style = "text-align: right;">-84.59637818694216</td>
-      <td style = "text-align: right;">-88.28009767044658</td>
-      <td style = "text-align: right;">-96.5640308569028</td>
-      <td style = "text-align: right;">-104.30370109292966</td>
-      <td style = "text-align: right;">-97.84015248941918</td>
-      <td style = "text-align: right;">-109.4850130727552</td>
-      <td style = "text-align: right;">-102.92594424882637</td>
-      <td style = "text-align: right;">-73.22204126028011</td>
+      <td style = "text-align: right;">-18.411901967239018</td>
+      <td style = "text-align: right;">-13.531200209324245</td>
+      <td style = "text-align: right;">-41.79982197762365</td>
+      <td style = "text-align: right;">-36.84699177505561</td>
+      <td style = "text-align: right;">-60.99353051340335</td>
+      <td style = "text-align: right;">-53.64642654459636</td>
+      <td style = "text-align: right;">-56.66285380344308</td>
+      <td style = "text-align: right;">-101.6598274536887</td>
+      <td style = "text-align: right;">-104.72083236087002</td>
+      <td style = "text-align: right;">-115.6825157234107</td>
+      <td style = "text-align: right;">-87.65982765390493</td>
+      <td style = "text-align: right;">-102.68588506274713</td>
+      <td style = "text-align: right;">-100.40002183497361</td>
+      <td style = "text-align: right;">-115.64813873524304</td>
+      <td style = "text-align: right;">-32.48297887734182</td>
     </tr>
     <tr class = "dataRow">
       <td style = "text-align: right;">2020-01-01T09:00:00</td>
-      <td style = "text-align: right;">-1.5464359855165672</td>
-      <td style = "text-align: right;">-1.4019117358302982</td>
-      <td style = "text-align: right;">-17.0080971401255</td>
-      <td style = "text-align: right;">-16.86143706861238</td>
-      <td style = "text-align: right;">-18.684129004287644</td>
-      <td style = "text-align: right;">-42.353389734830586</td>
-      <td style = "text-align: right;">-46.007485344082724</td>
-      <td style = "text-align: right;">-84.83319323064251</td>
-      <td style = "text-align: right;">-88.54129013847464</td>
-      <td style = "text-align: right;">-95.86103111046248</td>
-      <td style = "text-align: right;">-90.40686169358415</td>
-      <td style = "text-align: right;">-151.87386229125462</td>
-      <td style = "text-align: right;">-87.63392080669267</td>
-      <td style = "text-align: right;">-150.00929879976994</td>
-      <td style = "text-align: right;">-102.17445248869856</td>
+      <td style = "text-align: right;">-11.366243431443143</td>
+      <td style = "text-align: right;">-11.063648405954869</td>
+      <td style = "text-align: right;">-32.85048355766963</td>
+      <td style = "text-align: right;">-32.5434166939845</td>
+      <td style = "text-align: right;">-34.553057147256375</td>
+      <td style = "text-align: right;">-53.936119319917744</td>
+      <td style = "text-align: right;">-58.31076675539367</td>
+      <td style = "text-align: right;">-101.78590983071147</td>
+      <td style = "text-align: right;">-106.22520709137196</td>
+      <td style = "text-align: right;">-114.46354810416182</td>
+      <td style = "text-align: right;">-127.90947692666792</td>
+      <td style = "text-align: right;">-111.97453695107296</td>
+      <td style = "text-align: right;">-126.34146169951252</td>
+      <td style = "text-align: right;">-110.17103049886592</td>
+      <td style = "text-align: right;">-105.70189000388068</td>
     </tr>
     <tr>
       <td style = "text-align: right;">&vellip;</td>
@@ -762,4 +762,4 @@ transformer_flows = read_realized_expression(
     &quot;BranchRatingTimeSeriesParameter__Line&quot;;
     table_format = TableFormat.WIDE,
 )
-first(keys(dlr_params))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">2020-01-01T00:00:00</code></pre><div class="admonition is-success" id="Tip-8f9f66827cb44167"><header class="admonition-header">Tip<a class="admonition-anchor" href="#Tip-8f9f66827cb44167" title="Permalink"></a></header><div class="admonition-body"><p>To verify that DLR constraints are binding, compare the line flows in <code>line_flows</code> against the corresponding DLR parameter values in <code>dlr_params</code>. When demand is high and the DLR limit is tight, the flow should be at or near the DLR limit rather than the static rating.</p></div></div></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../generated_pcm_simulation/">« Multi-stage Production Cost Simulation</a><a class="docs-footer-nextpage" href="../generated_uc_power_flow_in_the_loop/">Running Power Flow In The Loop with Unit Commitment »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Tuesday 8 September 2026 05:37">Tuesday 8 September 2026</span>. Using Julia version 1.12.7.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+first(keys(dlr_params))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">2020-01-01T00:00:00</code></pre><div class="admonition is-success" id="Tip-adab63580273fe2c"><header class="admonition-header">Tip<a class="admonition-anchor" href="#Tip-adab63580273fe2c" title="Permalink"></a></header><div class="admonition-body"><p>To verify that DLR constraints are binding, compare the line flows in <code>line_flows</code> against the corresponding DLR parameter values in <code>dlr_params</code>. When demand is high and the DLR limit is tight, the flow should be at or near the DLR limit rather than the static rating.</p></div></div></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../generated_pcm_simulation/">« Multi-stage Production Cost Simulation</a><a class="docs-footer-nextpage" href="../generated_uc_power_flow_in_the_loop/">Running Power Flow In The Loop with Unit Commitment »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Thursday 24 September 2026 15:51">Thursday 24 September 2026</span>. Using Julia version 1.13.0.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
