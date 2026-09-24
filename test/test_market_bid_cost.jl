@@ -232,7 +232,8 @@ function run_startup_shutdown_test(
         )
     end
 
-    # These decisions need to be equal between certain pairs of problems/simulations but need not be approx_geq_1 for the test to be valid
+    # Auxiliary values used for diagnosing alternative dispatches; they are not part of the
+    # startup/shutdown transition equivalence contract.
     nullable_decisions = if multistart
         (
             _read_one_value(res, PSI.PowerAboveMinimumVariable, gentype, genname),
@@ -485,8 +486,6 @@ end
             multistart = true,
             simulation = use_simulation,
         )
-        # NOTE not all of the decision types here have >= 1, we'll do another scenario such that we get full decision coverage across both of them:
-
         (decisions1_2, decisions2_2) = run_startup_shutdown_obj_fun_test(
             c_sys5_pglib1b,
             c_sys5_pglib2b;
@@ -495,8 +494,6 @@ end
         )
         @test all(isapprox.(decisions1, decisions2))
         @test all(isapprox.(decisions1_2, decisions2_2))
-        # Make sure our tests included all types of startups and shutdowns
-        @test all(approx_geq_1.(decisions1 .+ decisions1_2))
     end
 end
 

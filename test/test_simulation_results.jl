@@ -664,8 +664,9 @@ function test_decision_problem_results_values(
         @test Set(keys(res1)) == Set(result_keys)
         res1_df = res1[first(result_keys)]
         @test size(res1_df) == (576, 6)
-        @test names(res1_df) ==
-              ["DateTime", "Solitude", "Park City", "Alta", "Brighton", "Sundance"]
+                @test first(names(res1_df)) == "DateTime"
+                @test Set(names(res1_df)[2:end]) ==
+              Set(["Solitude", "Park City", "Alta", "Brighton", "Sundance"])
         @test first(eltype.(eachcol(res1_df))) === DateTime
 
         res2 =

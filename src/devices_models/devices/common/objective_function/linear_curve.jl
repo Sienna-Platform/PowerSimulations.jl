@@ -192,44 +192,59 @@ function _add_curtailment_cost!(
 
     name = PSY.get_name(component)
     dispatch_vars = get_variable(container, T(), PSY.RenewableDispatch)
-    param_array =
-        get_parameter_array(
+    param_container =
+        get_parameter(
             container,
             ActivePowerTimeSeriesParameter(),
             PSY.RenewableDispatch,
         )
-    param_multiplier = get_parameter_multiplier_array(
-        container,
-        ActivePowerTimeSeriesParameter(),
-        PSY.RenewableDispatch,
-    )
-    has_ts_param = name in axes(param_array)[1]
+    param_multiplier = get_multiplier_array(param_container)
 
-    for t in get_time_steps(container)
-        offer_max = if has_ts_param
-            param_multiplier[name, t] * param_array[name, t]
-        else
-            PSY.get_max_active_power(component)
+    if haskey(get_attributes(param_container).component_name_to_ts_uuid, name)
+        availability = get_parameter_column_refs(param_container, name)
+        for t in get_time_steps(container)
+            offer_max = param_multiplier[name, t] * availability[t]
+            dispatch = dispatch_vars[name, t]
+            curtailment_cost = proportional_term_per_unit * dt * (offer_max - dispatch)
+
+            add_to_expression!(
+                container,
+                CurtailmentCostExpression,
+                curtailment_cost,
+                component,
+                t,
+            )
+
+            _add_proportional_term!(
+                container,
+                T(),
+                component,
+                OBJECTIVE_FUNCTION_NEGATIVE * proportional_term_per_unit * dt,
+                t,
+            )
         end
+    else
+        offer_max = PSY.get_max_active_power(component)
+        for t in get_time_steps(container)
+            dispatch = dispatch_vars[name, t]
+            curtailment_cost = proportional_term_per_unit * dt * (offer_max - dispatch)
 
-        dispatch = dispatch_vars[name, t]
-        curtailment_cost = proportional_term_per_unit * dt * (offer_max - dispatch)
+            add_to_expression!(
+                container,
+                CurtailmentCostExpression,
+                curtailment_cost,
+                component,
+                t,
+            )
 
-        add_to_expression!(
-            container,
-            CurtailmentCostExpression,
-            curtailment_cost,
-            component,
-            t,
-        )
-
-        _add_proportional_term!(
-            container,
-            T(),
-            component,
-            OBJECTIVE_FUNCTION_NEGATIVE * proportional_term_per_unit * dt,
-            t,
-        )
+            _add_proportional_term!(
+                container,
+                T(),
+                component,
+                OBJECTIVE_FUNCTION_NEGATIVE * proportional_term_per_unit * dt,
+                t,
+            )
+        end
     end
 
     return
@@ -263,40 +278,55 @@ function _add_curtailment_cost!(
 
     name = PSY.get_name(component)
     dispatch_vars = get_variable(container, T(), PSY.RenewableGen)
-    param_array =
-        get_parameter_array(container, ActivePowerTimeSeriesParameter(), PSY.RenewableGen)
-    param_multiplier = get_parameter_multiplier_array(
-        container,
-        ActivePowerTimeSeriesParameter(),
-        PSY.RenewableGen,
-    )
-    has_ts_param = name in axes(param_array)[1]
+    param_container =
+        get_parameter(container, ActivePowerTimeSeriesParameter(), PSY.RenewableGen)
+    param_multiplier = get_multiplier_array(param_container)
 
-    for t in get_time_steps(container)
-        offer_max = if has_ts_param
-            param_multiplier[name, t] * param_array[name, t]
-        else
-            PSY.get_max_active_power(component)
+    if haskey(get_attributes(param_container).component_name_to_ts_uuid, name)
+        availability = get_parameter_column_refs(param_container, name)
+        for t in get_time_steps(container)
+            offer_max = param_multiplier[name, t] * availability[t]
+            dispatch = dispatch_vars[name, t]
+            curtailment_cost = proportional_term_per_unit * dt * (offer_max - dispatch)
+
+            add_to_expression!(
+                container,
+                CurtailmentCostExpression,
+                curtailment_cost,
+                component,
+                t,
+            )
+
+            _add_proportional_term!(
+                container,
+                T(),
+                component,
+                OBJECTIVE_FUNCTION_NEGATIVE * proportional_term_per_unit * dt,
+                t,
+            )
         end
+    else
+        offer_max = PSY.get_max_active_power(component)
+        for t in get_time_steps(container)
+            dispatch = dispatch_vars[name, t]
+            curtailment_cost = proportional_term_per_unit * dt * (offer_max - dispatch)
 
-        dispatch = dispatch_vars[name, t]
-        curtailment_cost = proportional_term_per_unit * dt * (offer_max - dispatch)
+            add_to_expression!(
+                container,
+                CurtailmentCostExpression,
+                curtailment_cost,
+                component,
+                t,
+            )
 
-        add_to_expression!(
-            container,
-            CurtailmentCostExpression,
-            curtailment_cost,
-            component,
-            t,
-        )
-
-        _add_proportional_term!(
-            container,
-            T(),
-            component,
-            OBJECTIVE_FUNCTION_NEGATIVE * proportional_term_per_unit * dt,
-            t,
-        )
+            _add_proportional_term!(
+                container,
+                T(),
+                component,
+                OBJECTIVE_FUNCTION_NEGATIVE * proportional_term_per_unit * dt,
+                t,
+            )
+        end
     end
 
     return
