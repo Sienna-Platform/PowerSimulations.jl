@@ -12,7 +12,7 @@
         feedforward = false,
         in_memory = true,
     )
-    test_event_results(;
+    test_event_outputs(;
         res = res,
         outage_time = DateTime("2024-01-01T18:00:00"),
         outage_length = 3.0,
@@ -20,7 +20,7 @@
         expected_on_variable_recovery = DateTime("2024-01-01T22:00:00"),
     )
     #Test no ramping constraint in D2 model results
-    d2 = get_decision_problem_results(res, "D2")
+    d2 = get_decision_problem_outputs(res, "D2")
     p_d2 =
         read_realized_variables(d2; table_format = TableFormat.WIDE)["ActivePowerVariable__ThermalStandard"]
     p_recover_ix = indexin([DateTime("2024-01-01T22:00:00")], p_d2[!, :DateTime])[1]
@@ -40,7 +40,7 @@ end
         feedforward = true,
         in_memory = true,
     )
-    test_event_results(;
+    test_event_outputs(;
         res = res,
         outage_time = DateTime("2024-01-01T18:00:00"),
         outage_length = 3.0,
@@ -48,7 +48,7 @@ end
         expected_on_variable_recovery = DateTime("2024-01-01T22:00:00"),
     )
     #Test no ramping constraint in D2 model results
-    d2 = get_decision_problem_results(res, "D2")
+    d2 = get_decision_problem_outputs(res, "D2")
     p_d2 =
         read_realized_variables(d2; table_format = TableFormat.WIDE)["ActivePowerVariable__ThermalStandard"]
     p_recover_ix = indexin([DateTime("2024-01-01T22:00:00")], p_d2[!, :DateTime])[1]
@@ -73,7 +73,7 @@ end
         feedforward = true,
         in_memory = true,
     )
-    test_event_results(;
+    test_event_outputs(;
         res = res,
         outage_time = DateTime("2024-01-01T17:00:00"),
         outage_length = 3.0,
@@ -81,7 +81,7 @@ end
         expected_on_variable_recovery = DateTime("2024-01-01T22:00:00"),
     )
     #Test ramping constraint in D2 model results
-    d2 = get_decision_problem_results(res, "D2")
+    d2 = get_decision_problem_outputs(res, "D2")
     p_d2 =
         read_realized_variables(d2; table_format = TableFormat.WIDE)["ActivePowerVariable__ThermalStandard"]
     p_recover_ix = indexin([DateTime("2024-01-01T22:00:00")], p_d2[!, :DateTime])[1]
@@ -103,7 +103,7 @@ end
         feedforward = false,
         in_memory = true,
     )
-    test_event_results(;
+    test_event_outputs(;
         res = res,
         outage_time = DateTime("2024-01-01T18:00:00"),
         outage_length = 3.0,
@@ -124,7 +124,7 @@ end
         feedforward = true,
         in_memory = false,
     )
-    test_event_results(;
+    test_event_outputs(;
         res = res,
         outage_time = DateTime("2024-01-01T18:00:00"),
         outage_length = 3.0,
@@ -148,7 +148,7 @@ end
         feedforward = true,
         in_memory = true,
     )
-    test_event_results(;
+    test_event_outputs(;
         res = res,
         outage_time = DateTime("2024-01-01T17:00:00"),
         outage_length = 3.0,
@@ -156,7 +156,7 @@ end
         expected_on_variable_recovery = DateTime("2024-01-01T22:00:00"),
     )
     #Test ramping constraint in D2 model results
-    d2 = get_decision_problem_results(res, "D2")
+    d2 = get_decision_problem_outputs(res, "D2")
     p_d2 =
         read_realized_variables(d2; table_format = TableFormat.WIDE)["ActivePowerVariable__ThermalStandard"]
     p_recover_ix = indexin([DateTime("2024-01-01T22:00:00")], p_d2[!, :DateTime])[1]
@@ -167,7 +167,7 @@ end
 # the final hour are never flushed by the step loop. They must still be written, holding the
 # last hourly value, or the store reads them back as NaN (in memory) or 0.0 (HDF).
 function _test_trailing_rows_held(res)
-    em = get_emulation_problem_results(res)
+    em = get_emulation_problem_outputs(res)
     on_em = read_realized_variable(
         em,
         "OnVariable__ThermalStandard";
@@ -178,7 +178,7 @@ function _test_trailing_rows_held(res)
     @test !any(isnan, Matrix(last_hour[:, Not(:DateTime)]))
     # Both D1 and D2 write OnVariable; the hourly D2 runs after the daily D1, so its 23:00
     # solve is the last writer of the decision state the emulator copies verbatim.
-    d2 = get_decision_problem_results(res, "D2")
+    d2 = get_decision_problem_outputs(res, "D2")
     on_d2 = read_realized_variable(
         d2,
         "OnVariable__ThermalStandard";
@@ -207,7 +207,7 @@ end
         in_memory = true,
         attach_events = false,
     )
-    em = get_emulation_problem_results(res)
+    em = get_emulation_problem_outputs(res)
     p = read_realized_variable(
         em,
         "ActivePowerVariable__ThermalStandard";
@@ -216,7 +216,7 @@ end
     @test nrow(p) > 0
     @test p[2, :DateTime] - p[1, :DateTime] == Minute(5)
     #Test the hourly D2 decision model is also readable
-    d2 = get_decision_problem_results(res, "D2")
+    d2 = get_decision_problem_outputs(res, "D2")
     p_d2 =
         read_realized_variables(d2; table_format = TableFormat.WIDE)["ActivePowerVariable__ThermalStandard"]
     @test nrow(p_d2) > 0
@@ -257,7 +257,7 @@ end
         device_names = ["Alta"],
         renewable_formulation = RenewableFullDispatch,
     )
-    em = get_emulation_problem_results(res)
+    em = get_emulation_problem_outputs(res)
     status = read_realized_variable(
         em,
         "AvailableStatusParameter__ThermalStandard";
@@ -294,7 +294,7 @@ end
         device_names = ["WindBus1"],
         renewable_formulation = RenewableFullDispatch,
     )
-    em = get_emulation_problem_results(res)
+    em = get_emulation_problem_outputs(res)
     status = read_realized_variable(
         em,
         "AvailableStatusParameter__RenewableDispatch";
@@ -335,7 +335,7 @@ end
         device_names = ["WindBus1"],
         renewable_formulation = RenewableFullDispatch,
     )
-    d2 = PSI.get_decision_problem_results(res, "D2")
+    d2 = PSI.get_decision_problem_outputs(res, "D2")
     status = read_realized_variable(
         d2,
         "AvailableStatusParameter__RenewableDispatch";
@@ -372,7 +372,7 @@ end
         device_names = ["IloadBus4"],
         renewable_formulation = RenewableFullDispatch,
     )
-    em = get_emulation_problem_results(res)
+    em = get_emulation_problem_outputs(res)
     status = read_realized_variable(
         em,
         "AvailableStatusParameter__InterruptiblePowerLoad";
@@ -407,7 +407,7 @@ end
         device_names = ["Bus2"],
         renewable_formulation = RenewableFullDispatch,
     )
-    em = get_emulation_problem_results(res)
+    em = get_emulation_problem_outputs(res)
     active_power_thermal_no_outage =
         read_realized_variable(
             em,
@@ -427,7 +427,7 @@ end
         device_names = ["Bus2"],
         renewable_formulation = RenewableFullDispatch,
     )
-    em = get_emulation_problem_results(res)
+    em = get_emulation_problem_outputs(res)
     status = read_realized_variable(
         em,
         "AvailableStatusParameter__PowerLoad";
@@ -473,7 +473,7 @@ end
         device_names = ["Bus2"],
         renewable_formulation = RenewableFullDispatch,
     )
-    em = get_emulation_problem_results(res)
+    em = get_emulation_problem_outputs(res)
     active_power_thermal_no_outage =
         read_realized_variable(
             em,
@@ -493,7 +493,7 @@ end
         device_names = ["WindBus1"],
         renewable_formulation = FixedOutput,
     )
-    em = get_emulation_problem_results(res)
+    em = get_emulation_problem_outputs(res)
     renewable_status =
         read_realized_variable(
             em,
@@ -541,7 +541,7 @@ end
         feedforward = true,
         in_memory = true,
     )
-    test_event_results(;
+    test_event_outputs(;
         res = res,
         outage_time = DateTime("2024-01-01T18:00:00"),
         outage_length = 3.0,

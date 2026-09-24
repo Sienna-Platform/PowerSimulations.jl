@@ -59,9 +59,9 @@ mutable struct HdfSimulationStore <: SimulationStore
     }
     em_parameter_read_cache::Dict{IOM.ParameterKey, Dict{String, IS.TimeSeries.TimeArray}}
     # A caller's own already-open `System` for a model's bundle (R30), keyed by system uuid.
-    # Merged in from a `SimulationProblemResults`'s shared `system_registry` by
-    # `_register_borrowed_stores!` (simulation_problem_results.jl) before a store read -- so
-    # this includes systems loaded through any sibling result from the same SimulationResults,
+    # Merged in from a `SimulationProblemOutputs`'s shared `system_registry` by
+    # `_register_borrowed_stores!` (simulation_problem_outputs.jl) before a store read -- so
+    # this includes systems loaded through any sibling result from the same SimulationOutputs,
     # e.g. the Emulator borrowing a decision model's bundle (R31). When present for a uuid,
     # the parameter read path reads through it instead of opening a second handle to the same
     # sidecar (InfraStore allows only one) -- and never closes it, since it is owned by the
@@ -152,7 +152,7 @@ problem = :ED
 var_name = :P__ThermalStandard
 timestamp = DateTime("2020-01-01T05:00:00")
 store = open_store(HdfSimulationStore, path)
-df = PowerSimulations.read_result(DataFrame, store, model, :variables, var_name, timestamp)
+df = PowerSimulations.read_output(DataFrame, store, model, :variables, var_name, timestamp)
 ```
 """
 function open_store(
@@ -333,7 +333,7 @@ end
 """
 Register a decision model's parameter keys in the lookup and in `dm_parameter_keys`, and
 create nothing else: no HDF5 group, no dataset, no output cache. Parameter values are buffered
-in memory (`write_result!`) and materialized into the bundle's InfraStore at
+in memory (`write_output!`) and materialized into the bundle's InfraStore at
 `finalize_parameters!`.
 """
 function _initialize_decision_model_container!(
@@ -552,7 +552,7 @@ end
 """
 Return DataFrame, DenseAxisArray, or Array for a model result at a timestamp.
 """
-function read_result(
+function read_output(
     ::Type{DataFrames.DataFrame},
     store::HdfSimulationStore,
     model_name::Symbol,
@@ -594,7 +594,7 @@ function _make_denseaxisarray(
     )
 end
 
-function read_result(
+function read_output(
     ::Type{DenseAxisArray},
     store::HdfSimulationStore,
     model_name::Symbol,
@@ -602,20 +602,20 @@ function read_result(
     index::Union{DecisionModelIndexType, EmulationModelIndexType},
 )
     if is_cached(store.cache, model_name, key, index)
-        data = read_result(store.cache, model_name, key, index)
+        data = read_output(store.cache, model_name, key, index)
         columns = get_column_names(store, DecisionModelIndexType, model_name, key)
     else
-        data, columns = _read_result(store, model_name, key, index)
+        data, columns = _read_output(store, model_name, key, index)
     end
     return _make_denseaxisarray(data, columns)
 end
 
 """
-A `ParameterKey` is never cached — `write_result!` bypasses `add_output_cache!` entirely for
+A `ParameterKey` is never cached — `write_output!` bypasses `add_output_cache!` entirely for
 parameters (buffered or bundle-backed instead) — so the generic 4-arg `is_cached` must not
-run for one: it wraps `(model_name, key)` into an `OptimizationResultCacheKey` and looks it up
+run for one: it wraps `(model_name, key)` into an `OptimizationOutputCacheKey` and looks it up
 in `cache.data`, a `KeyError` for a key nobody ever registered there. This dispatches on the
-key before that wrap happens, for every `read_result(Array/DenseAxisArray, ...)` call.
+key before that wrap happens, for every `read_output(Array/DenseAxisArray, ...)` call.
 """
 is_cached(::OptimizationOutputCaches, ::Symbol, ::IOM.ParameterKey, ::Any) = false
 
@@ -639,8 +639,8 @@ end
 """
 Whether the registered borrowed store for `uuid`, if any, is genuinely backed by
 `sidecar_path` — the exact bundle sidecar a read for this model would otherwise open.
-`SimulationProblemResults.system` is set unconditionally at construction
-(`SimulationResults(sim::Simulation)` passes each decision model's own live, in-memory
+`SimulationProblemOutputs.system` is set unconditionally at construction
+(`SimulationOutputs(sim::Simulation)` passes each decision model's own live, in-memory
 `System`), which predates `finalize_parameters!`'s writes and is backed by a different store
 than the bundle file entirely; registering it on every non-`nothing` `get_system(res)` (R30)
 would otherwise silently misdirect a parameter read to a store that never has the row. Path
@@ -681,7 +681,7 @@ end
 
 """
 Run `f` on a freshly opened parameter store at `sidecar_path`, closing it afterward. Finalize
-and the partition merge (`simulation_partition_results.jl`, both its per-partition source reads
+and the partition merge (`simulation_partition_outputs.jl`, both its per-partition source reads
 and its destination write) always own the only handle to their sidecar, so this plain
 open/try/finally/close is also what `_with_parameter_store(f, store, uuid, ...)` falls back to
 once no borrowed store applies.
@@ -710,7 +710,7 @@ value`): read through a borrowed, already-open `System` store when one is regist
 this model's system uuid and genuinely backed by this sidecar, or a fresh open-read-close
 otherwise (`_with_parameter_store`). `slice` is `""` for a 2-D parameter's single window set,
 or one axis-2 label for a slice of a 3-D parameter. Cached per `(model, key, slice)` so a
-sidecar is read at most once per slice across a `SimulationProblemResults` session, whichever
+sidecar is read at most once per slice across a `SimulationProblemOutputs` session, whichever
 source served it. Shared by `_bundle_parameter_windows` (2-D) and `_bundle_parameter_windows_3d`
 (3-D, one call per slice) so both shapes read through the same open/cache logic.
 """
@@ -767,7 +767,7 @@ open (through a borrowed store when one is registered, else open-close, same as
 `_bundle_parameter_windows`); the rows themselves are read and cached separately
 (`_bundle_parameter_windows`/`_bundle_parameter_windows_3d`). Bundle-only: a buffered (mid-run)
 window's shape is read directly off its own array dimensionality instead
-(`_dm_buffered_columns`/`_dm_window_result`), never through this.
+(`_dm_buffered_columns`/`_dm_window_output`), never through this.
 """
 function _dm_parameter_slice_labels(
     store::HdfSimulationStore,
@@ -787,7 +787,7 @@ end
 The bundle sidecar's 3-D parameter windows for one decision model's key: one
 `_bundle_parameter_rows` call per `"axis2"` slice (mirrors the write side's own per-slice
 writes, `_write_parameter_windows!`, and the partition merge's read, `_decision_merge_units`
-in `simulation_partition_results.jl`), keyed by slice label, then axis-1 label, then initial
+in `simulation_partition_outputs.jl`), keyed by slice label, then axis-1 label, then initial
 time. Each slice is cached independently by `_bundle_parameter_rows`, so a slice already read
 elsewhere (e.g. by a prior call with an overlapping slice list) is not re-opened.
 """
@@ -805,7 +805,7 @@ end
 
 """
 The column axes for a decision-model parameter: `(labels,)` for a 2-D parameter, or
-`(labels, labels2)` for a 3-D one. Same source precedence as `_read_result` (buffer while
+`(labels, labels2)` for a 3-D one. Same source precedence as `_read_output` (buffer while
 mid-run, bundle once `finalize_parameters!` empties it), and the same sorted-label
 fallback in both cases: unlike every other container type, a parameter has no HDF5 column
 dataset persisting its array's original label order
@@ -865,13 +865,13 @@ for a 3-D window (`columns = (labels, labels2)`) — the shapes `_make_denseaxis
 the write side: axis-1 label, axis-2 label2, axis-3 time (`_write_parameter_windows!`). Both
 label axes sorted, same reason as `_dm_parameter_columns`.
 """
-function _dm_window_result(::IOM.ParameterKey, window::DenseAxisArray{Float64, 2})
+function _dm_window_output(::IOM.ParameterKey, window::DenseAxisArray{Float64, 2})
     labels = sort!(collect(axes(window, 1)))
     data = reduce(hcat, (window[label, :] for label in labels))
     return data, (labels,)
 end
 
-function _dm_window_result(::IOM.ParameterKey, window::DenseAxisArray{Float64, 3})
+function _dm_window_output(::IOM.ParameterKey, window::DenseAxisArray{Float64, 3})
     labels = sort!(collect(axes(window, 1)))
     labels2 = sort!(collect(axes(window, 2)))
     mats = map(labels2) do label2
@@ -885,16 +885,16 @@ end
 `(data, columns)` for one decision-model parameter's realized window at execution
 `initial_time`, from whichever source is in play: the buffer while mid-run (before
 `finalize_parameters!` empties it into the bundle), or the bundle's InfraStore once the run
-has finished. Dispatches 2-D vs 3-D through `_dm_window_result` (buffer, off the array's own
-dimensionality) or `_dm_bundle_result` (bundle, off the discovered `"axis2"` slice list) —
-`_read_result` itself makes only the buffer-vs-bundle choice, never a shape choice. Errors,
+has finished. Dispatches 2-D vs 3-D through `_dm_window_output` (buffer, off the array's own
+dimensionality) or `_dm_bundle_output` (bundle, off the discovered `"axis2"` slice list) —
+`_read_output` itself makes only the buffer-vs-bundle choice, never a shape choice. Errors,
 naming the model, key and time, when the requested window is missing from whichever source
-is in play — never a `NaN`-filled fallback. `read_result(Array/DenseAxisArray/DataFrame, ...)`
-and `_read_data_columns` for a `DecisionModelIndexType` all funnel through `_read_result`
+is in play — never a `NaN`-filled fallback. `read_output(Array/DenseAxisArray/DataFrame, ...)`
+and `_read_data_columns` for a `DecisionModelIndexType` all funnel through `_read_output`
 (mirroring the `OptimizationContainerKey` methods above), so overriding it here is the
 narrowest point that keeps every caller unchanged.
 """
-function _read_result(
+function _read_output(
     store::HdfSimulationStore,
     model_name::Symbol,
     key::IOM.ParameterKey,
@@ -905,19 +905,19 @@ function _read_result(
         haskey(buffered, initial_time) || error(
             "no buffered parameter window for model $model_name, key $key, time $initial_time",
         )
-        return _dm_window_result(key, buffered[initial_time])
+        return _dm_window_output(key, buffered[initial_time])
     end
-    return _dm_bundle_result(store, model_name, key, initial_time)
+    return _dm_bundle_output(store, model_name, key, initial_time)
 end
 
-function _dm_bundle_result(
+function _dm_bundle_output(
     store::HdfSimulationStore,
     model_name::Symbol,
     key::IOM.ParameterKey,
     initial_time::Dates.DateTime,
 )
     slice_labels = _dm_parameter_slice_labels(store, model_name, key)
-    return _dm_bundle_result(
+    return _dm_bundle_output(
         _dm_parameter_shape(slice_labels),
         store,
         model_name,
@@ -927,7 +927,7 @@ function _dm_bundle_result(
     )
 end
 
-function _dm_bundle_result(
+function _dm_bundle_output(
     ::_TwoD,
     store::HdfSimulationStore,
     model_name::Symbol,
@@ -946,7 +946,7 @@ function _dm_bundle_result(
     return data, (labels,)
 end
 
-function _dm_bundle_result(
+function _dm_bundle_output(
     ::_ThreeD,
     store::HdfSimulationStore,
     model_name::Symbol,
@@ -980,7 +980,7 @@ function get_column_names(
     return _dm_parameter_columns(store, model_name, key)
 end
 
-function read_result(
+function read_output(
     ::Type{Array},
     store::HdfSimulationStore,
     model_name::Symbol,
@@ -988,15 +988,15 @@ function read_result(
     index::Union{DecisionModelIndexType, EmulationModelIndexType},
 )
     if is_cached(store.cache, model_name, key, index)
-        data = read_result(store.cache, model_name, key, index)
+        data = read_output(store.cache, model_name, key, index)
     else
-        data, _ = _read_result(store, model_name, key, index)
+        data, _ = _read_output(store, model_name, key, index)
     end
 
     return data
 end
 
-function read_results(
+function read_outputs(
     store::HdfSimulationStore,
     key::OptimizationContainerKey;
     index::Union{Nothing, EmulationModelIndexType} = nothing,
@@ -1059,7 +1059,7 @@ function get_emulation_model_dataset_size(
     return size(dataset.values)[1]
 end
 
-function _read_result(
+function _read_output(
     store::HdfSimulationStore,
     ::Symbol,
     key::OptimizationContainerKey,
@@ -1133,7 +1133,7 @@ One label's value out of a buffered emulation-model parameter array. The array w
 `_update_system_state!`'s per-step `Emulator` collection (`get_decision_state_value`, which
 drops the time axis) is `DenseAxisArray{Float64,1}`; a real `POM.EmulationModel`'s own
 parameter write is `DenseAxisArray{Float64,2}` with a length-1 second axis (mirroring the
-non-parameter `EmulationModelIndexType` `write_result!` methods above). Both are handled by
+non-parameter `EmulationModelIndexType` `write_output!` methods above). Both are handled by
 dispatch; a genuine 3-D emulation-model parameter has no test coverage and errors here.
 """
 _em_parameter_value(window::DenseAxisArray{Float64, 1}, label::AbstractString) =
@@ -1206,7 +1206,7 @@ function get_emulation_model_dataset_size(store::HdfSimulationStore, key::IOM.Pa
     return length(first(values(series)))
 end
 
-function read_results(
+function read_outputs(
     store::HdfSimulationStore,
     key::IOM.ParameterKey;
     index::Union{Nothing, EmulationModelIndexType} = nothing,
@@ -1236,31 +1236,31 @@ function read_results(
 end
 
 """
-Feeds every `read_result`/`read_result(Array/DataFrame/DenseAxisArray, ...)` variant that
-takes an `EmulationModelIndexType`: they all funnel through `_read_result`, so overriding it
+Feeds every `read_output`/`read_output(Array/DataFrame/DenseAxisArray, ...)` variant that
+takes an `EmulationModelIndexType`: they all funnel through `_read_output`, so overriding it
 here (rather than each of them) is the narrowest point that keeps every caller unchanged.
 """
-function _read_result(
+function _read_output(
     store::HdfSimulationStore,
     ::Symbol,
     key::IOM.ParameterKey,
     index::EmulationModelIndexType,
 )
-    array = read_results(store, key; index = index, len = 1)
+    array = read_outputs(store, key; index = index, len = 1)
     return permutedims(array.data), (collect(axes(array, 1)),)
 end
 
-function _read_result(
+function _read_output(
     store::HdfSimulationStore,
     model_name::Symbol,
     key::OptimizationContainerKey,
     index::DecisionModelIndexType,
 )
     simulation_step, execution_index = _get_indices(store, model_name, index)
-    return _read_result(store, model_name, key, simulation_step, execution_index)
+    return _read_output(store, model_name, key, simulation_step, execution_index)
 end
 
-function _read_result(
+function _read_output(
     store::HdfSimulationStore,
     model_name::Symbol,
     key::OptimizationContainerKey,
@@ -1300,7 +1300,7 @@ end
 """
 Write a decision model result for a timestamp to the store.
 """
-function write_result!(
+function write_output!(
     store::HdfSimulationStore,
     model_name::Symbol,
     key::OptimizationContainerKey,
@@ -1310,7 +1310,7 @@ function write_result!(
 ) where {N}
     output_cache = get_output_cache(store.cache, model_name, key)
     cur_size = get_size(store.cache)
-    add_result!(output_cache, index, to_matrix(data), is_full(store.cache, cur_size))
+    add_output!(output_cache, index, to_matrix(data), is_full(store.cache, cur_size))
 
     if get_dirty_size(output_cache) >= get_min_flush_size(store.cache)
         discard = !should_keep_in_cache(output_cache)
@@ -1326,14 +1326,14 @@ function write_result!(
     #if is_full(store.cache)
     #    _flush_data!(store.cache, store)
 
-    @debug "write_result" get_size(store.cache) encode_key_as_string(key)
+    @debug "write_output" get_size(store.cache) encode_key_as_string(key)
     return
 end
 
 """
 Write a decision model result for a timestamp to the store.
 """
-function write_result!(
+function write_output!(
     store::HdfSimulationStore,
     model_name::Symbol,
     key::OptimizationContainerKey,
@@ -1344,7 +1344,7 @@ function write_result!(
     output_cache = get_output_cache(store.cache, model_name, key)
     cur_size = get_size(store.cache)
 
-    add_result!(
+    add_output!(
         output_cache,
         index,
         permutedims(data.data, (3, 1, 2)),
@@ -1365,7 +1365,7 @@ function write_result!(
     #if is_full(store.cache)
     #    _flush_data!(store.cache, store)
 
-    @debug "write_result" get_size(store.cache) encode_key_as_string(key)
+    @debug "write_output" get_size(store.cache) encode_key_as_string(key)
     return
 end
 
@@ -1374,9 +1374,9 @@ Write a decision-model result whose container is a `SparseAxisArray`. The
 sparse container is flattened to a `(horizon × n_cols)` `Matrix{Float64}` via
 `to_matrix`, where columns are the unique non-time tuple keys (e.g. for
 post-contingency flows: `(outage_id, branch_name)`). Cache and HDF5 dataset
-shapes match the 3D dense path: `(horizon, n_cols, num_results)`.
+shapes match the 3D dense path: `(horizon, n_cols, num_outputs)`.
 """
-function write_result!(
+function write_output!(
     store::HdfSimulationStore,
     model_name::Symbol,
     key::OptimizationContainerKey,
@@ -1386,7 +1386,7 @@ function write_result!(
 )
     output_cache = get_output_cache(store.cache, model_name, key)
     cur_size = get_size(store.cache)
-    add_result!(output_cache, index, to_matrix(data), is_full(store.cache, cur_size))
+    add_output!(output_cache, index, to_matrix(data), is_full(store.cache, cur_size))
 
     if get_dirty_size(output_cache) >= get_min_flush_size(store.cache)
         discard = !should_keep_in_cache(output_cache)
@@ -1394,14 +1394,14 @@ function write_result!(
         @debug "flushed data" LOG_GROUP_SIMULATION_STORE key size_flushed discard cur_size
     end
 
-    @debug "write_result" get_size(store.cache) encode_key_as_string(key)
+    @debug "write_output" get_size(store.cache) encode_key_as_string(key)
     return
 end
 
 """
 Write an emulation model result for an execution index value and the timestamp of the update
 """
-function write_result!(
+function write_output!(
     store::HdfSimulationStore,
     ::Symbol,
     key::OptimizationContainerKey,
@@ -1425,7 +1425,7 @@ function write_result!(
     return
 end
 
-function write_result!(
+function write_output!(
     store::HdfSimulationStore,
     ::Symbol,
     key::OptimizationContainerKey,
@@ -1447,7 +1447,7 @@ function write_result!(
     return
 end
 
-function write_result!(
+function write_output!(
     store::HdfSimulationStore,
     ::Symbol,
     key::OptimizationContainerKey,
@@ -1464,8 +1464,8 @@ end
 
 """
 Buffer a decision-model parameter window in memory, keyed by `index` — the execution's initial
-time, the same value `write_results!` passes as both `index` and the update timestamp
-(`decision_model.jl`'s `write_results!(store, model, start_time, start_time; ...)`). Never
+time, the same value `write_outputs!` passes as both `index` and the update timestamp
+(`decision_model.jl`'s `write_outputs!(store, model, start_time, start_time; ...)`). Never
 reaches a dataset: materialized into the bundle's InfraStore only at `finalize_parameters!`.
 """
 function _buffer_dm_parameter_window!(
@@ -1486,7 +1486,7 @@ function _buffer_dm_parameter_window!(
     return nothing
 end
 
-function write_result!(
+function write_output!(
     store::HdfSimulationStore,
     model_name::Symbol,
     key::IOM.ParameterKey,
@@ -1498,7 +1498,7 @@ function write_result!(
     return
 end
 
-function write_result!(
+function write_output!(
     store::HdfSimulationStore,
     model_name::Symbol,
     key::IOM.ParameterKey,
@@ -1510,7 +1510,7 @@ function write_result!(
     return
 end
 
-function write_result!(
+function write_output!(
     store::HdfSimulationStore,
     ::Symbol,
     key::IOM.ParameterKey,
@@ -1540,7 +1540,7 @@ function _buffer_em_parameter!(
     return nothing
 end
 
-function write_result!(
+function write_output!(
     store::HdfSimulationStore,
     ::Symbol,
     key::IOM.ParameterKey,
@@ -1552,7 +1552,7 @@ function write_result!(
     return
 end
 
-function write_result!(
+function write_output!(
     store::HdfSimulationStore,
     ::Symbol,
     key::IOM.ParameterKey,
@@ -1564,7 +1564,7 @@ function write_result!(
     return
 end
 
-function write_result!(
+function write_output!(
     store::HdfSimulationStore,
     ::Symbol,
     key::IOM.ParameterKey,
@@ -1579,7 +1579,7 @@ end
 """
 Buffer the raw values of every time-series parameter this execution read, plus (once per model
 and key) where they belong: the series name and type from the container's `TimeSeriesAttributes`
-and each label's owner in the model's System. `write_result!` receives the multiplied values, so
+and each label's owner in the model's System. `write_output!` receives the multiplied values, so
 this is the only place the raw half is still available.
 """
 function buffer_parameter_inputs!(
@@ -1732,7 +1732,7 @@ label into 2-D windows, each written with `"axis2"` added to `extra_features` (m
 3-D `write_parameter_array!` names that feature; time is the last axis in both).
 
 `windows`' declared value type is the loosely-typed `DenseAxisArray{Float64}` buffered by
-`write_result!` (any `N`), so dispatch reads the concrete dimensionality off one representative
+`write_output!` (any `N`), so dispatch reads the concrete dimensionality off one representative
 window rather than off the `Dict`'s own (non-concrete) value type parameter.
 """
 function _write_parameter_windows!(
@@ -1960,7 +1960,7 @@ end
 Sync an emulation model's just-written parameter value into `state`, mid-simulation. Mirrors
 `update_system_state!(state, key::OptimizationContainerKey, store::SimulationStore, model_name,
 simulation_time)` (`simulation_state.jl`), which reads the value back from the emulation
-model's HDF5 dataset via `get_last_recorded_row(em_data, key)`/`read_result` — both unavailable
+model's HDF5 dataset via `get_last_recorded_row(em_data, key)`/`read_output` — both unavailable
 for a `ParameterKey`, since it has no dataset. Reads the just-buffered value directly instead
 (`em_parameter_values`, the same buffer `finalize_parameters!` later writes into the bundle);
 only valid mid-run, before that buffer is emptied. `HdfSimulationStore` in the store position
@@ -2244,31 +2244,31 @@ function _flush_data!(
     key::OptimizationContainerKey,
     discard,
 )
-    return _flush_data!(cache, store, OptimizationResultCacheKey(model_name, key), discard)
+    return _flush_data!(cache, store, OptimizationOutputCacheKey(model_name, key), discard)
 end
 
 function _flush_data!(
     cache::OptimizationOutputCache,
     store::HdfSimulationStore,
-    cache_key::OptimizationResultCacheKey,
+    cache_key::OptimizationOutputCacheKey,
     discard::Bool,
 )
     !has_dirty(cache) && return 0
     dataset = _get_dm_dataset(store, cache_key)
     timestamps, data = get_dirty_data_to_flush!(cache)
-    num_results = length(timestamps)
-    @assert_op num_results == size(data)[end]
+    num_outputs = length(timestamps)
+    @assert_op num_outputs == size(data)[end]
     end_index = dataset.write_index + length(timestamps) - 1
     write_range = (dataset.write_index):end_index
     # Enable only for development and benchmarking
     _write_dataset!(dataset.values, data, write_range)
 
-    discard && discard_results!(cache, timestamps)
+    discard && discard_outputs!(cache, timestamps)
 
-    dataset.write_index += num_results
-    size_flushed = cache.size_per_entry * num_results
+    dataset.write_index += num_outputs
+    size_flushed = cache.size_per_entry * num_outputs
 
-    @debug "Flushed cache results to HDF5" LOG_GROUP_SIMULATION_STORE cache_key size_flushed num_results get_size(
+    @debug "Flushed cache outputs to HDF5" LOG_GROUP_SIMULATION_STORE cache_key size_flushed num_outputs get_size(
         store.cache,
     )
     return size_flushed
@@ -2294,7 +2294,7 @@ function _get_dm_dataset(
     return getfield(get_dm_data(store)[model_name], get_store_container_type(key))[key]
 end
 
-function _get_dm_dataset(store::HdfSimulationStore, key::OptimizationResultCacheKey)
+function _get_dm_dataset(store::HdfSimulationStore, key::OptimizationOutputCacheKey)
     return _get_dm_dataset(store, key.model, key.key)
 end
 
@@ -2339,10 +2339,10 @@ function _read_data_columns(
     index::DecisionModelIndexType,
 )
     if is_cached(store.cache, model_name, key, index)
-        data = read_result(store.cache, model_name, key, index)
+        data = read_output(store.cache, model_name, key, index)
         columns = get_column_names(key, _get_dm_dataset(store, model_name, key))
     else
-        data, columns = _read_result(store, model_name, key, index)
+        data, columns = _read_output(store, model_name, key, index)
     end
     return data, columns
 end
@@ -2353,7 +2353,7 @@ function _read_data_columns(
     key::OptimizationContainerKey,
     index::EmulationModelIndexType,
 )
-    return _read_result(store, model_name, key, index)
+    return _read_output(store, model_name, key, index)
 end
 
 # Specific data set writing function that writes decision model data. It dispatches on the index type of the dataset as a range

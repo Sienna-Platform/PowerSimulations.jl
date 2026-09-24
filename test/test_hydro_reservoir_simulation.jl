@@ -48,8 +48,8 @@
     )
     step2_ic_value = IOM.get_condition(ic)
 
-    results = SimulationResults(sim)
-    uc_results = get_decision_problem_results(results, "UC")
+    results = SimulationOutputs(sim)
+    uc_results = get_decision_problem_outputs(results, "UC")
     set_system!(uc_results, sys)
     volume = read_realized_variable(
         uc_results,

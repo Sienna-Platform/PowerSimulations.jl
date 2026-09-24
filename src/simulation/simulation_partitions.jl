@@ -236,7 +236,7 @@ _is_interrupt(_) = false
 Run a partitioned simulation in parallel on a local computer.
 
 Throw an exception if any partition fails. In that case a failed status is recorded in
-`<output_dir>/<name>/results/status.json` and the results of the successful partitions can
+`<output_dir>/<name>/outputs/status.json` and the results of the successful partitions can
 still be merged by calling
 `PowerSimulations.join_simulation(joinpath(output_dir, name); skip_failures = true)`.
 
@@ -328,7 +328,7 @@ function run_parallel_simulation(
         # successful partitions can still be merged with
         # join_simulation(path; skip_failures = true).
         if !_is_interrupt(e)
-            _try_serialize_failed_status(joinpath(output_dir, name, RESULTS_DIR))
+            _try_serialize_failed_status(joinpath(output_dir, name, OUTPUTS_DIR))
         end
         rethrow()
     finally

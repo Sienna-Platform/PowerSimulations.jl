@@ -88,8 +88,8 @@ end
     )
     @test execute_simulation(regular_sim) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
 
-    regular_results = SimulationResults(sim_dir, regular_name)
-    partitioned_results = SimulationResults(sim_dir, partition_name)
+    regular_results = SimulationOutputs(sim_dir, regular_name)
+    partitioned_results = SimulationOutputs(sim_dir, partition_name)
 
     functions = (
         read_realized_aux_variables,
@@ -99,8 +99,8 @@ end
     )
     key_strings_to_skip = ("Flow", "On", "Off", "Shut", "Start", "Stop")
     for name in ("ED", "UC")
-        regular_model_results = get_decision_problem_results(regular_results, name)
-        partitioned_model_results = get_decision_problem_results(partitioned_results, name)
+        regular_model_results = get_decision_problem_outputs(regular_results, name)
+        partitioned_model_results = get_decision_problem_outputs(partitioned_results, name)
 
         for func in functions
             regular = func(regular_model_results; table_format = TableFormat.WIDE)
@@ -146,7 +146,7 @@ end
     end
 
     # The merged bundle's System carries the input windows of every partition.
-    uc_joined = get_decision_problem_results(partitioned_results, "UC")
+    uc_joined = get_decision_problem_outputs(partitioned_results, "UC")
     restored = get_system!(uc_joined)
     ren = first(get_components(PSY.RenewableDispatch, restored))
     fc = PSY.get_time_series(PSY.Deterministic, ren, "max_active_power")
@@ -156,7 +156,7 @@ end
     IS.close!(IS.get_data_store(restored.data))
 
     base_dir = joinpath(sim_dir, partition_name)
-    partition_results = PSI.SimulationPartitionResults(base_dir)
+    partition_results = PSI.SimulationPartitionOutputs(base_dir)
     num_partitions = get_num_partitions(partition_results.partitions)
 
     # Parameters have no HDF5-backed dataset to compare here (Task 8+9): they live in each
@@ -238,12 +238,12 @@ end
     # TODO: Can emulation model results be validated through the public results APIs?
 
     # The checks below sabotage the partition outputs and so must be last.
-    joined_status_path = joinpath(base_dir, PSI.RESULTS_DIR)
+    joined_status_path = joinpath(base_dir, PSI.OUTPUTS_DIR)
     partition_status_path(index) =
-        joinpath(PSI._partition_path(partition_results, index), PSI.RESULTS_DIR)
+        joinpath(PSI._partition_path(partition_results, index), PSI.OUTPUTS_DIR)
     read_realized(results) = Dict(
         name => read_realized_variables(
-            get_decision_problem_results(results, name);
+            get_decision_problem_outputs(results, name);
             table_format = TableFormat.WIDE,
         ) for name in ("UC", "ED")
     )
@@ -281,12 +281,12 @@ end
     store_dir = joinpath(base_dir, "data_store")
     PSI.IS.compute_file_hash(store_dir, "simulation_store.h5")
     sentinel_variables =
-        read_realized(SimulationResults(sim_dir, partition_name; ignore_status = true))
+        read_realized(SimulationOutputs(sim_dir, partition_name; ignore_status = true))
 
     @test PSI.join_simulation(base_dir; skip_failures = true) == PSI.RunStatus.FAILED
     @test PSI.deserialize_status(joined_status_path) == PSI.RunStatus.FAILED
     # The results of the successful partitions must still be readable.
-    post_join_results = SimulationResults(sim_dir, partition_name; ignore_status = true)
+    post_join_results = SimulationOutputs(sim_dir, partition_name; ignore_status = true)
     post_join_variables = read_realized(post_join_results)
     for (model_name, pre_variables) in pre_join_variables
         post_variables = post_join_variables[model_name]
@@ -428,9 +428,9 @@ end
         return nothing
     end
     @test emulator_model_name !== nothing
-    final_results = SimulationResults(sim_dir, partition_name)
+    final_results = SimulationOutputs(sim_dir, partition_name)
     restored = get_system!(
-        get_decision_problem_results(final_results, string(emulator_model_name)),
+        get_decision_problem_outputs(final_results, string(emulator_model_name)),
     )
     input_rows = POM.list_input_series(POM.parameter_store_of(restored))
     @test any(md -> IS.get_time_series_type(md) <: PSY.Deterministic, input_rows)

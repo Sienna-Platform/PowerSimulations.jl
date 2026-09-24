@@ -252,8 +252,8 @@ function run_generic_mbc_sim(
         @test execute!(sim; in_memory = in_memory_store) ==
               PSI.RunStatus.SUCCESSFULLY_FINALIZED
 
-    sim_res = SimulationResults(sim)
-    res = get_decision_problem_results(sim_res, "UC")
+    sim_res = SimulationOutputs(sim)
+    res = get_decision_problem_outputs(sim_res, "UC")
     if !isnothing(filename)
         adj = is_decremental ? "decr" : "incr"
         save_objective_function(

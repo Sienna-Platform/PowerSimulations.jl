@@ -16,7 +16,7 @@ Construct the `Simulation` structure to run the sequence of decision and emulati
   - `name::String`: Name of the Simulation
   - `steps::Int`: Number of steps on which the sequence of models will be executed
   - `models::SimulationModels`: List of Decision and Emulation Models
-  - `simulation_folder::String`: Folder on which results will be stored
+  - `simulation_folder::String`: Folder on which outputs will be stored
   - `initial_time::Union{Nothing, Dates.DateTime} = nothing`: Initial time of which the
     simulation starts. If nothing it will default to the first timestamp of time series of the system.
 
@@ -115,7 +115,7 @@ get_simulation_build_status(sim::Simulation) = sim.internal.build_status
 get_simulation_state(sim::Simulation) = sim.internal.simulation_state
 set_simulation_store!(sim::Simulation, store) = sim.internal.store = store
 get_simulation_store(sim::Simulation) = sim.internal.store
-get_results_dir(sim::Simulation) = sim.internal.results_dir
+get_outputs_dir(sim::Simulation) = sim.internal.outputs_dir
 get_models_dir(sim::Simulation) = sim.internal.models_dir
 
 IOM.get_interval(sim::Simulation, name::Symbol) = get_interval(sim.sequence, name)
@@ -801,7 +801,7 @@ function _update_decision_state_from_store!(sim::Simulation, model_name::Symbol,
     model_params = get_decision_model_params(store, model_name)
     for key in keys
         !has_dataset(get_decision_states(state), key) && continue
-        res = read_result(DenseAxisArray, store, model_name, key, simulation_time)
+        res = read_output(DenseAxisArray, store, model_name, key, simulation_time)
         update_decision_state!(state, key, res, simulation_time, model_params)
     end
     return
@@ -968,13 +968,13 @@ function _write_state_rows!(
             # since the last row actually written to the store, so reuse it instead
             # of `decision_states`, whose window no longer covers `aligned_timestamp`.
             last_row = _last_state_row(store, em_store, key)
-            raw_state_values = read_result(DenseAxisArray, store, model_name, key, last_row)
+            raw_state_values = read_output(DenseAxisArray, store, model_name, key, last_row)
             state_values = _last_recorded_state_value(store, raw_state_values, last_row)
         else
             state_values = get_decision_state_value(sim_state, key, aligned_timestamp)
         end
         ix = _last_state_row(store, em_store, key) + 1
-        write_result!(store, model_name, key, ix, _update_timestamp, state_values)
+        write_output!(store, model_name, key, ix, _update_timestamp, state_values)
         _update_timestamp += state_resolution
     end
     return
@@ -1045,9 +1045,9 @@ function _execute!(
     _prepare_execution_store!(sim, store, cache_size_mib, min_cache_flush_size_mib)
     store_params = get_params(store)
     if !isnothing(exports)
-        exports = _as_results_export(exports, store_params)
+        exports = _as_outputs_export(exports, store_params)
         if isnothing(exports.path)
-            exports.path = get_results_dir(sim)
+            exports.path = get_outputs_dir(sim)
         end
     end
     sequence = get_sequence(sim)
@@ -1251,7 +1251,7 @@ function _empty_problem_caches!(sim::Simulation)
 end
 
 """
-Write each model's System as a results bundle beside its outputs — the document plus a store
+Write each model's System as an outputs bundle beside its outputs — the document plus a store
 holding the series its costs reference — so `get_system!` rebuilds a System whose costs
 resolve. Models sharing a System still get one bundle each, because the read side
 (`locate_system_bundle`) looks under the model's own `problems/<model>/` directory. The
@@ -1264,7 +1264,7 @@ function _write_system_bundles!(sim::Simulation)
         ispath(bundle_dir) && continue
         store = POM.ParameterTimeSeriesStore()
         key_map = POM.copy_cost_time_series!(store, sys, _planned_run_windows(sim, model))
-        POM.write_results_system_bundle!(sys, store, key_map, bundle_dir)
+        POM.write_outputs_system_bundle!(sys, store, key_map, bundle_dir)
         POM.close_parameter_store!(store)
     end
     return
@@ -1299,14 +1299,14 @@ function _planned_run_windows(sim::Simulation, model::EmulationModel)
 end
 
 function serialize_status(sim::Simulation)
-    serialize_status(get_simulation_status(sim), get_results_dir(sim))
+    serialize_status(get_simulation_status(sim), get_outputs_dir(sim))
 end
 
-_status_file_path(results_dir::AbstractString) = joinpath(results_dir, "status.json")
+_status_file_path(outputs_dir::AbstractString) = joinpath(outputs_dir, "status.json")
 
-function serialize_status(status::RunStatus.Value, results_dir::AbstractString)
+function serialize_status(status::RunStatus.Value, outputs_dir::AbstractString)
     data = Dict("run_status" => string(status))
-    open(_status_file_path(results_dir), "w") do io
+    open(_status_file_path(outputs_dir), "w") do io
         JSON3.write(io, data)
     end
 
@@ -1314,30 +1314,30 @@ function serialize_status(status::RunStatus.Value, results_dir::AbstractString)
 end
 
 """
-Record RunStatus.FAILED in `results_dir` without throwing. Failure paths call this from
+Record RunStatus.FAILED in `outputs_dir` without throwing. Failure paths call this from
 catch blocks so that an IO error while recording the status cannot mask the exception
 that caused the failure.
 """
-function _try_serialize_failed_status(results_dir::AbstractString)
+function _try_serialize_failed_status(outputs_dir::AbstractString)
     try
         # The directory may not exist if the failure occurred before the simulation
         # created its output directories.
-        mkpath(results_dir)
-        serialize_status(RunStatus.FAILED, results_dir)
+        mkpath(outputs_dir)
+        serialize_status(RunStatus.FAILED, outputs_dir)
     catch e
         e isa InterruptException && rethrow()
-        @error "Failed to record RunStatus.FAILED" results_dir exception =
+        @error "Failed to record RunStatus.FAILED" outputs_dir exception =
             (e, catch_backtrace())
     end
     return
 end
 
 function deserialize_status(sim::Simulation)
-    return deserialize_status(get_results_dir(sim))
+    return deserialize_status(get_outputs_dir(sim))
 end
 
-function deserialize_status(results_path::AbstractString)
-    filename = _status_file_path(results_path)
+function deserialize_status(outputs_path::AbstractString)
+    filename = _status_file_path(outputs_path)
     if !isfile(filename)
         error("run status file $filename does not exist")
     end

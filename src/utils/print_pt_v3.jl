@@ -196,11 +196,11 @@ function IOM._show_method(io::IO, sim::Simulation, backend::Symbol; kwargs...)
     IOM._show_method(io, sim.sequence, backend; kwargs...)
 end
 
-function Base.show(io::IO, ::MIME"text/plain", input::SimulationResults)
+function Base.show(io::IO, ::MIME"text/plain", input::SimulationOutputs)
     IOM._show_method(io, input, :auto)
 end
 
-function Base.show(io::IO, ::MIME"text/html", input::SimulationResults)
+function Base.show(io::IO, ::MIME"text/html", input::SimulationOutputs)
     # The tf_html_simple format was eliminated from PrettyTables and it was added to PowerSystems
     IOM._show_method(
         io,
@@ -211,11 +211,11 @@ function Base.show(io::IO, ::MIME"text/html", input::SimulationResults)
     )
 end
 
-function IOM._show_method(io::IO, results::SimulationResults, backend::Symbol; kwargs...)
+function IOM._show_method(io::IO, results::SimulationOutputs, backend::Symbol; kwargs...)
     header = ["Problem Name", "Initial Time", "Resolution", "Last Solution Timestamp"]
 
-    table = Matrix{Any}(undef, length(results.decision_problem_results), length(header))
-    for (ix, (key, result)) in enumerate(results.decision_problem_results)
+    table = Matrix{Any}(undef, length(results.decision_problem_outputs), length(header))
+    for (ix, (key, result)) in enumerate(results.decision_problem_outputs)
         table[ix, 1] = key
         table[ix, 2] = first(result.timestamps)
         table[ix, 3] = Dates.canonicalize(result.resolution)
@@ -227,32 +227,32 @@ function IOM._show_method(io::IO, results::SimulationResults, backend::Symbol; k
         table;
         column_labels = header,
         backend = backend,
-        title = "Decision Problem Results",
+        title = "Decision Problem Outputs",
         alignment = :l,
     )
 
     println(io)
     table = [
-        "Name" results.emulation_problem_results.problem
-        "Resolution" Dates.Minute(results.emulation_problem_results.resolution)
-        "Number of steps" length(results.emulation_problem_results.timestamps)
+        "Name" results.emulation_problem_outputs.problem
+        "Resolution" Dates.Minute(results.emulation_problem_outputs.resolution)
+        "Number of steps" length(results.emulation_problem_outputs.timestamps)
     ]
     PrettyTables.pretty_table(
         io,
         table;
         show_column_labels = false,
         backend = backend,
-        title = "Emulator Results",
+        title = "Emulator Outputs",
         alignment = :l,
         kwargs...,
     )
 end
 
-function Base.show(io::IO, ::MIME"text/plain", input::SimulationProblemResults)
+function Base.show(io::IO, ::MIME"text/plain", input::SimulationProblemOutputs)
     IOM._show_method(io, input, :auto)
 end
 
-function Base.show(io::IO, ::MIME"text/html", input::SimulationProblemResults)
+function Base.show(io::IO, ::MIME"text/html", input::SimulationProblemOutputs)
     # The tf_html_simple format was eliminated from PrettyTables and it was added to PowerSystems
     IOM._show_method(
         io,
@@ -265,7 +265,7 @@ end
 
 function IOM._show_method(
     io::IO,
-    results::SimulationProblemResults,
+    results::SimulationProblemOutputs,
     backend::Symbol;
     kwargs...,
 )
@@ -306,7 +306,7 @@ function IOM._show_method(
                 val;
                 show_column_labels = false,
                 backend = backend,
-                title = "$name Problem $k Results",
+                title = "$name Problem $k Outputs",
                 alignment = :l,
                 kwargs...,
             )

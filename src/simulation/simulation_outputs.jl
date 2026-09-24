@@ -13,18 +13,18 @@ function check_folder_integrity(folder::String)
     return false
 end
 
-struct SimulationResults
+struct SimulationOutputs
     path::String
     params::SimulationStoreParams
-    decision_problem_results::Dict{
+    decision_problem_outputs::Dict{
         String,
-        SimulationProblemResults{DecisionModelSimulationResults},
+        SimulationProblemOutputs{DecisionModelSimulationOutputs},
     }
-    emulation_problem_results::SimulationProblemResults{EmulationModelSimulationResults}
+    emulation_problem_outputs::SimulationProblemOutputs{EmulationModelSimulationOutputs}
     store::Union{Nothing, SimulationStore}
 end
 
-function SimulationResults(path::AbstractString, execution = nothing; ignore_status = false)
+function SimulationOutputs(path::AbstractString, execution = nothing; ignore_status = false)
     # This method maintains compatibility with the old interface as long as there is only
     # one simulation name.
     unique_names = Set{String}()
@@ -39,11 +39,11 @@ function SimulationResults(path::AbstractString, execution = nothing; ignore_sta
 
     if length(unique_names) == 1
         name = first(unique_names)
-        return SimulationResults(path, name, execution; ignore_status = ignore_status)
+        return SimulationOutputs(path, name, execution; ignore_status = ignore_status)
     end
 
     if STORE_DIR in readdir(path)
-        return SimulationResults(
+        return SimulationOutputs(
             dirname(path),
             basename(path),
             execution;
@@ -57,19 +57,19 @@ function SimulationResults(path::AbstractString, execution = nothing; ignore_sta
 end
 
 """
-Construct SimulationResults from a simulation output directory.
+Construct SimulationOutputs from a simulation output directory.
 
 # Arguments
 
   - `path::AbstractString`: Simulation output directory
   - `name::AbstractString`: Simulation name
   - `execution::AbstractString`: Execution number. Default is the most recent.
-  - `ignore_status::Bool`: If true, return results even if the simulation failed.
+  - `ignore_status::Bool`: If true, return outputs even if the simulation failed.
 """
 _emulation_system(::Nothing) = nothing
 _emulation_system(model::EmulationModel) = get_system(model)
 
-function SimulationResults(
+function SimulationOutputs(
     path::AbstractString,
     name::AbstractString,
     execution = nothing;
@@ -88,7 +88,7 @@ function SimulationResults(
     end
 
     @info "Loading simulation results from $execution_path"
-    status = deserialize_status(joinpath(execution_path, RESULTS_DIR))
+    status = deserialize_status(joinpath(execution_path, OUTPUTS_DIR))
     _check_status(status, ignore_status)
 
     if !check_folder_integrity(execution_path)
@@ -100,8 +100,8 @@ function SimulationResults(
     check_file_integrity(simulation_store_path)
 
     return open_store(HdfSimulationStore, simulation_store_path, "r") do store
-        decision_problem_results =
-            Dict{String, SimulationProblemResults{DecisionModelSimulationResults}}()
+        decision_problem_outputs =
+            Dict{String, SimulationProblemOutputs{DecisionModelSimulationOutputs}}()
         sim_params = get_params(store)
         container_key_lookup = get_container_key_lookup(store)
         # Shared across every decision and emulation result below (R30/R31): one System
@@ -110,7 +110,7 @@ function SimulationResults(
         system_registry = Dict{Base.UUID, POM.ParameterTimeSeriesStore}()
         for (name, problem_params) in sim_params.decision_models_params
             name = string(name)
-            problem_result = SimulationProblemResults(
+            problem_output = SimulationProblemOutputs(
                 DecisionModel,
                 store,
                 name,
@@ -121,11 +121,11 @@ function SimulationResults(
                 system = nothing,
                 system_registry = system_registry,
             )
-            decision_problem_results[name] = problem_result
+            decision_problem_outputs[name] = problem_output
         end
 
         em_params = get_emulation_model_params(sim_params)
-        emulation_result = SimulationProblemResults(
+        emulation_output = SimulationProblemOutputs(
             EmulationModel,
             store,
             string(first(keys(sim_params.emulation_model_params))),
@@ -137,25 +137,25 @@ function SimulationResults(
             system_registry = system_registry,
         )
 
-        return SimulationResults(
+        return SimulationOutputs(
             execution_path,
             sim_params,
-            decision_problem_results,
-            emulation_result,
+            decision_problem_outputs,
+            emulation_output,
             nothing,
         )
     end
 end
 
 """
-Construct SimulationResults from a simulation.
+Construct SimulationOutputs from a simulation.
 """
-function SimulationResults(sim::Simulation; ignore_status = false, kwargs...)
+function SimulationOutputs(sim::Simulation; ignore_status = false, kwargs...)
     _check_status(get_simulation_status(sim), ignore_status)
     store = get_simulation_store(sim)
     execution_path = get_simulation_dir(sim)
-    decision_problem_results =
-        Dict{String, SimulationProblemResults{DecisionModelSimulationResults}}()
+    decision_problem_outputs =
+        Dict{String, SimulationProblemOutputs{DecisionModelSimulationOutputs}}()
     sim_params = get_params(store)
     models = get_models(sim)
     container_key_lookup = get_container_key_lookup(store)
@@ -168,7 +168,7 @@ function SimulationResults(sim::Simulation; ignore_status = false, kwargs...)
     for (name, problem_params) in sim_params.decision_models_params
         model = get_simulation_model(models, name)
         name = string(name)
-        problem_result = SimulationProblemResults(
+        problem_output = SimulationProblemOutputs(
             DecisionModel,
             store,
             name,
@@ -179,11 +179,11 @@ function SimulationResults(sim::Simulation; ignore_status = false, kwargs...)
             system = get_system(model),
             system_registry = system_registry,
         )
-        decision_problem_results[name] = problem_result
+        decision_problem_outputs[name] = problem_output
     end
 
     emulation_model = get_emulation_model(models)
-    emulation_results = SimulationProblemResults(
+    emulation_outputs = SimulationProblemOutputs(
         EmulationModel,
         store,
         string(first(keys(sim_params.emulation_model_params))),
@@ -195,80 +195,80 @@ function SimulationResults(sim::Simulation; ignore_status = false, kwargs...)
         system_registry = system_registry,
     )
 
-    return SimulationResults(
+    return SimulationOutputs(
         execution_path,
         sim_params,
-        decision_problem_results,
-        emulation_results,
+        decision_problem_outputs,
+        emulation_outputs,
         store,
     )
 end
 
 """
-    Base.empty!(res::SimulationResults)
+    Base.empty!(res::SimulationOutputs)
 
-Empty the [`SimulationResults`](@ref)
+Empty the [`SimulationOutputs`](@ref)
 """
-function Base.empty!(res::SimulationResults)
-    foreach(empty!, values(res.decision_problem_results))
-    empty!(res.emulation_problem_results)
+function Base.empty!(res::SimulationOutputs)
+    foreach(empty!, values(res.decision_problem_outputs))
+    empty!(res.emulation_problem_outputs)
 end
 
-Base.isempty(res::SimulationResults) = all(isempty, values(res.decision_problem_results))
-Base.length(res::SimulationResults) =
-    mapreduce(length, +, values(res.decision_problem_results))
+Base.isempty(res::SimulationOutputs) = all(isempty, values(res.decision_problem_outputs))
+Base.length(res::SimulationOutputs) =
+    mapreduce(length, +, values(res.decision_problem_outputs))
 
 """
-Return SimulationProblemResults corresponding to a SimulationResults
+Return SimulationProblemOutputs corresponding to a SimulationOutputs
 
 # Arguments
- - `sim_results::PSI.SimulationResults`: the simulation results to read from
+ - `sim_outputs::PSI.SimulationOutputs`: the simulation outputs to read from
  - `problem::String`: the name of the problem (e.g., "UC", "ED")
- - `populate_system::Bool = true`: whether to set the results' system as if using
+ - `populate_system::Bool = true`: whether to set the outputs' system as if using
    [`get_system!`](@ref)
  - `populate_units::Union{IS.UnitSystem.Value, String, Nothing} = nothing`: unsupported;
    PowerSystems (psy6) has no system-wide unit base, so passing a non-`nothing`
    value throws (requires `populate_system=true`)
 """
-function get_decision_problem_results(
-    results::SimulationResults,
+function get_decision_problem_outputs(
+    results::SimulationOutputs,
     problem::String;
     populate_system::Bool = false,
     populate_units::Union{IS.UnitSystem.Value, String, Nothing} = nothing,
 )
-    if !haskey(results.decision_problem_results, problem)
+    if !haskey(results.decision_problem_outputs, problem)
         throw(IS.InvalidValue("$problem is not stored"))
     end
 
-    results = results.decision_problem_results[problem]
-    _populate_system_in_results!(results, populate_system, populate_units)
+    results = results.decision_problem_outputs[problem]
+    _populate_system_in_outputs!(results, populate_system, populate_units)
 
     return results
 end
 
 """
-Return SimulationProblemResults corresponding to a SimulationResults
+Return SimulationProblemOutputs corresponding to a SimulationOutputs
 
 # Arguments
- - `sim_results::PSI.SimulationResults`: the simulation results to read from
- - `populate_system::Bool = true`: whether to set the results' system as if using
+ - `sim_outputs::PSI.SimulationOutputs`: the simulation outputs to read from
+ - `populate_system::Bool = true`: whether to set the outputs' system as if using
    [`get_system!`](@ref)
  - `populate_units::Union{IS.UnitSystem.Value, String, Nothing} = nothing`: unsupported;
    PowerSystems (psy6) has no system-wide unit base, so passing a non-`nothing`
    value throws (requires `populate_system=true`)
 """
-function get_emulation_problem_results(
-    results::SimulationResults;
+function get_emulation_problem_outputs(
+    results::SimulationOutputs;
     populate_system::Bool = false,
     populate_units::Union{IS.UnitSystem.Value, String, Nothing} = nothing,
 )
-    results = results.emulation_problem_results
-    _populate_system_in_results!(results, populate_system, populate_units)
+    results = results.emulation_problem_outputs
+    _populate_system_in_outputs!(results, populate_system, populate_units)
     return results
 end
 
-function _populate_system_in_results!(
-    results::SimulationProblemResults,
+function _populate_system_in_outputs!(
+    results::SimulationProblemOutputs,
     populate_system::Bool,
     populate_units::Union{IS.UnitSystem.Value, String, Nothing},
 )
@@ -304,16 +304,16 @@ end
 """
 Return the problem names in the simulation.
 """
-list_decision_problems(results::SimulationResults) =
-    collect(keys(results.decision_problem_results))
+list_decision_problems(results::SimulationOutputs) =
+    collect(keys(results.decision_problem_outputs))
 
 """
-Export results to files in the results directory.
+Export outputs to files in the outputs directory.
 
 # Arguments
 
-  - `results::SimulationResults`: simulation results
-  - `exports`: SimulationResultsExport or anything that can be passed to its constructor.
+  - `results::SimulationOutputs`: simulation outputs
+  - `exports`: SimulationOutputsExport or anything that can be passed to its constructor.
     (such as Dict or path to JSON file)
 
 An example JSON file demonstrating possible options is below. Note that `start_time`,
@@ -352,32 +352,32 @@ An example JSON file demonstrating possible options is below. Note that `start_t
 
 ```
 """
-function export_results(results::SimulationResults, exports)
-    _export_results_with_store(results, exports, results.store)
+function IOM.export_outputs(results::SimulationOutputs, exports)
+    _export_outputs_with_store(results, exports, results.store)
     return
 end
 
-_export_results_with_store(results, exports, store::InMemorySimulationStore) =
-    export_results(results, exports, store)
-function _export_results_with_store(results, exports, ::Union{Nothing, HdfSimulationStore})
-    _open_results_store(results.path) do store
-        export_results(results, exports, store)
+_export_outputs_with_store(results, exports, store::InMemorySimulationStore) =
+    IOM.export_outputs(results, exports, store)
+function _export_outputs_with_store(results, exports, ::Union{Nothing, HdfSimulationStore})
+    _open_outputs_store(results.path) do store
+        IOM.export_outputs(results, exports, store)
     end
     return
 end
 
-function export_results(results::SimulationResults, exports, store::SimulationStore)
-    exports = _as_results_export(exports, results.params)
+function IOM.export_outputs(results::SimulationOutputs, exports, store::SimulationStore)
+    exports = _as_outputs_export(exports, results.params)
     file_type = get_export_file_type(exports)
 
-    for problem_results in values(results.decision_problem_results)
-        problem_exports = get_problem_exports(exports, problem_results.problem)
+    for problem_outputs in values(results.decision_problem_outputs)
+        problem_exports = get_problem_exports(exports, problem_outputs.problem)
         if isnothing(exports.path)
-            path = problem_results.results_output_folder
+            path = problem_outputs.output_dir
         else
             path = exports.path
         end
-        for timestamp in get_timestamps(problem_results)
+        for timestamp in get_timestamps(problem_outputs)
             !should_export(exports, timestamp) && continue
             for (folder, list_names, should_export_fn, read_fn) in (
                 ("variables", list_variable_names, should_export_variable, read_variable),
@@ -401,11 +401,11 @@ function export_results(results::SimulationResults, exports, store::SimulationSt
                     read_expression,
                 ),
             )
-                export_path = mkpath(joinpath(path, problem_results.problem, folder))
-                for name in list_names(problem_results)
+                export_path = mkpath(joinpath(path, problem_outputs.problem, folder))
+                for name in list_names(problem_outputs)
                     should_export_fn(problem_exports, name) || continue
                     dfs = read_fn(
-                        problem_results,
+                        problem_outputs,
                         name;
                         start_time = timestamp,
                         len = 1,
@@ -417,8 +417,8 @@ function export_results(results::SimulationResults, exports, store::SimulationSt
         end
 
         if problem_exports.optimizer_stats
-            export_path = joinpath(path, problem_results.problem, "optimizer_stats.csv")
-            df = read_optimizer_stats(problem_results; store = store)
+            export_path = joinpath(path, problem_outputs.problem, "optimizer_stats.csv")
+            df = read_optimizer_stats(problem_outputs; store = store)
             export_output(file_type, export_path, df)
         end
     end

@@ -59,8 +59,8 @@ build_out = build!(sim; console_level = Logging.Error)
 exec_out = execute!(sim; enable_progress_bar = false)
 @assert exec_out == PSI.RunStatus.SUCCESSFULLY_FINALIZED
 
-results = SimulationResults(sim)
-ed = get_decision_problem_results(results, "ED")
+results = SimulationOutputs(sim)
+ed = get_decision_problem_outputs(results, "ED")
 df = read_realized_variable(ed, "ActivePowerVariable__ThermalStandard")
 # c_sys5_ed's default load forecast carries 5-minute look-ahead points, so ED dispatches
 # (and realizes) every 5 minutes: 2 days * 24h * 12 (5-min steps/hour) = 576 timestamps,

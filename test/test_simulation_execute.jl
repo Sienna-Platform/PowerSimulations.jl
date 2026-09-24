@@ -322,9 +322,9 @@ end
     execute_out = execute!(sim)
     @test execute_out == PSI.RunStatus.SUCCESSFULLY_FINALIZED
 
-    results = SimulationResults(sim)
+    results = SimulationOutputs(sim)
     for name in list_decision_problems(results)
-        res = get_decision_problem_results(results, name)
+        res = get_decision_problem_outputs(results, name)
         parameters = read_realized_parameters(res)
         @test !isempty(parameters)
         for (key, df1) in parameters

@@ -2,25 +2,25 @@ using Base: COMPILETIME_PREFERENCES
 # Read the actual data of a result to see what the timestamps are
 actual_timestamps(result) = result |> values |> first |> x -> x.data |> keys |> collect
 
-# Test that a particular call to _read_results reads from outside the cache; pass through the results
+# Test that a particular call to _read_outputs reads from outside the cache; pass through the results
 macro test_no_cache(expr)
     :(@test_logs(
         match_mode = :any,
-        (:debug, r"reading results from data store"),
+        (:debug, r"reading outputs from data store"),
         min_level = Logging.Debug,
         $(esc(expr))))
 end
-@test_no_cache((@debug "reading results from data store"; @debug "msg 2"))
+@test_no_cache((@debug "reading outputs from data store"; @debug "msg 2"))
 
-# Test that a particular call to _read_results reads from the cache; pass through the results
+# Test that a particular call to _read_outputs reads from the cache; pass through the results
 macro test_yes_cache(expr)
     :(@test_logs(
         match_mode = :any,
-        (:debug, r"reading results from SimulationsResults cache"),
+        (:debug, r"reading outputs from SimulationsOutputs cache"),
         min_level = Logging.Debug,
         $(esc(expr))))
 end
-@test_yes_cache((@debug "reading results from SimulationsResults cache"; @debug "msg 2"))
+@test_yes_cache((@debug "reading outputs from SimulationsOutputs cache"; @debug "msg 2"))
 
 ED_EXPECTED_VARS = [
     "ActivePowerVariable__HydroTurbine",
@@ -47,22 +47,22 @@ UC_EXPECTED_VARS = [
     "StopVariable__ThermalStandard",
 ]
 
-function verify_export_results(results, export_path)
-    exports = SimulationResultsExport(
-        make_export_all(keys(results.decision_problem_results)),
+function verify_export_outputs(results, export_path)
+    exports = SimulationOutputsExport(
+        make_export_all(keys(results.decision_problem_outputs)),
         results.params,
     )
-    export_results(results, exports)
+    IOM.export_outputs(results, exports)
 
-    for problem_results in values(results.decision_problem_results)
-        rpath = problem_results.results_output_folder
-        problem = problem_results.problem
-        for timestamp in get_timestamps(problem_results)
-            for name in list_dual_names(problem_results)
-                @test compare_results(rpath, export_path, problem, "duals", name, timestamp)
+    for problem_outputs in values(results.decision_problem_outputs)
+        rpath = problem_outputs.output_dir
+        problem = problem_outputs.problem
+        for timestamp in get_timestamps(problem_outputs)
+            for name in list_dual_names(problem_outputs)
+                @test compare_outputs(rpath, export_path, problem, "duals", name, timestamp)
             end
-            for name in list_parameter_names(problem_results)
-                @test compare_results(
+            for name in list_parameter_names(problem_outputs)
+                @test compare_outputs(
                     rpath,
                     export_path,
                     problem,
@@ -71,8 +71,8 @@ function verify_export_results(results, export_path)
                     timestamp,
                 )
             end
-            for name in list_variable_names(problem_results)
-                @test compare_results(
+            for name in list_variable_names(problem_outputs)
+                @test compare_outputs(
                     rpath,
                     export_path,
                     problem,
@@ -82,8 +82,8 @@ function verify_export_results(results, export_path)
                 )
             end
 
-            for name in list_aux_variable_names(problem_results)
-                @test compare_results(
+            for name in list_aux_variable_names(problem_outputs)
+                @test compare_outputs(
                     rpath,
                     export_path,
                     problem,
@@ -97,8 +97,8 @@ function verify_export_results(results, export_path)
         # This file is not currently exported during the simulation.
         @test isfile(
             joinpath(
-                problem_results.results_output_folder,
-                problem_results.problem,
+                problem_outputs.output_dir,
+                problem_outputs.problem,
                 "optimizer_stats.csv",
             ),
         )
@@ -118,7 +118,7 @@ NATURAL_UNITS_VALUES = [
     "SystemBalanceSlackUp__System",
 ]
 
-function compare_results(rpath, epath, model, field, name, timestamp)
+function compare_outputs(rpath, epath, model, field, name, timestamp)
     filename = string(name) * "_" * IS.convert_for_path(timestamp) * ".csv"
     rp = joinpath(rpath, model, field, filename)
     ep = joinpath(epath, model, field, filename)
@@ -168,12 +168,12 @@ function make_export_all(problems)
     ]
 end
 
-function test_simulation_results(
+function test_simulation_outputs_run(
     file_path::String,
     export_path;
     in_memory = false,
 )
-    @testset "Test simulation results in_memory = $in_memory" begin
+    @testset "Test simulation outputs in_memory = $in_memory" begin
         c_sys5_hy_uc = PSB.build_system(PSITestSystems, "c_sys5_hy_uc")
         c_sys5_hy_ed = PSB.build_system(PSITestSystems, "c_sys5_hy_ed")
         sim = run_simulation(
@@ -183,25 +183,25 @@ function test_simulation_results(
             export_path;
             in_memory = in_memory,
         )
-        results = SimulationResults(sim)
-        test_decision_problem_results(results, c_sys5_hy_ed, c_sys5_hy_uc, in_memory)
+        results = SimulationOutputs(sim)
+        test_decision_problem_outputs(results, c_sys5_hy_ed, c_sys5_hy_uc, in_memory)
         if !in_memory
-            test_decision_problem_results_kwargs_handling(
+            test_decision_problem_outputs_kwargs_handling(
                 dirname(results.path),
                 c_sys5_hy_ed,
                 c_sys5_hy_uc,
             )
         end
-        test_emulation_problem_results(results, in_memory)
+        test_emulation_problem_outputs(results, in_memory)
 
-        results_ed = get_decision_problem_results(results, "ED")
+        results_ed = get_decision_problem_outputs(results, "ED")
         @test !isempty(results_ed)
         @test !isempty(results)
         empty!(results)
         @test isempty(results_ed)
         @test isempty(results)
 
-        verify_export_results(results, export_path)
+        verify_export_outputs(results, export_path)
         exported = readdir(export_realized_outputs(results_ed))
         @test length(exported) >= 22
         @test any(contains.(exported, "ProductionCostExpression"))
@@ -212,11 +212,11 @@ function test_simulation_results(
         PSI.set_simulation_status!(sim, PSI.RunStatus.FAILED)
         PSI.serialize_status(sim)
         @test PSI.deserialize_status(sim) == PSI.RunStatus.FAILED
-        @test_throws ErrorException SimulationResults(sim)
+        @test_throws ErrorException SimulationOutputs(sim)
         @test_logs(
             match_mode = :any,
             (:warn, r"Results may not be valid"),
-            SimulationResults(sim, ignore_status = true),
+            SimulationOutputs(sim, ignore_status = true),
         )
 
         if in_memory
@@ -234,7 +234,7 @@ function test_simulation_results(
     end
 end
 
-function test_decision_problem_results_values(
+function test_decision_problem_outputs_values(
     results_ed,
     results_uc,
     c_sys5_hy_ed,
@@ -315,7 +315,7 @@ function test_decision_problem_results_values(
     for var in values(realized_variable_uc)
         @test length(unique(var.DateTime)) == 48
     end
-    compare_long_and_wide_realized_results_2d(read_realized_variables, results_uc)
+    compare_long_and_wide_realized_outputs_2d(read_realized_variables, results_uc)
 
     realized_variable_uc =
         read_realized_variables(results_uc, [(ActivePowerVariable, ThermalStandard)])
@@ -341,14 +341,14 @@ function test_decision_problem_results_values(
         realized_variable_uc["ActivePowerVariable__ThermalStandard"],
         :DateTime > Dates.DateTime("2024-01-01T00:00:00")
     )
-    compare_long_and_wide_realized_results_2d(
+    compare_long_and_wide_realized_outputs_2d(
         read_realized_variables,
         results_uc,
         [(ActivePowerVariable, ThermalStandard)];
         start_time = Dates.DateTime("2024-01-01T01:00:00"),
         len = 47,
     )
-    compare_long_and_wide_realized_results_2d(
+    compare_long_and_wide_realized_outputs_2d(
         read_realized_variables,
         results_uc,
         [(ActivePowerVariable, ThermalStandard)];
@@ -361,13 +361,13 @@ function test_decision_problem_results_values(
     for param in values(realized_param_uc)
         @test length(unique(param.DateTime)) == 48
     end
-    compare_long_and_wide_realized_results_2d(read_realized_parameters, results_uc)
+    compare_long_and_wide_realized_outputs_2d(read_realized_parameters, results_uc)
 
     realized_param_uc = read_realized_parameters(
         results_uc,
         [(ActivePowerTimeSeriesParameter, RenewableDispatch)],
     )
-    compare_long_and_wide_realized_results_2d(
+    compare_long_and_wide_realized_outputs_2d(
         read_realized_parameters,
         results_uc,
         [(ActivePowerTimeSeriesParameter, RenewableDispatch)],
@@ -462,7 +462,7 @@ function test_decision_problem_results_values(
         ))
     )
 
-    load_results!(
+    load_outputs!(
         results_ed,
         3;
         initial_time = DateTime("2024-01-01T00:00:00"),
@@ -512,7 +512,7 @@ function test_decision_problem_results_values(
     )
 
     initial_time = DateTime("2024-01-01T00:00:00")
-    load_results!(
+    load_outputs!(
         results_ed,
         3;
         initial_time = initial_time,
@@ -554,36 +554,36 @@ function test_decision_problem_results_values(
         @test isempty(PSI.get_cached_variables(myres))
 
         # With nothing cached, all reads should be from outside the cache
-        read = @test_no_cache PSI._read_results(myres, [variable_key], timestamps, nothing)
+        read = @test_no_cache PSI._read_outputs(myres, [variable_key], timestamps, nothing)
         @test actual_timestamps(read) == timestamps
 
         # With 2 result windows cached, reading 2 windows should come from cache and reading 3 should come from outside
-        load_results!(myres, 2; initial_time = initial_time, variables = [variable_tuple])
+        load_outputs!(myres, 2; initial_time = initial_time, variables = [variable_tuple])
         @test haskey(PSI.get_cached_variables(myres), variable_key)
-        read = @test_yes_cache PSI._read_results(
+        read = @test_yes_cache PSI._read_outputs(
             myres,
             [variable_key],
             timestamps[1:2],
             nothing,
         )
         @test actual_timestamps(read) == timestamps[1:2]
-        read = @test_no_cache PSI._read_results(myres, [variable_key], timestamps, nothing)
+        read = @test_no_cache PSI._read_outputs(myres, [variable_key], timestamps, nothing)
         @test actual_timestamps(read) == timestamps
 
         # With 3 result windows cached, reading 2 and 3 windows should both come from cache
-        load_results!(myres, 3; initial_time = initial_time, variables = [variable_tuple])
-        read = @test_yes_cache PSI._read_results(
+        load_outputs!(myres, 3; initial_time = initial_time, variables = [variable_tuple])
+        read = @test_yes_cache PSI._read_outputs(
             myres,
             [variable_key],
             timestamps[1:2],
             nothing,
         )
         @test actual_timestamps(read) == timestamps[1:2]
-        read = @test_yes_cache PSI._read_results(myres, [variable_key], timestamps, nothing)
+        read = @test_yes_cache PSI._read_outputs(myres, [variable_key], timestamps, nothing)
         @test actual_timestamps(read) == timestamps
 
         # Caching an additional variable should incur an additional read but not evict the old variable
-        @test_no_cache load_results!(
+        @test_no_cache load_outputs!(
             myres,
             3;
             initial_time = initial_time,
@@ -597,7 +597,7 @@ function test_decision_problem_results_values(
 
         # Reset back down to 2 windows
         empty!(myres)
-        @test_no_cache load_results!(
+        @test_no_cache load_outputs!(
             myres,
             2;
             initial_time = initial_time,
@@ -605,20 +605,20 @@ function test_decision_problem_results_values(
         )
 
         # Loading a subset of what has already been loaded should not incur additional reads from outside the cache
-        @test_yes_cache load_results!(
+        @test_yes_cache load_outputs!(
             myres,
             2;
             initial_time = initial_time,
             variables = [variable_tuple],
         )
-        @test_yes_cache load_results!(
+        @test_yes_cache load_outputs!(
             myres,
             1;
             initial_time = initial_time,
             variables = [variable_tuple],
         )
         # But loading a superset should
-        @test_no_cache load_results!(
+        @test_no_cache load_outputs!(
             myres,
             3;
             initial_time = initial_time,
@@ -627,27 +627,27 @@ function test_decision_problem_results_values(
         empty!(myres)
 
         # With windows 2-3 cached, reading 2-3 and 3-3 should be from cache, reading 1-2 should be from outside cache
-        @test_no_cache load_results!(
+        @test_no_cache load_outputs!(
             myres,
             2;
             initial_time = timestamps[2],
             variables = [variable_tuple],
         )
-        read = @test_yes_cache PSI._read_results(
+        read = @test_yes_cache PSI._read_outputs(
             myres,
             [variable_key],
             timestamps[2:3],
             nothing,
         )
         @test actual_timestamps(read) == timestamps[2:3]
-        read = @test_yes_cache PSI._read_results(
+        read = @test_yes_cache PSI._read_outputs(
             myres,
             [variable_key],
             timestamps[3:3],
             nothing,
         )
         @test actual_timestamps(read) == timestamps[3:3]
-        read = @test_no_cache PSI._read_results(
+        read = @test_no_cache PSI._read_outputs(
             myres,
             [variable_key],
             timestamps[1:2],
@@ -659,16 +659,16 @@ function test_decision_problem_results_values(
         @test isempty(PSI.get_cached_variables(myres))
     end
 
-    @testset "Test read_results_with_keys" begin
+    @testset "Test read_outputs_with_keys" begin
         myres = deepcopy(results_ed)
         initial_time = DateTime("2024-01-01T00:00:00")
         timestamps = PSI._process_timestamps(myres, initial_time, 3)
-        result_keys = [PSI.VariableKey(ActivePowerVariable, ThermalStandard)]
+        output_keys = [PSI.VariableKey(ActivePowerVariable, ThermalStandard)]
 
         res1 =
-            PSI.read_results_with_keys(myres, result_keys; table_format = TableFormat.WIDE)
-        @test Set(keys(res1)) == Set(result_keys)
-        res1_df = res1[first(result_keys)]
+            IOM.read_outputs_with_keys(myres, output_keys; table_format = TableFormat.WIDE)
+        @test Set(keys(res1)) == Set(output_keys)
+        res1_df = res1[first(output_keys)]
         @test size(res1_df) == (576, 6)
         @test first(names(res1_df)) == "DateTime"
         @test Set(names(res1_df)[2:end]) ==
@@ -676,66 +676,66 @@ function test_decision_problem_results_values(
         @test first(eltype.(eachcol(res1_df))) === DateTime
 
         res2 =
-            PSI.read_results_with_keys(
+            IOM.read_outputs_with_keys(
                 myres,
-                result_keys;
+                output_keys;
                 cols = ["Park City", "Brighton"],
                 table_format = TableFormat.WIDE,
             )
-        @test Set(keys(res2)) == Set(result_keys)
-        res2_df = res2[first(result_keys)]
+        @test Set(keys(res2)) == Set(output_keys)
+        res2_df = res2[first(output_keys)]
         @test size(res2_df) == (576, 3)
         @test names(res2_df) ==
               ["DateTime", "Park City", "Brighton"]
         @test first(eltype.(eachcol(res2_df))) === DateTime
-        compare_long_and_wide_realized_results_2d(
-            PSI.read_results_with_keys,
+        compare_long_and_wide_realized_outputs_2d(
+            IOM.read_outputs_with_keys,
             myres,
-            result_keys;
+            output_keys;
             cols = ["Park City", "Brighton"],
         )
 
         res3_df =
-            PSI.read_results_with_keys(
+            IOM.read_outputs_with_keys(
                 myres,
-                result_keys;
+                output_keys;
                 start_time = timestamps[2],
                 table_format = TableFormat.WIDE,
             )[first(
-                result_keys,
+                output_keys,
             )]
         @test res3_df[1, "DateTime"] == timestamps[2]
 
         res4_df =
-            PSI.read_results_with_keys(
+            IOM.read_outputs_with_keys(
                 myres,
-                result_keys;
+                output_keys;
                 len = 2,
                 table_format = TableFormat.WIDE,
-            )[first(result_keys)]
+            )[first(output_keys)]
         @test size(res4_df) == (2, 6)
     end
 end
 
-function test_decision_problem_results(
-    results::SimulationResults,
+function test_decision_problem_outputs(
+    results::SimulationOutputs,
     c_sys5_hy_ed,
     c_sys5_hy_uc,
     in_memory;
     skip_from_file_check = false,
 )
     @test list_decision_problems(results) == ["ED", "UC"]
-    results_uc = get_decision_problem_results(results, "UC")
-    results_ed = get_decision_problem_results(results, "ED")
+    results_uc = get_decision_problem_outputs(results, "UC")
+    results_ed = get_decision_problem_outputs(results, "ED")
 
-    test_decision_problem_results_values(results_ed, results_uc, c_sys5_hy_ed, c_sys5_hy_uc)
+    test_decision_problem_outputs_values(results_ed, results_uc, c_sys5_hy_ed, c_sys5_hy_uc)
     if !in_memory && !skip_from_file_check
-        test_simulation_results_from_file(dirname(results.path), c_sys5_hy_ed, c_sys5_hy_uc)
+        test_simulation_outputs_from_file(dirname(results.path), c_sys5_hy_ed, c_sys5_hy_uc)
     end
 end
 
-function test_emulation_problem_results(results::SimulationResults, in_memory)
-    results_em = get_emulation_problem_results(results)
+function test_emulation_problem_outputs(results::SimulationOutputs, in_memory)
+    results_em = get_emulation_problem_outputs(results)
 
     read_realized_aux_variables(results_em)
 
@@ -885,7 +885,7 @@ function test_emulation_problem_results(results::SimulationResults, in_memory)
     )
 
     @test isempty(results_em)
-    load_results!(
+    load_outputs!(
         results_em;
         duals = duals_inputs[2],
         expressions = expressions_inputs[2],
@@ -936,11 +936,11 @@ process) does not hit "already open in this process"."""
 _close_sidecar_store!(sys::PSY.System) =
     IS.close!(IS.get_data_store(sys.data.time_series_manager))
 
-function test_simulation_results_from_file(path::AbstractString, c_sys5_hy_ed, c_sys5_hy_uc)
-    results = SimulationResults(path, "no_cache")
+function test_simulation_outputs_from_file(path::AbstractString, c_sys5_hy_ed, c_sys5_hy_uc)
+    results = SimulationOutputs(path, "no_cache")
     @test list_decision_problems(results) == ["ED", "UC"]
-    results_uc = get_decision_problem_results(results, "UC")
-    results_ed = get_decision_problem_results(results, "ED")
+    results_uc = get_decision_problem_outputs(results, "UC")
+    results_ed = get_decision_problem_outputs(results, "ED")
 
     loaded_uc = get_system!(results_uc)
     @test !isnothing(loaded_uc)
@@ -951,25 +951,25 @@ function test_simulation_results_from_file(path::AbstractString, c_sys5_hy_ed, c
     set_system!(results_ed, c_sys5_hy_ed)
     set_system!(results_uc, c_sys5_hy_uc)
 
-    test_decision_problem_results_values(results_ed, results_uc, c_sys5_hy_ed, c_sys5_hy_uc)
+    test_decision_problem_outputs_values(results_ed, results_uc, c_sys5_hy_ed, c_sys5_hy_uc)
 end
 
-function test_decision_problem_results_kwargs_handling(
+function test_decision_problem_outputs_kwargs_handling(
     path::AbstractString,
     c_sys5_hy_ed,
     c_sys5_hy_uc,
 )
-    results = SimulationResults(path, "no_cache")
+    results = SimulationOutputs(path, "no_cache")
     @test list_decision_problems(results) == ["ED", "UC"]
-    results_uc = get_decision_problem_results(results, "UC")
-    results_ed = get_decision_problem_results(results, "ED")
+    results_uc = get_decision_problem_outputs(results, "UC")
+    results_ed = get_decision_problem_outputs(results, "ED")
 
     loaded_uc = get_system!(results_uc)
     loaded_ed = get_system!(results_ed)
     @test !isnothing(loaded_uc)
     @test !isnothing(loaded_ed)
 
-    results_ed = get_decision_problem_results(results, "ED"; populate_system = true)
+    results_ed = get_decision_problem_outputs(results, "ED"; populate_system = true)
     @test !isnothing(get_system(results_ed))
 
     @test_throws IS.InvalidValue set_system!(results_uc, c_sys5_hy_ed)
@@ -982,24 +982,24 @@ function test_decision_problem_results_kwargs_handling(
     # PowerSystems (psy6) has no system-wide unit base (`set_units_base_system!`/
     # `get_units_base` are gone; getters take an explicit unit system per call), so
     # `populate_units` is unsupported and errors regardless of `populate_system`.
-    @test_throws ErrorException get_decision_problem_results(
+    @test_throws ErrorException get_decision_problem_outputs(
         results,
         "ED";
         populate_system = true,
         populate_units = IS.UnitSystem.DEVICE_BASE,
     )
 
-    @test_throws ArgumentError get_decision_problem_results(
+    @test_throws ArgumentError get_decision_problem_outputs(
         results,
         "ED";
         populate_system = false,
         populate_units = IS.UnitSystem.DEVICE_BASE,
     )
 
-    test_decision_problem_results_values(results_ed, results_uc, c_sys5_hy_ed, c_sys5_hy_uc)
+    test_decision_problem_outputs_values(results_ed, results_uc, c_sys5_hy_ed, c_sys5_hy_uc)
 end
 
-function compare_long_and_wide_realized_results_2d(func, args...; kwargs...)
+function compare_long_and_wide_realized_outputs_2d(func, args...; kwargs...)
     long_results = func(args...; table_format = TableFormat.LONG, kwargs...)
     wide_results = func(args...; table_format = TableFormat.WIDE, kwargs...)
     @test sort!(collect(keys(long_results))) == sort!(collect(keys(wide_results)))
@@ -1017,15 +1017,15 @@ function compare_long_and_wide_realized_results_2d(func, args...; kwargs...)
     end
 end
 
-@testset "Test simulation results" begin
+@testset "Test simulation outputs" begin
     for in_memory in (false, true)
         file_path = mktempdir(; cleanup = true)
         export_path = mktempdir(; cleanup = true)
-        test_simulation_results(file_path, export_path; in_memory = in_memory)
+        test_simulation_outputs_run(file_path, export_path; in_memory = in_memory)
     end
 end
 
-@testset "Test simulation results with system from store" begin
+@testset "Test simulation outputs with system from store" begin
     file_path = mktempdir(; cleanup = true)
     export_path = mktempdir(; cleanup = true)
     c_sys5_hy_uc = PSB.build_system(PSITestSystems, "c_sys5_hy_uc")
@@ -1038,24 +1038,24 @@ end
         export_path;
         in_memory = in_memory,
     )
-    results = SimulationResults(PSI.get_simulation_folder(sim))
-    uc = get_decision_problem_results(results, "UC")
-    ed = get_decision_problem_results(results, "ED")
+    results = SimulationOutputs(PSI.get_simulation_folder(sim))
+    uc = get_decision_problem_outputs(results, "UC")
+    ed = get_decision_problem_outputs(results, "ED")
     sys_uc = get_system!(uc)
     sys_ed = get_system!(ed)
     # This testset already loaded UC/ED from the on-disk bundle above; skip
-    # test_decision_problem_results' own from-file re-check, which would otherwise
+    # test_decision_problem_outputs' own from-file re-check, which would otherwise
     # independently reopen the same bundle while sys_uc/sys_ed (and their still-open
     # sidecar stores, needed later for deepcopy) are alive -- InfraStore allows only one
     # open handle per store file per process.
-    test_decision_problem_results(
+    test_decision_problem_outputs(
         results,
         sys_ed,
         sys_uc,
         in_memory;
         skip_from_file_check = true,
     )
-    test_emulation_problem_results(results, in_memory)
+    test_emulation_problem_outputs(results, in_memory)
 end
 
 @testset "The System rebuilt from results reads a time-series-backed cost" begin
@@ -1111,8 +1111,8 @@ end
     @test execute!(sim; enable_progress_bar = false) ==
           PSI.RunStatus.SUCCESSFULLY_FINALIZED
 
-    results = SimulationResults(PSI.get_simulation_folder(sim))
-    uc = get_decision_problem_results(results, "UC")
+    results = SimulationOutputs(PSI.get_simulation_folder(sim))
+    uc = get_decision_problem_outputs(results, "UC")
     restored = get_system!(uc)
     gen = get_component(PSY.ThermalStandard, restored, PSY.get_name(thermal))
     cost_ts = PSY.get_fuel_cost(gen)
@@ -1133,8 +1133,8 @@ end
         export_path;
         in_memory = false,
     )
-    results = SimulationResults(PSI.get_simulation_folder(sim))
-    uc = get_decision_problem_results(results, "UC")
+    results = SimulationOutputs(PSI.get_simulation_folder(sim))
+    uc = get_decision_problem_outputs(results, "UC")
     restored = get_system!(uc)
 
     ren = first(get_components(PSY.RenewableDispatch, c_sys5_hy_uc))
@@ -1215,13 +1215,13 @@ end
     @test any(startswith("system-"), readdir(bundle_parent))
 end
 
-function read_result_names(results, key::PSI.OptimizationContainerKey)
-    result_data = PSI.read_results_with_keys(
+function read_output_names(results, key::PSI.OptimizationContainerKey)
+    output_data = IOM.read_outputs_with_keys(
         results,
         [key];
         table_format = TableFormat.LONG,
     )
-    first_result = only(values(result_data))
+    first_result = only(values(output_data))
     columns_without_datetime = first_result[!, Not(:DateTime)]
     return Set(names(columns_without_datetime))
 end
@@ -1239,10 +1239,10 @@ end
         in_memory = false,
     )
 
-    results = SimulationResults(PSI.get_simulation_folder(sim))
-    results_uc = get_decision_problem_results(results, "UC")
-    results_ed = get_decision_problem_results(results, "ED")
-    results_em = get_emulation_problem_results(results)
+    results = SimulationOutputs(PSI.get_simulation_folder(sim))
+    results_uc = get_decision_problem_outputs(results, "UC")
+    results_ed = get_decision_problem_outputs(results, "ED")
+    results_em = get_emulation_problem_outputs(results)
 
     sys_uc = get_system!(results_uc)
     sys_ed = get_system!(results_ed)
@@ -1277,8 +1277,8 @@ end
         mktempdir(; cleanup = true);
         in_memory = false,
     )
-    results = SimulationResults(PSI.get_simulation_folder(sim))
-    uc = get_decision_problem_results(results, "UC")
+    results = SimulationOutputs(PSI.get_simulation_folder(sim))
+    uc = get_decision_problem_outputs(results, "UC")
     params = read_realized_parameters(uc)
     @test !isempty(params)
     df = params["ActivePowerTimeSeriesParameter__RenewableDispatch"]

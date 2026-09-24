@@ -22,7 +22,7 @@ function POM.solve!(
     @assert get_current_time(model) == start_time
     if get_run_status(model) == RunStatus.SUCCESSFULLY_FINALIZED
         advance_execution_count!(model)
-        write_results!(
+        write_outputs!(
             store,
             model,
             get_execution_count(model),
