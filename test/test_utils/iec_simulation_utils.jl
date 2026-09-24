@@ -25,6 +25,7 @@ function make_5_bus_with_import_export(;
         internal_voltage = 1.0,
         internal_angle = 0.0,
         base_power = 100.0,
+        input_basis = CU,
     )
 
     import_curve = make_import_curve(

@@ -26,6 +26,7 @@ function replace_with_renewable!(
         # but we'll use the unit's operation cost as-is for simplicity.
         operation_cost = deepcopy(get_operation_cost(unit1)),
         base_power = get_base_power(unit1),
+        input_basis = CU,
     )
     add_component!(sys, rg1)
     transfer_mbc!(rg1, unit1, sys)
@@ -82,6 +83,7 @@ function replace_load_with_interruptible!(sys::System)
         operation_cost = PSY.LoadCost(nothing),
         base_power = get_base_power(load1),
         conformity = get_conformity(load1),
+        input_basis = CU,
     )
     add_component!(sys, interruptible_load)
     for md in IS.list_time_series_metadata(load1)
