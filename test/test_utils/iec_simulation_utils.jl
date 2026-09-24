@@ -140,7 +140,11 @@ function run_iec_obj_fun_test(sys1, sys2, comp_name::String, ::Type{T};
     return decisions1, decisions2
 end
 
-function check_iec_time_series_parameters(res::IS.Results, sys::System, ::Type{T}) where {
+function check_iec_time_series_parameters(
+    res::IS.Results,
+    sys::System,
+    ::Type{T},
+) where {
     T <: PSY.Component}
     # Test that breakpoint and slope parameters read from results match the
     # ground truth from the system's offer curve time series.
