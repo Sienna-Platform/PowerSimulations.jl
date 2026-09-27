@@ -1195,7 +1195,10 @@ end
                         if network_type == AreaPTDFPowerModel
                             set_device_model!(template, AreaInterchange, StaticBranch)
                         else
-                            remove_component!(sys, get_component(AreaInterchange, sys, "1_2"))
+                            remove_component!(
+                                sys,
+                                get_component(AreaInterchange, sys, "1_2"),
+                            )
                         end
                         model = DecisionModel(template, sys; resolution = Hour(1),
                             horizon = Hour(2), optimizer = HiGHS_optimizer)
@@ -1205,12 +1208,26 @@ end
                         from_type, to_type = if lossless
                             (PSI.FlowActivePowerVariable, PSI.FlowActivePowerVariable)
                         elseif dispatch
-                            (PSI.FlowActivePowerFromToVariable, PSI.FlowActivePowerToFromVariable)
+                            (
+                                PSI.FlowActivePowerFromToVariable,
+                                PSI.FlowActivePowerToFromVariable,
+                            )
                         else
-                            (PSI.HVDCActivePowerReceivedFromVariable, PSI.HVDCActivePowerReceivedToVariable)
+                            (
+                                PSI.HVDCActivePowerReceivedFromVariable,
+                                PSI.HVDCActivePowerReceivedToVariable,
+                            )
                         end
-                        from = PSI.get_variable(container, from_type(), TwoTerminalGenericHVDCLine)
-                        to = PSI.get_variable(container, to_type(), TwoTerminalGenericHVDCLine)
+                        from = PSI.get_variable(
+                            container,
+                            from_type(),
+                            TwoTerminalGenericHVDCLine,
+                        )
+                        to = PSI.get_variable(
+                            container,
+                            to_type(),
+                            TwoTerminalGenericHVDCLine,
+                        )
                         from_sign = lossless || dispatch ? -1.0 : 1.0
                         to_sign = dispatch ? -1.0 : 1.0
                         from_area = get_name(get_area(get_from(get_arc(hvdc))))
@@ -1218,21 +1235,30 @@ end
                         @test (from_area == to_area) == same_area
 
                         for (t, transfer) in enumerate((0.5, -0.5))
-                            JuMP.fix(from["test_hvdc", t], -from_sign * transfer; force = true)
+                            JuMP.fix(
+                                from["test_hvdc", t],
+                                -from_sign * transfer;
+                                force = true,
+                            )
                             if network_type == AreaPTDFPowerModel
                                 constraints = PSI.get_constraint(
                                     container, CopperPlateBalanceConstraint(), Area)
                                 for area in get_components(Area, sys)
                                     name = get_name(area)
-                                    balance = JuMP.constraint_object(constraints[name, t]).func
+                                    balance =
+                                        JuMP.constraint_object(constraints[name, t]).func
                                     expected = from_sign * (name == from_area)
                                     if lossless
                                         expected += to_sign * (name == to_area)
                                     else
-                                        @test JuMP.coefficient(balance, to["test_hvdc", t]) ==
+                                        @test JuMP.coefficient(
+                                            balance,
+                                            to["test_hvdc", t],
+                                        ) ==
                                               to_sign * (name == to_area)
                                     end
-                                    @test JuMP.coefficient(balance, from["test_hvdc", t]) == expected
+                                    @test JuMP.coefficient(balance, from["test_hvdc", t]) ==
+                                          expected
                                 end
                             end
                         end
@@ -1245,7 +1271,8 @@ end
                             to_injection = to_sign * JuMP.value(to["test_hvdc", t])
                             @test isapprox(-from_injection, transfer; atol = 1e-8)
                             @test isapprox(-(from_injection + to_injection),
-                                loss_factor * max(-from_injection, -to_injection); atol = 1e-8)
+                                loss_factor * max(-from_injection, -to_injection);
+                                atol = 1e-8)
                         end
                     end
                     @test isapprox(objectives[1], objectives[2]; atol = 0.1)
