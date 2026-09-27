@@ -412,30 +412,20 @@ end
 
 #################################### Rate Limits Constraints ##################################################
 function _get_flow_bounds(d::PSY.TwoTerminalHVDC)
-    check_hvdc_line_limits_consistency(d)
     from_min = PSY.get_active_power_limits_from(d).min
     to_min = PSY.get_active_power_limits_to(d).min
     from_max = PSY.get_active_power_limits_from(d).max
     to_max = PSY.get_active_power_limits_to(d).max
 
-    if from_min >= 0.0 && to_min >= 0.0
-        min_rate = min(from_min, to_min)
-    elseif from_min <= 0.0 && to_min <= 0.0
-        min_rate = max(from_min, to_min)
-    elseif from_min <= 0.0 && to_min >= 0.0
-        min_rate = from_min
-    elseif to_min <= 0.0 && from_min >= 0.0
-        min_rate = to_min
-    end
-
-    if from_max >= 0.0 && to_max >= 0.0
-        max_rate = min(from_max, to_max)
-    elseif from_max <= 0.0 && to_max <= 0.0
-        max_rate = max(from_max, to_max)
-    elseif from_max <= 0.0 && to_max >= 0.0
-        max_rate = from_max
-    elseif from_max >= 0.0 && to_max <= 0.0
-        max_rate = to_max
+    min_rate = max(from_min, -to_max)
+    max_rate = min(from_max, -to_min)
+    if !(min_rate <= max_rate)
+        throw(
+            IS.ConflictingInputsError(
+                "HVDC line $(PSY.get_name(d)) has incompatible lossless terminal limits: " *
+                "from=($from_min, $from_max), to=($to_min, $to_max).",
+            ),
+        )
     end
 
     return min_rate, max_rate
