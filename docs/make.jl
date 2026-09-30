@@ -48,6 +48,10 @@ links = InterLinks(
         inventory_source("https://sienna-platform.github.io/HydroPowerSimulations.jl/dev/"),
     "PowerFlows" =>
         inventory_source("https://sienna-platform.github.io/PowerFlows.jl/stable/"),
+    "PowerNetworkMatrices" =>
+        inventory_source(
+            "https://sienna-platform.github.io/PowerNetworkMatrices.jl/stable/",
+        ),
 )
 
 include(joinpath(@__DIR__, "make_tutorials.jl"))
