@@ -188,11 +188,17 @@ function run_startup_shutdown_test(
     multistart::Bool = false,
     simulation = true,
     in_memory_store::Bool = false,
+    optimizer = HiGHS_optimizer_small_gap,
 )
     model, res = if simulation
-        run_generic_mbc_sim(sys; multistart = multistart, in_memory_store = in_memory_store)
+        run_generic_mbc_sim(
+            sys;
+            multistart = multistart,
+            in_memory_store = in_memory_store,
+            optimizer = optimizer,
+        )
     else
-        run_generic_mbc_prob(sys; multistart = multistart)
+        run_generic_mbc_prob(sys; multistart = multistart, optimizer = optimizer)
     end
 
     # Test correctness of written shutdown cost parameters
@@ -365,6 +371,7 @@ function run_startup_shutdown_obj_fun_test(
     multistart::Bool = false,
     simulation = true,
     in_memory_store::Bool = false,
+    optimizer = HiGHS_optimizer_small_gap,
 )
     _, res1, decisions1, nullable_decisions1 =
         run_startup_shutdown_test(
@@ -372,6 +379,7 @@ function run_startup_shutdown_obj_fun_test(
             multistart = multistart,
             simulation = simulation,
             in_memory_store = in_memory_store,
+            optimizer = optimizer,
         )
     _, res2, decisions2, nullable_decisions2 =
         run_startup_shutdown_test(
@@ -379,6 +387,7 @@ function run_startup_shutdown_obj_fun_test(
             multistart = multistart,
             simulation = simulation,
             in_memory_store = in_memory_store,
+            optimizer = optimizer,
         )
 
     all_decisions1 = (decisions1..., nullable_decisions1...)
@@ -479,12 +488,24 @@ end
     test_generic_mbc_equivalence(c_sys5_pglib0a, c_sys5_pglib1a; multistart = true)
     test_generic_mbc_equivalence(c_sys5_pglib0b, c_sys5_pglib1b; multistart = true)
 
+    tight_gap_optimizer = JuMP.optimizer_with_attributes(
+        HiGHS.Optimizer,
+        "time_limit" => 100.0,
+        "random_seed" => 12345,
+        "mip_rel_gap" => 1e-8,
+        "log_to_console" => false,
+    )
     for use_simulation in (false, true)
         (decisions1, decisions2) = run_startup_shutdown_obj_fun_test(
             c_sys5_pglib1a,
             c_sys5_pglib2a;
             multistart = true,
             simulation = use_simulation,
+            optimizer = if use_simulation
+                tight_gap_optimizer
+            else
+                HiGHS_optimizer_small_gap
+            end,
         )
         (decisions1_2, decisions2_2) = run_startup_shutdown_obj_fun_test(
             c_sys5_pglib1b,
