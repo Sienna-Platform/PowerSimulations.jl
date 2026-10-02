@@ -295,9 +295,11 @@ function handle_variable_cost_parameter(
     return
 end
 
+# Every reserve kind carries its demand curve in `variable`, and POM builds the curve's cost
+# parameters for any `AbstractReserve` with one (on-line, off-line and group reserves alike).
 function handle_variable_cost_parameter(
     param::T,
-    component::PSY.OnlineReserve,
+    component::PSY.AbstractReserve,
     name,
     parameter_array,
     parameter_multiplier,
