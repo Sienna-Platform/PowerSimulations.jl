@@ -728,7 +728,6 @@ function IOM.update_container_parameter_values!(
         U,
         model,
         input,
-        key.meta,
     )
     return
 end

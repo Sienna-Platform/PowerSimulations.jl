@@ -41,6 +41,8 @@ function _update_parameter_values!(
     return
 end
 
+# POM keys a cost parameter of every reserve of type `V` into one container with an empty
+# `meta`, the reserves along its first axis, so each reserve on that axis is updated in turn.
 function _update_service_cost_parameter_values!(
     parameter_array::DenseAxisArray,
     ::T,
@@ -49,7 +51,6 @@ function _update_service_cost_parameter_values!(
     ::Type{V},
     model::DecisionModel,
     ::DatasetContainer{InMemoryDataset},
-    service_name::String,
 ) where {T <: ObjectiveFunctionParameter, V <: PSY.Service}
     initial_forecast_time = get_current_time(model)
     time_steps = get_time_steps(get_optimization_container(model))
@@ -59,20 +60,27 @@ function _update_service_cost_parameter_values!(
         "Cannot update $(T) on a synchronized container; objective expressions would " *
         "be re-augmented and double-counted",
     )
-    service = PSY.get_component(V, get_system(model), service_name)
-    ts_type = get_deterministic_time_series_type(get_system(model))
-    handle_variable_cost_parameter(
-        T(),
-        service,
-        service_name,
-        parameter_array,
-        parameter_multiplier,
-        attributes,
-        model,
-        initial_forecast_time,
-        horizon,
-        ts_type,
-    )
+    system = get_system(model)
+    ts_type = get_deterministic_time_series_type(system)
+    for service_name in axes(parameter_array, 1)
+        service = PSY.get_component(V, system, service_name)
+        isnothing(service) && error(
+            "Service $(V) named '$(service_name)' is no longer in the system; " *
+            "cannot update parameter $(T)",
+        )
+        handle_variable_cost_parameter(
+            T(),
+            service,
+            service_name,
+            parameter_array,
+            parameter_multiplier,
+            attributes,
+            model,
+            initial_forecast_time,
+            horizon,
+            ts_type,
+        )
+    end
     return
 end
 
