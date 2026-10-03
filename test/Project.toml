@@ -43,11 +43,11 @@ PowerOperationsOpenAPIModels = "a372b6d7-45a2-44c2-8199-6a724b72e8ff"
 [sources]
 # Branch pins for the outputs-bundle PRs (IS #645, PSY #1811, POM #319); back to psy6/main once they merge.
 PowerSimulations = {path = ".."}
-InfrastructureSystems = {url = "https://github.com/Sienna-Platform/InfrastructureSystems.jl", rev = "jd/store_level_api"}
-InfrastructureOptimizationModels = {url = "https://github.com/Sienna-Platform/InfrastructureOptimizationModels.jl", rev = "main"}
+InfrastructureSystems = {url = "https://github.com/Sienna-Platform/InfrastructureSystems.jl", rev = "mb/lhs-params"}
+InfrastructureOptimizationModels = {url = "https://github.com/Sienna-Platform/InfrastructureOptimizationModels.jl", rev = "mb/lhs-params"}
 PowerSystems = {url = "https://github.com/Sienna-Platform/PowerSystems.jl", rev = "jd/catalog-only-export"}
 PowerNetworkMatrices = {url = "https://github.com/Sienna-Platform/PowerNetworkMatrices.jl", rev = "psy6"}
-PowerOperationsModels = {url = "https://github.com/Sienna-Platform/PowerOperationsModels.jl", rev = "jd/infrastore_parameters"}
+PowerOperationsModels = {url = "https://github.com/Sienna-Platform/PowerOperationsModels.jl", rev = "mb/lhs-params"}
 PowerSystemCaseBuilder = {url = "https://github.com/Sienna-Platform/PowerSystemCaseBuilder.jl", rev = "psy6"}
 PowerFlows = {url = "https://github.com/Sienna-Platform/PowerFlows.jl", rev = "psy6"}
 # PSB depends on these off the psy6 branch; not registered there yet.

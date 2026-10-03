@@ -20,6 +20,9 @@ function update_parameters!(
     for key in keys(get_parameters(model))
         update_parameter_values!(model, key, simulation_state)
     end
+    # A rebuild re-binds every coefficient from the refreshed arrays.
+    get_rebuild_model(model) ||
+        IOM.apply_coefficient_bindings!(get_optimization_container(model))
     if !is_synchronized(model)
         update_objective_function!(get_optimization_container(model))
         obj_func = get_objective_expression(get_optimization_container(model))
