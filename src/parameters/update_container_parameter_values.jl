@@ -814,7 +814,7 @@ function IOM.update_container_parameter_values!(
 ) where {T <: IOM.TimeSeriesLHSParameter, U <: PSY.Service}
     # Per-type container like the service time-series parameters above: its rows cover every
     # profiled service of type `U`, so it uses the per-type reader. The refreshed values reach
-    # the model when `update_parameters!` applies the coefficient bindings.
+    # the model through the rebuild every model holding an LHS parameter performs.
     parameter_array = get_parameter_array(optimization_container, key)
     parameter_attributes = get_parameter_attributes(optimization_container, key)
     _update_parameter_values!(parameter_array, T(), parameter_attributes, U, model, input)

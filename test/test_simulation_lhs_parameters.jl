@@ -2,7 +2,9 @@
 Left-hand-side parameters in simulations.
 
 A reserve's deployed-fraction profile multiplies the reserve award, so it is a constraint
-coefficient. Each step must apply that window's values, with or without a model rebuild.
+coefficient written as a fixed number. A model holding one is rebuilt every step to apply that
+window's values: `rebuild_model` is turned on automatically, and an explicit `false` is
+rejected.
 """
 
 const _LHS_HORIZON = Hour(4)
@@ -56,7 +58,7 @@ function _lhs_storage_template()
     return template
 end
 
-function _run_lhs_simulation(models; steps = 2)
+function _lhs_simulation(models; steps = 2)
     sequence = SimulationSequence(;
         models = models,
         ini_cond_chronology = InterProblemChronology(),
@@ -68,26 +70,38 @@ function _run_lhs_simulation(models; steps = 2)
         sequence = sequence,
         simulation_folder = mktempdir(; cleanup = true),
     )
+    return sim
+end
+
+function _run_lhs_simulation(models; steps = 2)
+    sim = _lhs_simulation(models; steps = steps)
     @test build!(sim; console_level = Logging.Error) == PSI.SimulationBuildStatus.BUILT
     @test execute!(sim; in_memory = true) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
     return sim
 end
 
-"The deployed fraction the model last solved with, per time step, read from its product rows."
+"The deployed fraction the model last solved with, per time step, read from its coefficients."
 function _deployed_fraction_in_model(model, reserve)
     container = IOM.get_optimization_container(model)
     V = PSY.EnergyReservoirStorage
     U = POM.AncillaryServiceVariableDischarge
-    meta = POM._deployed_product_meta(U, reserve)
-    rows = IOM.get_constraint(container, IOM.ParameterizedProductConstraint, V, meta)
+    T = POM.StorageReserveBalanceExpression{
+        PSY.ReserveUp,
+        POM.DeployedReserve,
+        POM.DischargeSide,
+    }
+    device = PSY.get_component(V, PSI.get_system(model), "Bat")
+    base =
+        POM.get_variable_multiplier(U, T, device, POM.StorageDispatchWithReserves, reserve)
+    expression = IOM.get_expression(container, T, V)
     awards = IOM.get_variable(container, U, V, POM._service_container_meta(reserve))
     return [
-        -JuMP.normalized_coefficient(rows["Bat", t], awards["Bat", t]) for
+        JuMP.coefficient(expression["Bat", t], awards["Bat", t]) / base for
         t in IOM.get_time_steps(container)
     ]
 end
 
-for rebuild in (false, true)
+for rebuild in (nothing, true)
     @testset "Deployed fraction refreshes each step (rebuild_model = $rebuild)" begin
         profile = collect(range(0.2, 0.9; length = 48))
         sys, reserve = _lhs_storage_system(profile)
@@ -102,6 +116,7 @@ for rebuild in (false, true)
         ])
         sim = _run_lhs_simulation(models)
         model = PSI.get_simulation_model(sim, :ED)
+        @test IOM.get_rebuild_model_setting(IOM.get_settings(model)) === true
         @test _deployed_fraction_in_model(model, reserve) ≈ _LHS_FRACTION .* profile[5:8]
 
         outputs = get_decision_problem_outputs(SimulationOutputs(sim), "ED")
@@ -115,25 +130,20 @@ for rebuild in (false, true)
     end
 end
 
-@testset "With rebuild_model, a parameter update leaves the live model alone" begin
-    # The rebuild replaces the model right after the update, so rewriting its coefficients
-    # first would be wasted work.
+@testset "An explicit rebuild_model = false is rejected" begin
     profile = collect(range(0.2, 0.9; length = 48))
-    sys, reserve = _lhs_storage_system(profile)
+    sys, _ = _lhs_storage_system(profile)
     models = SimulationModels([
         DecisionModel(
             _lhs_storage_template(),
             sys;
             name = "ED",
             optimizer = HiGHS_optimizer,
-            rebuild_model = true,
+            rebuild_model = false,
         ),
     ])
-    sim = _run_lhs_simulation(models)
-    model = PSI.get_simulation_model(sim, :ED)
-    before = _deployed_fraction_in_model(model, reserve)
-    PSI.update_parameters!(model, PSI.get_simulation_state(sim))
-    @test _deployed_fraction_in_model(model, reserve) == before
+    sim = _lhs_simulation(models)
+    @test_throws IS.ConflictingInputsError build!(sim; console_level = Logging.Error)
 end
 
 @testset "A deployed fraction that is zero at build becomes nonzero" begin
@@ -174,8 +184,8 @@ end
     )
     # The emulator advances one hour per execution: four executions per 4-hour ED step.
     sim = _run_lhs_simulation(models; steps = 1)
-    @test only(
-        _deployed_fraction_in_model(PSI.get_simulation_model(sim, :EM), reserve_em),
-    ) ≈
+    emulator = PSI.get_simulation_model(sim, :EM)
+    @test IOM.get_rebuild_model_setting(IOM.get_settings(emulator)) === true
+    @test only(_deployed_fraction_in_model(emulator, reserve_em)) ≈
           _LHS_FRACTION * profile[4]
 end
