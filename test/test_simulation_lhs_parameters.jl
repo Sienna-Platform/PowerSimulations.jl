@@ -3,8 +3,7 @@ Left-hand-side parameters in simulations.
 
 A reserve's deployed-fraction profile multiplies the reserve award, so it is a constraint
 coefficient written as a fixed number. A model holding one is rebuilt every step to apply that
-window's values: `rebuild_model` is turned on automatically, and an explicit `false` is
-rejected.
+window's values: `rebuild_model` is switched on automatically, with a warning.
 """
 
 const _LHS_HORIZON = Hour(4)
@@ -101,7 +100,7 @@ function _deployed_fraction_in_model(model, reserve)
     ]
 end
 
-for rebuild in (nothing, true)
+for rebuild in (false, true)
     @testset "Deployed fraction refreshes each step (rebuild_model = $rebuild)" begin
         profile = collect(range(0.2, 0.9; length = 48))
         sys, reserve = _lhs_storage_system(profile)
@@ -116,7 +115,7 @@ for rebuild in (nothing, true)
         ])
         sim = _run_lhs_simulation(models)
         model = PSI.get_simulation_model(sim, :ED)
-        @test IOM.get_rebuild_model_setting(IOM.get_settings(model)) === true
+        @test IOM.get_rebuild_model(IOM.get_settings(model))
         @test _deployed_fraction_in_model(model, reserve) ≈ _LHS_FRACTION .* profile[5:8]
 
         outputs = get_decision_problem_outputs(SimulationOutputs(sim), "ED")
@@ -128,22 +127,6 @@ for rebuild in (nothing, true)
         step_2 = fractions[DateTime("2024-01-01T04:00:00")]
         @test step_2[!, :value] ≈ _LHS_FRACTION .* profile[5:8]
     end
-end
-
-@testset "An explicit rebuild_model = false is rejected" begin
-    profile = collect(range(0.2, 0.9; length = 48))
-    sys, _ = _lhs_storage_system(profile)
-    models = SimulationModels([
-        DecisionModel(
-            _lhs_storage_template(),
-            sys;
-            name = "ED",
-            optimizer = HiGHS_optimizer,
-            rebuild_model = false,
-        ),
-    ])
-    sim = _lhs_simulation(models)
-    @test_throws IS.ConflictingInputsError build!(sim; console_level = Logging.Error)
 end
 
 @testset "A deployed fraction that is zero at build becomes nonzero" begin
@@ -185,7 +168,7 @@ end
     # The emulator advances one hour per execution: four executions per 4-hour ED step.
     sim = _run_lhs_simulation(models; steps = 1)
     emulator = PSI.get_simulation_model(sim, :EM)
-    @test IOM.get_rebuild_model_setting(IOM.get_settings(emulator)) === true
+    @test IOM.get_rebuild_model(IOM.get_settings(emulator))
     @test only(_deployed_fraction_in_model(emulator, reserve_em)) ≈
           _LHS_FRACTION * profile[4]
 end

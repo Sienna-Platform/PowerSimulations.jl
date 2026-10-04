@@ -811,21 +811,6 @@ function IOM.update_container_parameter_values!(
     model::IOM.AbstractOptimizationModel,
     key::ParameterKey{T, U},
     input::DatasetContainer{InMemoryDataset},
-) where {T <: IOM.TimeSeriesLHSParameter, U <: PSY.Service}
-    # Per-type container like the service time-series parameters above: its rows cover every
-    # profiled service of type `U`, so it uses the per-type reader. The refreshed values reach
-    # the model through the rebuild every model holding an LHS parameter performs.
-    parameter_array = get_parameter_array(optimization_container, key)
-    parameter_attributes = get_parameter_attributes(optimization_container, key)
-    _update_parameter_values!(parameter_array, T(), parameter_attributes, U, model, input)
-    return
-end
-
-function IOM.update_container_parameter_values!(
-    optimization_container::OptimizationContainer,
-    model::IOM.AbstractOptimizationModel,
-    key::ParameterKey{T, U},
-    input::DatasetContainer{InMemoryDataset},
 ) where {T <: ParameterType, U <: PSY.Service}
     # Note: Do not instantite a new key here because it might not match the param keys in the container
     # if the keys have strings in the meta fields
