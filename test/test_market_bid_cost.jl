@@ -758,6 +758,67 @@ end
     @test isapprox(_anchor_at_t(model_updated, 2), second_anchor; atol = 1e-9)
 end
 
+for decremental in (false, true)
+    adj = decremental ? "decremental" : "incremental"
+    @testset "MarketBidCost $(adj) update zeroes the blocks past a shorter curve's end" begin
+        # The block axis is sized for the longest curve in the series, and the build pins
+        # the blocks past a curve's end at zero width. `create_extra_tranches` gives the
+        # first window's first period one segment more than the second window's, so the
+        # update to the second window must set that extra block's width back to zero: left
+        # at the first window's width with no price on it, the block is free energy.
+        comp_type = decremental ? InterruptiblePowerLoad : ThermalStandard
+        comp_name = decremental ? "Bus1_interruptible" : "Test Unit1"
+        formulation = decremental ? PowerLoadInterruption : ThermalBasicUnitCommitment
+        width_type = if decremental
+            PiecewiseLinearBlockDecrementalWidthConstraint
+        else
+            PiecewiseLinearBlockIncrementalWidthConstraint
+        end
+        block_type = if decremental
+            PiecewiseLinearBlockDecrementalOffer
+        else
+            PiecewiseLinearBlockIncrementalOffer
+        end
+        getter = decremental ? get_decremental_offer_curves : get_incremental_offer_curves
+        build_func = decremental ? build_sys_decr2 : build_sys_incr
+        sys = build_func(false, false, false; create_extra_tranches = true)
+        component = get_component(comp_type, sys, comp_name)
+        offer_curve = getter(get_operation_cost(component))
+        ts_key = IS.get_time_series_key(get_value_curve(offer_curve))
+        forecast = IS.get_time_series(component, ts_key)
+        horizon_count = IS.get_horizon_count(forecast)
+        first_window = IS.get_time_series_values(
+            component, ts_key; start_time = TIME1, len = horizon_count)
+        second_window = IS.get_time_series_values(component, ts_key;
+            start_time = TIME1 + IS.get_interval(forecast), len = horizon_count)
+        @test length(get_y_coords(first(first_window))) >
+              length(get_y_coords(first(second_window)))
+
+        model, _ = run_generic_mbc_sim(sys;
+            device_to_formulation = FormulationDict(comp_type => formulation))
+        container = PSI.get_optimization_container(model)
+        widths = get_constraint(container, width_type, comp_type)
+        blocks = PSI.get_variable(container, block_type, comp_type)
+        objective = JuMP.objective_function(PSI.get_jump_model(container))
+        n_blocks = maximum(k for (name, k, _) in keys(widths.data) if name == comp_name)
+        for t in 1:horizon_count
+            converted = PSI.get_piecewise_curve_per_system_unit(
+                second_window[t],
+                IS.get_power_units(offer_curve),
+                get_base_power(sys),
+                get_base_power(component),
+            )
+            n_segments = length(get_y_coords(converted))
+            expected = vcat(diff(get_x_coords(converted)), zeros(n_blocks - n_segments))
+            updated = [JuMP.normalized_rhs(widths[(comp_name, k, t)]) for k in 1:n_blocks]
+            @test isapprox(updated, expected; atol = 1e-9)
+            for k in (n_segments + 1):n_blocks
+                @test JuMP.coefficient(objective, blocks[(comp_name, k, t)]) == 0.0
+            end
+        end
+    end
+end
+
 @testset "MarketBidCost incremental with heterogeneous time series names" begin
     # `_is_mbc` matches both MarketBidCost and MarketBidTimeSeriesCost: `build_sys_incr` (via
     # `extend_mbc!`) converts every selected component's cost to `MarketBidTimeSeriesCost`, so

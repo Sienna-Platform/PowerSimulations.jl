@@ -103,6 +103,30 @@ handle_variable_cost_parameter(
 const _AnyPiecewiseLinearParameter =
     Union{AbstractPiecewiseLinearSlopeParameter, AbstractPiecewiseLinearBreakpointParameter}
 
+# The block axis is sized for the longest curve in the series. A shorter curve is padded to it
+# the way `unwrap_for_param` pads the parameter values and the build pins the blocks: zero-width
+# blocks at the last breakpoint with zero slope. The update then rewrites every block's width
+# and cost, so a block past the curve's end cannot keep the width of an earlier, longer curve.
+_n_blocks(::AbstractPiecewiseLinearSlopeParameter, additional_axes) =
+    length(only(additional_axes))
+_n_blocks(::AbstractPiecewiseLinearBreakpointParameter, additional_axes) =
+    length(only(additional_axes)) - 1
+
+function _pad_to_blocks(value::PSY.PiecewiseStepData, n_blocks::Int)
+    x_coords = PSY.get_x_coords(value)
+    y_coords = PSY.get_y_coords(value)
+    n_pad = n_blocks - length(y_coords)
+    n_pad == 0 && return value
+    n_pad > 0 || error(
+        "PiecewiseStepData has $(length(y_coords)) segments, more than the $(n_blocks) " *
+        "blocks the model was built with",
+    )
+    return PSY.PiecewiseStepData(
+        vcat(x_coords, fill(last(x_coords), n_pad)),
+        vcat(y_coords, zeros(n_pad)),
+    )
+end
+
 _linear_block_width_constraint(::Type{IncrementalPiecewiseLinearBreakpointParameter}) =
     PiecewiseLinearBlockIncrementalWidthConstraint
 _linear_block_width_constraint(::Type{DecrementalPiecewiseLinearBreakpointParameter}) =
@@ -412,13 +436,14 @@ function handle_variable_cost_parameter(
         horizon,
     )
     additional_axes = lookup_additional_axes(parameter_array)
+    n_blocks = _n_blocks(param, additional_axes)
     for (t, value::PSY.PiecewiseStepData) in enumerate(raw_values)
         unwrapped_value = unwrap_for_param(T(), value, additional_axes)
         _set_param_value!(parameter_array, unwrapped_value, name, t)
         update_variable_cost!(
             param,
             container,
-            value,  # intentionally passing the PiecewiseStepData here, not the unwrapped
+            _pad_to_blocks(value, n_blocks),
             parameter_multiplier,
             attributes,
             component,
@@ -459,13 +484,14 @@ function handle_variable_cost_parameter(
         horizon,
     )
     additional_axes = lookup_additional_axes(parameter_array)
+    n_blocks = _n_blocks(param, additional_axes)
     for (t, value::PSY.PiecewiseStepData) in enumerate(raw_values)
         unwrapped_value = unwrap_for_param(T(), value, additional_axes)
         _set_param_value!(parameter_array, unwrapped_value, name, t)
         update_variable_cost!(
             param,
             container,
-            value,
+            _pad_to_blocks(value, n_blocks),
             parameter_multiplier,
             attributes,
             component,
