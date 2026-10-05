@@ -146,15 +146,148 @@ function update_variable_cost!(
     power_units::IS.AbstractUnitSystem,
 ) where {T <: PSY.Component}
     component_name = PSY.get_name(component)
-    converted_data = get_piecewise_curve_per_system_unit(
-        function_data,
-        power_units,
-        get_model_base_power(container),
-        PSY.get_base_power(component),
-    )
+    converted_data =
+        _converted_piecewise_data(container, function_data, component, power_units)
     _update_pwl_width_constraint!(
         breakpoint_param, container, T, component_name, time_period, converted_data)
     return
+end
+
+# A device's curve also anchors its block-offer linking row at the first breakpoint, so a
+# device update re-anchors that row under formulation `D`.
+function update_variable_cost!(
+    breakpoint_param::AbstractPiecewiseLinearBreakpointParameter,
+    container::OptimizationContainer,
+    function_data::PSY.PiecewiseStepData,
+    parameter_multiplier::JuMPFloatArray,
+    attributes::CostFunctionAttributes,
+    component::T,
+    time_period::Int,
+    power_units::IS.AbstractUnitSystem,
+    ::Type{D},
+) where {T <: PSY.Component, D <: AbstractDeviceFormulation}
+    update_variable_cost!(
+        breakpoint_param,
+        container,
+        function_data,
+        parameter_multiplier,
+        attributes,
+        component,
+        time_period,
+        power_units,
+    )
+    converted_data =
+        _converted_piecewise_data(container, function_data, component, power_units)
+    _update_pwl_offset!(
+        breakpoint_param, container, component, time_period, converted_data, D)
+    return
+end
+
+# A slope update rewrites objective terms only, so the formulation a device update
+# carries for the breakpoint's row anchoring is not needed here.
+update_variable_cost!(
+    slope_param::AbstractPiecewiseLinearSlopeParameter,
+    container::OptimizationContainer,
+    function_data::PSY.PiecewiseStepData,
+    parameter_multiplier::JuMPFloatArray,
+    attributes::CostFunctionAttributes,
+    component::PSY.Component,
+    time_period::Int,
+    power_units::IS.AbstractUnitSystem,
+    ::Type{<:AbstractDeviceFormulation},
+) = update_variable_cost!(
+    slope_param,
+    container,
+    function_data,
+    parameter_multiplier,
+    attributes,
+    component,
+    time_period,
+    power_units,
+)
+
+_converted_piecewise_data(
+    container::OptimizationContainer,
+    function_data::PSY.PiecewiseStepData,
+    component::PSY.Component,
+    power_units::IS.AbstractUnitSystem,
+) = get_piecewise_curve_per_system_unit(
+    function_data,
+    power_units,
+    get_model_base_power(container),
+    PSY.get_base_power(component),
+)
+
+# The block-offer linking row a breakpoint parameter anchors, paired the way
+# `_linear_block_width_constraint` pairs the width rows.
+_linear_block_offer_constraint(::Type{IncrementalPiecewiseLinearBreakpointParameter}) =
+    PiecewiseLinearBlockIncrementalOfferConstraint
+_linear_block_offer_constraint(::Type{DecrementalPiecewiseLinearBreakpointParameter}) =
+    PiecewiseLinearBlockDecrementalOfferConstraint
+
+"""
+Re-anchor the block-offer linking row at the curve's refreshed first breakpoint.
+`add_pwl_constraint_delta!` (IOM `objective_function_pwl_delta.jl`) builds the row as
+`power == Σ δ + p1 * on` for a formulation whose offset rides the `OnVariable`, as
+`power == Σ δ + p1` for one with a constant minimum, and as `power == Σ δ` for one with
+no offset, with `p1` the first breakpoint of the curve the model was built with. A curve
+whose first breakpoint moves between solves must move that offset too, or the row keeps
+the device at the old curve's start while the width rows describe the new one. The
+branch mirrors the build's dispatch on the power variable the row links, so a formulation
+without an offset is left alone.
+"""
+function _update_pwl_offset!(
+    ::P,
+    container::OptimizationContainer,
+    component::T,
+    time_period::Int,
+    cost_data::PSY.PiecewiseStepData,
+    ::Type{D},
+) where {
+    P <: AbstractPiecewiseLinearBreakpointParameter,
+    T <: PSY.Component,
+    D <: AbstractDeviceFormulation,
+}
+    component_name = PSY.get_name(component)
+    row = get_constraint(container, _linear_block_offer_constraint(P), T)[
+        component_name,
+        time_period,
+    ]
+    U = _linked_power_variable(container, row, T, component_name, time_period)
+    p1 = first(PSY.get_x_coords(cost_data))
+    if IOM._include_constant_min_gen_power_in_constraint(T, U, D)
+        JuMP.set_normalized_rhs(row, p1)
+    elseif IOM._include_min_gen_power_in_constraint(T, U, D)
+        on_vars = get_variable(container, OnVariable, T)
+        if component_name in axes(on_vars, 1)
+            JuMP.set_normalized_coefficient(row, on_vars[component_name, time_period], -p1)
+        else
+            JuMP.set_normalized_rhs(row, p1)
+        end
+    end
+    return
+end
+
+# The cost parameter's attributes name only the block variables, so the power variable the
+# linking row ties them to is read off the row: the one `T` variable entering it with
+# coefficient one.
+function _linked_power_variable(
+    container::OptimizationContainer,
+    row::JuMP.ConstraintRef,
+    ::Type{T},
+    component_name::String,
+    time_period::Int,
+) where {T <: PSY.Component}
+    for (key, variables) in get_variables(container)
+        IOM.get_component_type(key) === T || continue
+        V = IOM.get_entry_type(key)
+        V === OnVariable && continue
+        ndims(variables) == 2 || continue
+        component_name in axes(variables, 1) || continue
+        v = variables[component_name, time_period]
+        JuMP.normalized_coefficient(row, v) == 1.0 && return V
+    end
+    error("No power variable of $(T) links the block-offer row of $(component_name)")
 end
 
 _maybe_tuple(::StartupCostParameter, value) = Tuple(value)
@@ -269,6 +402,7 @@ function handle_variable_cost_parameter(
     container = get_optimization_container(model)
     ts_name = _cost_ts_name(param, component, op_cost)
     power_units = IS.get_power_units(offer_curve)
+    formulation = IOM.get_formulation(get_model(get_template(model), typeof(component)))
     raw_values = get_time_series_values!(
         ts_type,
         model,
@@ -290,6 +424,7 @@ function handle_variable_cost_parameter(
             component,
             t,
             power_units,
+            formulation,
         )
     end
     return

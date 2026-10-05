@@ -709,6 +709,55 @@ end
     @test isapprox(rhs_build, rhs_updated; atol = 1e-9)
 end
 
+@testset "MarketBidCost first-breakpoint update re-anchors the block-offer row" begin
+    # `add_pwl_constraint_delta!` (IOM) anchors the linking row `power == Σ δ + p1 * on`
+    # at the first breakpoint of the curve the model is built with. When that breakpoint
+    # moves between solves, the between-step update must move the anchor along with the
+    # width rows, or the row keeps the unit at the first window's curve start. The
+    # fixture's `breakpoints_vary` shifts every breakpoint, the first included, by step and
+    # by period once `do_override_min_x` stops pinning it to the unit's minimum power.
+    device_to_formulation = FormulationDict(ThermalStandard => ThermalBasicUnitCommitment)
+    sys = build_sys_incr(false, true, false; do_override_min_x = false)
+    unit1 = get_component(SEL_INCR, sys)
+    offer_curve = get_incremental_offer_curves(get_operation_cost(unit1))
+    ts_key = IS.get_time_series_key(get_value_curve(offer_curve))
+    forecast = IS.get_time_series(unit1, ts_key)
+    interval = IS.get_interval(forecast)
+    horizon_count = IS.get_horizon_count(forecast)
+
+    function _expected_anchor(step_time, t)
+        curves = IS.get_time_series_values(
+            unit1, ts_key; start_time = step_time, len = horizon_count)
+        converted = PSI.get_piecewise_curve_per_system_unit(
+            curves[t],
+            IS.get_power_units(offer_curve),
+            get_base_power(sys),
+            get_base_power(unit1),
+        )
+        return first(get_x_coords(converted))
+    end
+
+    function _anchor_at_t(model, t)
+        container = PSI.get_optimization_container(model)
+        offer_rows = get_constraint(
+            container, PiecewiseLinearBlockIncrementalOfferConstraint, ThermalStandard)
+        on_vars = PSI.get_variable(container, OnVariable, ThermalStandard)
+        return -JuMP.normalized_coefficient(
+            offer_rows["Test Unit1", t], on_vars["Test Unit1", t])
+    end
+
+    model_build, _ =
+        run_generic_mbc_prob(sys; device_to_formulation = device_to_formulation)
+    model_updated, _ =
+        run_generic_mbc_sim(sys; device_to_formulation = device_to_formulation)
+
+    first_anchor = _expected_anchor(TIME1, 2)
+    second_anchor = _expected_anchor(TIME1 + interval, 2)
+    @test !isapprox(first_anchor, second_anchor)
+    @test isapprox(_anchor_at_t(model_build, 2), first_anchor; atol = 1e-9)
+    @test isapprox(_anchor_at_t(model_updated, 2), second_anchor; atol = 1e-9)
+end
+
 @testset "MarketBidCost incremental with heterogeneous time series names" begin
     # `_is_mbc` matches both MarketBidCost and MarketBidTimeSeriesCost: `build_sys_incr` (via
     # `extend_mbc!`) converts every selected component's cost to `MarketBidTimeSeriesCost`, so
