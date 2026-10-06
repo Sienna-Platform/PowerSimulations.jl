@@ -224,7 +224,11 @@ function _update_parameter_values!(
     ::Type{V},
     model::EmulationModel,
     ::DatasetContainer{InMemoryDataset},
-) where {T <: Union{JuMP.VariableRef, Float64}, U <: PSY.SingleTimeSeries, V <: PSY.Device}
+) where {
+    T <: Union{JuMP.VariableRef, Float64},
+    U <: PSY.SingleTimeSeries,
+    V <: PSY.Component,
+}
     initial_forecast_time = get_current_time(model)
     template = get_template(model)
     device_model = get_model(template, V)
@@ -236,6 +240,7 @@ function _update_parameter_values!(
     name_lookup = parameter_array.lookup[1]
     ts_uuids = Set{String}()
     for component in components
+        PSY.has_time_series(component, U, ts_name) || continue
         ts_uuid = _get_ts_uuid(attributes, PSY.get_name(component))
         if !(ts_uuid in ts_uuids)
             # Note: This interface reads one single value per component at a time.
