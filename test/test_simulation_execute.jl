@@ -254,7 +254,7 @@ end
     # per-instance `VariableReserve` keying did). `c_sys5_uc`'s `add_reserves=true` fixture
     # carries an extra "ORDC1" reserve that `c_sys5_ed`'s fixture does not, so without this
     # filter the UC-sized decision state would demand an "ORDC1" column that ED's own
-    # solved results never populate. Filter UC down to the reserve roster the two systems
+    # solved outputs never populate. Filter UC down to the reserve roster the two systems
     # share so the cross-model state stays consistent.
     set_service_model!(
         template_uc,
@@ -322,9 +322,9 @@ end
     execute_out = execute!(sim)
     @test execute_out == PSI.RunStatus.SUCCESSFULLY_FINALIZED
 
-    results = SimulationResults(sim)
-    for name in list_decision_problems(results)
-        res = get_decision_problem_results(results, name)
+    outputs = SimulationOutputs(sim)
+    for name in list_decision_problems(outputs)
+        res = get_decision_problem_outputs(outputs, name)
         parameters = read_realized_parameters(res)
         @test !isempty(parameters)
         for (key, df1) in parameters

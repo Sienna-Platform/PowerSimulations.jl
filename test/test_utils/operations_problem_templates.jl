@@ -2,7 +2,6 @@ function get_thermal_dispatch_template_network(network = CopperPlateNetworkModel
     template = PowerOperationsProblemTemplate(network)
     set_device_model!(template, ThermalStandard, ThermalBasicDispatch)
     set_device_model!(template, PowerLoad, StaticPowerLoad)
-    set_device_model!(template, MonitoredLine, StaticBranchBounds)
     set_device_model!(template, Line, StaticBranch)
     set_device_model!(template, TwoWindingTransformer, StaticBranch)
     set_device_model!(template, TwoTerminalGenericHVDCLine, HVDCTwoTerminalLossless)

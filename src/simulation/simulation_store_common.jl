@@ -1,5 +1,5 @@
-function write_results!(
-    store,
+function IOM.write_outputs!(
+    store::SimulationStore,
     model::IOM.AbstractOptimizationModel,
     index::Union{DecisionModelIndexType, EmulationModelIndexType},
     update_timestamp::Dates.DateTime;
@@ -18,7 +18,7 @@ function write_results!(
     end
 
     for field in (:duals, :parameters, :variables, :aux_variables, :expressions)
-        _write_model_field_results!(
+        _write_model_field_outputs!(
             store,
             model,
             index,
@@ -27,29 +27,30 @@ function write_results!(
             Val(field),
         )
     end
+    buffer_parameter_inputs!(store, model, index, update_timestamp)
     return
 end
 
-_result_source(container::OptimizationContainer, ::Val{:duals}) = get_duals(container)
-_result_source(container::OptimizationContainer, ::Val{:parameters}) =
+_output_source(container::OptimizationContainer, ::Val{:duals}) = get_duals(container)
+_output_source(container::OptimizationContainer, ::Val{:parameters}) =
     get_parameters(container)
-_result_source(container::OptimizationContainer, ::Val{:aux_variables}) =
+_output_source(container::OptimizationContainer, ::Val{:aux_variables}) =
     get_aux_variables(container)
-function _result_source(container::OptimizationContainer, ::Val{:variables})
+function _output_source(container::OptimizationContainer, ::Val{:variables})
     if !isempty(container.primal_values_cache)
         return container.primal_values_cache.variables_cache
     end
     return get_variables(container)
 end
-function _result_source(container::OptimizationContainer, ::Val{:expressions})
+function _output_source(container::OptimizationContainer, ::Val{:expressions})
     if !isempty(container.primal_values_cache)
         return container.primal_values_cache.expressions_cache
     end
     return get_expressions(container)
 end
 
-_result_values(x, ::Val) = jump_value.(x)
-_result_values(x, ::Val{:parameters}) = calculate_parameter_values(x)
+_output_values(x, ::Val) = jump_value.(x)
+_output_values(x, ::Val{:parameters}) = calculate_parameter_values(x)
 
 _should_export_field(exports, ts, model_name, key, ::Val{:duals}) =
     should_export_dual(exports, ts, model_name, key)
@@ -62,7 +63,7 @@ _should_export_field(exports, ts, model_name, key, ::Val{:aux_variables}) =
 _should_export_field(exports, ts, model_name, key, ::Val{:expressions}) =
     should_export_expression(exports, ts, model_name, key)
 
-function _write_model_field_results!(
+function _write_model_field_outputs!(
     store,
     model::IOM.AbstractOptimizationModel,
     index::Union{DecisionModelIndexType, EmulationModelIndexType},
@@ -77,10 +78,10 @@ function _write_model_field_results!(
         mkpath(exports_path)
     end
 
-    for (key, value) in _result_source(container, field)
+    for (key, value) in _output_source(container, field)
         !should_write_resulting_value(key) && continue
-        data = _result_values(value, field)
-        write_result!(store, model_name, key, index, update_timestamp, data)
+        data = _output_values(value, field)
+        write_output!(store, model_name, key, index, update_timestamp, data)
 
         if !isnothing(export_params) &&
            _should_export_field(
@@ -103,6 +104,6 @@ function _write_model_field_results!(
     return
 end
 
-function _open_results_store(f, execution_path::AbstractString)
+function _open_outputs_store(f, execution_path::AbstractString)
     return open_store(f, HdfSimulationStore, joinpath(execution_path, STORE_DIR), "r")
 end

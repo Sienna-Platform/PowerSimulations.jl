@@ -13,14 +13,14 @@ PSY ──▶ PSB
 
   - **`InfrastructureOptimizationModels.jl`** (IOM) defines the domain-neutral optimization
     core: `OptimizationContainer`, `DecisionModel`, `EmulationModel`, settings, per-model
-    stores, and results types.
+    stores, and outputs types.
   - **`PowerOperationsModels.jl`** (POM) defines every power formulation: device and service
     models via `DeviceModel` and `ServiceModel`, network models, `PowerOperationsProblemTemplate`,
     and the `build!`/`solve!` chain for a single model.
   - **`PowerSimulations.jl`** (PSI) takes built `DecisionModel`s and `EmulationModel`s and
     sequences them: it decides execution order, moves data between models with
     `SimulationSequence` and feedforwards, tracks `SimulationState` across solves, and stores
-    and reads back results.
+    and reads back outputs.
 
 A `Simulation` is built from:
 
@@ -30,7 +30,7 @@ A `Simulation` is built from:
   - the number of steps and an output folder.
 
 `build!(sim)` builds every model and wires the sequence; `execute!(sim)` runs it, writing
-results to a `SimulationStore` as it goes.
+outputs to a `SimulationStore` as it goes.
 
 !!! question "What is the difference between a Model and a Problem?"
     

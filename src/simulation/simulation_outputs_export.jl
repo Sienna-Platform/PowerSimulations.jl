@@ -2,7 +2,7 @@
 _parse_export_time(x::AbstractString) = Dates.DateTime(x)
 _parse_export_time(x) = x
 
-mutable struct SimulationResultsExport
+mutable struct SimulationOutputsExport
     models::Dict{Symbol, IOM.OptimizationProblemOutputsExport}
     start_time::Dates.DateTime
     end_time::Dates.DateTime
@@ -11,10 +11,10 @@ mutable struct SimulationResultsExport
 end
 
 # Callers may pass either a built export spec or the raw user input for one.
-_as_results_export(x::SimulationResultsExport, _) = x
-_as_results_export(x, params) = SimulationResultsExport(x, params)
+_as_outputs_export(x::SimulationOutputsExport, _) = x
+_as_outputs_export(x, params) = SimulationOutputsExport(x, params)
 
-function SimulationResultsExport(
+function SimulationOutputsExport(
     models::Vector{IOM.OptimizationProblemOutputsExport},
     params::SimulationStoreParams;
     start_time = nothing,
@@ -38,11 +38,11 @@ function SimulationResultsExport(
         throw(IS.InvalidValue("invalid end_time: $end_time"))
     end
 
-    if !(format in list_supported_formats(SimulationResultsExport))
+    if !(format in list_supported_formats(SimulationOutputsExport))
         throw(IS.InvalidValue("format = $format is not supported"))
     end
 
-    return SimulationResultsExport(
+    return SimulationOutputsExport(
         Dict(x.name => x for x in models),
         start_time,
         end_time,
@@ -51,15 +51,15 @@ function SimulationResultsExport(
     )
 end
 
-function SimulationResultsExport(filename::AbstractString, params::SimulationStoreParams)
+function SimulationOutputsExport(filename::AbstractString, params::SimulationStoreParams)
     if splitext(filename)[2] != ".json"
         throw(IS.InvalidValue("only JSON files are supported: $filename"))
     end
 
-    return SimulationResultsExport(read_json(filename), params)
+    return SimulationOutputsExport(read_json(filename), params)
 end
 
-function SimulationResultsExport(data::AbstractDict, params::SimulationStoreParams)
+function SimulationOutputsExport(data::AbstractDict, params::SimulationStoreParams)
     models = Vector{IOM.OptimizationProblemOutputsExport}()
     for model in get(data, "models", [])
         if !haskey(model, "name")
@@ -100,7 +100,7 @@ function SimulationResultsExport(data::AbstractDict, params::SimulationStorePara
     start_time = _parse_export_time(get(data, "start_time", nothing))
     end_time = _parse_export_time(get(data, "end_time", nothing))
 
-    return SimulationResultsExport(
+    return SimulationOutputsExport(
         models,
         params;
         start_time = start_time,
@@ -110,7 +110,7 @@ function SimulationResultsExport(data::AbstractDict, params::SimulationStorePara
     )
 end
 
-function get_problem_exports(x::SimulationResultsExport, model_name)
+function get_problem_exports(x::SimulationOutputsExport, model_name)
     name = Symbol(model_name)
     if !haskey(x.models, name)
         throw(IS.InvalidValue("model $name is not stored. keys = $(keys(x.models))"))
@@ -119,7 +119,7 @@ function get_problem_exports(x::SimulationResultsExport, model_name)
     return x.models[name]
 end
 
-function get_export_file_type(exports::SimulationResultsExport)
+function get_export_file_type(exports::SimulationOutputsExport)
     if exports.format == "csv"
         return CSV.File
     end
@@ -127,30 +127,30 @@ function get_export_file_type(exports::SimulationResultsExport)
     throw(IS.InvalidValue("format not supported: $(exports.format)"))
 end
 
-list_supported_formats(::Type{SimulationResultsExport}) = ("csv",)
+list_supported_formats(::Type{SimulationOutputsExport}) = ("csv",)
 
-function should_export(exports::SimulationResultsExport, tstamp::Dates.DateTime)
+function should_export(exports::SimulationOutputsExport, tstamp::Dates.DateTime)
     return tstamp >= exports.start_time && tstamp <= exports.end_time
 end
 
-function IOM.should_export_dual(exports::SimulationResultsExport, tstamp, model, name)
+function IOM.should_export_dual(exports::SimulationOutputsExport, tstamp, model, name)
     return _should_export(exports, tstamp, model, STORE_CONTAINER_DUALS, name)
 end
 
-function IOM.should_export_parameter(exports::SimulationResultsExport, tstamp, model, name)
+function IOM.should_export_parameter(exports::SimulationOutputsExport, tstamp, model, name)
     return _should_export(exports, tstamp, model, STORE_CONTAINER_PARAMETERS, name)
 end
 
-function IOM.should_export_variable(exports::SimulationResultsExport, tstamp, model, name)
+function IOM.should_export_variable(exports::SimulationOutputsExport, tstamp, model, name)
     return _should_export(exports, tstamp, model, STORE_CONTAINER_VARIABLES, name)
 end
 
-function IOM.should_export_expression(exports::SimulationResultsExport, tstamp, model, name)
+function IOM.should_export_expression(exports::SimulationOutputsExport, tstamp, model, name)
     return _should_export(exports, tstamp, model, STORE_CONTAINER_EXPRESSIONS, name)
 end
 
 function IOM.should_export_aux_variable(
-    exports::SimulationResultsExport,
+    exports::SimulationOutputsExport,
     tstamp,
     model,
     name,
@@ -159,7 +159,7 @@ function IOM.should_export_aux_variable(
 end
 
 function IOM._should_export(
-    exports::SimulationResultsExport,
+    exports::SimulationOutputsExport,
     tstamp,
     model,
     field_name,

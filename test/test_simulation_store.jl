@@ -11,8 +11,8 @@ import PowerSimulations:
     STORE_CONTAINER_VARIABLES,
     initialize_problem_storage!,
     add_rule!,
-    write_result!,
-    read_result,
+    write_output!,
+    read_output,
     has_dirty,
     get_cache_hit_percentage
 
@@ -86,7 +86,7 @@ function _run_sim_test(path, sim, variables, model_defs, cache_rules, seed)
                     for key in keys(variables)
                         data = rand(rng, size(model_defs[model]["variables"][key])...)
                         columns = model_defs[model]["names"]
-                        write_result!(
+                        write_output!(
                             store,
                             model,
                             key,
@@ -121,7 +121,7 @@ function _run_sim_test(path, sim, variables, model_defs, cache_rules, seed)
     end
 end
 
-function _verify_read_results(path, sim, variables, model_defs, seed)
+function _verify_read_outputs(path, sim, variables, model_defs, seed)
     rng = MersenneTwister(seed)
     open_store(HdfSimulationStore, path, "r") do store
         sim_time = sim["initial_time"]
@@ -150,7 +150,7 @@ end
 
 function _verify_data(expected, store, model, name, time, columns::Tuple{Vector{Symbol}})
     expected_df = DataFrames.DataFrame(expected, columns[1])
-    df = read_result(DataFrames.DataFrame, store, model, name, time)
+    df = read_output(DataFrames.DataFrame, store, model, name, time)
     @test expected_df == df
 end
 
@@ -198,11 +198,11 @@ end
     # Use this seed to produce the same randomly generated arrays for write and verify.
     seed = 1234
     _run_sim_test(path, sim, variables, model_defs, cache_rules, seed)
-    _verify_read_results(path, sim, variables, model_defs, seed)
+    _verify_read_outputs(path, sim, variables, model_defs, seed)
 end
 
 @testset "Test OptimizationOutputCache" begin
-    key = PSI.OptimizationResultCacheKey(
+    key = PSI.OptimizationOutputCacheKey(
         :ED,
         PSI.VariableKey(ActivePowerVariable, InterruptiblePowerLoad),
     )
@@ -214,12 +214,12 @@ end
     timestamp2 = Dates.DateTime("2020-01-01T01:00:00")
     timestamp3 = Dates.DateTime("2020-01-01T02:00:00")
     timestamp4 = Dates.DateTime("2020-01-01T03:00:00")
-    PSI.add_result!(cache, timestamp1, ones(2), false)
+    PSI.add_output!(cache, timestamp1, ones(2), false)
     @test PSI.is_dirty(cache, timestamp1)
-    PSI.add_result!(cache, timestamp2, ones(2), false)
+    PSI.add_output!(cache, timestamp2, ones(2), false)
     @test PSI.is_dirty(cache, timestamp2)
 
-    @test_throws IS.InvalidValue PSI.add_result!(cache, timestamp2, ones(2), false)
+    @test_throws IS.InvalidValue PSI.add_output!(cache, timestamp2, ones(2), false)
 
     @test length(cache.data) == 2
     @test length(cache.dirty_timestamps) == 2
@@ -230,11 +230,11 @@ end
     @test length(cache.data) == 2
     @test length(cache.dirty_timestamps) == 1
 
-    PSI.add_result!(cache, timestamp3, ones(2), false)
+    PSI.add_output!(cache, timestamp3, ones(2), false)
     @test length(cache.data) == 3
     @test length(cache.dirty_timestamps) == 2
 
-    PSI.add_result!(cache, timestamp4, ones(2), true)
+    PSI.add_output!(cache, timestamp4, ones(2), true)
     @test length(cache.data) == 3
     @test length(cache.dirty_timestamps) == 3
 
@@ -246,10 +246,58 @@ end
     @test isempty(cache.data)
     @test isempty(cache.dirty_timestamps)
 
-    PSI.add_result!(cache, timestamp1, ones(2), false)
-    PSI.add_result!(cache, timestamp2, ones(2), false)
-    PSI.discard_results!(cache, [timestamp1, timestamp2])
+    PSI.add_output!(cache, timestamp1, ones(2), false)
+    PSI.add_output!(cache, timestamp2, ones(2), false)
+    PSI.discard_outputs!(cache, [timestamp1, timestamp2])
     @test isempty(cache.data)
+end
+
+@testset "HdfSimulationStore creates no HDF5 dataset for parameters" begin
+    model_name = :UC
+    system_uuid = Base.UUID("4076af6c-e467-56ae-b986-b466b2749572")
+    variable_key = PSI.VariableKey(ActivePowerVariable, ThermalStandard)
+    parameter_key = IOM.ParameterKey(POM.ActivePowerTimeSeriesParameter, PowerLoad)
+
+    reqs = SimulationModelStoreRequirements()
+    reqs.variables[variable_key] =
+        Dict("columns" => ([:dev1],), "dims" => (2, 1, 2))
+    reqs.parameters[parameter_key] =
+        Dict("columns" => ([:dev1],), "dims" => (2, 1, 2))
+
+    model_params = ModelStoreParams(
+        1,
+        IS.time_period_conversion(Hour(2)),
+        IS.time_period_conversion(Hour(1)),
+        IS.time_period_conversion(Hour(1)),
+        100.0,
+        system_uuid,
+    )
+    params = SimulationStoreParams(
+        Dates.DateTime("2020-01-01T00:00:00"),
+        Dates.Hour(24),
+        1,
+        OrderedDict(model_name => model_params),
+        OrderedDict{Symbol, ModelStoreParams}(),
+    )
+    cache_rules = CacheFlushRules(; max_size = 1 * MiB, min_flush_size = 4 * KiB)
+    add_rule!(cache_rules, model_name, variable_key, true)
+
+    path = mktempdir()
+    open_store(HdfSimulationStore, path, "w") do store
+        initialize_problem_storage!(
+            store,
+            params,
+            Dict(model_name => reqs),
+            SimulationModelStoreRequirements(),
+            cache_rules,
+        )
+    end
+
+    PSI.HDF5.h5open(joinpath(path, HDF_FILENAME), "r") do file
+        uc = file["simulation/decision_models/$model_name"]
+        @test !haskey(uc, "parameters")
+        @test haskey(uc, "variables")
+    end
 end
 
 # TODO: test optimizer stats

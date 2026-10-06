@@ -9,7 +9,7 @@ struct RealizedMeta
 end
 
 function RealizedMeta(
-    res::SimulationProblemResults;
+    res::SimulationProblemOutputs;
     start_time::Union{Nothing, Dates.DateTime} = nothing,
     len::Union{Int, Nothing} = nothing,
 )
@@ -19,24 +19,24 @@ function RealizedMeta(
     interval_len = Int(interval / resolution)
     realized_timestamps = get_realized_timestamps(res; start_time = start_time, len = len)
 
-    result_start_time = existing_timestamps[findlast(
+    output_start_time = existing_timestamps[findlast(
         x -> x .<= first(realized_timestamps),
         existing_timestamps,
     )]
-    result_end_time = existing_timestamps[findlast(
+    output_end_time = existing_timestamps[findlast(
         x -> x .<= last(realized_timestamps),
         existing_timestamps,
     )]
 
-    len = length(result_start_time:interval:result_end_time)
+    len = length(output_start_time:interval:output_end_time)
 
-    start_offset = length(result_start_time:resolution:first(realized_timestamps))
+    start_offset = length(output_start_time:resolution:first(realized_timestamps))
     end_offset = length(
-        (last(realized_timestamps) + resolution):resolution:(result_end_time + interval - resolution),
+        (last(realized_timestamps) + resolution):resolution:(output_end_time + interval - resolution),
     )
 
     return RealizedMeta(
-        result_start_time,
+        output_start_time,
         resolution,
         len,
         start_offset,
@@ -69,16 +69,16 @@ function _realized_step_bounds(step::Int, meta::RealizedMeta, df::DataFrame, key
 end
 
 function _make_dataframe(
-    results_by_time::OutputsByTime{DataFrame, N},
+    outputs_by_time::OutputsByTime{DataFrame, N},
     num_timestamps::Int,
     meta::RealizedMeta,
     key::OptimizationContainerKey,
     ::Val{TableFormat.LONG},
 ) where {N}
-    @assert !isempty(results_by_time)
+    @assert !isempty(outputs_by_time)
     dfs = DataFrame[]
-    first_cols = names(first(values(results_by_time.data)))
-    for (step, (_, df)) in enumerate(results_by_time)
+    first_cols = names(first(values(outputs_by_time.data)))
+    for (step, (_, df)) in enumerate(outputs_by_time)
         if step > 1 && names(df) != first_cols
             error("Mismatched columns. First df = $(first_cols), other df = $(names(df))")
         end
@@ -100,33 +100,33 @@ function _make_dataframe(
             meta.realized_timestamps,
         ) - 1),
     )
-    result_df = @chain begin
+    output_df = @chain begin
         innerjoin(combined_df, time_df; on = :time_index)
         @select(:DateTime, Not(:DateTime, :time_index))
         @orderby(:DateTime)
     end
 
-    actual_num_timestamps = length(unique(result_df.DateTime))
+    actual_num_timestamps = length(unique(output_df.DateTime))
     if actual_num_timestamps != num_timestamps
         error(
             "Mismatched number of timestamps. Expected $(num_timestamps), got $actual_num_timestamps",
         )
     end
 
-    return result_df
+    return output_df
 end
 
 function _make_dataframe(
-    results_by_time::OutputsByTime{DataFrame, N},
+    outputs_by_time::OutputsByTime{DataFrame, N},
     num_timestamps::Int,
     meta::RealizedMeta,
     key::OptimizationContainerKey,
     ::Val{TableFormat.WIDE},
 ) where {N}
-    @assert !isempty(results_by_time)
+    @assert !isempty(outputs_by_time)
     dfs = DataFrame[]
-    first_cols = names(first(values(results_by_time.data)))
-    for (step, (_, df)) in enumerate(results_by_time)
+    first_cols = names(first(values(outputs_by_time.data)))
+    for (step, (_, df)) in enumerate(outputs_by_time)
         if step > 1 && names(df) != first_cols
             error("Mismatched columns. First df = $(first_cols), other df = $(names(df))")
         end
@@ -152,7 +152,7 @@ function _make_dataframe(
 end
 
 function get_realization(
-    results::Dict{OptimizationContainerKey, OutputsByTime{DataFrame}},
+    outputs::Dict{OptimizationContainerKey, OutputsByTime{DataFrame}},
     meta::RealizedMeta;
     table_format = TableFormat.LONG,
 )
@@ -160,10 +160,10 @@ function get_realization(
     lk = ReentrantLock()
     num_timestamps = length(meta.realized_timestamps)
     start = time()
-    Threads.@threads for key in collect(keys(results))
-        results_by_time = results[key]
+    Threads.@threads for key in collect(keys(outputs))
+        outputs_by_time = outputs[key]
         df = _make_dataframe(
-            results_by_time,
+            outputs_by_time,
             num_timestamps,
             meta,
             key,
@@ -176,8 +176,8 @@ function get_realization(
 
     duration = time() - start
     if Threads.nthreads() == 1 && duration > 10.0
-        @info "Time to read results: $duration seconds. You will likely get faster " *
-              "results by starting Julia with multiple threads."
+        @info "Time to read outputs: $duration seconds. You will likely get faster " *
+              "reads by starting Julia with multiple threads."
     end
     return realized_values
 end

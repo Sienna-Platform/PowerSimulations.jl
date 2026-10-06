@@ -48,11 +48,11 @@
     )
     step2_ic_value = IOM.get_condition(ic)
 
-    results = SimulationResults(sim)
-    uc_results = get_decision_problem_results(results, "UC")
-    set_system!(uc_results, sys)
+    outputs = SimulationOutputs(sim)
+    uc_outputs = get_decision_problem_outputs(outputs, "UC")
+    set_system!(uc_outputs, sys)
     volume = read_realized_variable(
-        uc_results,
+        uc_outputs,
         "HydroReservoirVolumeVariable__HydroReservoir",
     )
     step1_last_volume = volume[24, "value"]

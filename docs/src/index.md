@@ -8,14 +8,14 @@ CurrentModule = PowerSimulations
 
 `PowerSimulations.jl` (PSI) is the **simulation orchestration** package of the Sienna psy6
 line. It runs optimization models in a loop over time, keeps simulation state, updates
-parameters and initial conditions between solves, stores results, and reads them back. It does
+parameters and initial conditions between solves, stores outputs, and reads them back. It does
 not build optimization models.
 
 Model building belongs to two upstream packages:
 
   - [`InfrastructureOptimizationModels.jl`](https://github.com/Sienna-Platform/InfrastructureOptimizationModels.jl) (IOM) — the domain-neutral optimization
     core: `OptimizationContainer`, `DecisionModel`, `EmulationModel`, settings, per-model
-    stores, datasets, results types, objective functions.
+    stores, datasets, outputs types, objective functions.
   - [`PowerOperationsModels.jl`](https://sienna-platform.github.io/PowerOperationsModels.jl/dev/) (POM) — power formulations: every device, service,
     network, HVDC, storage, and hydro formulation, `PowerOperationsProblemTemplate`, the
     problem-type chain, per-model `build!`/`solve!`/`run!`, feedforward types, parameter
@@ -36,7 +36,7 @@ PSI owns:
     execution order, and feedforward attachment.
   - `SimulationState` — the state passed between solves.
   - Parameter and initial-condition updates between solves.
-  - `HdfSimulationStore` / `InMemorySimulationStore`, results, realized results, partitions,
+  - `HdfSimulationStore` / `InMemorySimulationStore`, outputs, realized outputs, partitions,
     and recorder events.
 
 If a change needs `SimulationState`, a `SimulationStore`, or knowledge of more than one

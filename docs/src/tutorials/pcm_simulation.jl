@@ -7,7 +7,7 @@
 # ## Introduction
 #
 # PowerSimulations.jl supports simulations that consist of sequential optimization problems
-# where results from previous problems inform subsequent problems in a variety of ways. This
+# where outputs from previous problems inform subsequent problems in a variety of ways. This
 # example demonstrates some of these capabilities to represent electricity market clearing.
 # `PowerSimulations.jl` re-exports the device, service, and network formulations from
 # `PowerOperationsModels.jl`, so a single `using PowerSimulations` is enough to build the
@@ -187,62 +187,62 @@ build!(sim)
 # ### Execute simulation
 #
 # the following command returns the status of the simulation (`SimulationBuildStatus.BUILT`
-# is proper execution) and stores the results in a set of HDF5 files on disk.
+# is proper execution) and stores the outputs in a set of HDF5 files on disk.
 
 execute!(sim; enable_progress_bar = false)
 
-# ## Results
+# ## Outputs
 #
-# To access the results, we need to load the simulation result metadata and then make
+# To access the outputs, we need to load the simulation outputs metadata and then make
 # requests to the specific data of interest. This allows you to efficiently access the
-# results of interest without overloading resources.
+# outputs of interest without overloading resources.
 
-results = SimulationResults(sim);
-uc_results = get_decision_problem_results(results, "UC"); # UC stage result metadata
-ed_results = get_decision_problem_results(results, "ED"); # ED stage result metadata
+outputs = SimulationOutputs(sim);
+uc_outputs = get_decision_problem_outputs(outputs, "UC"); # UC stage outputs metadata
+ed_outputs = get_decision_problem_outputs(outputs, "ED"); # ED stage outputs metadata
 
-# We can read all the result variables
+# We can read all the output variables
 
-read_variables(uc_results)
+read_variables(uc_outputs)
 
 # or all the parameters
 
-read_parameters(uc_results)
+read_parameters(uc_outputs)
 
-# We can just list the variable names contained in `uc_results`:
+# We can just list the variable names contained in `uc_outputs`:
 
-list_variable_names(uc_results)
+list_variable_names(uc_outputs)
 
 # and a number of parameters (this pattern also works for aux_variables, expressions, and duals)
 
-list_parameter_names(uc_results)
+list_parameter_names(uc_outputs)
 
-# Now we can read the specific results of interest for a specific problem, time window (optional),
+# Now we can read the specific outputs of interest for a specific problem, time window (optional),
 # and set of variables, duals, or parameters (optional)
 
 Dict([
-    v => read_variable(ed_results, v) for v in [
+    v => read_variable(ed_outputs, v) for v in [
         "ActivePowerVariable__RenewableDispatch",
         "ActivePowerVariable__ThermalStandard",
     ]
 ])
 
-# Or if we want the result of just one variable, parameter, or dual (must be defined in the
+# Or if we want the output of just one variable, parameter, or dual (must be defined in the
 # problem definition), we can use:
 
 read_parameter(
-    ed_results,
+    ed_outputs,
     "ActivePowerTimeSeriesParameter__RenewableDispatch";
     len = 2,
 )
 
 # !!! info
 #
-# note that this returns the results of each execution step in a separate dataframe
-# If you want the realized results (without lookahead periods), you can call `read_realized_*`:
+# note that this returns the outputs of each execution step in a separate dataframe
+# If you want the realized outputs (without lookahead periods), you can call `read_realized_*`:
 
 read_realized_variables(
-    uc_results,
+    uc_outputs,
     ["ActivePowerVariable__ThermalStandard"],
 )
 rm(path; force = true, recursive = true) #hide

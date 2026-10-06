@@ -14,9 +14,9 @@ abstract type SimulationStore end
 # - list_emulation_model_keys(store::SimulationStore, container_type::Symbol)
 # - list_decision_models(store::SimulationStore)
 # - log_cache_hit_percentages(store::SimulationStore)
-# - write_result!
-# - read_result!
-# - read_results
+# - write_output!
+# - read_output
+# - read_outputs
 # - write_optimizer_stats!
 # - read_optimizer_stats
 # - get_dm_data

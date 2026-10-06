@@ -7,7 +7,7 @@ end
 
 # API Reference
 
-This page documents PSI's own API: simulation orchestration, results, and stores. For device,
+This page documents PSI's own API: simulation orchestration, outputs, and stores. For device,
 service, and network formulations, problem templates, and single-model `build!`/`solve!`, see
 the [`PowerOperationsModels.jl`](https://sienna-platform.github.io/PowerOperationsModels.jl/dev/)
 documentation. For the optimization core (`OptimizationContainer`, datasets, per-model stores),
@@ -106,7 +106,7 @@ Private = false
 
 ```@autodocs
 Modules = [PowerSimulations]
-Pages   = ["simulation_partitions.jl", "simulation_partition_results.jl"]
+Pages   = ["simulation_partitions.jl", "simulation_partition_outputs.jl"]
 Order = [:type, :function]
 Public = true
 Private = false
@@ -114,16 +114,16 @@ Private = false
 
 * * *
 
-## Results
+## Outputs
 
-### Accessing Simulation Results
+### Accessing Simulation Outputs
 
 ```@autodocs
 Modules = [PowerSimulations]
-Pages   = ["simulation_results.jl",
-            "simulation_problem_results.jl",
-            "decision_model_simulation_results.jl",
-            "emulation_model_simulation_results.jl",
+Pages   = ["simulation_outputs.jl",
+            "simulation_problem_outputs.jl",
+            "decision_model_simulation_outputs.jl",
+            "emulation_model_simulation_outputs.jl",
             "realized_meta.jl",
            ]
 Order = [:type, :function]
@@ -131,11 +131,11 @@ Public = true
 Private = false
 ```
 
-### Exporting Results
+### Exporting Outputs
 
 ```@autodocs
 Modules = [PowerSimulations]
-Pages   = ["simulation_results_export.jl"]
+Pages   = ["simulation_outputs_export.jl"]
 Order = [:type, :function]
 Public = true
 Private = false

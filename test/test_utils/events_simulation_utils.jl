@@ -107,8 +107,8 @@ function run_fixed_forced_outage_sim_with_timeseries(;
     @test build_out == SimulationBuildStatus.BUILT
     execute_out = execute!(sim; in_memory = true)
     @test execute_out == IOM.RunStatus.SUCCESSFULLY_FINALIZED
-    results = SimulationResults(sim; ignore_status = true)
-    return results
+    outputs = SimulationOutputs(sim; ignore_status = true)
+    return outputs
 end
 
 function run_events_simulation(;
@@ -238,11 +238,11 @@ function run_events_simulation(;
     @test build_out == SimulationBuildStatus.BUILT
     execute_out = execute!(sim; in_memory = in_memory)
     @test execute_out == IOM.RunStatus.SUCCESSFULLY_FINALIZED
-    results = SimulationResults(sim; ignore_status = true)
-    return results
+    outputs = SimulationOutputs(sim; ignore_status = true)
+    return outputs
 end
 
-function test_event_results(;
+function test_event_outputs(;
     res,
     outage_time,
     outage_length,
@@ -250,7 +250,7 @@ function test_event_results(;
     expected_on_variable_recovery,
     test_reactive_power = false,
 )
-    em = get_emulation_problem_results(res)
+    em = get_emulation_problem_outputs(res)
     p = read_realized_variable(
         em,
         "ActivePowerVariable__ThermalStandard";

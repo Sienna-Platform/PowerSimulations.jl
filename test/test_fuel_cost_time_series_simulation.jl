@@ -66,8 +66,8 @@
     @test execute!(sim; enable_progress_bar = false) ==
           PSI.RunStatus.SUCCESSFULLY_FINALIZED
 
-    sim_res = SimulationResults(sim)
-    res = get_decision_problem_results(sim_res, "UC")
+    sim_res = SimulationOutputs(sim)
+    res = get_decision_problem_outputs(sim_res, "UC")
     fuel_param = read_parameter(res, PSI.FuelCostParameter, PSY.ThermalStandard)
     @test length(fuel_param) == length(windows)
 

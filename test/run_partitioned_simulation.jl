@@ -62,9 +62,9 @@ function build_simulation(
 
     for sys in [c_sys5_pjm_da, c_sys5_pjm_rt]
         th = get_component(ThermalStandard, sys, "Park City")
-        set_active_power_limits!(th, (min = 0.1 * PSY.SU, max = 1.7 * PSY.SU))
+        set_active_power_limits!(th, (min = 0.1 * u"SU", max = 1.7 * u"SU"))
         set_status!(th, OperationalStates.OFFLINE)
-        set_active_power!(th, 0.0 * PSY.SU)
+        set_active_power!(th, 0.0 * u"SU")
         c = get_operation_cost(th)
         PSY.set_start_up!(c, 1500.0)
         PSY.set_shut_down!(c, 75.0)
@@ -72,36 +72,36 @@ function build_simulation(
 
         th = get_component(ThermalStandard, sys, "Alta")
         set_time_limits!(th, (up = 5, down = 1))
-        set_active_power_limits!(th, (min = 0.05 * PSY.SU, max = 0.4 * PSY.SU))
-        set_active_power!(th, 0.05 * PSY.SU)
+        set_active_power_limits!(th, (min = 0.05 * u"SU", max = 0.4 * u"SU"))
+        set_active_power!(th, 0.05 * u"SU")
         c = get_operation_cost(th)
         PSY.set_start_up!(c, 400.0)
         PSY.set_shut_down!(c, 200.0)
         set_time_at_status!(th, 2)
 
         th = get_component(ThermalStandard, sys, "Brighton")
-        set_active_power_limits!(th, (min = 2.0 * PSY.SU, max = 6.0 * PSY.SU))
+        set_active_power_limits!(th, (min = 2.0 * u"SU", max = 6.0 * u"SU"))
         c = get_operation_cost(th)
-        set_active_power!(th, 4.88041 * PSY.SU)
+        set_active_power!(th, 4.88041 * u"SU")
         PSY.set_start_up!(c, 5000.0)
         PSY.set_shut_down!(c, 3000.0)
 
         th = get_component(ThermalStandard, sys, "Sundance")
-        set_active_power_limits!(th, (min = 1.0 * PSY.SU, max = 2.0 * PSY.SU))
+        set_active_power_limits!(th, (min = 1.0 * u"SU", max = 2.0 * u"SU"))
         set_time_limits!(th, (up = 5, down = 1))
-        set_active_power!(th, 2.0 * PSY.SU)
+        set_active_power!(th, 2.0 * u"SU")
         c = get_operation_cost(th)
         PSY.set_start_up!(c, 4000.0)
         PSY.set_shut_down!(c, 2000.0)
         set_time_at_status!(th, 1)
 
         th = get_component(ThermalStandard, sys, "Solitude")
-        set_active_power_limits!(th, (min = 1.0 * PSY.SU, max = 5.2 * PSY.SU))
+        set_active_power_limits!(th, (min = 1.0 * u"SU", max = 5.2 * u"SU"))
         set_ramp_limits!(
             th,
-            (up = 0.0052 * PSY.SU / u"minute", down = 0.0052 * PSY.SU / u"minute"),
+            (up = 0.0052 * u"SU" / u"minute", down = 0.0052 * u"SU" / u"minute"),
         )
-        set_active_power!(th, 2.0 * PSY.SU)
+        set_active_power!(th, 2.0 * u"SU")
         c = get_operation_cost(th)
         PSY.set_start_up!(c, 3000.0)
         PSY.set_shut_down!(c, 1500.0)
@@ -109,12 +109,12 @@ function build_simulation(
         set_status!(th, OperationalStates.ONLINE)
     end
 
-    to_json(
+    PSY.to_file(
         c_sys5_pjm_da,
         joinpath(output_dir, "PSI-5-BUS-UC-ED/c_sys5_pjm_da.json");
         force = true,
     )
-    to_json(
+    PSY.to_file(
         c_sys5_pjm_rt,
         joinpath(output_dir, "PSI-5-BUS-UC-ED/c_sys5_pjm_rt.json");
         force = true,

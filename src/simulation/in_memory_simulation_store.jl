@@ -62,7 +62,7 @@ function list_decision_model_keys(
     container_type::Symbol,
 )
     return collect(
-        keys(get_data_field(_get_model_results(store, model_name), container_type)),
+        keys(get_data_field(_get_model_outputs(store, model_name), container_type)),
     )
 end
 
@@ -70,7 +70,7 @@ function list_emulation_model_keys(store::InMemorySimulationStore, container_typ
     return collect(keys(get_data_field(store.em_data, container_type)))
 end
 
-function write_result!(
+function write_output!(
     store::InMemorySimulationStore,
     model_name::Symbol,
     key::OptimizationContainerKey,
@@ -89,7 +89,7 @@ function write_result!(
     return
 end
 
-function write_result!(
+function write_output!(
     store::InMemorySimulationStore,
     model_name::Symbol,
     key::OptimizationContainerKey,
@@ -152,7 +152,7 @@ function get_column_names(
     return get_column_names(get_dm_data(store)[model_name], key)
 end
 
-function read_result(
+function read_output(
     ::Type{DenseAxisArray},
     store::InMemorySimulationStore,
     model_name::Symbol,
@@ -162,7 +162,7 @@ function read_result(
     return read_outputs(get_dm_data(store)[model_name], key; index = index)
 end
 
-function read_result(
+function read_output(
     ::Type{Array},
     store::InMemorySimulationStore,
     model_name::Symbol,
@@ -174,7 +174,7 @@ function read_result(
     )
 end
 
-function read_result(
+function read_output(
     ::Type{DenseAxisArray},
     store::InMemorySimulationStore,
     ::Symbol,
@@ -184,7 +184,7 @@ function read_result(
     return read_outputs(get_em_data(store), key; index = index)
 end
 
-function read_results(
+function read_outputs(
     store::InMemorySimulationStore,
     key::OptimizationContainerKey;
     index::EmulationModelIndexType = nothing,
@@ -201,15 +201,15 @@ function get_emulation_model_dataset_size(
 end
 
 # Note that this function is not type-stable.
-function _get_model_results(store::InMemorySimulationStore, model_name::Symbol)
+function _get_model_outputs(store::InMemorySimulationStore, model_name::Symbol)
     if model_name in keys(get_dm_data(store))
-        results = get_dm_data(store)
+        outputs = get_dm_data(store)
     else
         # TODO EmulationModel: this interface is TBD
         error("model name $model_name is not stored")
     end
 
-    return results[model_name]
+    return outputs[model_name]
 end
 
 function write_optimizer_stats!(
@@ -234,4 +234,16 @@ function write_optimizer_stats!(
     return
 end
 
-write_system_json!(::InMemorySimulationStore, ::String, ::String) = nothing
+"""
+No-op: `InMemorySimulationStore`'s parameters stay in memory in its own per-model dataset
+(R19); there is no bundle sidecar to materialize them into.
+"""
+finalize_parameters!(::InMemorySimulationStore) = nothing
+
+# Parameters never leave this store's per-key storage (R19), so there is nothing to recast.
+buffer_parameter_inputs!(
+    ::InMemorySimulationStore,
+    ::IOM.AbstractOptimizationModel,
+    ::Union{DecisionModelIndexType, EmulationModelIndexType},
+    ::Dates.DateTime,
+) = nothing

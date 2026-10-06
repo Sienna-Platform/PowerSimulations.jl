@@ -8,7 +8,7 @@ This section contains instructions to:
 ## Run a Simulation in Parallel on a local computer
 
 This page describes how to split a simulation into partitions, run each partition in parallel,
-and then join the results.
+and then join the outputs.
 
 ### Setup
 
@@ -81,31 +81,31 @@ julia> run_parallel_simulation(
     )
 ```
 
-The final results will be in `./my_simulation_output/my_simulation`
+The final outputs will be in `./my_simulation_output/my_simulation`
 
-Note the log files and results for each partition are located in
+Note the log files and outputs for each partition are located in
 `./my_simulation_output/my_simulation/simulation_partitions`
 
 ### Failed partitions
 
 If any partition fails, the join step throws an exception and records a failed status in
-`./my_simulation_output/my_simulation/results/status.json`. Each failed partition, along
+`./my_simulation_output/my_simulation/outputs/status.json`. Each failed partition, along
 with the simulation steps that it covers, is logged in
 `./my_simulation_output/my_simulation/logs/join_partitioned_simulation.log`.
 
-If you want to inspect the results of the successful partitions, join them by skipping the
+If you want to inspect the outputs of the successful partitions, join them by skipping the
 failed partitions, as shown below. The status of the simulation remains a failure and the
-results of the steps that were covered by the failed partitions are invalid.
+outputs of the steps that were covered by the failed partitions are invalid.
 
 ```
 julia> PowerSimulations.join_simulation("my_simulation_output/my_simulation"; skip_failures=true)
-julia> results = SimulationResults("my_simulation_output/my_simulation"; ignore_status=true)
+julia> outputs = SimulationOutputs("my_simulation_output/my_simulation"; ignore_status=true)
 ```
 
 ## Run a Simulation in Parallel on an HPC
 
 This page describes how to split a simulation into partitions, run each partition in parallel
-on HPC compute nodes, and then join the results.
+on HPC compute nodes, and then join the outputs.
 
 These steps can be used on a local computer or any HPC supported by the submission software.
 Some steps may be specific to NREL's HPC `Eagle` cluster.
@@ -290,22 +290,22 @@ Jade will create HTML plots of the resource utilization in `output/stats`. You m
 `--per-node-batch-size` and `--num-processes` to finish the simulations more quickly.
 
  5. Jade will run a final command to join the simulation partitions into one unified file. You can load the
-    results as you normally would.
+    outputs as you normally would.
 
 ```
-julia> results = SimulationResults("<output-dir>/job-outputs/<simulation-name>")
+julia> outputs = SimulationOutputs("<output-dir>/job-outputs/<simulation-name>")
 ```
 
-Note the log files and results for each partition are located in
+Note the log files and outputs for each partition are located in
 `<output-dir>/job-outputs/<simulation-name>/simulation_partitions`
 
 If any partition fails, the join command fails and records a failed status in
-`<output-dir>/job-outputs/<simulation-name>/results/status.json`. Each failed partition,
+`<output-dir>/job-outputs/<simulation-name>/outputs/status.json`. Each failed partition,
 along with the simulation steps that it covers, is logged in
 `<output-dir>/job-outputs/<simulation-name>/logs/join_partitioned_simulation.log`.
 Re-run the command with the `--skip-failures` option to skip the failed partitions and merge
-the results of the successful ones. The status of the simulation remains a failure, so the
-results must be loaded with `SimulationResults(path; ignore_status=true)`.
+the outputs of the successful ones. The status of the simulation remains a failure, so the
+outputs must be loaded with `SimulationOutputs(path; ignore_status=true)`.
 
 ```
 $ julia --project=<path> my_simulation.jl join --simulation-name=<simulation-name> --output-dir=<output-dir>/job-outputs --skip-failures
