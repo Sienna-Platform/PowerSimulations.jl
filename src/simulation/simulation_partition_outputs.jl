@@ -569,7 +569,7 @@ function _merge_emulation_model_bundle!(
                 pstore,
                 key,
                 array,
-                timestamps,
+                first(timestamps),
                 em_resolution;
                 extra_features = extra_features,
             )

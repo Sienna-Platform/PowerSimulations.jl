@@ -107,7 +107,7 @@ function SimulationOutputs(
         # Shared across every decision and emulation output below (R30/R31): one System
         # loaded through any of them becomes readable by all the others via
         # `_register_borrowed_stores!`.
-        system_registry = Dict{Base.UUID, POM.ParameterTimeSeriesStore}()
+        system_registry = Dict{Base.UUID, IS.Store}()
         for (name, problem_params) in sim_params.decision_models_params
             name = string(name)
             problem_output = SimulationProblemOutputs(
@@ -164,7 +164,7 @@ function SimulationOutputs(sim::Simulation; ignore_status = false, kwargs...)
     # `_register_borrowed_stores!`. Constructed empty here -- the `system` kwarg below is
     # each model's live, in-memory System, which predates `finalize_parameters!` and is not
     # registered (see `set_system!`); only a later `get_system!` reload populates this.
-    system_registry = Dict{Base.UUID, POM.ParameterTimeSeriesStore}()
+    system_registry = Dict{Base.UUID, IS.Store}()
     for (name, problem_params) in sim_params.decision_models_params
         model = get_simulation_model(models, name)
         name = string(name)

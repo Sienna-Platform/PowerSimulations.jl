@@ -1171,7 +1171,7 @@ end
     input_keys = [
         k for
         (k, pc) in IOM.get_parameters(IOM.get_optimization_container(from_original)) if
-        POM.is_input_parameter(k, pc)
+        POM.is_input_parameter(pc)
     ]
     @test !isempty(input_keys)
     for k in input_keys

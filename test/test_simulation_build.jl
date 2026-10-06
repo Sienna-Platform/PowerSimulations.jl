@@ -401,13 +401,13 @@ end
     expected_executions = num_executions * num_steps
 
     key = IOM.ParameterKey(POM.ActivePowerTimeSeriesParameter, PSY.PowerLoad)
-    pstore = POM.open_parameter_store(sidecar)
+    pstore = IS.open_infrastore_store(sidecar)
     windows = POM.read_parameter_windows(
         pstore,
         key;
         extra_features = Dict{String, Any}("model" => "UC"),
     )
-    POM.close_parameter_store!(pstore)
+    IS.close!(pstore)
     @test !isempty(windows)
     label, per_time = first(windows)
     @test length(per_time) == expected_executions

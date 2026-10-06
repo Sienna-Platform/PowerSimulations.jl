@@ -439,7 +439,7 @@ end
 end
 
 @testset "_write_decision_model_inputs! warns instead of silently dropping new windows" begin
-    store = POM.ParameterTimeSeriesStore()
+    store = IS.Store(; in_memory = true)
     t0 = Dates.DateTime(2024, 1, 1)
     resolution = Dates.Hour(1)
     interval = Dates.Hour(24)
@@ -466,5 +466,5 @@ end
     ts = POM.read_input_time_series(store, row)
     @test collect(keys(IS.get_data(ts))) == [t0]
     @test IS.get_data(ts)[t0] == collect(1.0:24.0)
-    POM.close_parameter_store!(store)
+    IS.close!(store)
 end

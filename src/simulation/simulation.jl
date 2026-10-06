@@ -1262,10 +1262,10 @@ function _write_system_bundles!(sim::Simulation)
         sys = get_system(model)
         bundle_dir = joinpath(IOM.get_output_dir(model), IOM.make_system_dirname(sys))
         ispath(bundle_dir) && continue
-        store = POM.ParameterTimeSeriesStore()
+        store = IS.Store(; in_memory = true)
         key_map = POM.copy_cost_time_series!(store, sys, _planned_run_windows(sim, model))
         POM.write_outputs_system_bundle!(sys, store, key_map, bundle_dir)
-        POM.close_parameter_store!(store)
+        IS.close!(store)
     end
     return
 end

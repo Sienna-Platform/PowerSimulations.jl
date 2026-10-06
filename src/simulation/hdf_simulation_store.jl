@@ -67,7 +67,7 @@ mutable struct HdfSimulationStore <: SimulationStore
     # sidecar (InfraStore allows only one) -- and never closes it, since it is owned by the
     # caller's `System`, not by this store. Empty by default: a store with no caller-registered
     # System behaves exactly as before.
-    borrowed_parameter_stores::Dict{Base.UUID, POM.ParameterTimeSeriesStore}
+    borrowed_parameter_stores::Dict{Base.UUID, IS.Store}
 end
 
 get_initial_time(store::HdfSimulationStore) = get_initial_time(store.params)
@@ -123,7 +123,7 @@ function HdfSimulationStore(file_path::AbstractString, mode::AbstractString)
             Dict{String, Dict{Dates.DateTime, Vector{Float64}}},
         }(),
         Dict{IOM.ParameterKey, Dict{String, IS.TimeSeries.TimeArray}}(),
-        Dict{Base.UUID, POM.ParameterTimeSeriesStore}(),
+        Dict{Base.UUID, IS.Store}(),
     )
     mode in ("r", "rw") && _deserialize_attributes!(store)
 
@@ -656,7 +656,7 @@ function _has_borrowed_store(
 )::Bool
     haskey(store.borrowed_parameter_stores, uuid) || return false
     borrowed = store.borrowed_parameter_stores[uuid]
-    return IS.get_file_path(borrowed.store) == abspath(sidecar_path)
+    return IS.get_file_path(borrowed) == abspath(sidecar_path)
 end
 
 """
@@ -687,11 +687,11 @@ open/try/finally/close is also what `_with_parameter_store(f, store, uuid, ...)`
 once no borrowed store applies.
 """
 function _with_parameter_store(f, sidecar_path::AbstractString)
-    pstore = POM.open_parameter_store(sidecar_path)
+    pstore = IS.open_infrastore_store(sidecar_path)
     try
         return f(pstore)
     finally
-        POM.close_parameter_store!(pstore)
+        IS.close!(pstore)
     end
 end
 
@@ -1610,7 +1610,7 @@ function _buffer_parameter_inputs!(
     model_name = get_name(model)
     sys = get_system(model)
     for (key, pc) in get_parameters(get_optimization_container(model))
-        POM.is_input_parameter(key, pc) || continue
+        POM.is_input_parameter(pc) || continue
         get!(store.input_descriptors, (model_name, key)) do
             POM.input_series_descriptor(sys, key, pc)
         end
@@ -1726,14 +1726,9 @@ function _emulation_bundle_dir(store::HdfSimulationStore)
 end
 
 """
-Write one decision-model parameter's realized windows into `pstore`, one `Deterministic` per
-axis-1 label. A 3-D window set has no `Deterministic` counterpart, so it is sliced per axis-2
-label into 2-D windows, each written with `"axis2"` added to `extra_features` (mirrors how POM's
-3-D `write_parameter_array!` names that feature; time is the last axis in both).
-
-`windows`' declared value type is the loosely-typed `DenseAxisArray{Float64}` buffered by
-`write_output!` (any `N`), so dispatch reads the concrete dimensionality off one representative
-window rather than off the `Dict`'s own (non-concrete) value type parameter.
+Write one decision-model parameter's realized windows into `pstore`. POM slices a 3-D window set
+per axis-2 label. `windows` holds the loosely-typed `DenseAxisArray{Float64}` that `write_output!`
+buffers, so dispatch reads the dimensionality off one window and rebuilds a concrete `Dict`.
 """
 function _write_parameter_windows!(
     pstore,
@@ -1757,13 +1752,13 @@ end
 function _write_parameter_windows!(
     pstore,
     key::IOM.ParameterKey,
-    ::DenseAxisArray{Float64, 2},
+    ::DenseAxisArray{Float64, N},
     windows::AbstractDict{Dates.DateTime, DenseAxisArray{Float64}},
     resolution::Dates.Period,
     interval::Dates.Period,
     model_name::Symbol,
-)
-    concrete_windows = Dict{Dates.DateTime, DenseAxisArray{Float64, 2}}(
+) where {N}
+    concrete_windows = Dict{Dates.DateTime, DenseAxisArray{Float64, N}}(
         initial_time => window for (initial_time, window) in windows
     )
     POM.write_parameter_windows!(
@@ -1774,35 +1769,6 @@ function _write_parameter_windows!(
         interval;
         extra_features = Dict{String, Any}("model" => string(model_name)),
     )
-    return nothing
-end
-
-function _write_parameter_windows!(
-    pstore,
-    key::IOM.ParameterKey,
-    ::DenseAxisArray{Float64, 3},
-    windows::AbstractDict{Dates.DateTime, DenseAxisArray{Float64}},
-    resolution::Dates.Period,
-    interval::Dates.Period,
-    model_name::Symbol,
-)
-    labels2 = axes(first(values(windows)), 2)
-    for label2 in labels2
-        sliced = Dict{Dates.DateTime, DenseAxisArray{Float64, 2}}(
-            initial_time => window[:, label2, :] for (initial_time, window) in windows
-        )
-        POM.write_parameter_windows!(
-            pstore,
-            key,
-            sliced,
-            resolution,
-            interval;
-            extra_features = Dict{String, Any}(
-                "model" => string(model_name),
-                "axis2" => string(label2),
-            ),
-        )
-    end
     return nothing
 end
 
@@ -1896,7 +1862,7 @@ function _finalize_emulation_model!(
                     pstore,
                     key,
                     array,
-                    timestamps,
+                    first(timestamps),
                     resolution;
                     extra_features = Dict{String, Any}("model" => string(model_name)),
                 )
@@ -1910,8 +1876,8 @@ function _finalize_emulation_model!(
         for (key, values_by_time) in input_values_by_key
             timestamps, array = _em_dense_array(values_by_time)
             POM.write_input_series!(
-                pstore, store.input_descriptors[(model_name, key)], array, timestamps,
-                resolution,
+                pstore, store.input_descriptors[(model_name, key)], array,
+                first(timestamps), resolution,
             )
         end
     end

@@ -29,7 +29,7 @@ mutable struct SimulationProblemOutputs{T} <:
     # `get_system!`, is registered here under its uuid so a sibling output (e.g. the Emulator,
     # which borrows a decision model's bundle -- R31) can read that bundle's already-open
     # store instead of opening a second, colliding handle to the same sidecar file.
-    system_registry::Dict{Base.UUID, POM.ParameterTimeSeriesStore}
+    system_registry::Dict{Base.UUID, IS.Store}
 end
 
 function SimulationProblemOutputs{T}(
@@ -41,7 +41,7 @@ function SimulationProblemOutputs{T}(
     vals::T;
     output_path = nothing,
     system = nothing,
-    system_registry = Dict{Base.UUID, POM.ParameterTimeSeriesStore}(),
+    system_registry = Dict{Base.UUID, IS.Store}(),
 ) where {T <: OperationModelSimulationOutputs}
     if isnothing(output_path)
         output_path = joinpath(path, OUTPUTS_DIR)
