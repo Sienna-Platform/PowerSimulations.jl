@@ -280,13 +280,13 @@ function _populate_system_in_outputs!(
         end
 
         # PowerSystems (psy6) removed the system-wide unit-base mode this used to set via
-        # `set_units_base_system!`; getters now take an explicit unit system (PSY.SU/DU/NU)
+        # `set_units_base_system!`; getters now take an explicit unit system (u"SU"/DU/NU)
         # per call. Error loudly rather than silently ignoring a caller's request.
         if !isnothing(populate_units)
             error(
                 "populate_units is not supported: PowerSystems no longer has a system-wide " *
                 "unit base. Pass the desired unit system explicitly to each accessor instead " *
-                "(e.g. PSY.get_rating(component, PSY.SU)).",
+                "(e.g. PSY.get_rating(component, u\"SU\")).",
             )
         end
 
