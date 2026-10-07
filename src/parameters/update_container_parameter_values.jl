@@ -127,13 +127,7 @@ function _update_parameter_values!(
     model_interval = get_interval(get_settings(model))
     ts_interval = model_interval
 
-    network_model = get_network_model(get_template(model))
-    net_reduction_data = network_model.network_reduction
-    all_branch_maps_by_type = PNM.get_all_branch_maps_by_type(net_reduction_data)
-
-    if !haskey(net_reduction_data.name_to_arc_map, V)
-        return
-    end
+    catalog = POM.get_branch_catalog(get_network_model(get_template(model)))
 
     # Hoist the underlying dense storage and per-component name lookup once so each
     # write skips DenseAxisArray's String-keyed axis lookup.
@@ -141,13 +135,10 @@ function _update_parameter_values!(
     name_lookup = parameter_array.lookup[1]
 
     ts_uuids_updated = Set{String}()
-    for (name, (arc, reduction)) in PNM.get_name_to_arc_map(net_reduction_data, V)
-        reduction_entry = all_branch_maps_by_type[reduction][V][arc]
-        if !PNM.has_time_series(reduction_entry, U, ts_name)
-            continue
-        end
-        device_with_time_series =
-            PNM.get_device_with_time_series(reduction_entry, U, ts_name)
+    for (name, arc) in PNM.get_name_to_arc_map(catalog, V)
+        device_with_time_series = PNM.get_device_with_time_series(
+            PNM.get_reduction_entry(catalog, arc), U, ts_name)
+        device_with_time_series === nothing && continue
         ts_uuid = _get_ts_uuid(attributes, name)
         if ts_uuid in ts_uuids_updated
             continue
