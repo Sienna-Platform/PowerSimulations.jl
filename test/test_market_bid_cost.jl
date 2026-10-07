@@ -189,10 +189,16 @@ function run_startup_shutdown_test(
     simulation = true,
     in_memory_store::Bool = false,
 )
+    # The decisions are compared across two solves, so a nonzero MIP gap lets them differ.
     model, res = if simulation
-        run_generic_mbc_sim(sys; multistart = multistart, in_memory_store = in_memory_store)
+        run_generic_mbc_sim(
+            sys;
+            multistart = multistart,
+            in_memory_store = in_memory_store,
+            optimizer = HiGHS_optimizer_exact,
+        )
     else
-        run_generic_mbc_prob(sys; multistart = multistart)
+        run_generic_mbc_prob(sys; multistart = multistart, optimizer = HiGHS_optimizer_exact)
     end
 
     # Test correctness of written shutdown cost parameters
@@ -384,7 +390,7 @@ function run_startup_shutdown_obj_fun_test(
     all_decisions1 = (decisions1..., nullable_decisions1...)
     all_decisions2 = (decisions2..., nullable_decisions2...)
 
-    if !all(isapprox.(decisions1, decisions2; atol = 1))
+    if !all(isapprox.(all_decisions1, all_decisions2; atol = 1))
         @error all_decisions1
         @error all_decisions2
         # Given the solver tolerance, this method can result in up to 1 change in the commitment result
