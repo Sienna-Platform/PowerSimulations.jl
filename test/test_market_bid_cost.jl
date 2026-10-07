@@ -384,7 +384,7 @@ function run_startup_shutdown_obj_fun_test(
     all_decisions1 = (decisions1..., nullable_decisions1...)
     all_decisions2 = (decisions2..., nullable_decisions2...)
 
-    if !all(isapprox.(all_decisions1, all_decisions2; atol = 1))
+    if !all(isapprox.(decisions1, decisions2; atol = 1))
         @error all_decisions1
         @error all_decisions2
         # Given the solver tolerance, this method can result in up to 1 change in the commitment result
