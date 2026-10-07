@@ -437,11 +437,14 @@ function _push_component_buses!(buses::Set{Int64}, device::PSY.StaticInjection)
     return
 end
 
-# Drop (and warn about) any branch type whose components were all merged away by the
-# reduction — e.g. a lone zero-impedance monitored line. Such a type has no surviving
-# arc in `name_to_arc_map`, so building its flow vars/constraints would fail. Absence
-# from the map alone is not enough: types that never use it (e.g. HVDC) are also
-# absent, so we prune only when an endpoint bus was actually removed by the reduction.
+# Only AC transmission types appear in PNM's `name_to_arc_map`. Other branches
+# (e.g. two-terminal HVDC) are remapped to the surviving bus instead.
+_tracked_in_name_to_arc_map(::Type{<:PSY.Branch}) = false
+_tracked_in_name_to_arc_map(::Type{<:PSY.ACTransmission}) = true
+
+# Drop (and warn about) any AC transmission type whose components were all merged away
+# by the reduction — e.g. a lone zero-impedance monitored line. Such a type has no
+# surviving arc in `name_to_arc_map`, so building its flow vars/constraints would fail.
 # Uncommon; `model_all_branches` keeps such lines instead.
 function _prune_fully_reduced_branch_models!(
     network_model::NetworkModel,
@@ -455,6 +458,7 @@ function _prune_fully_reduced_branch_models!(
     name_to_arc_maps = PNM.get_name_to_arc_maps(network_model.network_reduction)
     pruned = DataType[]
     for branch_type in network_model.modeled_ac_branch_types
+        _tracked_in_name_to_arc_map(branch_type) || continue
         survived = get(name_to_arc_maps, branch_type, nothing)
         isnothing(survived) || isempty(survived) || continue
         buses = Set{Int64}()

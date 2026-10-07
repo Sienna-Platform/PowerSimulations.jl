@@ -1057,3 +1057,48 @@ end
     @test occursin("MonitoredLine(s) [\"1\"]", log_contents)
     @test occursin("model_all_branches", log_contents)
 end
+
+# Regression test for #1682.
+@testset "TwoTerminalGenericHVDCLine kept when reduction merges an endpoint bus" begin
+    sys = PSB.build_system(PSITestSystems, "c_sys5")
+    # Line "5" is 3 -> 4 and line "3" is 1 -> 5; only the former touches a merged bus.
+    for name in ("5", "3")
+        line = PSY.get_component(Line, sys, name)
+        PSY.remove_component!(sys, line)
+        PSY.add_component!(
+            sys,
+            TwoTerminalGenericHVDCLine(;
+                name = name,
+                available = true,
+                active_power_flow = 0.0,
+                arc = PSY.get_arc(line),
+                active_power_limits_from = (min = -1.0, max = 1.0),
+                active_power_limits_to = (min = -1.0, max = 1.0),
+                reactive_power_limits_from = (min = 0.0, max = 0.0),
+                reactive_power_limits_to = (min = 0.0, max = 0.0),
+            ),
+        )
+    end
+    # Near-zero impedance on line "4" (2 -> 3) merges bus 3 away.
+    zib = PSY.get_component(Line, sys, "4")
+    PSY.set_r!(zib, 0.0)
+    PSY.set_x!(zib, 1e-5)
+
+    template = get_thermal_dispatch_template_network(NetworkModel(PTDFPowerModel))
+    model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+
+    reduction = PSI.get_network_reduction(PSI.get_network_model(PSI.get_template(model)))
+    surviving_bus = PNM.get_mapped_bus_number(reduction, 3)
+    @test surviving_bus != 3
+    container = PSI.get_optimization_container(model)
+    flow = PSI.get_variable(
+        container,
+        FlowActivePowerVariable(),
+        TwoTerminalGenericHVDCLine,
+    )
+    @test Set(axes(flow)[1]) == Set(["5", "3"])
+    balance = PSI.get_expression(container, PSI.ActivePowerBalance(), ACBus)
+    @test JuMP.coefficient(balance[surviving_bus, 1], flow["5", 1]) != 0.0
+end
