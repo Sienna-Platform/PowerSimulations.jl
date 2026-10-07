@@ -262,6 +262,35 @@ end
     end
 end
 
+@testset "HVDCTwoTerminalLossless terminal limits" begin
+    sys = PSB.build_system(PSITestSystems, "c_sys14_dc")
+    hvdc = PSY.get_component(TwoTerminalGenericHVDCLine, sys, "DCLine3")
+    for (from, to, expected) in (
+        ((-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0)),
+        ((0.0, 1.0), (-1.0, 0.0), (0.0, 1.0)),
+        ((-1.0, 0.0), (0.0, 1.0), (-1.0, 0.0)),
+        ((-2.0, 1.0), (-0.8, 1.5), (-1.5, 0.8)),
+        ((0.2, 1.0), (-0.8, -0.3), (0.3, 0.8)),
+        ((-1.0, -0.2), (0.3, 0.8), (-0.8, -0.3)),
+        ((0.5, 0.5), (-0.5, -0.5), (0.5, 0.5)),
+        ((0.0, 0.0), (-1.0, 1.0), (0.0, 0.0)),
+        ((0.0, 1.0), (0.0, 1.0), (0.0, 0.0)),
+    )
+        set_active_power_limits_from!(hvdc, (min = from[1], max = from[2]))
+        set_active_power_limits_to!(hvdc, (min = to[1], max = to[2]))
+        @test PSI._get_flow_bounds(hvdc) == expected
+    end
+    for (from, to) in (
+        ((0.2, 1.0), (0.2, 1.0)),
+        ((0.5, 1.0), (-0.4, 0.0)),
+        ((1.0, 0.0), (-1.0, 0.0)),
+    )
+        set_active_power_limits_from!(hvdc, (min = from[1], max = from[2]))
+        set_active_power_limits_to!(hvdc, (min = to[1], max = to[2]))
+        @test_throws IS.ConflictingInputsError PSI._get_flow_bounds(hvdc)
+    end
+end
+
 @testset "HVDCTwoTerminalLossless values check between network models" begin
     # Test to compare lossless models with lossless formulation
     sys_5 = build_system(PSITestSystems, "c_sys5_uc")
