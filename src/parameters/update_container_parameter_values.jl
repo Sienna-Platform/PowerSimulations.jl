@@ -1,3 +1,9 @@
+# The template model of component type `T`. A market component (a `VirtualParticipant`, a
+# `PointToPointBid`) is registered on the template's market model, not among its devices.
+_component_model(template, ::Type{T}) where {T <: PSY.Component} = get_model(template, T)
+_component_model(template, ::Type{T}) where {T <: PSY.MarketComponent} =
+    IOM.get_market_component_models(IOM.get_market_model(template))[nameof(T)]
+
 function _update_parameter_values!(
     ::AbstractArray{T},
     pt::ParameterType,
@@ -63,7 +69,7 @@ function _update_parameter_values!(
     subsystem = get_subsystem(attributes)
     template = get_template(model)
     if isempty(subsystem)
-        device_model = get_model(template, V)
+        device_model = _component_model(template, V)
     else
         device_model = get_model(template, V, subsystem)
     end

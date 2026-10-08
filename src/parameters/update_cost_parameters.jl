@@ -1,3 +1,9 @@
+# A `rebuild_model` model is rebuilt from its parameter values right after the update, so its
+# objective and rows are not edited in place: the old build need not hold the terms a new
+# step's curves price (a bid offered only on a later day has none).
+_edits_in_place(container::OptimizationContainer) =
+    !IOM.get_rebuild_model(IOM.get_settings(container))
+
 function _update_parameter_values!(
     parameter_array::DenseAxisArray,
     ::T,
@@ -16,12 +22,12 @@ function _update_parameter_values!(
         "be re-augmented and double-counted",
     )
     template = get_template(model)
-    device_model = get_model(template, V)
+    device_model = _component_model(template, V)
     components = IOM.get_available_components(device_model, get_system(model))
     ts_type = get_deterministic_time_series_type(get_system(model))
     for component in components
         name = PSY.get_name(component)
-        op_cost = PSY.get_operation_cost(component)
+        op_cost = IOM.get_operation_cost(component)
         # `handle_variable_cost_parameter` is responsible for figuring out whether there is
         # actually time variance for this particular component and, if so, performing the update
         handle_variable_cost_parameter(
@@ -395,7 +401,7 @@ function _update_scalar_cost_values!(
     for (t, raw_value) in enumerate(raw_values)
         value = unwrap_for_param(param, raw_value, additional_axes)
         _set_param_value!(parameter_array, _maybe_tuple(param, value), name, t)
-        update_variable_cost!(
+        _edits_in_place(container) && update_variable_cost!(
             param,
             container,
             parameter_array,
@@ -426,7 +432,7 @@ function handle_variable_cost_parameter(
     container = get_optimization_container(model)
     ts_name = _cost_ts_name(param, component, op_cost)
     power_units = IS.get_power_units(offer_curve)
-    formulation = IOM.get_formulation(get_model(get_template(model), typeof(component)))
+    formulation = IOM.get_formulation(_component_model(get_template(model), typeof(component)))
     raw_values = get_time_series_values!(
         ts_type,
         model,
@@ -440,7 +446,7 @@ function handle_variable_cost_parameter(
     for (t, value::PSY.PiecewiseStepData) in enumerate(raw_values)
         unwrapped_value = unwrap_for_param(T(), value, additional_axes)
         _set_param_value!(parameter_array, unwrapped_value, name, t)
-        update_variable_cost!(
+        _edits_in_place(container) && update_variable_cost!(
             param,
             container,
             _pad_to_blocks(value, n_blocks),
@@ -488,7 +494,7 @@ function handle_variable_cost_parameter(
     for (t, value::PSY.PiecewiseStepData) in enumerate(raw_values)
         unwrapped_value = unwrap_for_param(T(), value, additional_axes)
         _set_param_value!(parameter_array, unwrapped_value, name, t)
-        update_variable_cost!(
+        _edits_in_place(container) && update_variable_cost!(
             param,
             container,
             _pad_to_blocks(value, n_blocks),
@@ -567,7 +573,7 @@ function _update_fuel_cost_values!(
 )
     for (t, value) in enumerate(raw_values)
         _set_param_value!(parameter_array, value, name, t)
-        update_variable_cost!(
+        _edits_in_place(container) && update_variable_cost!(
             FuelCostParameter(),
             container,
             parameter_array,
