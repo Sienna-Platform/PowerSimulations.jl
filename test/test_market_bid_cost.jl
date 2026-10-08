@@ -189,10 +189,16 @@ function run_startup_shutdown_test(
     simulation = true,
     in_memory_store::Bool = false,
 )
+    # The decisions are compared across two solves, so a nonzero MIP gap lets them differ.
     model, res = if simulation
-        run_generic_mbc_sim(sys; multistart = multistart, in_memory_store = in_memory_store)
+        run_generic_mbc_sim(
+            sys;
+            multistart = multistart,
+            in_memory_store = in_memory_store,
+            optimizer = HiGHS_optimizer_exact,
+        )
     else
-        run_generic_mbc_prob(sys; multistart = multistart)
+        run_generic_mbc_prob(sys; multistart = multistart, optimizer = HiGHS_optimizer_exact)
     end
 
     # Test correctness of written shutdown cost parameters
