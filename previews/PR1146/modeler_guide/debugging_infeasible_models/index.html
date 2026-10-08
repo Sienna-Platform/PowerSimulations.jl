@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Debugging infeasible models · PowerSimulations.jl</title><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.045/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.13.24/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="PowerSimulations.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">PowerSimulations.jl</a></span></div><form class="docs-search" action="../../search/"><input class="docs-search-query" id="documenter-search-query" name="q" type="text" placeholder="Search docs"/></form><ul class="docs-menu"><li><a class="tocitem" href="../../">Welcome Page</a></li><li><a class="tocitem" href="../../quick_start_guide/">Quick Start Guide</a></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../../tutorials/decision_problem/">Single-step Problem</a></li><li><a class="tocitem" href="../../tutorials/pcm_simulation/">Multi-stage Production Cost Simulation</a></li></ul></li><li><span class="tocitem">Modeler Guide</span><ul><li><a class="tocitem" href="../definitions/">Definitions</a></li><li><a class="tocitem" href="../psi_structure/">PowerSimulations.jl Modeling Structure</a></li><li><a class="tocitem" href="../problem_templates/">Operations <code>ProblemTemplate</code>s</a></li><li><a class="tocitem" href="../running_a_simulation/">Simulation</a></li><li><a class="tocitem" href="../read_results/">Read results</a></li><li><a class="tocitem" href="../simulation_recorder/">Simulation Recorder</a></li><li><a class="tocitem" href="../logging/">Logging</a></li><li class="is-active"><a class="tocitem" href>Debugging infeasible models</a><ul class="internal"><li><a class="tocitem" href="#Adding-slacks-to-the-model"><span>Adding slacks to the model</span></a></li><li><a class="tocitem" href="#Getting-the-infeasibility-conflict"><span>Getting the infeasibility conflict</span></a></li></ul></li><li><a class="tocitem" href="../parallel_simulations/">Parallel Simulations</a></li><li><a class="tocitem" href="../modeling_faq/">Modeling FAQ</a></li></ul></li><li><span class="tocitem">Model Developer Guide</span><ul><li><a class="tocitem" href="../../model_developer_guide/structure_of_operation_problem/">Operation Problem Structure</a></li><li><a class="tocitem" href="../../model_developer_guide/troubleshooting/">Troubleshooting</a></li></ul></li><li><span class="tocitem">Code Base Developer Guide</span><ul><li><a class="tocitem" href="../../code_base_developer_guide/developer/">Developer Guide</a></li><li><a class="tocitem" href="../../code_base_developer_guide/troubleshooting/">Troubleshooting</a></li></ul></li><li><span class="tocitem">Formulation Library</span><ul><li><a class="tocitem" href="../../formulation_library/Introduction/">Introduction</a></li><li><a class="tocitem" href="../../formulation_library/General/">General</a></li><li><a class="tocitem" href="../../formulation_library/Network/">Network</a></li><li><a class="tocitem" href="../../formulation_library/ThermalGen/">Thermal Generation</a></li><li><a class="tocitem" href="../../formulation_library/RenewableGen/">Renewable Generation</a></li><li><a class="tocitem" href="../../formulation_library/Load/">Load</a></li><li><a class="tocitem" href="../../formulation_library/Branch/">Branch</a></li><li><a class="tocitem" href="../../formulation_library/Service/">Services</a></li><li><a class="tocitem" href="../../formulation_library/Feedforward/">Feedforwards</a></li><li><a class="tocitem" href="../../formulation_library/Piecewise/">Piecewise Linear Cost</a></li></ul></li><li><a class="tocitem" href="../../api/PowerSimulations/">API Reference</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Modeler Guide</a></li><li class="is-active"><a href>Debugging infeasible models</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Debugging infeasible models</a></li></ul></nav><div class="docs-right"><a class="docs-edit-link" href="https://github.com/NREL-Sienna/PowerSimulations.jl/blob/main/docs/src/modeler_guide/debugging_infeasible_models.md" title="Edit on GitHub"><span class="docs-icon fab"></span><span class="docs-label is-hidden-touch">Edit on GitHub</span></a><a class="docs-settings-button fas fa-cog" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-sidebar-button fa fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a></div></header><article class="content" id="documenter-page"><h1 id="Debugging-infeasible-models"><a class="docs-heading-anchor" href="#Debugging-infeasible-models">Debugging infeasible models</a><a id="Debugging-infeasible-models-1"></a><a class="docs-heading-anchor-permalink" href="#Debugging-infeasible-models" title="Permalink"></a></h1><p>Getting infeasible solutions to models is a common occurrence in operations simulations, there are multiple reasons why this can happen. <code>PowerSimulations.jl</code> has several tools to help debug this situation.</p><h2 id="Adding-slacks-to-the-model"><a class="docs-heading-anchor" href="#Adding-slacks-to-the-model">Adding slacks to the model</a><a id="Adding-slacks-to-the-model-1"></a><a class="docs-heading-anchor-permalink" href="#Adding-slacks-to-the-model" title="Permalink"></a></h2><p>One of the most common infeasibility issues observed is due to not enough generation to supply demand, or conversely, excessive fixed (non-curtailable) generation in a low demand scenario. </p><p>The recommended solution for any of these cases is adding slack variables to the network model, for example:</p><pre><code class="language-julia hljs">template_uc = ProblemTemplate(
+        NetworkModel(
+            CopperPlatePowerModel,
+            use_slacks=true,
+        ),
+    )</code></pre><p>will add slack variables to the <code>ActivePowerBalance</code> expression.</p><p>In this case, if the problem is now feasible, the user can check the solution of the variables <code>SystemBalanceSlackUp</code> and <code>SystemBalanceSlackDown</code>, and if one value is greater than zero, it represents that not enough generation (for Slack Up) or not enough demand (for Slack Down) in the optimization problem.</p><h3 id="Services-cases"><a class="docs-heading-anchor" href="#Services-cases">Services cases</a><a id="Services-cases-1"></a><a class="docs-heading-anchor-permalink" href="#Services-cases" title="Permalink"></a></h3><p>In many scenarios, certain units are also required to provide reserve requirements, e.g. thermal units mandated to provide up-regulation. In such scenarios, it is also possible to add slack variables, by specifying the service model (<code>RangeReserve</code>) for the specific service type (<code>VariableReserve{ReserveUp}</code>) as:</p><pre><code class="language-julia hljs">set_service_model!(
+    template_uc,
+    ServiceModel(
+        VariableReserve{ReserveUp},
+        RangeReserve;
+        use_slacks=true
+    ),
+)</code></pre><p>Again, if the problem is now feasible, check the solution of <code>ReserveRequirementSlack</code> variable, and if it is larger than zero in a specific time-step, then it is evidence that there is not enough reserve available to satisfy the requirement.</p><h2 id="Getting-the-infeasibility-conflict"><a class="docs-heading-anchor" href="#Getting-the-infeasibility-conflict">Getting the infeasibility conflict</a><a id="Getting-the-infeasibility-conflict-1"></a><a class="docs-heading-anchor-permalink" href="#Getting-the-infeasibility-conflict" title="Permalink"></a></h2><p>Some solvers allows to identify which constraints and variables are producing the infeasibility, by finding the irreducible infeasible set (IIS), that is the subset of constraints and variable bounds that will become feasible if any single constraint or variable bound is removed. </p><p>To enable this feature in <code>PowerSimulations</code> the keyword argument <code>calculate_conflict</code> must be set to <code>true</code>, when creating the <code>DecisionModel</code>. Note that not all solvers allow the computation of the IIS, but most commercial solvers have this capability. It is also recommended to enable the keyword argument <code>store_variable_names=true</code> to help understanding which variables are with infeasibility issues.</p><p>The following code creates a decision model with the <code>Xpress</code> optimizer, and enabling the <code>calculate_conflict=true</code> keyword argument.</p><pre><code class="language-julia hljs">DecisionModel(
+    template_ed,
+    sys_rts_rt;
+    name=&quot;ED&quot;,
+    optimizer=optimizer_with_attributes(Xpress.Optimizer, &quot;MIPRELSTOP&quot; =&gt; 1e-2),
+    optimizer_solve_log_print=true,
+    calculate_conflict=true,
+    store_variable_names=true,
+)</code></pre><p>Here is an example on how the IIS will be displayed as:</p><pre><code class="language-raw hljs">Error: Constraints participating in conflict basis (IIS) 
+│ 
+│ ┌──────────────────────────────────────┐
+│ │ CopperPlateBalanceConstraint__System │
+│ ├──────────────────────────────────────┤
+│ │                            (113, 26) │
+│ └──────────────────────────────────────┘
+│ ┌──────────────────────────────────┐
+│ │ EnergyAssetBalance__HybridSystem │
+│ ├──────────────────────────────────┤
+│ │               (&quot;317_Hybrid&quot;, 26) │
+│ └──────────────────────────────────┘
+│ ┌─────────────────────────────────────────────┐
+│ │ PieceWiseLinearCostConstraint__HybridSystem │
+│ ├─────────────────────────────────────────────┤
+│ │                          (&quot;317_Hybrid&quot;, 26) │
+│ └─────────────────────────────────────────────┘
+│ ┌────────────────────────────────────────────────┐
+│ │ PieceWiseLinearCostConstraint__ThermalStandard │
+│ ├────────────────────────────────────────────────┤
+│ │                            (&quot;202_STEAM_3&quot;, 26) │
+│ │                            (&quot;101_STEAM_3&quot;, 26) │
+│ │                               (&quot;118_CC_1&quot;, 26) │
+│ │                            (&quot;202_STEAM_4&quot;, 26) │
+│ │                               (&quot;315_CT_6&quot;, 26) │
+│ │                            (&quot;201_STEAM_3&quot;, 26) │
+│ │                            (&quot;102_STEAM_4&quot;, 26) │
+│ └────────────────────────────────────────────────┘
+│ ┌──────────────────────────────────────────────────────────────────────┐
+│ │ ActivePowerVariableTimeSeriesLimitsConstraint__RenewableDispatch__ub │
+│ ├──────────────────────────────────────────────────────────────────────┤
+│ │                                                   (&quot;122_WIND_1&quot;, 26) │
+│ │                                                     (&quot;324_PV_3&quot;, 26) │
+│ │                                                     (&quot;312_PV_1&quot;, 26) │
+│ │                                                     (&quot;102_PV_1&quot;, 26) │
+│ │                                                     (&quot;101_PV_1&quot;, 26) │
+│ │                                                     (&quot;324_PV_2&quot;, 26) │
+│ │                                                     (&quot;313_PV_2&quot;, 26) │
+│ │                                                     (&quot;104_PV_1&quot;, 26) │
+│ │                                                     (&quot;101_PV_2&quot;, 26) │
+│ │                                                   (&quot;309_WIND_1&quot;, 26) │
+│ │                                                     (&quot;310_PV_2&quot;, 26) │
+│ │                                                     (&quot;113_PV_1&quot;, 26) │
+│ │                                                     (&quot;314_PV_1&quot;, 26) │
+│ │                                                     (&quot;324_PV_1&quot;, 26) │
+│ │                                                     (&quot;103_PV_1&quot;, 26) │
+│ │                                                   (&quot;303_WIND_1&quot;, 26) │
+│ │                                                     (&quot;314_PV_2&quot;, 26) │
+│ │                                                     (&quot;102_PV_2&quot;, 26) │
+│ │                                                     (&quot;314_PV_3&quot;, 26) │
+│ │                                                     (&quot;320_PV_1&quot;, 26) │
+│ │                                                     (&quot;101_PV_3&quot;, 26) │
+│ │                                                     (&quot;319_PV_1&quot;, 26) │
+│ │                                                     (&quot;314_PV_4&quot;, 26) │
+│ │                                                     (&quot;310_PV_1&quot;, 26) │
+│ │                                                     (&quot;215_PV_1&quot;, 26) │
+│ │                                                     (&quot;313_PV_1&quot;, 26) │
+│ │                                                     (&quot;101_PV_4&quot;, 26) │
+│ │                                                     (&quot;119_PV_1&quot;, 26) │
+│ └──────────────────────────────────────────────────────────────────────┘
+│ ┌─────────────────────────────────────────────────────────────────────────────┐
+│ │ FeedforwardSemiContinuousConstraint__ThermalStandard__ActivePowerVariable_ub │
+│ ├─────────────────────────────────────────────────────────────────────────────┤
+│ │                                                            (&quot;322_CT_6&quot;, 26) │
+│ │                                                            (&quot;321_CC_1&quot;, 26) │
+│ │                                                            (&quot;223_CT_4&quot;, 26) │
+│ │                                                            (&quot;213_CT_1&quot;, 26) │
+│ │                                                            (&quot;223_CT_6&quot;, 26) │
+│ │                                                            (&quot;123_CT_1&quot;, 26) │
+│ │                                                            (&quot;113_CT_3&quot;, 26) │
+│ │                                                            (&quot;302_CT_3&quot;, 26) │
+│ │                                                            (&quot;215_CT_4&quot;, 26) │
+│ │                                                            (&quot;301_CT_4&quot;, 26) │
+│ │                                                            (&quot;113_CT_2&quot;, 26) │
+│ │                                                            (&quot;221_CC_1&quot;, 26) │
+│ │                                                            (&quot;223_CT_5&quot;, 26) │
+│ │                                                            (&quot;315_CT_7&quot;, 26) │
+│ │                                                            (&quot;215_CT_5&quot;, 26) │
+│ │                                                            (&quot;113_CT_1&quot;, 26) │
+│ │                                                            (&quot;307_CT_2&quot;, 26) │
+│ │                                                            (&quot;213_CT_2&quot;, 26) │
+│ │                                                            (&quot;113_CT_4&quot;, 26) │
+│ │                                                            (&quot;218_CC_1&quot;, 26) │
+│ │                                                            (&quot;213_CC_3&quot;, 26) │
+│ │                                                            (&quot;323_CC_2&quot;, 26) │
+│ │                                                            (&quot;322_CT_5&quot;, 26) │
+│ │                                                            (&quot;207_CT_2&quot;, 26) │
+│ │                                                            (&quot;123_CT_5&quot;, 26) │
+│ │                                                            (&quot;123_CT_4&quot;, 26) │
+│ │                                                            (&quot;207_CT_1&quot;, 26) │
+│ │                                                            (&quot;301_CT_3&quot;, 26) │
+│ │                                                            (&quot;302_CT_4&quot;, 26) │
+│ │                                                            (&quot;307_CT_1&quot;, 26) │
+│ └─────────────────────────────────────────────────────────────────────────────┘
+│ ┌───────────────────────────────────────────────────────┐
+│ │ RenewableActivePowerLimitConstraint__HybridSystem__ub │
+│ ├───────────────────────────────────────────────────────┤
+│ │                                    (&quot;317_Hybrid&quot;, 26) │
+│ └───────────────────────────────────────────────────────┘
+│ ┌───────────────────────────────────────┐
+│ │ ThermalOnVariableUb__HybridSystem__ub │
+│ ├───────────────────────────────────────┤
+│ │                    (&quot;317_Hybrid&quot;, 26) │
+│ └───────────────────────────────────────┘
+
+ Error: Serializing Infeasible Problem at /var/folders/1v/t69qyl0n5059n6c1nn7sp8zm7g8s6z/T/jl_jNSREb/compact_sim/problems/ED/infeasible_ED_2020-10-06T15:00:00.json</code></pre><p>Note that the IIS clearly identify that the issue is happening at time step 26, and constraints are related with the <code>CopperPlateBalanceConstraint__System</code>, with multiple upper bound constraints, for the hybrid system, renewable units and thermal units. This highlights that there may not be enough generation in the system. Indeed, by enabling system slacks, the problem become feasible.</p><p>Finally, the infeasible model is exported in a <code>json</code> file that can be loaded directly in <code>JuMP</code> to be explored. More information about this is <a href="https://jump.dev/JuMP.jl/stable/moi/submodules/FileFormats/overview/#Read-from-file">available here</a>.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../logging/">« Logging</a><a class="docs-footer-nextpage" href="../parallel_simulations/">Parallel Simulations »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.25 on <span class="colophon-date" title="Tuesday 24 September 2024 19:57">Tuesday 24 September 2024</span>. Using Julia version 1.10.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
