@@ -250,7 +250,10 @@ end
         set_device_model!(template_uc, ThermalStandard, ThermalBasicUnitCommitment)
         set_device_model!(template_uc, RenewableDispatch, RenewableFullDispatch)
         set_device_model!(template_uc, PowerLoad, StaticPowerLoad)
-        set_device_model!(template_uc, DeviceModel(Line, StaticBranch))
+        set_device_model!(
+            template_uc,
+            DeviceModel(Line, StaticBranch; attributes = PARALLEL_RATING),
+        )
 
         if hvdc_type == TwoTerminalVSCLine
             set_device_model!(
@@ -289,7 +292,10 @@ end
     set_device_model!(template, ThermalStandard, ThermalBasicUnitCommitment)
     set_device_model!(template, RenewableDispatch, RenewableFullDispatch)
     set_device_model!(template, PowerLoad, StaticPowerLoad)
-    set_device_model!(template, DeviceModel(Line, StaticBranch))
+    set_device_model!(
+        template,
+        DeviceModel(Line, StaticBranch; attributes = PARALLEL_RATING),
+    )
     set_device_model!(
         template,
         DeviceModel(TwoTerminalGenericHVDCLine, HVDCTwoTerminalLossless),
@@ -438,7 +444,10 @@ end
     )
     set_device_model!(template, ThermalStandard, ThermalBasicUnitCommitment)
     set_device_model!(template, PowerLoad, StaticPowerLoad)
-    set_device_model!(template, DeviceModel(Line, StaticBranch))
+    set_device_model!(
+        template,
+        DeviceModel(Line, StaticBranch; attributes = PARALLEL_RATING),
+    )
     set_device_model!(template, DeviceModel(TwoTerminalVSCLine, HVDCTwoTerminalLossless))
     model = DecisionModel(template, sys5; optimizer = HiGHS_optimizer, horizon = Hour(2))
     @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
@@ -501,7 +510,10 @@ function _build_rts_hvdc_acpf_model(hvdc_formulation; loss = nothing, stored_flo
     set_device_model!(template, ThermalStandard, ThermalBasicUnitCommitment)
     set_device_model!(template, RenewableDispatch, RenewableFullDispatch)
     set_device_model!(template, PowerLoad, StaticPowerLoad)
-    set_device_model!(template, DeviceModel(Line, StaticBranch))
+    set_device_model!(
+        template,
+        DeviceModel(Line, StaticBranch; attributes = PARALLEL_RATING),
+    )
     set_device_model!(
         template,
         DeviceModel(TwoTerminalGenericHVDCLine, hvdc_formulation),
@@ -1292,7 +1304,10 @@ end
     set_device_model!(template, ThermalStandard, ThermalBasicUnitCommitment)
     set_device_model!(template, PowerLoad, StaticPowerLoad)
     set_device_model!(template, DeviceModel(Source, FixedOutput))
-    set_device_model!(template, DeviceModel(Line, StaticBranch))
+    set_device_model!(
+        template,
+        DeviceModel(Line, StaticBranch; attributes = PARALLEL_RATING),
+    )
 
     uc_model = DecisionModel(
         template, sys; name = "UC", optimizer = HiGHS_optimizer,
@@ -1382,7 +1397,10 @@ end
     set_device_model!(template, ThermalStandard, ThermalBasicUnitCommitment)
     set_device_model!(template, PowerLoad, StaticPowerLoad)
     set_device_model!(template, DeviceModel(Source, FixedOutput))
-    set_device_model!(template, DeviceModel(Line, StaticBranch))
+    set_device_model!(
+        template,
+        DeviceModel(Line, StaticBranch; attributes = PARALLEL_RATING),
+    )
 
     uc_model = DecisionModel(
         template, sys; name = "UC", optimizer = HiGHS_optimizer,

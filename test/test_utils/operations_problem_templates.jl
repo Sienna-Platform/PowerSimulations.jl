@@ -30,7 +30,10 @@ function get_thermal_dispatch_template_network(network = CopperPlatePowerModel)
     set_device_model!(template, ThermalStandard, ThermalBasicDispatch)
     set_device_model!(template, PowerLoad, StaticPowerLoad)
     set_device_model!(template, MonitoredLine, StaticBranchBounds)
-    set_device_model!(template, Line, StaticBranch)
+    set_device_model!(
+        template,
+        DeviceModel(Line, StaticBranch; attributes = PARALLEL_RATING),
+    )
     set_device_model!(template, Transformer2W, StaticBranch)
     set_device_model!(template, TapTransformer, StaticBranch)
     set_device_model!(template, TwoTerminalGenericHVDCLine, HVDCTwoTerminalLossless)
@@ -91,7 +94,10 @@ function get_template_dispatch_with_network(network = PTDFPowerModel)
     template = ProblemTemplate(network)
     set_device_model!(template, PowerLoad, StaticPowerLoad)
     set_device_model!(template, ThermalStandard, ThermalBasicDispatch)
-    set_device_model!(template, Line, StaticBranch)
+    set_device_model!(
+        template,
+        DeviceModel(Line, StaticBranch; attributes = PARALLEL_RATING),
+    )
     set_device_model!(template, Transformer2W, StaticBranchBounds)
     set_device_model!(template, TapTransformer, StaticBranchBounds)
     set_device_model!(template, TwoTerminalGenericHVDCLine, HVDCTwoTerminalLossless)

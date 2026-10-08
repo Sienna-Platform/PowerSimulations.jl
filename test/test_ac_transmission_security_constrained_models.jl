@@ -119,7 +119,14 @@ end
                 MODF_matrix = VirtualMODF(sys),
             ),
         )
-        set_device_model!(template, Line, SecurityConstrainedStaticBranch)
+        set_device_model!(
+            template,
+            DeviceModel(
+                Line,
+                SecurityConstrainedStaticBranch;
+                attributes = PARALLEL_RATING,
+            ),
+        )
         set_device_model!(template, Transformer2W, SecurityConstrainedStaticBranch)
         set_device_model!(template, TapTransformer, SecurityConstrainedStaticBranch)
 
@@ -215,7 +222,14 @@ end
                 MODF_matrix = VirtualMODF(sys),
             ),
         )
-        set_device_model!(template, Line, SecurityConstrainedStaticBranch)
+        set_device_model!(
+            template,
+            DeviceModel(
+                Line,
+                SecurityConstrainedStaticBranch;
+                attributes = PARALLEL_RATING,
+            ),
+        )
         set_device_model!(template, Transformer2W, SecurityConstrainedStaticBranch)
         set_device_model!(template, TapTransformer, SecurityConstrainedStaticBranch)
 
@@ -467,7 +481,14 @@ end
                 ),
             ),
         )
-        set_device_model!(template, Line, SecurityConstrainedStaticBranch)
+        set_device_model!(
+            template,
+            DeviceModel(
+                Line,
+                SecurityConstrainedStaticBranch;
+                attributes = PARALLEL_RATING,
+            ),
+        )
         set_device_model!(template, Transformer2W, SecurityConstrainedStaticBranch)
         set_device_model!(template, TapTransformer, SecurityConstrainedStaticBranch)
 
@@ -956,7 +977,10 @@ end
     template = get_thermal_dispatch_template_network(
         NetworkModel(PTDFPowerModel; MODF_matrix = VirtualMODF(sys)),
     )
-    set_device_model!(template, Line, SecurityConstrainedStaticBranch)
+    set_device_model!(
+        template,
+        DeviceModel(Line, SecurityConstrainedStaticBranch; attributes = PARALLEL_RATING),
+    )
     ps_model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
     @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
           PSI.ModelBuildStatus.BUILT
@@ -1225,7 +1249,10 @@ end
             reduce_degree_two_branches = true,
         ),
     )
-    set_device_model!(template, Line, SecurityConstrainedStaticBranch)
+    set_device_model!(
+        template,
+        DeviceModel(Line, SecurityConstrainedStaticBranch; attributes = PARALLEL_RATING),
+    )
 
     model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
     @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
