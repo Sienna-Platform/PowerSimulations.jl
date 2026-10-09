@@ -84,6 +84,32 @@ POM.construct_device!(
     @test PSI.get_initial_time(model) == t0
 end
 
+@testset "Branch rating time series update on a PTDF network" begin
+    for rebuild in (false, true)
+        c_sys = PSB.build_system(PSITestSystems, "c_sys5_uc")
+        t0 = first(PSY.get_forecast_initial_times(c_sys))
+        for line in PSY.get_components(Line, c_sys)
+            data = Dict(t0 => fill(1.0, 24), t0 + Day(1) => fill(0.9, 24))
+            PSY.add_time_series!(c_sys, line, PSY.Deterministic("branch_rating", data, Hour(1)))
+        end
+        template = get_template_nomin_ed_simulation(NetworkModel(PTDFNetworkModel))
+        set_device_model!(template, DeviceModel(Line, StaticBranch;
+            time_series_names = Dict(POM.BranchRatingTimeSeriesParameter => "branch_rating")))
+        model = DecisionModel(template, c_sys; name = "ED", optimizer = HiGHS_optimizer,
+            rebuild_model = rebuild)
+        models = SimulationModels([model])
+        sequence = SimulationSequence(; models, ini_cond_chronology = InterProblemChronology())
+        sim = Simulation(; name = "branch_rating", steps = 2, models, sequence,
+            simulation_folder = mktempdir(; cleanup = true))
+        @test build!(sim) == PSI.SimulationBuildStatus.BUILT
+        @test execute!(sim; in_memory = true) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+        # The parameter holds the second window's ratings after the last step.
+        rating = IOM.get_parameter_array(PSI.get_optimization_container(model),
+            POM.BranchRatingTimeSeriesParameter, Line)
+        @test all(==(0.9), IOM.jump_value.(rating.data))
+    end
+end
+
 @testset "Test model export at each solve" begin
     # 2 simulation steps. Each format writes a single file per solve, so the
     # export directory holds exactly 2 files of the selected extension and none
