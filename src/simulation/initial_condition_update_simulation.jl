@@ -129,9 +129,14 @@ function IOM.update_initial_conditions!(
             elseif isapprox(var_val - max, 0.0; atol = ABSOLUTE_TOLERANCE)
                 set_ic_quantity!(ic, max)
             else
-                error("Variable value $(var_val) for ActivePowerVariable \\
-                      Status value $(status_val) for OnVariable \\
-                      $(comp_type)-$(comp_name) is out of bounds [$(min), $(max)].")
+                # The state can come from another model whose copy of the device has wider
+                # limits (a dispatch model built on telemetered limits feeding a commitment
+                # model built on planned ones); the receiving model can only start inside its own.
+                clamped = clamp(var_val, min, max)
+                @warn "The initial ActivePowerVariable of $(comp_type)-$(comp_name) from the \
+                       simulation state, $(var_val), is outside this model's limits \
+                       [$(min), $(max)]; clamped to $(clamped)." maxlog = 50
+                set_ic_quantity!(ic, clamped)
             end
         else
             if !isapprox(var_val, 0.0; atol = ABSOLUTE_TOLERANCE)
