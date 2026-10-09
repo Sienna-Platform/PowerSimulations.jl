@@ -1276,7 +1276,10 @@ function _write_system_bundles!(sim::Simulation)
         sys = get_system(model)
         bundle_dir = joinpath(IOM.get_output_dir(model), IOM.make_system_dirname(sys))
         ispath(bundle_dir) && continue
-        store = POM.ParameterTimeSeriesStore()
+        # Created at the bundle's own sidecar: persisting an in-memory store rewrites every
+        # array, and a multi-day run's cost copies make that take hours.
+        sidecar = joinpath(mkpath(bundle_dir), PSY.TIME_SERIES_FILE)
+        store = POM.ParameterTimeSeriesStore(sidecar)
         key_map = POM.copy_cost_time_series!(store, sys, _planned_run_windows(sim, model))
         POM.write_outputs_system_bundle!(sys, store, key_map, bundle_dir)
         POM.close_parameter_store!(store)
