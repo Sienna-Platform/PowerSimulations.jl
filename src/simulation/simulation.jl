@@ -692,7 +692,7 @@ function _apply_warm_start!(model::IOM.AbstractOptimizationModel)
     container = get_optimization_container(model)
     # If the model was used to retrieve duals from an MILP the logic has to be different and
     # the output values need to be read from the primal cache
-    if isempty(container.primal_values_cache)
+    if isempty(container.primal_values_cache.variables_cache)
         jump_model = get_jump_model(container)
         all_vars = JuMP.all_variables(jump_model)
         all_vars_value = jump_value.(all_vars)

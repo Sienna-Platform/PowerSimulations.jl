@@ -37,13 +37,13 @@ _output_source(container::OptimizationContainer, ::Val{:parameters}) =
 _output_source(container::OptimizationContainer, ::Val{:aux_variables}) =
     get_aux_variables(container)
 function _output_source(container::OptimizationContainer, ::Val{:variables})
-    if !isempty(container.primal_values_cache)
+    if !isempty(container.primal_values_cache.variables_cache)
         return container.primal_values_cache.variables_cache
     end
     return get_variables(container)
 end
 function _output_source(container::OptimizationContainer, ::Val{:expressions})
-    if !isempty(container.primal_values_cache)
+    if !isempty(container.primal_values_cache.expressions_cache)
         return container.primal_values_cache.expressions_cache
     end
     return get_expressions(container)
