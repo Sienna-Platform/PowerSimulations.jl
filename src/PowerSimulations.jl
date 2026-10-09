@@ -120,7 +120,7 @@ import InfrastructureOptimizationModels:
     to_outputs_dataframe, _read_outputs, get_time_series_values!, export_optimizer_stats,
     export_output, export_realized_outputs
 import InfrastructureOptimizationModels:
-    ABSOLUTE_TOLERANCE, AbstractAffectFeedforward, calculate_parameter_values,
+    ABSOLUTE_TOLERANCE, AbstractAffectFeedforward,
     encode_key_as_string, get_aux_variables_values, get_container_keys, get_duals_values,
     get_enum_value, get_ic_type, get_parameters_values, get_piecewise_curve_per_system_unit,
     get_store_container_type, get_variables_values, get_variable_types,

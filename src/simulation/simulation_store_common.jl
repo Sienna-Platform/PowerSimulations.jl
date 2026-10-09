@@ -36,21 +36,15 @@ _output_source(container::OptimizationContainer, ::Val{:parameters}) =
     get_parameters(container)
 _output_source(container::OptimizationContainer, ::Val{:aux_variables}) =
     get_aux_variables(container)
-function _output_source(container::OptimizationContainer, ::Val{:variables})
-    if !isempty(container.primal_values_cache)
-        return container.primal_values_cache.variables_cache
-    end
-    return get_variables(container)
-end
-function _output_source(container::OptimizationContainer, ::Val{:expressions})
-    if !isempty(container.primal_values_cache)
-        return container.primal_values_cache.expressions_cache
-    end
-    return get_expressions(container)
-end
+_output_source(container::OptimizationContainer, ::Val{:variables}) =
+    get_variables(container)
+_output_source(container::OptimizationContainer, ::Val{:expressions}) =
+    get_expressions(container)
 
-_output_values(x, ::Val) = jump_value.(x)
-_output_values(x, ::Val{:parameters}) = calculate_parameter_values(x)
+# After a MILP's dual computation JuMP holds no primal values; `lookup_value` reads the
+# solve's values from the primal cache then, and from the solver otherwise.
+_output_values(container, key, x, ::Val) = IOM.lookup_value(container, key)
+_output_values(container, key, x, ::Val{:duals}) = jump_value.(x)
 
 _should_export_field(exports, ts, model_name, key, ::Val{:duals}) =
     should_export_dual(exports, ts, model_name, key)
@@ -80,7 +74,7 @@ function _write_model_field_outputs!(
 
     for (key, value) in _output_source(container, field)
         !should_write_resulting_value(key) && continue
-        data = _output_values(value, field)
+        data = _output_values(container, key, value, field)
         write_output!(store, model_name, key, index, update_timestamp, data)
 
         if !isnothing(export_params) &&
