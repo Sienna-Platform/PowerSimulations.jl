@@ -384,7 +384,17 @@ function update_decision_state!(
     model_params::ModelStoreParams,
 )
     state_data = get_decision_state_data(state, key)
-    column_names = get_column_names(key, state_data)[1]
+    # The state's columns come from the first model that registered the key; a later model
+    # can carry fewer, such as a bus another model's network reduction kept and this one's
+    # did not. Those columns keep their last recorded values.
+    stored = Set(axes(store_data)[1])
+    all_columns = get_column_names(key, state_data)[1]
+    column_names = [name for name in all_columns if name in stored]
+    if length(column_names) < length(all_columns)
+        @warn "$(encode_key_as_string(key)): this model's outputs lack \
+               $(length(all_columns) - length(column_names)) of the state's \
+               $(length(all_columns)) columns; they keep their last recorded values" maxlog = 20
+    end
     model_resolution = get_resolution(model_params)
     state_resolution = get_data_resolution(state_data)
     resolution_ratio = model_resolution ÷ state_resolution
