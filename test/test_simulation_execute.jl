@@ -110,6 +110,21 @@ end
     end
 end
 
+@testset "A simulation built without system bundles writes none and still runs" begin
+    for in_memory in (true, false)
+        c_sys = PSB.build_system(PSITestSystems, "c_sys5_uc")
+        model = DecisionModel(get_template_nomin_ed_simulation(), c_sys; name = "ED",
+            optimizer = HiGHS_optimizer)
+        models = SimulationModels([model])
+        sequence = SimulationSequence(; models, ini_cond_chronology = InterProblemChronology())
+        sim = Simulation(; name = "no_bundles", steps = 2, models, sequence,
+            simulation_folder = mktempdir(; cleanup = true))
+        @test build!(sim; write_system_bundles = false) == PSI.SimulationBuildStatus.BUILT
+        @test !ispath(joinpath(IOM.get_output_dir(model), IOM.make_system_dirname(c_sys)))
+        @test execute!(sim; in_memory) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+    end
+end
+
 @testset "Test model export at each solve" begin
     # 2 simulation steps. Each format writes a single file per solve, so the
     # export directory holds exactly 2 files of the selected extension and none

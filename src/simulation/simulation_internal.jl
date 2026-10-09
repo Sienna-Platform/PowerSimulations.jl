@@ -19,6 +19,7 @@ mutable struct SimulationInternal
     cache_size_mib::Int
     min_cache_flush_size_mib::Int
     rng::AbstractRNG
+    write_system_bundles::Bool
 end
 
 function SimulationInternal(
@@ -32,6 +33,7 @@ function SimulationInternal(
     partitions::Union{Nothing, SimulationPartitions} = nothing,
     cache_size_mib = 1024,
     min_cache_flush_size_mib = MIN_CACHE_FLUSH_SIZE_MiB,
+    write_system_bundles::Bool = true,
 )
     count_dict = OrderedDict{Int, OrderedDict{Int, Int}}()
 
@@ -83,6 +85,7 @@ function SimulationInternal(
         cache_size_mib,
         min_cache_flush_size_mib,
         Random.Xoshiro(IS.get_random_seed()),
+        write_system_bundles,
     )
 end
 

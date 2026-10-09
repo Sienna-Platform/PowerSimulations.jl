@@ -573,8 +573,10 @@ function _build!(
     _build_decision_models!(sim)
     _build_emulation_model!(sim)
 
-    TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "Serialize Systems" begin
-        _write_system_bundles!(sim)
+    if sim.internal.write_system_bundles
+        TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "Serialize Systems" begin
+            _write_system_bundles!(sim)
+        end
     end
 
     TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "Initialize Simulation State" begin
@@ -606,7 +608,8 @@ function _set_simulation_internal!(
     partitions::Union{Nothing, SimulationPartitions},
     recorders,
     console_level,
-    file_level,
+    file_level;
+    write_system_bundles::Bool = true,
 )
     sim.internal = SimulationInternal(
         sim.steps,
@@ -617,6 +620,7 @@ function _set_simulation_internal!(
         console_level,
         file_level;
         partitions = partitions,
+        write_system_bundles = write_system_bundles,
     )
     return
 end
@@ -639,6 +643,9 @@ Build the Simulation, problems and the related folder structure.
   - `recorders::Vector{Symbol} = []`: recorder names to register
   - `console_level = Logging.Error`:
   - `file_level = Logging.Info`:
+  - `write_system_bundles = true`: write each model's System bundle (document and cost series)
+    at build and its parameter rows at the end of `execute!`. Without it, outputs carry no
+    System or parameters.
 """
 function POM.build!(
     sim::Simulation;
@@ -647,11 +654,13 @@ function POM.build!(
     file_level = Logging.Info,
     partitions::Union{Nothing, SimulationPartitions} = nothing,
     index = nothing,
+    write_system_bundles::Bool = true,
 )
     TimerOutputs.reset_timer!(BUILD_PROBLEMS_TIMER)
     TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "Build Simulation" begin
         _check_folder(sim)
-        _set_simulation_internal!(sim, partitions, recorders, console_level, file_level)
+        _set_simulation_internal!(sim, partitions, recorders, console_level, file_level;
+            write_system_bundles)
         make_dirs(sim.internal)
         if !isnothing(partitions) && isnothing(index)
             setup_simulation_partitions = true
@@ -1226,7 +1235,7 @@ function execute!(sim::Simulation; kwargs...)
                     @info ("\n$(RUN_SIMULATION_TIMER)\n")
                     set_simulation_status!(sim, RunStatus.SUCCESSFULLY_FINALIZED)
                     log_cache_hit_percentages(store)
-                    finalize_parameters!(store)
+                    sim.internal.write_system_bundles && finalize_parameters!(store)
                 catch e
                     set_simulation_status!(sim, RunStatus.FAILED)
                     @error "simulation failed" exception = (e, catch_backtrace())
