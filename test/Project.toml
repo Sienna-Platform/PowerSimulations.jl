@@ -44,8 +44,7 @@ PowerOperationsOpenAPIModels = "a372b6d7-45a2-44c2-8199-6a724b72e8ff"
 PowerSimulations = {path = ".."}
 InfrastructureSystems = {url = "https://github.com/Sienna-Platform/InfrastructureSystems.jl", rev = "IS4"}
 InfrastructureOptimizationModels = {url = "https://github.com/Sienna-Platform/InfrastructureOptimizationModels.jl", rev = "main"}
-# TODO: revert to rev = "psy6" once PowerSystems.jl#1825 merges.
-PowerSystems = {url = "https://github.com/Sienna-Platform/PowerSystems.jl", rev = "lk/rebase-component"}
+PowerSystems = {url = "https://github.com/Sienna-Platform/PowerSystems.jl", rev = "psy6"}
 PowerNetworkMatrices = {url = "https://github.com/Sienna-Platform/PowerNetworkMatrices.jl", rev = "psy6"}
 PowerOperationsModels = {url = "https://github.com/Sienna-Platform/PowerOperationsModels.jl", rev = "main"}
 PowerSystemCaseBuilder = {url = "https://github.com/Sienna-Platform/PowerSystemCaseBuilder.jl", rev = "psy6"}
