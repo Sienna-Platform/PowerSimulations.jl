@@ -525,7 +525,7 @@ end
 
 function _build!(
     sim::Simulation;
-    store_systems_in_results = true,
+    store_systems_in_results = false,
     setup_simulation_partitions = false,
     partitions = nothing,
     index = nothing,
@@ -647,7 +647,8 @@ Build the Simulation, problems and the related folder structure.
 
   - `sim::Simulation`: simulation object
   - `recorders::Vector{Symbol} = []`: recorder names to register
-  - `store_systems_in_results::Bool = true`: stores the systems as JSON in the results HDF5 file
+  - `store_systems_in_results::Bool = false`: stores the systems as JSON in the results HDF5 file.
+    Off by default: the interim encoding cannot hold a cost that references a time series.
   - `console_level = Logging.Error`:
   - `file_level = Logging.Info`:
 """
@@ -656,7 +657,7 @@ function POM.build!(
     recorders = [],
     console_level = Logging.Error,
     file_level = Logging.Info,
-    store_systems_in_results = true,
+    store_systems_in_results = false,
     partitions::Union{Nothing, SimulationPartitions} = nothing,
     index = nothing,
 )
@@ -703,18 +704,12 @@ end
 
 function _apply_warm_start!(model::IOM.AbstractOptimizationModel)
     container = get_optimization_container(model)
-    # If the model was used to retrieve duals from an MILP the logic has to be different and
-    # the results need to be read from the primal cache
-    if isempty(container.primal_values_cache)
-        jump_model = get_jump_model(container)
-        all_vars = JuMP.all_variables(jump_model)
-        all_vars_value = jump_value.(all_vars)
-        JuMP.set_start_value.(all_vars, all_vars_value)
-    else
-        for (var_key, variable_value) in container.primal_values_cache.variables_cache
-            variable = get_variable(container, var_key)
-            JuMP.set_start_value.(variable, variable_value)
-        end
+    # Setting a start value discards the solver's solution, so read every value first.
+    # `lookup_value` reads the solve's values even after a MILP's dual computation.
+    variables = get_variables(container)
+    values = Dict(key => IOM.lookup_value(container, key) for key in keys(variables))
+    for (key, variable) in variables
+        JuMP.set_start_value.(variable, values[key])
     end
     return
 end
@@ -1230,10 +1225,23 @@ function _serialize_systems_to_json(sim::Simulation)
     for model in get_all_models(simulation_models)
         sys = get_system(model)
         get!(results, string(get_system_uuid(sys))) do
-            PSY.to_json(sys)
+            _system_document_json(sys)
         end
     end
     return results
+end
+
+# Interim encoding until the System bundle written beside each model's outputs replaces the
+# in-store copy. Like the store's earlier copy, it holds the components without time series.
+function _system_document_json(sys::PSY.System)
+    rows = PSY.read_export_store_rows(sys)
+    no_time_series = PSY.ExportStoreRows(
+        rows.supplemental_attribute_associations,
+        0,
+        empty(rows.time_series_associations),
+    )
+    doc = PSY.to_openapi(sys; store_rows = no_time_series)
+    return JSON3.write(PSY.PC.document_tree(doc))
 end
 
 function serialize_status(sim::Simulation)
