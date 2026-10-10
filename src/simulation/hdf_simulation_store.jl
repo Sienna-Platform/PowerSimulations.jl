@@ -735,6 +735,7 @@ function write_result!(
     return
 end
 
+#= SYSTEM-IN-RESULTS: storing the systems in the results is disabled until it is redesigned.
 function write_system_json!(store::HdfSimulationStore, uuid::String, json_text::String)
     root = store.file[HDF_SIMULATION_ROOT_PATH]
     systems_group = _get_group_or_create(root, "systems")
@@ -743,6 +744,7 @@ function write_system_json!(store::HdfSimulationStore, uuid::String, json_text::
     end
     return
 end
+=#
 
 function has_system(store::HdfSimulationStore, uuid::Base.UUID)
     root = store.file[HDF_SIMULATION_ROOT_PATH]

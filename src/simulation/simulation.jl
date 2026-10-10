@@ -525,7 +525,6 @@ end
 
 function _build!(
     sim::Simulation;
-    store_systems_in_results = false,
     setup_simulation_partitions = false,
     partitions = nothing,
     index = nothing,
@@ -571,11 +570,13 @@ function _build!(
         _check_steps(sim, problem_initial_times)
     end
 
+    #= SYSTEM-IN-RESULTS: storing the systems in the results is disabled until it is redesigned.
     if store_systems_in_results
         # Spawn system serialization (JSON conversion) in parallel with model builds.
         # Systems are read-only during building, so this is safe.
         serialization_task = Threads.@spawn _serialize_systems_to_json(sim)
     end
+    =#
 
     _build_decision_models!(sim)
     _build_emulation_model!(sim)
@@ -589,6 +590,7 @@ function _build!(
             set_simulation_store!(sim, store)
             try
                 _initialize_problem_storage!(sim)
+                #= SYSTEM-IN-RESULTS: storing the systems in the results is disabled until it is redesigned.
                 if store_systems_in_results
                     # Fetch pre-computed JSON from the parallel task and write to HDF5 store.
                     serialized = fetch(serialization_task)
@@ -596,6 +598,7 @@ function _build!(
                         write_system_json!(store, uuid, json_text)
                     end
                 end
+                =#
             finally
                 set_simulation_store!(sim, nothing)
             end
@@ -647,8 +650,8 @@ Build the Simulation, problems and the related folder structure.
 
   - `sim::Simulation`: simulation object
   - `recorders::Vector{Symbol} = []`: recorder names to register
-  - `store_systems_in_results::Bool = false`: stores the systems as JSON in the results HDF5 file.
-    Off by default: the interim encoding cannot hold a cost that references a time series.
+  - `store_systems_in_results::Bool = false`: storing the systems in the results is disabled;
+    `true` raises an error.
   - `console_level = Logging.Error`:
   - `file_level = Logging.Info`:
 """
@@ -661,6 +664,13 @@ function POM.build!(
     partitions::Union{Nothing, SimulationPartitions} = nothing,
     index = nothing,
 )
+    # SYSTEM-IN-RESULTS: storing the systems in the results is disabled until it is redesigned.
+    if store_systems_in_results
+        error(
+            "store_systems_in_results = true is not supported: storing the systems in the " *
+            "results is disabled until it is redesigned.",
+        )
+    end
     TimerOutputs.reset_timer!(BUILD_PROBLEMS_TIMER)
     TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "Build Simulation" begin
         _check_folder(sim)
@@ -679,7 +689,6 @@ function POM.build!(
                 try
                     _build!(
                         sim;
-                        store_systems_in_results = store_systems_in_results,
                         setup_simulation_partitions = setup_simulation_partitions,
                         partitions = partitions,
                         index = index,
@@ -1219,6 +1228,7 @@ function _empty_problem_caches!(sim::Simulation)
     return
 end
 
+#= SYSTEM-IN-RESULTS: storing the systems in the results is disabled until it is redesigned.
 function _serialize_systems_to_json(sim::Simulation)
     simulation_models = get_models(sim)
     results = Dict{String, String}()
@@ -1244,6 +1254,7 @@ function _system_document_json(sys::PSY.System)
     doc = PSY.to_openapi(sys; store_rows = no_time_series)
     return JSON3.write(PSY.PC.document_tree(doc))
 end
+=#
 
 function serialize_status(sim::Simulation)
     serialize_status(get_simulation_status(sim), get_results_dir(sim))
