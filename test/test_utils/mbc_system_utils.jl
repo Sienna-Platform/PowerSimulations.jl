@@ -16,16 +16,17 @@ function replace_with_renewable!(
         name = "RG1",
         available = true,
         bus = get_bus(unit1),
-        active_power = get_active_power(unit1, PSY.CU),
-        reactive_power = get_reactive_power(unit1, PSY.CU),
-        rating = get_rating(unit1, PSY.CU),
+        active_power = get_active_power(unit1, u"CU"),
+        reactive_power = get_reactive_power(unit1, u"CU"),
+        rating = get_rating(unit1, u"CU"),
         prime_mover_type = PSY.PrimeMovers.PVe,
-        reactive_power_limits = get_reactive_power_limits(unit1, PSY.CU),
+        reactive_power_limits = get_reactive_power_limits(unit1, u"CU"),
         power_factor = 0.9,
         # the start up, shunt down, and no-load cost of renewables should be zero,
         # but we'll use the unit's operation cost as-is for simplicity.
         operation_cost = deepcopy(get_operation_cost(unit1)),
         base_power = get_base_power(unit1),
+        input_basis = u"CU",
     )
     add_component!(sys, rg1)
     transfer_mbc!(rg1, unit1, sys)
@@ -45,7 +46,7 @@ function replace_with_renewable!(
         length = total_steps,
     )
     if use_thermal_max_power
-        rg_data = fill(get_active_power_limits(unit1, PSY.NU).max, total_steps)
+        rg_data = fill(get_active_power_limits(unit1, u"NU").max, total_steps)
     else
         rg_data = magnitude .* ones(total_steps) .+ random_variation .* rand(total_steps)
     end
@@ -75,13 +76,14 @@ function replace_load_with_interruptible!(sys::System)
         name = get_name(load1) * "_interruptible",
         bus = get_bus(load1),
         available = get_available(load1),
-        active_power = get_active_power(load1, PSY.CU),
-        reactive_power = get_reactive_power(load1, PSY.CU),
-        max_active_power = get_max_active_power(load1, PSY.CU),
-        max_reactive_power = get_max_reactive_power(load1, PSY.CU),
+        active_power = get_active_power(load1, u"CU"),
+        reactive_power = get_reactive_power(load1, u"CU"),
+        max_active_power = get_max_active_power(load1, u"CU"),
+        max_reactive_power = get_max_reactive_power(load1, u"CU"),
         operation_cost = PSY.LoadCost(nothing),
         base_power = get_base_power(load1),
         conformity = get_conformity(load1),
+        input_basis = u"CU",
     )
     add_component!(sys, interruptible_load)
     for md in IS.list_time_series_metadata(load1)
@@ -109,16 +111,16 @@ function tweak_system!(sys::System, load_pow_mult, therm_pow_mult, therm_price_m
     for load in get_components(PowerLoad, sys)
         set_max_active_power!(
             load,
-            get_max_active_power(load, PSY.SU) * load_pow_mult * PSY.SU,
+            get_max_active_power(load, u"SU") * load_pow_mult * u"SU",
         )
     end
     # replace with type of component?
     for therm in get_components(ThermalStandard, sys)
         op_cost = get_operation_cost(therm)
         _is_market_bid_cost(op_cost) && continue
-        old_limits = get_active_power_limits(therm, PSY.CU)
+        old_limits = get_active_power_limits(therm, u"CU")
         new_limits =
-            (min = old_limits.min * PSY.CU, max = old_limits.max * therm_pow_mult * PSY.CU)
+            (min = old_limits.min * u"CU", max = old_limits.max * therm_pow_mult * u"CU")
         set_active_power_limits!(therm, new_limits)
         set_variable_operation_cost!(
             op_cost,
@@ -250,7 +252,7 @@ figure baked into `initial_input` is `MEO * P_min`). Not designed for time serie
 function no_load_to_initial_input!(sys::PSY.System, comp::Generator)
     cost = get_operation_cost(comp)::MarketBidCost
     meo_rate = IS.get_proportional_term(get_function_data(get_minimum_energy_offer(cost)))
-    p_min = get_active_power_limits(comp, PSY.NU).min
+    p_min = get_active_power_limits(comp, u"NU").min
     old_fd = get_function_data(
         get_value_curve(get_incremental_offer_curves(cost)),
     )::IS.PiecewiseStepData
