@@ -60,7 +60,10 @@ end
     set_device_model!(template, ThermalStandard, ThermalBasicUnitCommitment)
     set_device_model!(template, PowerLoad, StaticPowerLoad)
     set_service_model!(template, ServiceModel(OnlineReserve{ReserveDown}, RangeReserve))
-    set_service_model!(template, ServiceModel(OnlineReserve{ReserveUp}, StepwiseCostReserve))
+    set_service_model!(
+        template,
+        ServiceModel(OnlineReserve{ReserveUp}, StepwiseCostReserve),
+    )
     set_service_model!(template, ServiceModel(OfflineReserve, StepwiseCostReserve))
     model = DecisionModel(template, sys; name = "UC", optimizer = HiGHS_optimizer)
     models = SimulationModels(; decision_models = [model])
@@ -79,8 +82,9 @@ end
             POM._reserve_offer_direction(PSY.get_component(R, sys, name)))
         return IOM.get_parameter_array(container, IOM.ParameterKey(param, R))
     end
-    reserves = [(OnlineReserve{ReserveUp}, "ORDC_TS1"), (OnlineReserve{ReserveUp}, "ORDC_TS2"),
-        (OfflineReserve, "NSPIN_TS")]
+    reserves =
+        [(OnlineReserve{ReserveUp}, "ORDC_TS1"), (OnlineReserve{ReserveUp}, "ORDC_TS2"),
+            (OfflineReserve, "NSPIN_TS")]
     values_of(R, name) = Array(breakpoints_of(R, name)[name, :, :].data)
     at_build = Dict(name => values_of(R, name) for (R, name) in reserves)
 
