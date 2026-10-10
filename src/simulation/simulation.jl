@@ -703,9 +703,12 @@ end
 
 function _apply_warm_start!(model::IOM.AbstractOptimizationModel)
     container = get_optimization_container(model)
+    # Setting a start value discards the solver's solution, so read every value first.
     # `lookup_value` reads the solve's values even after a MILP's dual computation.
-    for (key, variable) in get_variables(container)
-        JuMP.set_start_value.(variable, IOM.lookup_value(container, key))
+    variables = get_variables(container)
+    values = Dict(key => IOM.lookup_value(container, key) for key in keys(variables))
+    for (key, variable) in variables
+        JuMP.set_start_value.(variable, values[key])
     end
     return
 end

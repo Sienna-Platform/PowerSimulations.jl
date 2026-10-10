@@ -44,6 +44,12 @@ _result_source(container::OptimizationContainer, ::Val{:expressions}) =
 # solve's values from the primal cache then, and from the solver otherwise.
 _result_values(container, key, x, ::Val) = IOM.lookup_value(container, key)
 _result_values(container, key, x, ::Val{:duals}) = jump_value.(x)
+# `lookup_value` returns the container's own aux array, which the next solve mutates in place;
+# the in-memory store keeps the reference.
+function _result_values(container, key, x, ::Val{:aux_variables})
+    values = IOM.lookup_value(container, key)
+    return DenseAxisArray(copy(values.data), values.axes...)
+end
 _result_values(container, key, x, ::Val{:parameters}) = calculate_parameter_values(x)
 
 _should_export_field(exports, ts, model_name, key, ::Val{:duals}) =
