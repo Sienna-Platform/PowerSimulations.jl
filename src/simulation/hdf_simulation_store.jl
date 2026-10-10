@@ -757,7 +757,8 @@ function deserialize_system(store::HdfSimulationStore, uuid::Base.UUID)
         error("No system with UUID $uuid_str is stored")
     end
     json_text = HDF5.read(root["systems"][uuid_str])
-    return PSY.from_json(json_text, PSY.System)
+    doc = PSY.PC.document_from_json(JSON3.read(json_text, Dict{String, Any}))
+    return PSY.from_openapi(PSY.System, doc)
 end
 
 function _check_state(store::HdfSimulationStore)

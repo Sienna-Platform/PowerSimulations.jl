@@ -1225,10 +1225,23 @@ function _serialize_systems_to_json(sim::Simulation)
     for model in get_all_models(simulation_models)
         sys = get_system(model)
         get!(results, string(get_system_uuid(sys))) do
-            PSY.to_json(sys)
+            _system_document_json(sys)
         end
     end
     return results
+end
+
+# Interim encoding until the System bundle written beside each model's outputs replaces the
+# in-store copy. Like the store's earlier copy, it holds the components without time series.
+function _system_document_json(sys::PSY.System)
+    rows = PSY.read_export_store_rows(sys)
+    no_time_series = PSY.ExportStoreRows(
+        rows.supplemental_attribute_associations,
+        0,
+        empty(rows.time_series_associations),
+    )
+    doc = PSY.to_openapi(sys; store_rows = no_time_series)
+    return JSON3.write(PSY.PC.document_tree(doc))
 end
 
 function serialize_status(sim::Simulation)
