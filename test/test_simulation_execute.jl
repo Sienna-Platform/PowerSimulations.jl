@@ -409,3 +409,77 @@ end
         test_3_stage_simulation_with_feedforwards(in_memory)
     end
 end
+
+function test_2_stage_fix_value_feedforward(in_memory)
+    template_uc = get_template_basic_uc_simulation()
+    template_ed = get_template_nomin_ed_simulation()
+    set_device_model!(template_ed, ThermalStandard, ThermalBasicUnitCommitment)
+    set_network_model!(
+        template_ed,
+        NetworkModel(CopperPlateNetworkModel; use_slacks = true),
+    )
+    models = SimulationModels(;
+        decision_models = [
+            DecisionModel(
+                template_uc,
+                PSB.build_system(PSITestSystems, "c_sys5_hy_uc");
+                name = "UC",
+                optimizer = HiGHS_optimizer,
+            ),
+            DecisionModel(
+                template_ed,
+                PSB.build_system(PSITestSystems, "c_sys5_hy_ed");
+                name = "ED",
+                optimizer = HiGHS_optimizer,
+            ),
+        ],
+    )
+    sequence = SimulationSequence(;
+        models = models,
+        feedforwards = Dict(
+            "ED" => [
+                FixValueFeedforward(;
+                    component_type = ThermalStandard,
+                    source = OnVariable,
+                    affected_values = [OnVariable],
+                ),
+            ],
+        ),
+        ini_cond_chronology = InterProblemChronology(),
+    )
+    sim = Simulation(;
+        name = "fix_value_ff",
+        steps = 2,
+        models = models,
+        sequence = sequence,
+        simulation_folder = mktempdir(; cleanup = true),
+    )
+    @test build!(sim; console_level = Logging.Error) == PSI.SimulationBuildStatus.BUILT
+    @test execute!(sim; in_memory = in_memory) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    results = SimulationResults(sim)
+    on_uc = read_realized_variable(
+        get_decision_problem_results(results, "UC"),
+        "OnVariable__ThermalStandard",
+    )
+    on_ed = read_realized_variable(
+        get_decision_problem_results(results, "ED"),
+        "OnVariable__ThermalStandard",
+    )
+    # Each ED commitment is fixed to the UC commitment of the hour it falls in.
+    on_ed.hour = floor.(on_ed.DateTime, Hour)
+    joined = innerjoin(
+        on_ed,
+        on_uc;
+        on = [:hour => :DateTime, :name],
+        renamecols = "_ed" => "_uc",
+    )
+    @test nrow(joined) == nrow(on_ed)
+    @test joined.value_ed ≈ joined.value_uc
+end
+
+@testset "2-Stage Decision Models with FixValueFeedforward" begin
+    for in_memory in (true, false)
+        test_2_stage_fix_value_feedforward(in_memory)
+    end
+end
