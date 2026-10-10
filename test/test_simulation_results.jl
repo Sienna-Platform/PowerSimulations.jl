@@ -143,7 +143,7 @@ function compare_results(rpath, epath, model, field, name, timestamp)
     size(df1) != size(df2_long) && return false
 
     if !isapprox(df1.value, df2_long.value)
-        @error "File mismatch" rp ep row1 row2
+        @error "File mismatch" rp ep
         return false
     end
 
