@@ -352,6 +352,9 @@ end
         sequence = sequence,
         simulation_folder = mktempdir(; cleanup = true),
     )
+    # SYSTEM-IN-RESULTS: storing the systems in the results is disabled until it is redesigned.
+    @test_throws ErrorException build!(sim_with; store_systems_in_results = true)
+    #=
     build_out = build!(sim_with; store_systems_in_results = true)
     @test build_out == PSI.SimulationBuildStatus.BUILT
     PSI.open_store(PSI.HdfSimulationStore, PSI.get_store_dir(sim_with), "r") do store
@@ -359,6 +362,7 @@ end
         @test haskey(root, "systems")
         @test length(keys(root["systems"])) > 0
     end
+    =#
 
     # Test store_systems_in_results = false (default)
     models2 = create_simulation_build_test_problems(get_template_basic_uc_simulation())
