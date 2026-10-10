@@ -966,12 +966,14 @@ function test_decision_problem_results_kwargs_handling(
     # PowerSystems (psy6) has no system-wide unit base (`set_units_base_system!`/
     # `get_units_base` are gone; getters take an explicit unit system per call), so
     # `populate_units` is unsupported and errors regardless of `populate_system`.
+    #= SYSTEM-IN-RESULTS: storing the systems in the results is disabled until it is redesigned.
     @test_throws ErrorException get_decision_problem_results(
         results,
         "ED";
         populate_system = true,
         populate_units = IS.UnitSystem.DEVICE_BASE,
     )
+    =#
 
     @test_throws ArgumentError get_decision_problem_results(
         results,
