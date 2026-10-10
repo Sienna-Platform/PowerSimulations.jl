@@ -598,21 +598,10 @@ end
     # Fixture default: device base power (140) != system base power (100).
     sys_mismatch = build_sys_incr(false, true, false)
 
-    # Same system, except "Test Unit1"'s device base power is forced equal to the system
-    # base power; limits/rating/active power are rescaled by absolute MW so the physical
-    # dispatch problem is unchanged, mirroring `load_sys_incr`'s own base-power rescale.
+    # Same system, except "Test Unit1"'s device base power is rebased to the system base
+    # power, keeping every natural-unit value so the physical dispatch problem is unchanged.
     sys_matched = build_sys_incr(false, true, false)
-    u_matched = get_component(SEL_INCR, sys_matched)
-    limits = get_active_power_limits(u_matched, PSY.NU)
-    rating = get_rating(u_matched, PSY.NU)
-    active_power = get_active_power(u_matched, PSY.NU)
-    set_base_power!(u_matched, get_base_power(sys_matched))
-    set_active_power_limits!(
-        u_matched,
-        (min = limits.min * u"MW", max = limits.max * u"MW"),
-    )
-    set_rating!(u_matched, rating * u"MW")
-    set_active_power!(u_matched, active_power * u"MW")
+    rebase_component!(get_component(SEL_INCR, sys_matched), get_base_power(sys_matched))
 
     model_mismatch, _ =
         run_generic_mbc_sim(sys_mismatch; device_to_formulation = device_to_formulation)
