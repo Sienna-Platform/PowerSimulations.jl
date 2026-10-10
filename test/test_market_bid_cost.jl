@@ -647,7 +647,7 @@ end
     du_x_coords = get_x_coords(baseline_fd) ./ db
     # `extend_mbc!`'s `do_override_min_x` pins the first breakpoint to the device's min power but
     # reads it in natural units, so pin it here on the device base instead.
-    du_x_coords[1] = get_active_power_limits(unit1, PSY.NU).min / db
+    du_x_coords[1] = get_active_power_limits(unit1, u"NU").min / db
     du_incr_curve = make_market_bid_curve(
         du_x_coords,
         get_y_coords(baseline_fd) .* db,
