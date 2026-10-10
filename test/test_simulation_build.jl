@@ -344,7 +344,7 @@ end
         ini_cond_chronology = InterProblemChronology(),
     )
 
-    # Test store_systems_in_results = true (default)
+    # Test store_systems_in_results = true
     sim_with = Simulation(;
         name = "test_with_systems",
         steps = 1,
@@ -360,7 +360,7 @@ end
         @test length(keys(root["systems"])) > 0
     end
 
-    # Test store_systems_in_results = false
+    # Test store_systems_in_results = false (default)
     models2 = create_simulation_build_test_problems(get_template_basic_uc_simulation())
     sequence2 = SimulationSequence(;
         models = models2,

@@ -525,7 +525,7 @@ end
 
 function _build!(
     sim::Simulation;
-    store_systems_in_results = true,
+    store_systems_in_results = false,
     setup_simulation_partitions = false,
     partitions = nothing,
     index = nothing,
@@ -647,7 +647,8 @@ Build the Simulation, problems and the related folder structure.
 
   - `sim::Simulation`: simulation object
   - `recorders::Vector{Symbol} = []`: recorder names to register
-  - `store_systems_in_results::Bool = true`: stores the systems as JSON in the results HDF5 file
+  - `store_systems_in_results::Bool = false`: stores the systems as JSON in the results HDF5 file.
+    Off by default: the interim encoding cannot hold a cost that references a time series.
   - `console_level = Logging.Error`:
   - `file_level = Logging.Info`:
 """
@@ -656,7 +657,7 @@ function POM.build!(
     recorders = [],
     console_level = Logging.Error,
     file_level = Logging.Info,
-    store_systems_in_results = true,
+    store_systems_in_results = false,
     partitions::Union{Nothing, SimulationPartitions} = nothing,
     index = nothing,
 )
