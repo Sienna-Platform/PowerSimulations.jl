@@ -41,6 +41,50 @@ end
     end
 end
 
+# A load formulation that adds nothing and records the initial time each build reads at.
+struct InitialTimeProbe <: POM.AbstractLoadFormulation end
+const PROBED_INITIAL_TIMES = Dates.DateTime[]
+POM.get_default_time_series_names(::Type{PowerLoad}, ::Type{InitialTimeProbe}) =
+    Dict{Type{<:IOM.TimeSeriesParameter}, String}()
+POM.get_default_attributes(::Type{PowerLoad}, ::Type{InitialTimeProbe}) =
+    Dict{String, Any}()
+function POM.construct_device!(
+    container::IOM.OptimizationContainer,
+    ::PSY.System,
+    ::IOM.ArgumentConstructStage,
+    ::IOM.DeviceModel{PowerLoad, InitialTimeProbe},
+    ::IOM.NetworkModel{CopperPlateNetworkModel},
+)
+    push!(PROBED_INITIAL_TIMES, IOM.get_initial_time(container))
+    return
+end
+POM.construct_device!(
+    ::IOM.OptimizationContainer,
+    ::PSY.System,
+    ::IOM.ModelConstructStage,
+    ::IOM.DeviceModel{PowerLoad, InitialTimeProbe},
+    ::IOM.NetworkModel{CopperPlateNetworkModel},
+) = nothing
+
+@testset "A rebuilt model builds at the step it solves" begin
+    empty!(PROBED_INITIAL_TIMES)
+    template = get_template_nomin_ed_simulation()
+    set_device_model!(template, PowerLoad, InitialTimeProbe)
+    c_sys = PSB.build_system(PSITestSystems, "c_sys5_uc")
+    model = DecisionModel(template, c_sys; name = "ED", optimizer = HiGHS_optimizer,
+        rebuild_model = true)
+    models = SimulationModels([model])
+    sequence = SimulationSequence(; models, ini_cond_chronology = InterProblemChronology())
+    sim = Simulation(; name = "rebuild_time", steps = 2, models, sequence,
+        simulation_folder = mktempdir(; cleanup = true))
+    @test build!(sim) == PSI.SimulationBuildStatus.BUILT
+    @test execute!(sim; in_memory = true) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+    t0 = PSI.get_initial_time(sim)
+    @test PROBED_INITIAL_TIMES == [t0, t0 + IOM.get_interval(sequence, :ED)]
+    # The model's clock is back on the simulation's initial time.
+    @test PSI.get_initial_time(model) == t0
+end
+
 @testset "Test model export at each solve" begin
     # 2 simulation steps. Each format writes a single file per solve, so the
     # export directory holds exactly 2 files of the selected extension and none
