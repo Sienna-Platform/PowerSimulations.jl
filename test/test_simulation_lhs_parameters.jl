@@ -118,7 +118,7 @@ for rebuild in (false, true)
         @test IOM.get_rebuild_model(IOM.get_settings(model))
         @test _deployed_fraction_in_model(model, reserve) ≈ _LHS_FRACTION .* profile[5:8]
 
-        outputs = get_decision_problem_outputs(SimulationOutputs(sim), "ED")
+        outputs = get_decision_problem_results(SimulationResults(sim), "ED")
         fractions = read_parameter(
             outputs,
             POM.DeployedFractionParameter,
