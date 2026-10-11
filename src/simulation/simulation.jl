@@ -961,7 +961,12 @@ function update_model!(model::IOM.AbstractOptimizationModel, sim::Simulation)
     if get_rebuild_model(model)
         container = get_optimization_container(model)
         reset_optimization_model!(container)
+        # The build reads time series at the initial time, so it reads this step's window;
+        # restored after, since the model's clock counts executions from the original.
+        initial_time = get_initial_time(model)
+        set_initial_time!(model, get_current_time(sim))
         POM.build_problem!(container, get_template(model), get_system(model))
+        set_initial_time!(model, initial_time)
     end
 
     return
