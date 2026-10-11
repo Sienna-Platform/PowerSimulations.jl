@@ -143,7 +143,7 @@ function compare_results(rpath, epath, model, field, name, timestamp)
     size(df1) != size(df2_long) && return false
 
     if !isapprox(df1.value, df2_long.value)
-        @error "File mismatch" rp ep row1 row2
+        @error "File mismatch" rp ep
         return false
     end
 
@@ -929,7 +929,8 @@ function test_simulation_results_from_file(path::AbstractString, c_sys5_hy_ed, c
     results_uc = get_decision_problem_results(results, "UC")
     results_ed = get_decision_problem_results(results, "ED")
 
-    @test !isnothing(get_system(results_uc))
+    # SYSTEM-IN-RESULTS: storing the systems in the results is disabled until it is redesigned.
+    # @test !isnothing(get_system(results_uc))
     @test length(read_realized_variables(results_uc)) == length(UC_EXPECTED_VARS)
 
     @test_throws IS.InvalidValue set_system!(results_uc, c_sys5_hy_ed)
@@ -949,11 +950,13 @@ function test_decision_problem_results_kwargs_handling(
     results_uc = get_decision_problem_results(results, "UC")
     results_ed = get_decision_problem_results(results, "ED")
 
+    #= SYSTEM-IN-RESULTS: storing the systems in the results is disabled until it is redesigned.
     @test !isnothing(get_system(results_uc))
     @test !isnothing(get_system(results_ed))
 
     results_ed = get_decision_problem_results(results, "ED"; populate_system = true)
     @test !isnothing(get_system(results_ed))
+    =#
 
     @test_throws IS.InvalidValue set_system!(results_uc, c_sys5_hy_ed)
 
@@ -963,12 +966,14 @@ function test_decision_problem_results_kwargs_handling(
     # PowerSystems (psy6) has no system-wide unit base (`set_units_base_system!`/
     # `get_units_base` are gone; getters take an explicit unit system per call), so
     # `populate_units` is unsupported and errors regardless of `populate_system`.
+    #= SYSTEM-IN-RESULTS: storing the systems in the results is disabled until it is redesigned.
     @test_throws ErrorException get_decision_problem_results(
         results,
         "ED";
         populate_system = true,
         populate_units = IS.UnitSystem.DEVICE_BASE,
     )
+    =#
 
     @test_throws ArgumentError get_decision_problem_results(
         results,
@@ -1006,6 +1011,7 @@ end
     end
 end
 
+#= SYSTEM-IN-RESULTS: storing the systems in the results is disabled until it is redesigned.
 @testset "Test simulation results with system from store" begin
     file_path = mktempdir(; cleanup = true)
     export_path = mktempdir(; cleanup = true)
@@ -1027,6 +1033,7 @@ end
     test_decision_problem_results(results, sys_ed, sys_uc, in_memory)
     test_emulation_problem_results(results, in_memory)
 end
+=#
 
 function read_result_names(results, key::PSI.OptimizationContainerKey)
     result_data = PSI.read_results_with_keys(
@@ -1039,6 +1046,7 @@ function read_result_names(results, key::PSI.OptimizationContainerKey)
     return Set(names(columns_without_datetime))
 end
 
+#= SYSTEM-IN-RESULTS: storing the systems in the results is disabled until it is redesigned.
 @testset "Test system is automatically populated from HDF5 store on file deserialization" begin
     file_path = mktempdir(; cleanup = true)
     export_path = mktempdir(; cleanup = true)
@@ -1071,6 +1079,7 @@ end
     ts_counts = PSY.get_time_series_counts(sys_uc)
     @test ts_counts.forecast_count == 0
 end
+=#
 
 @testset "Test system is automatically populated from HDF5 store on file deserialization" begin
     file_path = mktempdir(; cleanup = true)
