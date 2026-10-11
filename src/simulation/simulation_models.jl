@@ -116,6 +116,15 @@ function determine_horizons!(models::SimulationModels)
     return horizons
 end
 
+# A forecast with a single window has no interval: InfrastructureSystems records it as an empty
+# period, because there is no next window to be an interval away. The one window covers the
+# forecast horizon, so that is the step a model on it advances by. Whether the simulation asks
+# for more steps than the windows it has is checked against the initial times at build.
+function _single_window_interval(system::PSY.System)
+    length(PSY.get_forecast_initial_times(system)) == 1 || return Dates.Millisecond(0)
+    return IS.time_period_conversion(PSY.get_forecast_horizon(system))
+end
+
 function determine_intervals(models::SimulationModels)
     intervals = OrderedDict{Symbol, Dates.Millisecond}()
     for model in models.decision_models
@@ -125,6 +134,9 @@ function determine_intervals(models::SimulationModels)
         else
             system = get_system(model)
             interval = PSY.get_forecast_interval(system)
+            if interval == Dates.Millisecond(0)
+                interval = _single_window_interval(system)
+            end
         end
         if interval == Dates.Millisecond(0)
             throw(IS.InvalidValue("Model $(get_name(model)) interval not set correctly"))
