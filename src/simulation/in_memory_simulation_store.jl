@@ -234,4 +234,6 @@ function write_optimizer_stats!(
     return
 end
 
+#= SYSTEM-IN-RESULTS: storing the systems in the results is disabled until it is redesigned.
 write_system_json!(::InMemorySimulationStore, ::String, ::String) = nothing
+=#

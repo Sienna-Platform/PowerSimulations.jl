@@ -6,7 +6,7 @@ function run_simulation(
     in_memory = false,
     uc_network_model = nothing,
     ed_network_model = nothing,
-    store_systems_in_results = true,
+    store_systems_in_results = false,
 )
     template_uc = get_template_basic_uc_simulation()
     template_ed = get_template_nomin_ed_simulation()

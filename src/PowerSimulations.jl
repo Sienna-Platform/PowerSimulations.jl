@@ -57,6 +57,7 @@ import JuMP: optimizer_with_attributes
 import JuMP.Containers: DenseAxisArray, SparseAxisArray
 import JSON3
 import PowerSystems as PSY
+import PowerSystems: @u_str, PerUnit
 import InfrastructureSystems as IS
 import InfrastructureSystems: @assert_op, TableFormat, list_recorder_events, get_name
 import InfrastructureSystems.Simulation: SimulationInfo

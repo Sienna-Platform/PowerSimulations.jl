@@ -735,6 +735,7 @@ function write_result!(
     return
 end
 
+#= SYSTEM-IN-RESULTS: storing the systems in the results is disabled until it is redesigned.
 function write_system_json!(store::HdfSimulationStore, uuid::String, json_text::String)
     root = store.file[HDF_SIMULATION_ROOT_PATH]
     systems_group = _get_group_or_create(root, "systems")
@@ -743,6 +744,7 @@ function write_system_json!(store::HdfSimulationStore, uuid::String, json_text::
     end
     return
 end
+=#
 
 function has_system(store::HdfSimulationStore, uuid::Base.UUID)
     root = store.file[HDF_SIMULATION_ROOT_PATH]
@@ -757,7 +759,11 @@ function deserialize_system(store::HdfSimulationStore, uuid::Base.UUID)
         error("No system with UUID $uuid_str is stored")
     end
     json_text = HDF5.read(root["systems"][uuid_str])
-    return PSY.from_json(json_text, PSY.System)
+    doc = PSY.PC.document_from_json(JSON3.read(json_text, Dict{String, Any}))
+    system = PSY.from_openapi(PSY.System, doc)
+    # The document does not carry the System UUID; results match a system to its model by it.
+    PSY.set_system_uuid!(system, uuid)
+    return system
 end
 
 function _check_state(store::HdfSimulationStore)

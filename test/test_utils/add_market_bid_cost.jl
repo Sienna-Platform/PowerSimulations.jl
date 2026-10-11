@@ -208,7 +208,7 @@ function extend_mbc!(
     for comp in get_components(active_components, sys)
         op_cost = get_operation_cost(comp)::MarketBidCost
         if do_override_min_x && :active_power_limits in fieldnames(typeof(comp))
-            min_power = get_active_power_limits(comp, PSY.NU).min
+            min_power = get_active_power_limits(comp, u"NU").min
         else
             min_power = nothing
         end
