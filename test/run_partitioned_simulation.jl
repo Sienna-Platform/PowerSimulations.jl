@@ -32,8 +32,8 @@ const DATA_DIR = joinpath(BASE_DIR, "test/test_data")
 
 include(joinpath(BASE_DIR, "test/test_utils/solver_definitions.jl"))
 
-# avoid redefinition of functions and constants when running on CI
-if get(ENV, "CI", nothing) != "true"
+# The test process already holds these; a partition worker includes this script fresh.
+if !isdefined(Main, :test_template_unit_commitment)
     include(joinpath(BASE_DIR, "test/test_utils/common_operation_model.jl"))
     include(joinpath(BASE_DIR, "test/test_utils/model_checks.jl"))
     include(joinpath(BASE_DIR, "test/test_utils/mock_operation_models.jl"))
