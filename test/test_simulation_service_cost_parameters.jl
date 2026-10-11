@@ -1,10 +1,5 @@
-# Time-varying reserve demand curve (ORDC) cost parameters across simulation steps. POM keys the
-# slope and breakpoint parameters of every reserve of a service type into ONE container with an
-# empty `meta`, the reserves along its first axis; the updater must walk that axis rather than
-# read a service name from the key.
+# POM keys the ORDC cost parameters of every reserve of a type into one container.
 
-# A time-varying ORDC of reserve type `R` built from the system's static ORDC baseline, backed
-# by a deterministic cost-curve forecast with the system's horizon, interval and window count.
 function _add_ts_ordc!(
     sys,
     name::String,
@@ -39,8 +34,6 @@ function _add_ts_ordc!(
 end
 
 @testset "Time-varying ORDC cost parameters update between steps" begin
-    # On-line and off-line reserves carry their demand curve the same way, and POM builds the
-    # cost parameters for both, so both have to update.
     sys = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_reserves = true)
     static_ordc = first(get_components(PSY.has_demand_curve, PSY.OnlineReserve, sys))
     # Two ORDCs with different tranche counts share one padded container. The interval

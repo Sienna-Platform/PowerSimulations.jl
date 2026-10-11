@@ -1,10 +1,4 @@
-"""
-Left-hand-side parameters in simulations.
-
-A reserve's deployed-fraction profile multiplies the reserve award, so it is a constraint
-coefficient written as a fixed number. A model holding one is rebuilt every step to apply that
-window's values: `rebuild_model` is switched on automatically, with a warning.
-"""
+# A deployed fraction is a constraint coefficient, so a model with one is rebuilt every step.
 
 const _LHS_HORIZON = Hour(4)
 const _LHS_FRACTION = 0.5
@@ -57,7 +51,7 @@ function _lhs_storage_template()
     return template
 end
 
-function _lhs_simulation(models; steps = 2)
+function _run_lhs_simulation(models; steps = 2)
     sequence = SimulationSequence(;
         models = models,
         ini_cond_chronology = InterProblemChronology(),
@@ -69,11 +63,6 @@ function _lhs_simulation(models; steps = 2)
         sequence = sequence,
         simulation_folder = mktempdir(; cleanup = true),
     )
-    return sim
-end
-
-function _run_lhs_simulation(models; steps = 2)
-    sim = _lhs_simulation(models; steps = steps)
     @test build!(sim; console_level = Logging.Error) == PSI.SimulationBuildStatus.BUILT
     @test execute!(sim; in_memory = true) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
     return sim

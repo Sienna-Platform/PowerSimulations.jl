@@ -699,12 +699,8 @@ end
 end
 
 @testset "MarketBidCost first-breakpoint update re-anchors the block-offer row" begin
-    # `add_pwl_constraint_delta!` (IOM) anchors the linking row `power == Σ δ + p1 * on`
-    # at the first breakpoint of the curve the model is built with. When that breakpoint
-    # moves between solves, the between-step update must move the anchor along with the
-    # width rows, or the row keeps the unit at the first window's curve start. The
-    # fixture's `breakpoints_vary` shifts every breakpoint, the first included, by step and
-    # by period once `do_override_min_x` stops pinning it to the unit's minimum power.
+    # The row `power == Σ δ + p1 * on` must follow `p1` between solves. Without
+    # `do_override_min_x`, `breakpoints_vary` moves the first breakpoint too.
     device_to_formulation = FormulationDict(ThermalStandard => ThermalBasicUnitCommitment)
     sys = build_sys_incr(false, true, false; do_override_min_x = false)
     unit1 = get_component(SEL_INCR, sys)
@@ -750,11 +746,8 @@ end
 for decremental in (false, true)
     adj = decremental ? "decremental" : "incremental"
     @testset "MarketBidCost $(adj) update zeroes the blocks past a shorter curve's end" begin
-        # The block axis is sized for the longest curve in the series, and the build pins
-        # the blocks past a curve's end at zero width. `create_extra_tranches` gives the
-        # first window's first period one segment more than the second window's, so the
-        # update to the second window must set that extra block's width back to zero: left
-        # at the first window's width with no price on it, the block is free energy.
+        # `create_extra_tranches` makes window 1 one segment longer than window 2. A block
+        # that keeps its window-1 width with no price on it is free energy.
         comp_type = decremental ? InterruptiblePowerLoad : ThermalStandard
         comp_name = decremental ? "Bus1_interruptible" : "Test Unit1"
         formulation = decremental ? PowerLoadInterruption : ThermalBasicUnitCommitment

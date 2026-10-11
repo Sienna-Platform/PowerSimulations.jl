@@ -103,10 +103,7 @@ handle_variable_cost_parameter(
 const _AnyPiecewiseLinearParameter =
     Union{AbstractPiecewiseLinearSlopeParameter, AbstractPiecewiseLinearBreakpointParameter}
 
-# The block axis is sized for the longest curve in the series. A shorter curve is padded to it
-# the way `unwrap_for_param` pads the parameter values and the build pins the blocks: zero-width
-# blocks at the last breakpoint with zero slope. The update then rewrites every block's width
-# and cost, so a block past the curve's end cannot keep the width of an earlier, longer curve.
+# Pad a shorter curve with zero-width, zero-slope blocks, so no block keeps an older curve's width.
 _n_blocks(::AbstractPiecewiseLinearSlopeParameter, additional_axes) =
     length(only(additional_axes))
 _n_blocks(::AbstractPiecewiseLinearBreakpointParameter, additional_axes) =
@@ -177,95 +174,37 @@ function update_variable_cost!(
     return
 end
 
-# A device's curve also anchors its block-offer linking row at the first breakpoint, so a
-# device update re-anchors that row under formulation `D`.
-function update_variable_cost!(
-    breakpoint_param::AbstractPiecewiseLinearBreakpointParameter,
+function _converted_piecewise_data(
     container::OptimizationContainer,
     function_data::PSY.PiecewiseStepData,
-    parameter_multiplier::JuMPFloatArray,
-    attributes::CostFunctionAttributes,
-    component::T,
-    time_period::Int,
+    component::PSY.Component,
     power_units::IS.AbstractUnitSystem,
-    ::Type{D},
-) where {T <: PSY.Component, D <: AbstractDeviceFormulation}
-    update_variable_cost!(
-        breakpoint_param,
-        container,
+)
+    return get_piecewise_curve_per_system_unit(
         function_data,
-        parameter_multiplier,
-        attributes,
-        component,
-        time_period,
         power_units,
+        get_model_base_power(container),
+        PSY.get_base_power(component),
     )
-    converted_data =
-        _converted_piecewise_data(container, function_data, component, power_units)
-    _update_pwl_offset!(
-        breakpoint_param, container, component, time_period, converted_data, D)
-    return
 end
 
-# A slope update rewrites objective terms only, so the formulation a device update
-# carries for the breakpoint's row anchoring is not needed here.
-update_variable_cost!(
-    slope_param::AbstractPiecewiseLinearSlopeParameter,
-    container::OptimizationContainer,
-    function_data::PSY.PiecewiseStepData,
-    parameter_multiplier::JuMPFloatArray,
-    attributes::CostFunctionAttributes,
-    component::PSY.Component,
-    time_period::Int,
-    power_units::IS.AbstractUnitSystem,
-    ::Type{<:AbstractDeviceFormulation},
-) = update_variable_cost!(
-    slope_param,
-    container,
-    function_data,
-    parameter_multiplier,
-    attributes,
-    component,
-    time_period,
-    power_units,
-)
-
-_converted_piecewise_data(
-    container::OptimizationContainer,
-    function_data::PSY.PiecewiseStepData,
-    component::PSY.Component,
-    power_units::IS.AbstractUnitSystem,
-) = get_piecewise_curve_per_system_unit(
-    function_data,
-    power_units,
-    get_model_base_power(container),
-    PSY.get_base_power(component),
-)
-
-# The block-offer linking row a breakpoint parameter anchors, paired the way
-# `_linear_block_width_constraint` pairs the width rows.
 _linear_block_offer_constraint(::Type{IncrementalPiecewiseLinearBreakpointParameter}) =
     PiecewiseLinearBlockIncrementalOfferConstraint
 _linear_block_offer_constraint(::Type{DecrementalPiecewiseLinearBreakpointParameter}) =
     PiecewiseLinearBlockDecrementalOfferConstraint
 
+_update_pwl_offsets!(::AbstractPiecewiseLinearSlopeParameter, args...) = nothing
+
 """
-Re-anchor the block-offer linking row at the curve's refreshed first breakpoint.
-`add_pwl_constraint_delta!` (IOM `objective_function_pwl_delta.jl`) builds the row as
-`power == Σ δ + p1 * on` for a formulation whose offset rides the `OnVariable`, as
-`power == Σ δ + p1` for one with a constant minimum, and as `power == Σ δ` for one with
-no offset, with `p1` the first breakpoint of the curve the model was built with. A curve
-whose first breakpoint moves between solves must move that offset too, or the row keeps
-the device at the old curve's start while the width rows describe the new one. The
-branch mirrors the build's dispatch on the power variable the row links, so a formulation
-without an offset is left alone.
+Move the block-offer rows' offsets to the new first breakpoints. The branch mirrors
+`add_pwl_constraint_delta!` (IOM `objective_function_pwl_delta.jl`).
 """
-function _update_pwl_offset!(
+function _update_pwl_offsets!(
     ::P,
     container::OptimizationContainer,
     component::T,
-    time_period::Int,
-    cost_data::PSY.PiecewiseStepData,
+    raw_values,
+    power_units::IS.AbstractUnitSystem,
     ::Type{D},
 ) where {
     P <: AbstractPiecewiseLinearBreakpointParameter,
@@ -273,28 +212,37 @@ function _update_pwl_offset!(
     D <: AbstractDeviceFormulation,
 }
     component_name = PSY.get_name(component)
-    row = get_constraint(container, _linear_block_offer_constraint(P), T)[
-        component_name,
-        time_period,
+    rows = get_constraint(container, _linear_block_offer_constraint(P), T)
+    U = _linked_power_variable(container, rows[component_name, 1], T, component_name, 1)
+    constant_offset = IOM._include_constant_min_gen_power_in_constraint(T, U, D)
+    constant_offset || IOM._include_min_gen_power_in_constraint(T, U, D) || return
+    first_breakpoints = [
+        first(
+            PSY.get_x_coords(
+                _converted_piecewise_data(container, value, component, power_units),
+            ),
+        ) for value::PSY.PiecewiseStepData in raw_values
     ]
-    U = _linked_power_variable(container, row, T, component_name, time_period)
-    p1 = first(PSY.get_x_coords(cost_data))
-    if IOM._include_constant_min_gen_power_in_constraint(T, U, D)
-        JuMP.set_normalized_rhs(row, p1)
-    elseif IOM._include_min_gen_power_in_constraint(T, U, D)
+    if constant_offset
+        for (t, p1) in enumerate(first_breakpoints)
+            JuMP.set_normalized_rhs(rows[component_name, t], p1)
+        end
+    else
         on_vars = get_variable(container, OnVariable, T)
-        if component_name in axes(on_vars, 1)
-            JuMP.set_normalized_coefficient(row, on_vars[component_name, time_period], -p1)
-        else
-            JuMP.set_normalized_rhs(row, p1)
+        has_on_variable::Bool = component_name in axes(on_vars, 1)
+        for (t, p1) in enumerate(first_breakpoints)
+            if has_on_variable
+                JuMP.set_normalized_coefficient(
+                    rows[component_name, t], on_vars[component_name, t], -p1)
+            else
+                JuMP.set_normalized_rhs(rows[component_name, t], p1)
+            end
         end
     end
     return
 end
 
-# The cost parameter's attributes name only the block variables, so the power variable the
-# linking row ties them to is read off the row: the one `T` variable entering it with
-# coefficient one.
+# The attributes name only the block variables: find the `T` variable with coefficient one.
 function _linked_power_variable(
     container::OptimizationContainer,
     row::JuMP.ConstraintRef,
@@ -435,28 +383,21 @@ function handle_variable_cost_parameter(
         initial_forecast_time,
         horizon,
     )
-    additional_axes = lookup_additional_axes(parameter_array)
-    n_blocks = _n_blocks(param, additional_axes)
-    for (t, value::PSY.PiecewiseStepData) in enumerate(raw_values)
-        unwrapped_value = unwrap_for_param(T(), value, additional_axes)
-        _set_param_value!(parameter_array, unwrapped_value, name, t)
-        update_variable_cost!(
-            param,
-            container,
-            _pad_to_blocks(value, n_blocks),
-            parameter_multiplier,
-            attributes,
-            component,
-            t,
-            power_units,
-            formulation,
-        )
-    end
+    _update_piecewise_cost_values!(
+        param,
+        container,
+        raw_values,
+        parameter_array,
+        parameter_multiplier,
+        attributes,
+        component,
+        name,
+        power_units,
+    )
+    _update_pwl_offsets!(param, container, component, raw_values, power_units, formulation)
     return
 end
 
-# Every reserve kind carries its demand curve in `variable`, and POM builds the curve's cost
-# parameters for any `AbstractReserve` with one (on-line, off-line and group reserves alike).
 function handle_variable_cost_parameter(
     param::T,
     component::PSY.AbstractReserve,
@@ -483,6 +424,32 @@ function handle_variable_cost_parameter(
         initial_forecast_time,
         horizon,
     )
+    _update_piecewise_cost_values!(
+        param,
+        container,
+        raw_values,
+        parameter_array,
+        parameter_multiplier,
+        attributes,
+        component,
+        name,
+        power_units,
+    )
+    return
+end
+
+# Function barrier, as in `_update_scalar_cost_values!`.
+function _update_piecewise_cost_values!(
+    param::T,
+    container::OptimizationContainer,
+    raw_values,
+    parameter_array,
+    parameter_multiplier,
+    attributes,
+    component,
+    name,
+    power_units::IS.AbstractUnitSystem,
+) where {T <: _AnyPiecewiseLinearParameter}
     additional_axes = lookup_additional_axes(parameter_array)
     n_blocks = _n_blocks(param, additional_axes)
     for (t, value::PSY.PiecewiseStepData) in enumerate(raw_values)

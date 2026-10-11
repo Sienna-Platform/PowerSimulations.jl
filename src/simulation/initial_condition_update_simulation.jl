@@ -120,8 +120,7 @@ function IOM.update_initial_conditions!(
         end
         var_val = power_vals[comp_name]
         if !isapprox(status_val, 0.0; atol = ABSOLUTE_TOLERANCE)
-            min = PSY.get_active_power_limits(comp, u"SU").min
-            max = PSY.get_active_power_limits(comp, u"SU").max
+            (; min, max) = PSY.get_active_power_limits(comp, u"SU")
             if var_val <= max && var_val >= min
                 set_ic_quantity!(ic, var_val)
             elseif isapprox(min - var_val, 0.0; atol = ABSOLUTE_TOLERANCE)

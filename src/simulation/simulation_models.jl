@@ -116,10 +116,7 @@ function determine_horizons!(models::SimulationModels)
     return horizons
 end
 
-# A forecast with a single window has no interval: InfrastructureSystems records it as an empty
-# period, because there is no next window to be an interval away. The one window covers the
-# forecast horizon, so that is the step a model on it advances by. Whether the simulation asks
-# for more steps than the windows it has is checked against the initial times at build.
+# IS records a single-window forecast with an empty interval; the window spans the horizon.
 function _single_window_interval(system::PSY.System)
     length(PSY.get_forecast_initial_times(system)) == 1 || return Dates.Millisecond(0)
     return IS.time_period_conversion(PSY.get_forecast_horizon(system))

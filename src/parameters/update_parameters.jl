@@ -51,10 +51,7 @@ function _fix_parameter_value!(
     return
 end
 
-# Under recurrent solves without a rebuild the parameter array holds JuMP variables, and
-# `_set_param_value_at!` has already fixed each one to its state value. The affected
-# variables are tied to those parameters by the `FeedforwardFixValueConstraint` equality
-# rows built with the model, so the fix is complete once the parameters are set.
+# The parameters are fixed JuMP variables; `FeedforwardFixValueConstraint` rows tie them in.
 function _fix_parameter_value!(
     ::OptimizationContainer,
     ::DenseAxisArray{JuMP.VariableRef, 2},

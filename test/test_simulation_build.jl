@@ -431,11 +431,10 @@ function _single_window_system()
     return sys
 end
 
-function _single_window_simulation(; steps = 1, interval = nothing)
+function _single_window_simulation(; steps = 1, kwargs...)
     template = POM.PowerOperationsProblemTemplate(NetworkModel(CopperPlateNetworkModel))
     set_device_model!(template, ThermalStandard, ThermalBasicDispatch)
     set_device_model!(template, PowerLoad, StaticPowerLoad)
-    kwargs = interval === nothing ? (;) : (; interval)
     model = DecisionModel(template, _single_window_system(); name = "UC",
         optimizer = HiGHS_optimizer, kwargs...)
     models = SimulationModels(; decision_models = [model])

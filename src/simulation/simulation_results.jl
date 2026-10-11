@@ -275,9 +275,6 @@ function _populate_system_in_results!(
             error("Can't find the system file or retrieve the system error=$e")
         end
 
-        # PowerSystems (psy6) removed the system-wide unit-base mode this used to set via
-        # `set_units_base_system!`; getters now take an explicit unit (`u"SU"`, `u"CU"`,
-        # `u"NU"`) per call. Error loudly rather than silently ignoring a caller's request.
         if !isnothing(populate_units)
             error(
                 "populate_units is not supported: PowerSystems no longer has a system-wide " *

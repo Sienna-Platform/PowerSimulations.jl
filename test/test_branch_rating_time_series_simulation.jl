@@ -35,13 +35,11 @@
     @test build!(sim; console_level = Logging.Error) == PSI.SimulationBuildStatus.BUILT
 
     container = PSI.get_optimization_container(model)
-    rating_values() = map(
-        x -> x isa JuMP.VariableRef ? JuMP.fix_value(x) : x,
-        Array(
+    rating_values() =
+        PSI.jump_value.(
             IOM.get_parameter_array(container,
                 IOM.ParameterKey(BranchRatingTimeSeriesParameter, Line)).data,
-        ),
-    )
+        )
     @test all(rating_values() .≈ window_value(1))
 
     @test execute!(sim; enable_progress_bar = false) ==

@@ -136,9 +136,10 @@ function _update_parameter_values!(
 
     ts_uuids_updated = Set{String}()
     for (name, arc) in PNM.get_name_to_arc_map(catalog, V)
-        device_with_time_series = PNM.get_device_with_time_series(
-            PNM.get_reduction_entry(catalog, arc), U, ts_name)
-        device_with_time_series === nothing && continue
+        reduction_entry = PNM.get_reduction_entry(catalog, arc)
+        PNM.has_time_series(reduction_entry, U, ts_name) || continue
+        device_with_time_series =
+            PNM.get_device_with_time_series(reduction_entry, U, ts_name)
         ts_uuid = _get_ts_uuid(attributes, name)
         if ts_uuid in ts_uuids_updated
             continue

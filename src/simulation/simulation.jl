@@ -714,7 +714,6 @@ end
 function _apply_warm_start!(model::IOM.AbstractOptimizationModel)
     container = get_optimization_container(model)
     # Setting a start value discards the solver's solution, so read every value first.
-    # `lookup_value` reads the solve's values even after a MILP's dual computation.
     variables = get_variables(container)
     values = Dict(key => IOM.lookup_value(container, key) for key in keys(variables))
     for (key, variable) in variables
@@ -961,8 +960,7 @@ function update_model!(model::IOM.AbstractOptimizationModel, sim::Simulation)
     if get_rebuild_model(model)
         container = get_optimization_container(model)
         reset_optimization_model!(container)
-        # The build reads time series at the initial time, so it reads this step's window;
-        # restored after, since the model's clock counts executions from the original.
+        # The build reads time series at the initial time; the model's clock needs it back.
         initial_time = get_initial_time(model)
         set_initial_time!(model, get_current_time(sim))
         POM.build_problem!(container, get_template(model), get_system(model))
