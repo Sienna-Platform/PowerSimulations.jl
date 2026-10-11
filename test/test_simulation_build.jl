@@ -393,3 +393,69 @@ end
         @test !haskey(root, "systems")
     end
 end
+
+"""One bus, one thermal unit and one load with 24 h of hourly load data, transformed to a
+single 24 h forecast window. InfrastructureSystems records the interval of a one-window
+forecast as an empty period."""
+function _single_window_system()
+    sys = PSY.System(100.0)
+    bus = PSY.ACBus(; number = 1, name = "bus1", available = true,
+        bustype = PSY.ACBusTypes.REF, angle = 0.0, magnitude = 1.0,
+        voltage_limits = (min = 0.9, max = 1.1), base_voltage = 230.0,
+        input_basis = u"CU")
+    PSY.add_component!(sys, bus)
+    PSY.add_component!(
+        sys,
+        PSY.ThermalStandard(; name = "gen1", available = true,
+            status = PSY.OperationalStates.ONLINE, bus, active_power = 1.0,
+            reactive_power = 0.0,
+            rating = 2.0, active_power_limits = (min = 0.0, max = 2.0),
+            reactive_power_limits = nothing, ramp_limits = nothing,
+            operation_cost = PSY.ThermalGenerationCost(;
+                variable_operation_cost = PSY.CostCurve(PSY.LinearCurve(20.0)), fixed = 0.0,
+                start_up = 0.0, shut_down = 0.0),
+            base_power = 100.0, prime_mover_type = PSY.PrimeMovers.CT,
+            fuel = PSY.ThermalFuels.NATURAL_GAS, input_basis = u"CU"),
+    )
+    load = PSY.PowerLoad(; name = "load1", available = true, bus, active_power = 1.0,
+        reactive_power = 0.0, base_power = 100.0, max_active_power = 1.0,
+        max_reactive_power = 0.0, input_basis = u"CU")
+    PSY.add_component!(sys, load)
+    timestamps =
+        collect(range(DateTime("2024-01-01T00:00:00"); step = Hour(1), length = 24))
+    profile = [0.6 + 0.4 * sin(pi * h / 24) for h in 0:23]
+    PSY.add_time_series!(sys, load,
+        IS.SingleTimeSeries("max_active_power", TimeSeries.TimeArray(timestamps, profile);
+            unit_system = IS.CU, units = nothing, quantity_kind = "active_power"))
+    PSY.transform_single_time_series!(sys, Hour(24), Hour(24))
+    return sys
+end
+
+function _single_window_simulation(; steps = 1, interval = nothing)
+    template = POM.PowerOperationsProblemTemplate(NetworkModel(CopperPlateNetworkModel))
+    set_device_model!(template, ThermalStandard, ThermalBasicDispatch)
+    set_device_model!(template, PowerLoad, StaticPowerLoad)
+    kwargs = interval === nothing ? (;) : (; interval)
+    model = DecisionModel(template, _single_window_system(); name = "UC",
+        optimizer = HiGHS_optimizer, kwargs...)
+    models = SimulationModels(; decision_models = [model])
+    sequence = SimulationSequence(; models)
+    return Simulation(; name = "single_window", steps, models, sequence,
+        simulation_folder = mktempdir(; cleanup = true))
+end
+
+@testset "Simulation from a single forecast window" begin
+    # A one-step simulation of a one-day model needs only the one window the system has.
+    sim = _single_window_simulation()
+    @test build!(sim) == PSI.SimulationBuildStatus.BUILT
+    @test execute!(sim) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    # A second step would need a second window; say so rather than fail on the interval.
+    sim = _single_window_simulation(; steps = 2)
+    @test_throws IS.ConflictingInputsError build!(sim)
+end
+
+@testset "Explicit model interval on a single forecast window" begin
+    # The system has no forecast at a 24 h interval, so the request cannot be honored.
+    @test_throws IS.ConflictingInputsError _single_window_simulation(; interval = Hour(24))
+end

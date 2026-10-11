@@ -41,6 +41,50 @@ end
     end
 end
 
+# A load formulation that adds nothing and records the initial time each build reads at.
+struct InitialTimeProbe <: POM.AbstractLoadFormulation end
+const PROBED_INITIAL_TIMES = Dates.DateTime[]
+POM.get_default_time_series_names(::Type{PowerLoad}, ::Type{InitialTimeProbe}) =
+    Dict{Type{<:IOM.TimeSeriesParameter}, String}()
+POM.get_default_attributes(::Type{PowerLoad}, ::Type{InitialTimeProbe}) =
+    Dict{String, Any}()
+function POM.construct_device!(
+    container::IOM.OptimizationContainer,
+    ::PSY.System,
+    ::IOM.ArgumentConstructStage,
+    ::IOM.DeviceModel{PowerLoad, InitialTimeProbe},
+    ::IOM.NetworkModel{CopperPlateNetworkModel},
+)
+    push!(PROBED_INITIAL_TIMES, IOM.get_initial_time(container))
+    return
+end
+POM.construct_device!(
+    ::IOM.OptimizationContainer,
+    ::PSY.System,
+    ::IOM.ModelConstructStage,
+    ::IOM.DeviceModel{PowerLoad, InitialTimeProbe},
+    ::IOM.NetworkModel{CopperPlateNetworkModel},
+) = nothing
+
+@testset "A rebuilt model builds at the step it solves" begin
+    empty!(PROBED_INITIAL_TIMES)
+    template = get_template_nomin_ed_simulation()
+    set_device_model!(template, PowerLoad, InitialTimeProbe)
+    c_sys = PSB.build_system(PSITestSystems, "c_sys5_uc")
+    model = DecisionModel(template, c_sys; name = "ED", optimizer = HiGHS_optimizer,
+        rebuild_model = true)
+    models = SimulationModels([model])
+    sequence = SimulationSequence(; models, ini_cond_chronology = InterProblemChronology())
+    sim = Simulation(; name = "rebuild_time", steps = 2, models, sequence,
+        simulation_folder = mktempdir(; cleanup = true))
+    @test build!(sim) == PSI.SimulationBuildStatus.BUILT
+    @test execute!(sim; in_memory = true) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+    t0 = PSI.get_initial_time(sim)
+    @test PROBED_INITIAL_TIMES == [t0, t0 + IOM.get_interval(sequence, :ED)]
+    # The model's clock is back on the simulation's initial time.
+    @test PSI.get_initial_time(model) == t0
+end
+
 @testset "Test model export at each solve" begin
     # 2 simulation steps. Each format writes a single file per solve, so the
     # export directory holds exactly 2 files of the selected extension and none
@@ -407,5 +451,79 @@ end
 @testset "Test 3 stage simulation with FeedForwards" begin
     for in_memory in (true, false)
         test_3_stage_simulation_with_feedforwards(in_memory)
+    end
+end
+
+function test_2_stage_fix_value_feedforward(in_memory)
+    template_uc = get_template_basic_uc_simulation()
+    template_ed = get_template_nomin_ed_simulation()
+    set_device_model!(template_ed, ThermalStandard, ThermalBasicUnitCommitment)
+    set_network_model!(
+        template_ed,
+        NetworkModel(CopperPlateNetworkModel; use_slacks = true),
+    )
+    models = SimulationModels(;
+        decision_models = [
+            DecisionModel(
+                template_uc,
+                PSB.build_system(PSITestSystems, "c_sys5_hy_uc");
+                name = "UC",
+                optimizer = HiGHS_optimizer,
+            ),
+            DecisionModel(
+                template_ed,
+                PSB.build_system(PSITestSystems, "c_sys5_hy_ed");
+                name = "ED",
+                optimizer = HiGHS_optimizer,
+            ),
+        ],
+    )
+    sequence = SimulationSequence(;
+        models = models,
+        feedforwards = Dict(
+            "ED" => [
+                FixValueFeedforward(;
+                    component_type = ThermalStandard,
+                    source = OnVariable,
+                    affected_values = [OnVariable],
+                ),
+            ],
+        ),
+        ini_cond_chronology = InterProblemChronology(),
+    )
+    sim = Simulation(;
+        name = "fix_value_ff",
+        steps = 2,
+        models = models,
+        sequence = sequence,
+        simulation_folder = mktempdir(; cleanup = true),
+    )
+    @test build!(sim; console_level = Logging.Error) == PSI.SimulationBuildStatus.BUILT
+    @test execute!(sim; in_memory = in_memory) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    results = SimulationResults(sim)
+    on_uc = read_realized_variable(
+        get_decision_problem_results(results, "UC"),
+        "OnVariable__ThermalStandard",
+    )
+    on_ed = read_realized_variable(
+        get_decision_problem_results(results, "ED"),
+        "OnVariable__ThermalStandard",
+    )
+    # Each ED commitment is fixed to the UC commitment of the hour it falls in.
+    on_ed.hour = floor.(on_ed.DateTime, Hour)
+    joined = innerjoin(
+        on_ed,
+        on_uc;
+        on = [:hour => :DateTime, :name],
+        renamecols = "_ed" => "_uc",
+    )
+    @test nrow(joined) == nrow(on_ed)
+    @test joined.value_ed ≈ joined.value_uc
+end
+
+@testset "2-Stage Decision Models with FixValueFeedforward" begin
+    for in_memory in (true, false)
+        test_2_stage_fix_value_feedforward(in_memory)
     end
 end
