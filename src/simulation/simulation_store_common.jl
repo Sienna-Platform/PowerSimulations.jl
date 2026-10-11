@@ -35,21 +35,22 @@ _result_source(container::OptimizationContainer, ::Val{:parameters}) =
     get_parameters(container)
 _result_source(container::OptimizationContainer, ::Val{:aux_variables}) =
     get_aux_variables(container)
-function _result_source(container::OptimizationContainer, ::Val{:variables})
-    if !isempty(container.primal_values_cache)
-        return container.primal_values_cache.variables_cache
-    end
-    return get_variables(container)
-end
-function _result_source(container::OptimizationContainer, ::Val{:expressions})
-    if !isempty(container.primal_values_cache)
-        return container.primal_values_cache.expressions_cache
-    end
-    return get_expressions(container)
-end
+_result_source(container::OptimizationContainer, ::Val{:variables}) =
+    get_variables(container)
+_result_source(container::OptimizationContainer, ::Val{:expressions}) =
+    get_expressions(container)
 
-_result_values(x, ::Val) = jump_value.(x)
-_result_values(x, ::Val{:parameters}) = calculate_parameter_values(x)
+# After a MILP's dual computation JuMP holds no primal values; `lookup_value` reads the
+# solve's values from the primal cache then, and from the solver otherwise.
+_result_values(container, key, x, ::Val) = IOM.lookup_value(container, key)
+_result_values(container, key, x, ::Val{:duals}) = jump_value.(x)
+# `lookup_value` returns the container's own aux array, which the next solve mutates in place;
+# the in-memory store keeps the reference.
+function _result_values(container, key, x, ::Val{:aux_variables})
+    values = IOM.lookup_value(container, key)
+    return DenseAxisArray(copy(values.data), values.axes...)
+end
+_result_values(container, key, x, ::Val{:parameters}) = calculate_parameter_values(x)
 
 _should_export_field(exports, ts, model_name, key, ::Val{:duals}) =
     should_export_dual(exports, ts, model_name, key)
@@ -79,7 +80,7 @@ function _write_model_field_results!(
 
     for (key, value) in _result_source(container, field)
         !should_write_resulting_value(key) && continue
-        data = _result_values(value, field)
+        data = _result_values(container, key, value, field)
         write_result!(store, model_name, key, index, update_timestamp, data)
 
         if !isnothing(export_params) &&
