@@ -713,18 +713,12 @@ end
 
 function _apply_warm_start!(model::IOM.AbstractOptimizationModel)
     container = get_optimization_container(model)
-    # If the model was used to retrieve duals from an MILP the logic has to be different and
-    # the results need to be read from the primal cache
-    if isempty(container.primal_values_cache)
-        jump_model = get_jump_model(container)
-        all_vars = JuMP.all_variables(jump_model)
-        all_vars_value = jump_value.(all_vars)
-        JuMP.set_start_value.(all_vars, all_vars_value)
-    else
-        for (var_key, variable_value) in container.primal_values_cache.variables_cache
-            variable = get_variable(container, var_key)
-            JuMP.set_start_value.(variable, variable_value)
-        end
+    # Setting a start value discards the solver's solution, so read every value first.
+    # `lookup_value` reads the solve's values even after a MILP's dual computation.
+    variables = get_variables(container)
+    values = Dict(key => IOM.lookup_value(container, key) for key in keys(variables))
+    for (key, variable) in variables
+        JuMP.set_start_value.(variable, values[key])
     end
     return
 end
