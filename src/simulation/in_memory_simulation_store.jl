@@ -101,6 +101,24 @@ function write_result!(
     return
 end
 
+# A 3-D key's state at one time is a (component, label) slice. Its second axis holds
+# labels, not a time index, so it fills one execution row of the emulation dataset.
+function write_result!(
+    store::InMemorySimulationStore,
+    ::Symbol,
+    key::OptimizationContainerKey,
+    index::EmulationModelIndexType,
+    update_timestamp::Dates.DateTime,
+    array::DenseAxisArray{Float64, 2, <:Tuple{Any, <:AbstractVector{<:AbstractString}}},
+)
+    container = get_data_field(get_em_data(store), get_store_container_type(key))
+    dataset = container[key]
+    set_value!(dataset, array, index)
+    set_last_recorded_row!(dataset, index)
+    set_update_timestamp!(dataset, update_timestamp)
+    return
+end
+
 function IOM.read_optimizer_stats(store::InMemorySimulationStore, model_name)
     # TODO EmulationModel: this interface is TBD
     return read_optimizer_stats(get_dm_data(store)[model_name])
