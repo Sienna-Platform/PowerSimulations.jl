@@ -1,12 +1,10 @@
-# The template model that built the cost parameters of component type `T`: its market
-# component model when registered there (it wins over a device twin, as in
-# `get_service_device_models`), else its device model.
-_is_market_registered(template, ::Type{T}) where {T <: PSY.Component} =
-    haskey(POM._market_component_models(template), nameof(T))
-
+# The template model that built the cost parameters of component type `T`. Market
+# registration wins over a device twin, because those parameters come from the market
+# formulation.
 function _component_model(template, ::Type{T}) where {T <: PSY.Component}
-    if _is_market_registered(template, T)
-        return POM._market_component_models(template)[nameof(T)]
+    market_models = POM._market_component_models(template)
+    if haskey(market_models, nameof(T))
+        return market_models[nameof(T)]
     end
     model = get_model(template, T)
     if isnothing(model)

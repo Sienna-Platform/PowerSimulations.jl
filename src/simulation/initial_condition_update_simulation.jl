@@ -250,11 +250,12 @@ function _bounded_energy(comp::PSY.Storage, val::Float64)
     cap = PSY.get_storage_capacity(comp, u"SU") * PSY.get_conversion_factor(comp)
     limits = PSY.get_storage_level_limits(comp)
     lo, hi = limits.min * cap, limits.max * cap
-    lo - ABSOLUTE_TOLERANCE <= val <= hi + ABSOLUTE_TOLERANCE && return clamp(val, lo, hi)
     bounded = clamp(val, lo, hi)
-    @warn "The initial EnergyVariable of $(PSY.get_name(comp)) from the simulation state, \
-           $(val), is outside this model's storage limits [$(lo), $(hi)]; clamped to $(bounded)." maxlog =
-        50
+    if !(lo - ABSOLUTE_TOLERANCE <= val <= hi + ABSOLUTE_TOLERANCE)
+        @warn "The initial EnergyVariable of $(PSY.get_name(comp)) from the simulation state, \
+               $(val), is outside this model's storage limits [$(lo), $(hi)]; clamped to $(bounded)." maxlog =
+            50
+    end
     return bounded
 end
 _bounded_energy(::PSY.Component, val::Float64) = val

@@ -387,7 +387,7 @@ function update_decision_state!(
     # The state's columns come from the first model that registered the key; a later model
     # can carry fewer, such as a bus another model's network reduction kept and this one's
     # did not. Those columns keep their last recorded values.
-    stored = Set(axes(store_data)[1])
+    stored = Set{String}(axes(store_data)[1])
     all_columns = get_column_names(key, state_data)[1]
     column_names = [name for name in all_columns if name in stored]
     if length(column_names) < length(all_columns)
