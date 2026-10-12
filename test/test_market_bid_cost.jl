@@ -966,3 +966,36 @@ for case in _IEC_VARYING_CASES
         iec_obj_fun_test_wrapper(sys_constant, sys_varying)
     end
 end
+
+function _market_load_registration_template(; physical_twin::Bool)
+    template = PowerOperationsProblemTemplate(CopperPlateNetworkModel)
+    physical_twin &&
+        set_device_model!(template, PSY.InterruptiblePowerLoad, StaticPowerLoad)
+    set_market_model!(
+        template,
+        IOM.MarketModel(SettlementMarket; settlement_domain = PSY.System),
+    )
+    set_market_component_model!(template, PSY.InterruptiblePowerLoad, MarketLoadBid)
+    return template
+end
+
+@testset "Cost-parameter updates resolve the model by registration" begin
+    market_only = _market_load_registration_template(; physical_twin = false)
+    model = PSI._component_model(market_only, PSY.InterruptiblePowerLoad)
+    @test IOM.get_formulation(model) === MarketLoadBid
+
+    with_twin = _market_load_registration_template(; physical_twin = true)
+    model = PSI._component_model(with_twin, PSY.InterruptiblePowerLoad)
+    @test IOM.get_formulation(model) === MarketLoadBid
+
+    device_only = PowerOperationsProblemTemplate(CopperPlateNetworkModel)
+    set_device_model!(device_only, PSY.InterruptiblePowerLoad, StaticPowerLoad)
+    model = PSI._component_model(device_only, PSY.InterruptiblePowerLoad)
+    @test IOM.get_formulation(model) === StaticPowerLoad
+
+    unregistered = PowerOperationsProblemTemplate(CopperPlateNetworkModel)
+    @test_throws ErrorException PSI._component_model(
+        unregistered,
+        PSY.InterruptiblePowerLoad,
+    )
+end

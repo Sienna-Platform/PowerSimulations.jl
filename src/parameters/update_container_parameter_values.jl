@@ -1,6 +1,22 @@
-# The template model of component type `T`. A market component (a `VirtualParticipant`, a
-# `PointToPointBid`) is registered on the template's market model, not among its devices.
-_component_model(template, ::Type{T}) where {T <: PSY.Component} = get_model(template, T)
+# The template model that built the cost parameters of component type `T`: its market
+# component model when registered there (it wins over a device twin, as in
+# `get_service_device_models`), else its device model.
+_is_market_registered(template, ::Type{T}) where {T <: PSY.Component} =
+    haskey(POM._market_component_models(template), nameof(T))
+
+function _component_model(template, ::Type{T}) where {T <: PSY.Component}
+    if _is_market_registered(template, T)
+        return POM._market_component_models(template)[nameof(T)]
+    end
+    model = get_model(template, T)
+    if isnothing(model)
+        error(
+            "Component type $(T) is in neither the template's device models nor its market component models.",
+        )
+    end
+    return model
+end
+
 _component_model(template, ::Type{T}) where {T <: PSY.MarketComponent} =
     IOM.get_market_component_models(IOM.get_market_model(template))[nameof(T)]
 
