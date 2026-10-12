@@ -393,7 +393,8 @@ function update_decision_state!(
     if length(column_names) < length(all_columns)
         @warn "$(encode_key_as_string(key)): this model's outputs lack \
                $(length(all_columns) - length(column_names)) of the state's \
-               $(length(all_columns)) columns; they keep their last recorded values" maxlog = 20
+               $(length(all_columns)) columns; they keep their last recorded values" maxlog =
+            20
     end
     model_resolution = get_resolution(model_params)
     state_resolution = get_data_resolution(state_data)

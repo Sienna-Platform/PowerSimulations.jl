@@ -234,7 +234,10 @@ function IOM.update_initial_conditions!(
     var_val =
         get_system_state_value(state, EnergyVariable(), get_component_type(first(ics)))
     for ic in ics
-        set_ic_quantity!(ic, _bounded_energy(IOM.get_component(ic), var_val[get_component_name(ic)]))
+        set_ic_quantity!(
+            ic,
+            _bounded_energy(IOM.get_component(ic), var_val[get_component_name(ic)]),
+        )
     end
     return
 end
@@ -250,7 +253,8 @@ function _bounded_energy(comp::PSY.Storage, val::Float64)
     lo - ABSOLUTE_TOLERANCE <= val <= hi + ABSOLUTE_TOLERANCE && return clamp(val, lo, hi)
     bounded = clamp(val, lo, hi)
     @warn "The initial EnergyVariable of $(PSY.get_name(comp)) from the simulation state, \
-           $(val), is outside this model's storage limits [$(lo), $(hi)]; clamped to $(bounded)." maxlog = 50
+           $(val), is outside this model's storage limits [$(lo), $(hi)]; clamped to $(bounded)." maxlog =
+        50
     return bounded
 end
 _bounded_energy(::PSY.Component, val::Float64) = val
