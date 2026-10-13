@@ -110,7 +110,8 @@ import InfrastructureOptimizationModels:
     get_parameter_attributes, get_parameter_array, get_parameter_multiplier_array,
     get_attribute_key, get_time_series_name, _get_ts_uuid, _set_param_value_at!,
     ValidDataParamEltypes, TimeSeriesAttributes, VariableValueAttributes,
-    CostFunctionAttributes, EventParametersAttributes, NoAttributes
+    CostFunctionAttributes, EventParametersAttributes, NoAttributes,
+    get_time_series_window
 import InfrastructureOptimizationModels:
     LOG_GROUP_SIMULATION_STORE, get_variables, get_parameters,
     get_duals, get_expressions, get_aux_variables, get_time_steps, find_timestamp_index,
