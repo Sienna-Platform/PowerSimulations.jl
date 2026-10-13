@@ -592,14 +592,13 @@ function update_decision_state!(
 
     offset = resolution_ratio - 1
     result_time_index = axes(store_data)[3]
-    # The state names its second axis with strings; the output can name it with integers.
+    # The state names its second axis as the output's column names do: always strings.
     labels = axes(store_data)[2]
-    columns = string.(labels)
+    columns = get_column_names_from_axis_array(store_data)[2]
     set_update_timestamp!(state_data, simulation_time)
     for t in result_time_index
         state_range = state_data_index:(state_data_index + offset)
         for (name, column) in zip(labels, columns), i in state_range
-            #loop pelo -outages, names t
             for outage in outages
                 # TODO: We could also interpolate here
                 state_data.values[outage, column, i] = store_data[outage, name, t]

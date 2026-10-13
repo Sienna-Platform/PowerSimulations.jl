@@ -21,24 +21,72 @@ function _add_value_axes_series!(sys, component, value_axes)
     return reduce(hcat, [vec(selectdim(second, 1, t)) for t in 1:24])
 end
 
-@testset "A parameter with an extra axis refreshes from the next window" begin
-    # Each time step of a series with value axes is an array. A load zone has no
-    # availability flag, so the update cannot list it by availability.
-    sys = PSB.build_system(PSITestSystems, "c_sys5_uc")
+# A load zone has no availability flag, so the update cannot list it by availability.
+function _value_axes_cases(sys)
     zone = PSY.LoadZone("zone", 0.0, 0.0)
     PSY.add_component!(sys, zone)
-    thermal = PSY.get_component(ThermalStandard, sys, "Alta")
-    cases = [
+    return [
         (
             ValueAxesParameter,
             ThermalStandard,
-            thermal,
+            PSY.get_component(ThermalStandard, sys, "Alta"),
             [IS.TimeSeriesAxis("block", [1, 2]), IS.TimeSeriesAxis("product", ["a", "b"])],
         ),
         (ValueAxesLHSParameter, PSY.LoadZone, zone, [IS.TimeSeriesAxis("bus", [1, 2, 3])]),
     ]
-    expected = [_add_value_axes_series!(sys, c, axes) for (_, _, c, axes) in cases]
+end
 
+# Adds the containers the build would make for `cases`, advances one step, updates them,
+# and checks each one against `expected`.
+function _test_value_axes_update!(model, ts_type, cases, expected)
+    container = IOM.get_optimization_container(model)
+    time_steps = IOM.get_time_steps(container)
+    parameters = map(cases, expected) do (P, V, component, _), values
+        parameter = IOM.add_time_series_parameter_container!(
+            container,
+            P,
+            V,
+            ts_type,
+            "factors",
+            ["factors_hash"],
+            [PSY.get_name(component)],
+            (1:size(values, 1),),
+            time_steps,
+        )
+        IOM.add_component_name!(
+            IOM.get_attributes(parameter),
+            PSY.get_name(component),
+            "factors_hash",
+        )
+        for t in time_steps
+            IOM._set_parameter_at!(
+                IOM.get_parameter_array(parameter).data,
+                IOM.get_jump_model(container),
+                zeros(size(values, 1)),
+                1,
+                t,
+            )
+        end
+        return parameter
+    end
+    IOM.advance_execution_count!(model)
+    for ((P, V, _, _), parameter, values) in zip(cases, parameters, expected)
+        IOM.update_container_parameter_values!(
+            container,
+            model,
+            IOM.ParameterKey(P, V),
+            PSI.DatasetContainer{PSI.InMemoryDataset}(),
+        )
+        array = IOM.get_parameter_array(parameter)
+        @test jump_value.(array["factors_hash", :, :].data) == values
+    end
+    return
+end
+
+@testset "A parameter with an extra axis refreshes from the next window" begin
+    sys = PSB.build_system(PSITestSystems, "c_sys5_uc")
+    cases = _value_axes_cases(sys)
+    expected = [_add_value_axes_series!(sys, c, axes) for (_, _, c, axes) in cases]
     template = PowerOperationsProblemTemplate(CopperPlateNetworkModel)
     set_device_model!(template, ThermalStandard, ThermalBasicDispatch)
     set_device_model!(template, PowerLoad, StaticPowerLoad)
@@ -51,35 +99,36 @@ end
     )
     @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
           IOM.ModelBuildStatus.BUILT
+    _test_value_axes_update!(model, IS.Deterministic, cases, expected)
+end
 
-    container = IOM.get_optimization_container(model)
-    parameters = map(cases, expected) do (P, V, component, _), values
-        parameter = IOM.add_time_series_parameter_container!(
-            container,
-            P,
-            V,
-            IS.Deterministic,
+# Adds a 48-hour "factors" series whose steps have the shape of `value_axes`, and returns the
+# second hour flattened as the emulator's one-step parameter holds it: (position, 1).
+function _add_value_axes_single_series!(sys, component, value_axes)
+    dims = Tuple(length(axis.labels) for axis in value_axes)
+    data = reshape(collect(1.0:(48 * prod(dims))), 48, dims...)
+    PSY.add_time_series!(
+        sys,
+        component,
+        IS.SingleTimeSeries(
             "factors",
-            ["factors_hash"],
-            [PSY.get_name(component)],
-            (1:size(values, 1),),
-            IOM.get_time_steps(container),
-        )
-        IOM.add_component_name!(
-            IOM.get_attributes(parameter),
-            PSY.get_name(component),
-            "factors_hash",
-        )
-        return parameter
-    end
-    IOM.advance_execution_count!(model)
-    for ((P, V, _, _), parameter, values) in zip(cases, parameters, expected)
-        IOM.update_container_parameter_values!(
-            container,
-            model,
-            IOM.ParameterKey(P, V),
-            PSI.DatasetContainer{PSI.InMemoryDataset}(),
-        )
-        @test IOM.get_parameter_array(parameter)["factors_hash", :, :].data == values
-    end
+            _VALUE_AXES_T0,
+            Hour(1),
+            data;
+            value_axes = value_axes,
+        ),
+    )
+    return reshape(vec(selectdim(data, 1, 2)), :, 1)
+end
+
+@testset "An emulator parameter with an extra axis refreshes from the next hour" begin
+    sys = PSB.build_system(PSITestSystems, "c_sys5_uc")
+    cases = _value_axes_cases(sys)
+    expected = [_add_value_axes_single_series!(sys, c, axes) for (_, _, c, axes) in cases]
+    template = PowerOperationsProblemTemplate(CopperPlateNetworkModel)
+    set_device_model!(template, ThermalStandard, ThermalBasicDispatch)
+    model = EmulationModel(template, sys; optimizer = HiGHS_optimizer, resolution = Hour(1))
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          IOM.ModelBuildStatus.BUILT
+    _test_value_axes_update!(model, IS.SingleTimeSeries, cases, expected)
 end

@@ -13,54 +13,93 @@ end
 
 ######################## Methods to update Parameters from Time Series #####################
 function _get_time_series_window(
-    ::DenseAxisArray{<:Any, 2},
+    ::DenseAxisArray{T, 2},
     ::Type{U},
     model::DecisionModel,
     component,
     ts_name,
     initial_time,
-    horizon,
-    interval,
-) where {U <: PSY.AbstractDeterministic}
+) where {T <: Union{JuMP.VariableRef, Float64}, U <: PSY.AbstractDeterministic}
     return get_time_series_values!(
         U,
         model,
         component,
         ts_name,
         initial_time,
-        horizon;
-        interval = interval,
+        get_time_steps(get_optimization_container(model))[end];
+        interval = get_interval(get_settings(model)),
     )
 end
 
 # A container with an extra axis holds a vector per time step, as a series with value axes
 # gives. A TimeArray holds two dims at most, so read the window the way the build reads it.
 function _get_time_series_window(
-    ::DenseAxisArray{<:Any, 3},
+    ::DenseAxisArray{T, 3},
     ::Type{U},
     model::DecisionModel,
     component,
     ts_name,
     initial_time,
-    horizon,
-    interval,
-) where {U <: PSY.AbstractDeterministic}
-    forecast = IS.get_time_series(
+) where {T <: Union{JuMP.VariableRef, Float64}, U <: PSY.AbstractDeterministic}
+    return get_time_series_window(
         U,
         component,
-        ts_name;
-        start_time = initial_time,
-        count = 1,
-        interval = _to_is_interval(interval),
-        resolution = _to_is_resolution(get_resolution(get_settings(model))),
-    )
-    return _initial_values(
-        component,
-        forecast,
-        _value_axes(forecast),
+        ts_name,
         initial_time,
-        horizon,
+        get_time_steps(get_optimization_container(model))[end];
+        interval = get_interval(get_settings(model)),
+        resolution = get_resolution(model),
     )
+end
+
+# An emulator step reads one value per component.
+function _get_time_series_window(
+    ::DenseAxisArray{T, 2},
+    ::Type{U},
+    model::EmulationModel,
+    component,
+    ts_name,
+    initial_time,
+) where {T <: Union{JuMP.VariableRef, Float64}, U <: PSY.SingleTimeSeries}
+    return get_time_series_values!(U, model, component, ts_name, initial_time)
+end
+
+function _get_time_series_window(
+    ::DenseAxisArray{T, 3},
+    ::Type{U},
+    model::EmulationModel,
+    component,
+    ts_name,
+    initial_time,
+) where {T <: Union{JuMP.VariableRef, Float64}, U <: PSY.SingleTimeSeries}
+    return get_time_series_window(
+        U,
+        component,
+        ts_name,
+        initial_time,
+        1;
+        resolution = get_resolution(model),
+    )
+end
+
+function _set_time_series_row!(
+    parent_param,
+    ::W,
+    ts_vector,
+    additional_axes,
+    i_param::Int,
+    ts_name,
+) where {W <: ParameterType}
+    for (t, value) in enumerate(ts_vector)
+        # first two axes of parameter_array are component, time; we care about any additional ones
+        unwrapped_value = unwrap_for_param(W(), value, additional_axes)
+        if !all(isfinite, unwrapped_value)
+            error("The value for the time series $(ts_name) is not finite. \
+                  Check that the data in the time series is valid.")
+        end
+        _set_param_value_at!(parent_param, unwrapped_value, i_param, t)
+    end
+    return
 end
 
 function _set_param_value!(
@@ -95,22 +134,19 @@ end
 
 function _update_parameter_values!(
     parameter_array::DenseAxisArray{T},
-    ::W,
+    param::W,
     attributes::TimeSeriesAttributes{U},
     ::Type{V},
-    model::DecisionModel,
+    model::Union{DecisionModel, EmulationModel},
     ::DatasetContainer{InMemoryDataset},
 ) where {
     T <: Union{JuMP.VariableRef, Float64},
-    U <: PSY.AbstractDeterministic,
+    U <: Union{PSY.AbstractDeterministic, PSY.SingleTimeSeries},
     V <: PSY.Component,
     W <: ParameterType,
 }
-    initial_forecast_time = get_current_time(model) # Function not well defined for DecisionModels
-    horizon = get_time_steps(get_optimization_container(model))[end]
+    initial_forecast_time = get_current_time(model)
     ts_name = get_time_series_name(attributes)
-    model_interval = get_interval(get_settings(model))
-    ts_interval = model_interval
     sys = get_system(model)
     # Hoist the underlying dense storage and per-component name lookup once so each
     # write skips DenseAxisArray's String-keyed axis lookup. `additional_axes` is
@@ -131,20 +167,15 @@ function _update_parameter_values!(
                 PSY.get_component(V, sys, name),
                 ts_name,
                 initial_forecast_time,
-                horizon,
-                ts_interval,
             )
-            i_param = name_lookup[ts_uuid]
-            for (t, value) in enumerate(ts_vector)
-                # first two axes of parameter_array are component, time; we care about any additional ones
-                unwrapped_value =
-                    unwrap_for_param(W(), value, additional_axes)
-                if !all(isfinite, unwrapped_value)
-                    error("The value for the time series $(ts_name) is not finite. \
-                          Check that the data in the time series is valid.")
-                end
-                _set_param_value_at!(parent_param, unwrapped_value, i_param, t)
-            end
+            _set_time_series_row!(
+                parent_param,
+                param,
+                ts_vector,
+                additional_axes,
+                name_lookup[ts_uuid],
+                ts_name,
+            )
             push!(ts_uuids, ts_uuid)
         end
     end
@@ -214,121 +245,34 @@ end
 
 function _update_parameter_values!(
     parameter_array::DenseAxisArray{T},
-    ::W,
+    param::W,
     attributes::TimeSeriesAttributes{U},
     service::V,
-    model::DecisionModel,
+    model::Union{DecisionModel, EmulationModel},
     ::DatasetContainer{InMemoryDataset},
 ) where {
     T <: Union{JuMP.VariableRef, Float64},
-    U <: PSY.AbstractDeterministic,
+    U <: Union{PSY.AbstractDeterministic, PSY.SingleTimeSeries},
     V <: PSY.Service,
     W <: ParameterType,
 }
-    initial_forecast_time = get_current_time(model)
-    horizon = get_time_steps(get_optimization_container(model))[end]
     ts_name = get_time_series_name(attributes)
-    model_interval = get_interval(get_settings(model))
-    ts_interval = model_interval
-    ts_uuid = _get_ts_uuid(attributes, PSY.get_name(service))
     ts_vector = _get_time_series_window(
         parameter_array,
         U,
         model,
         service,
         ts_name,
-        initial_forecast_time,
-        horizon,
-        ts_interval,
+        get_current_time(model),
     )
-    parent_param = parameter_array.data
-    i_param = parameter_array.lookup[1][ts_uuid]
-    additional_axes = lookup_additional_axes(parameter_array)
-    for (t, value) in enumerate(ts_vector)
-        unwrapped_value = unwrap_for_param(W(), value, additional_axes)
-        if !all(isfinite, unwrapped_value)
-            error("The value for the time series $(ts_name) is not finite. \
-                  Check that the data in the time series is valid.")
-        end
-        _set_param_value_at!(parent_param, unwrapped_value, i_param, t)
-    end
-end
-
-function _update_parameter_values!(
-    parameter_array::DenseAxisArray{T},
-    ::ParameterType,
-    attributes::TimeSeriesAttributes{U},
-    ::Type{V},
-    model::EmulationModel,
-    ::DatasetContainer{InMemoryDataset},
-) where {
-    T <: Union{JuMP.VariableRef, Float64},
-    U <: PSY.SingleTimeSeries,
-    V <: PSY.Component,
-}
-    initial_forecast_time = get_current_time(model)
-    template = get_template(model)
-    device_model = get_model(template, V)
-    components = IOM.get_available_components(device_model, get_system(model))
-    ts_name = get_time_series_name(attributes)
-    ts_resolution = get_resolution(get_settings(model))
-    # Hoist the underlying dense storage and per-component name lookup once.
-    parent_param = parameter_array.data
-    name_lookup = parameter_array.lookup[1]
-    ts_uuids = Set{String}()
-    for component in components
-        PSY.has_time_series(component, U, ts_name) || continue
-        ts_uuid = _get_ts_uuid(attributes, PSY.get_name(component))
-        if !(ts_uuid in ts_uuids)
-            # Note: This interface reads one single value per component at a time.
-            value = get_time_series_values!(
-                U,
-                model,
-                component,
-                get_time_series_name(attributes),
-                initial_forecast_time;
-                resolution = ts_resolution,
-            )[1]
-            if !isfinite(value)
-                error("The value for the time series $(ts_name) is not finite. \
-                      Check that the data in the time series is valid.")
-            end
-            _set_param_value_at!(parent_param, value, name_lookup[ts_uuid], 1)
-            push!(ts_uuids, ts_uuid)
-        end
-    end
-    return
-end
-
-function _update_parameter_values!(
-    parameter_array::DenseAxisArray{T},
-    ::ParameterType,
-    attributes::TimeSeriesAttributes{U},
-    service::V,
-    model::EmulationModel,
-    ::DatasetContainer{InMemoryDataset},
-) where {T <: Union{JuMP.VariableRef, Float64}, U <: PSY.SingleTimeSeries, V <: PSY.Service}
-    initial_forecast_time = get_current_time(model)
-    ts_name = get_time_series_name(attributes)
-    ts_uuid = _get_ts_uuid(attributes, PSY.get_name(service))
-    ts_resolution = get_resolution(get_settings(model))
-    # Note: This interface reads one single value per component at a time.
-    value = get_time_series_values!(
-        U,
-        model,
-        service,
-        get_time_series_name(attributes),
-        initial_forecast_time;
-        resolution = ts_resolution,
-    )[1]
-    if !isfinite(value)
-        error("The value for the time series $(ts_name) is not finite. \
-            Check that the data in the time series is valid.")
-    end
-    parent_param = parameter_array.data
-    i_param = parameter_array.lookup[1][ts_uuid]
-    _set_param_value_at!(parent_param, value, i_param, 1)
-
+    _set_time_series_row!(
+        parameter_array.data,
+        param,
+        ts_vector,
+        lookup_additional_axes(parameter_array),
+        parameter_array.lookup[1][_get_ts_uuid(attributes, PSY.get_name(service))],
+        ts_name,
+    )
     return
 end
 
