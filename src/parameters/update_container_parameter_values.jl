@@ -12,6 +12,57 @@ function _update_parameter_values!(
 end
 
 ######################## Methods to update Parameters from Time Series #####################
+function _get_time_series_window(
+    ::DenseAxisArray{<:Any, 2},
+    ::Type{U},
+    model::DecisionModel,
+    component,
+    ts_name,
+    initial_time,
+    horizon,
+    interval,
+) where {U <: PSY.AbstractDeterministic}
+    return get_time_series_values!(
+        U,
+        model,
+        component,
+        ts_name,
+        initial_time,
+        horizon;
+        interval = interval,
+    )
+end
+
+# A container with an extra axis holds a vector per time step, as a series with value axes
+# gives. A TimeArray holds two dims at most, so read the window the way the build reads it.
+function _get_time_series_window(
+    ::DenseAxisArray{<:Any, 3},
+    ::Type{U},
+    model::DecisionModel,
+    component,
+    ts_name,
+    initial_time,
+    horizon,
+    interval,
+) where {U <: PSY.AbstractDeterministic}
+    forecast = IS.get_time_series(
+        U,
+        component,
+        ts_name;
+        start_time = initial_time,
+        count = 1,
+        interval = _to_is_interval(interval),
+        resolution = _to_is_resolution(get_resolution(get_settings(model))),
+    )
+    return _initial_values(
+        component,
+        forecast,
+        _value_axes(forecast),
+        initial_time,
+        horizon,
+    )
+end
+
 function _set_param_value!(
     param::JuMPVariableTensor,
     value::Union{T, AbstractVector{T}},
@@ -60,14 +111,7 @@ function _update_parameter_values!(
     ts_name = get_time_series_name(attributes)
     model_interval = get_interval(get_settings(model))
     ts_interval = model_interval
-    subsystem = get_subsystem(attributes)
-    template = get_template(model)
-    if isempty(subsystem)
-        device_model = get_model(template, V)
-    else
-        device_model = get_model(template, V, subsystem)
-    end
-    components = IOM.get_available_components(device_model, get_system(model))
+    sys = get_system(model)
     # Hoist the underlying dense storage and per-component name lookup once so each
     # write skips DenseAxisArray's String-keyed axis lookup. `additional_axes` is
     # invariant for the lifetime of this update call.
@@ -75,20 +119,20 @@ function _update_parameter_values!(
     name_lookup = parameter_array.lookup[1]
     additional_axes = lookup_additional_axes(parameter_array)
     ts_uuids = Set{String}()
-    for component in components
-        if !PSY.has_time_series(component, U, ts_name)
-            continue
-        end
-        ts_uuid = _get_ts_uuid(attributes, PSY.get_name(component))
+    # Refresh the rows the build made. Availability can change after the build, and a
+    # component type without an availability flag cannot list its components by it.
+    for name in get_component_names(attributes)
+        ts_uuid = _get_ts_uuid(attributes, name)
         if !(ts_uuid in ts_uuids)
-            ts_vector = get_time_series_values!(
+            ts_vector = _get_time_series_window(
+                parameter_array,
                 U,
                 model,
-                component,
+                PSY.get_component(V, sys, name),
                 ts_name,
                 initial_forecast_time,
-                horizon;
-                interval = ts_interval,
+                horizon,
+                ts_interval,
             )
             i_param = name_lookup[ts_uuid]
             for (t, value) in enumerate(ts_vector)
@@ -187,14 +231,15 @@ function _update_parameter_values!(
     model_interval = get_interval(get_settings(model))
     ts_interval = model_interval
     ts_uuid = _get_ts_uuid(attributes, PSY.get_name(service))
-    ts_vector = get_time_series_values!(
+    ts_vector = _get_time_series_window(
+        parameter_array,
         U,
         model,
         service,
-        get_time_series_name(attributes),
+        ts_name,
         initial_forecast_time,
-        horizon;
-        interval = ts_interval,
+        horizon,
+        ts_interval,
     )
     parent_param = parameter_array.data
     i_param = parameter_array.lookup[1][ts_uuid]
