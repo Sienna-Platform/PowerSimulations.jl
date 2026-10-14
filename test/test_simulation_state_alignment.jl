@@ -48,3 +48,23 @@ end
         @test PSI.get_dataset_values(system, key)["gen", 1] == 36.0
     end
 end
+
+@testset "3-D decision state takes outputs with an integer second axis" begin
+    # The state names its second axis with strings; a block or segment index in the output
+    # is an integer axis.
+    ts = DateTime("2024-01-01T00:00:00")
+    resolution = Millisecond(Hour(1))
+    key = PSI.VariableKey(ActivePowerVariable, ThermalStandard)
+    state = PSI.SimulationState()
+    PSI.set_dataset!(
+        PSI.get_decision_states(state),
+        key,
+        PSI.InMemoryDataset(0.0, ts, resolution, 1, 2, (["gen"], ["1", "2"])),
+    )
+    store_data = DenseAxisArray(reshape([1.0, 2.0, 3.0, 4.0], 1, 2, 2), ["gen"], 1:2, 1:2)
+    params = PSI.ModelStoreParams(1, 2, resolution, resolution, 100.0, UUIDs.uuid4())
+    PSI.update_decision_state!(state, key, store_data, ts, params)
+    values = PSI.get_decision_state_value(state, key)
+    @test values["gen", "1", :].data == [1.0, 3.0]
+    @test values["gen", "2", :].data == [2.0, 4.0]
+end
