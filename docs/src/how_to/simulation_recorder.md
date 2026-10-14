@@ -1,70 +1,104 @@
 # Simulation Recorder
 
-PowerSimulations.jl provides the ability to record structured data as events
-during a simulation. These events can be post-processed to help debug problems.
+PowerSimulations.jl records structured events while a simulation runs. Use them to follow a
+running simulation, or to inspect afterwards what each model execution did.
 
-By default only SimulationStepEvent and ProblemExecutionEvent are recorded.  Here is an example.
+## Recorder files
 
-Suppose a simulation is run in the directory `./output`.
+Every simulation writes two recorders to `<simulation directory>/recorder/`:
 
-Assume that setup commands have been run:
+| File                    | Events                                                                |
+|:----------------------- |:--------------------------------------------------------------------- |
+| `simulation_status.log` | `SimulationStepEvent`, `ProblemExecutionEvent`                        |
+| `execution.log`         | `ParameterUpdateEvent`, `InitialConditionUpdateEvent`, `StateUpdateEvent` |
+
+Each event is one line of JSON. The recorder flushes the file after every event, so the file
+on disk is always current while the simulation runs. Every line has a `name` (the event type)
+and a `timestamp` (the wall-clock time when the event was written), followed by the event's
+fields. Type names are written without their module prefix, for example `ThermalStandard`.
+A missing numeric value is written as `null`.
+
+### `ProblemExecutionEvent`
+
+Each model execution writes a `"start"` line and then either a `"done"` line or, if the
+execution throws, a `"failed"` line before the error propagates.
+
+| Field                | Meaning                                                                                     |
+|:-------------------- |:------------------------------------------------------------------------------------------- |
+| `simulation_time`    | Simulation time of the execution                                                            |
+| `step`               | Simulation step                                                                             |
+| `model_name`         | Name of the model                                                                           |
+| `status`             | `"start"`, `"done"`, or `"failed"`                                                          |
+| `termination_status` | Solver termination status, for example `OPTIMAL` or `TIME_LIMIT`; `OPTIMIZE_NOT_CALLED` on `"start"` |
+| `objective_value`    | Objective value of a successful solve; `null` otherwise                                     |
+| `solve_time_s`       | Wall time of the last `optimize!` call, in seconds; `null` on `"start"`                     |
+| `exec_time_s`        | Wall time of the whole execution (update, solve, state update), in seconds; `null` on `"start"` |
+
+The error message of a failed execution is in `logs/simulation.log`.
+
+### `InitialConditionUpdateEvent`
+
+One event per initial-condition key per model execution. The fields `device_names`,
+`new_values`, and `previous_values` hold one entry per device.
+
+## Following a running simulation
+
+Because every line is flushed, standard tools can follow the status file while the simulation
+runs. For example, with [`jq`](https://jqlang.org/):
+
+```sh
+cd <simulation directory>/recorder
+
+# Stream every model execution as it starts and finishes
+tail -f simulation_status.log
+
+# The last completed execution
+grep '"status":"done"' simulation_status.log | tail -1 | jq .
+
+# Executions that did not solve to optimality
+jq -c 'select(.name == "ProblemExecutionEvent" and .status != "start" and .termination_status != "OPTIMAL")' simulation_status.log
+
+# Total solve time per model
+jq -s 'map(select(.status == "done")) | group_by(.model_name) | map({model: .[0].model_name, solve_time_s: (map(.solve_time_s) | add)})' simulation_status.log
+```
+
+## Reading events in Julia
+
+Assume that a simulation ran in `./output/aggregation/1` and that these setup commands ran:
 
 ```julia
 using PowerSimulations
 import PowerSimulations as PSI
 ```
 
-Note that for all functions below you can optionally specify a function to filter events.
-The function must accept the event type and return true or false.
-
-## Show all events of type PSI.SimulationStepEvent
+[`list_simulation_events`](@ref) returns the events of one type. Filter them by step, by
+model, or with a function that accepts an event and returns `true` or `false`:
 
 ```julia
-julia> show_simulation_events(PSI.SimulationStepEvent, "./output/aggregation/1")
-┌─────────────────────┬─────────────────────┬──────┬────────┐
-│                name │     simulation_time │ step │ status │
-├─────────────────────┼─────────────────────┼──────┼────────┤
-│ SimulationStepEvent │ 2024-01-01T00:00:00 │    1 │  start │
-│ SimulationStepEvent │ 2024-01-01T23:00:00 │    1 │   done │
-│ SimulationStepEvent │ 2024-01-01T23:00:00 │    2 │  start │
-│ SimulationStepEvent │ 2024-01-02T23:00:00 │    2 │   done │
-└─────────────────────┴─────────────────────┴──────┴────────┘
-```
-
-## Show events of type PSI.ProblemExecutionEvent for a specific step and stage.
-
-```julia
-show_simulation_events(
+events = list_simulation_events(PSI.ProblemExecutionEvent, "./output/aggregation/1")
+failed = list_simulation_events(
     PSI.ProblemExecutionEvent,
     "./output/aggregation/1",
-    x -> x.step == 1 && x.stage == 2 && x.status == "start"
+    x -> x.status == "failed",
 )
-┌──────────────────────┬─────────────────────┬──────┬───────┬────────┐
-│                 name │     simulation_time │ step │ stage │ status │
-├──────────────────────┼─────────────────────┼──────┼───────┼────────┤
-│ ProblemExecutionEvent │ 2024-01-01T00:00:00 │    1 │     2 │  start │
-│ ProblemExecutionEvent │ 2024-01-01T00:00:00 │    1 │     2 │  start │
-│ ProblemExecutionEvent │ 2024-01-01T01:00:00 │    1 │     2 │  start │
-│ ProblemExecutionEvent │ 2024-01-01T02:00:00 │    1 │     2 │  start │
-│ ProblemExecutionEvent │ 2024-01-01T03:00:00 │    1 │     2 │  start │
-│ ProblemExecutionEvent │ 2024-01-01T04:00:00 │    1 │     2 │  start │
-│ ProblemExecutionEvent │ 2024-01-01T05:00:00 │    1 │     2 │  start │
-│ ProblemExecutionEvent │ 2024-01-01T06:00:00 │    1 │     2 │  start │
-│ ProblemExecutionEvent │ 2024-01-01T07:00:00 │    1 │     2 │  start │
-│ ProblemExecutionEvent │ 2024-01-01T08:00:00 │    1 │     2 │  start │
-│ ProblemExecutionEvent │ 2024-01-01T09:00:00 │    1 │     2 │  start │
-│ ProblemExecutionEvent │ 2024-01-01T10:00:00 │    1 │     2 │  start │
-│ ProblemExecutionEvent │ 2024-01-01T11:00:00 │    1 │     2 │  start │
-│ ProblemExecutionEvent │ 2024-01-01T12:00:00 │    1 │     2 │  start │
-│ ProblemExecutionEvent │ 2024-01-01T13:00:00 │    1 │     2 │  start │
-│ ProblemExecutionEvent │ 2024-01-01T14:00:00 │    1 │     2 │  start │
-│ ProblemExecutionEvent │ 2024-01-01T15:00:00 │    1 │     2 │  start │
-│ ProblemExecutionEvent │ 2024-01-01T16:00:00 │    1 │     2 │  start │
-│ ProblemExecutionEvent │ 2024-01-01T17:00:00 │    1 │     2 │  start │
-│ ProblemExecutionEvent │ 2024-01-01T18:00:00 │    1 │     2 │  start │
-│ ProblemExecutionEvent │ 2024-01-01T19:00:00 │    1 │     2 │  start │
-│ ProblemExecutionEvent │ 2024-01-01T20:00:00 │    1 │     2 │  start │
-│ ProblemExecutionEvent │ 2024-01-01T21:00:00 │    1 │     2 │  start │
-│ ProblemExecutionEvent │ 2024-01-01T22:00:00 │    1 │     2 │  start │
-└──────────────────────┴─────────────────────┴──────┴───────┴────────┘
+uc_updates = list_simulation_events(
+    PSI.InitialConditionUpdateEvent,
+    "./output/aggregation/1";
+    step = 2,
+    model_name = "UC",
+)
+```
+
+[`show_simulation_events`](@ref) prints the same events as a table. Initial-condition events
+print one row per device. Pass `wall_time = true` to include the `timestamp` column:
+
+```julia
+show_simulation_events(PSI.SimulationStepEvent, "./output/aggregation/1")
+show_simulation_events(
+    PSI.InitialConditionUpdateEvent,
+    "./output/aggregation/1";
+    step = 2,
+    model_name = "UC",
+    wall_time = true,
+)
 ```

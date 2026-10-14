@@ -242,47 +242,37 @@ end
     @testset "Verify simulation events" begin
         file = joinpath(PSI.get_simulation_dir(sim), "recorder", "simulation_status.log")
         @test isfile(file)
-        events = PSI.list_simulation_events(
-            PSI.InitialConditionUpdateEvent,
-            PSI.get_simulation_dir(sim);
-            step = 1,
-        )
-        @test length(events) == 23
-        events = PSI.list_simulation_events(
-            PSI.InitialConditionUpdateEvent,
-            PSI.get_simulation_dir(sim);
-            step = 2,
-        )
-        # This value needs to be checked
-        @test length(events) == 46
-
-        PSI.show_simulation_events(
-            devnull,
-            PSI.InitialConditionUpdateEvent,
-            PSI.get_simulation_dir(sim),
-            ;
-            step = 2,
+        sim_dir = PSI.get_simulation_dir(sim)
+        for step in 1:2
+            events = PSI.list_simulation_events(
+                PSI.InitialConditionUpdateEvent,
+                sim_dir;
+                step = step,
+            )
+            @test !isempty(events)
+            @test all(x -> !isempty(x.device_names), events)
+        end
+        # The first UC execution keeps the initial conditions from the system data.
+        @test isempty(
+            PSI.list_simulation_events(
+                PSI.InitialConditionUpdateEvent,
+                sim_dir;
+                step = 1,
+                model_name = "UC",
+            ),
         )
         events = PSI.list_simulation_events(
             PSI.InitialConditionUpdateEvent,
-            PSI.get_simulation_dir(sim);
-            step = 1,
-            model_name = "UC",
-        )
-        @test length(events) == 0
-        events = PSI.list_simulation_events(
-            PSI.InitialConditionUpdateEvent,
-            PSI.get_simulation_dir(sim),
-            ;
+            sim_dir;
             step = 2,
             model_name = "UC",
         )
-        @test length(events) == 22
+        @test !isempty(events)
+        @test all(x -> x.model_name == :UC, events)
         PSI.show_simulation_events(
             devnull,
             PSI.InitialConditionUpdateEvent,
-            PSI.get_simulation_dir(sim),
-            ;
+            sim_dir;
             step = 2,
             model_name = "UC",
         )

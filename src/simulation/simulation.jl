@@ -1080,53 +1080,66 @@ function _execute!(
             )
 
             start_time = time()
-            TimerOutputs.@timeit RUN_SIMULATION_TIMER "Execute $(model_name)" begin
-                if !is_built(model)
-                    error("$(model_name) status is not ModelBuildStatus.BUILT")
-                end
+            try
+                TimerOutputs.@timeit RUN_SIMULATION_TIMER "Execute $(model_name)" begin
+                    if !is_built(model)
+                        error("$(model_name) status is not ModelBuildStatus.BUILT")
+                    end
 
-                # Is first run of first problem? Yes -> don't update problem
+                    # Is first run of first problem? Yes -> don't update problem
 
-                TimerOutputs.@timeit RUN_SIMULATION_TIMER "Update $(model_name)" begin
-                    !(step == 1 && ix == 1) && update_model!(model, sim)
-                end
+                    TimerOutputs.@timeit RUN_SIMULATION_TIMER "Update $(model_name)" begin
+                        !(step == 1 && ix == 1) && update_model!(model, sim)
+                    end
 
-                TimerOutputs.@timeit RUN_SIMULATION_TIMER "Solve $(model_name)" begin
-                    status = solve!(step, model, current_time, store; exports = exports)
-                end # Run problem Timer
+                    TimerOutputs.@timeit RUN_SIMULATION_TIMER "Solve $(model_name)" begin
+                        status = solve!(step, model, current_time, store; exports = exports)
+                    end # Run problem Timer
 
-                TimerOutputs.@timeit RUN_SIMULATION_TIMER "Update State" begin
-                    if status == RunStatus.SUCCESSFULLY_FINALIZED
-                        # TODO: _update_simulation_state! can use performance improvements
-                        _update_simulation_state!(sim, model)
-                        if model_number == execution_order[end]
-                            _update_system_state!(sim, model)
-                            _write_state_to_store!(store, sim)
-                            # Called last so the state update is written AFTER the
-                            # models run.
-                            apply_simulation_events!(sim)
+                    TimerOutputs.@timeit RUN_SIMULATION_TIMER "Update State" begin
+                        if status == RunStatus.SUCCESSFULLY_FINALIZED
+                            # TODO: _update_simulation_state! can use performance improvements
+                            _update_simulation_state!(sim, model)
+                            if model_number == execution_order[end]
+                                _update_system_state!(sim, model)
+                                _write_state_to_store!(store, sim)
+                                # Called last so the state update is written AFTER the
+                                # models run.
+                                apply_simulation_events!(sim)
+                            end
                         end
                     end
-                end
 
-                sim.internal.run_count[step][model_number] += 1
-                sim.internal.date_ref[model_number] += get_interval(sequence, model_name)
+                    sim.internal.run_count[step][model_number] += 1
+                    sim.internal.date_ref[model_number] +=
+                        get_interval(sequence, model_name)
 
-                # _apply_warm_start! can only be called once all the operations that read solutions
-                # from the optimization container have been called.
-                # See https://github.com/Sienna-Platform/PowerSimulations.jl/pull/793#discussion_r761545526
-                # for reference
-                if warm_start_enabled(model)
-                    _apply_warm_start!(model)
-                end
+                    IS.@record :simulation_status ProblemExecutionEvent(
+                        IOM.get_current_time(sim),
+                        step,
+                        model,
+                        "done",
+                        time() - start_time,
+                    )
 
+                    # _apply_warm_start! can only be called once all the operations that read solutions
+                    # from the optimization container have been called.
+                    # See https://github.com/Sienna-Platform/PowerSimulations.jl/pull/793#discussion_r761545526
+                    # for reference
+                    if warm_start_enabled(model)
+                        _apply_warm_start!(model)
+                    end
+                end #execution problem timer
+            catch
                 IS.@record :simulation_status ProblemExecutionEvent(
-                    IOM.get_current_time(sim),
+                    current_time,
                     step,
-                    model_name,
-                    "done",
+                    model,
+                    "failed",
+                    time() - start_time,
                 )
-            end #execution problem timer
+                rethrow()
+            end
             progress_event.exec_time_s = time() - start_time
             if !isnothing(results_channel)
                 put!(results_channel, SimulationIntermediateResult(progress_event))
