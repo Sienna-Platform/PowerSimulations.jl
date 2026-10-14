@@ -14,14 +14,13 @@ function _update_initial_conditions!(
     # The implementation of specific update_initial_conditions! is located in the files
     # update_initial_conditions_in_memory_store.jl and update_initial_conditions_simulation.jl
     IOM.update_initial_conditions!(ini_conditions_vector, source, model_resolution)
-    for (i, initial_condition) in enumerate(ini_conditions_vector)
-        IS.@record :execution InitialConditionUpdateEvent(
-            timestamp,
-            initial_condition,
-            previous_values[i],
-            get_name(model),
-        )
-    end
+    IS.@record :execution InitialConditionUpdateEvent(
+        timestamp,
+        key,
+        ini_conditions_vector,
+        previous_values,
+        get_name(model),
+    )
     return
 end
 

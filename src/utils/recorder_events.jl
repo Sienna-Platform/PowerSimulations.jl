@@ -29,6 +29,10 @@ struct ProblemExecutionEvent <: AbstractSimulationStatusEvent
     step::Int
     model_name::Symbol
     status::String
+    termination_status::Symbol
+    objective_value::Float64
+    solve_time_s::Float64
+    exec_time_s::Float64
 end
 
 function ProblemExecutionEvent(
@@ -43,39 +47,78 @@ function ProblemExecutionEvent(
         step,
         model_name,
         status,
+        :OPTIMIZE_NOT_CALLED,
+        NaN,
+        NaN,
+        NaN,
     )
 end
 
+function ProblemExecutionEvent(
+    simulation_time::Dates.DateTime,
+    step::Int,
+    model::IOM.AbstractOptimizationModel,
+    status::AbstractString,
+    exec_time_s::Float64,
+)
+    container = get_optimization_container(model)
+    stats = get_optimizer_stats(container)
+    if status == "done" && get_run_status(model) == RunStatus.SUCCESSFULLY_FINALIZED
+        termination_status =
+            Symbol(JuMP.MOI.TerminationStatusCode(stats.termination_status))
+        objective_value = stats.objective_value
+    else
+        # IOM writes the optimizer stats only for a successful solve.
+        termination_status = Symbol(JuMP.termination_status(get_jump_model(container)))
+        objective_value = NaN
+    end
+    return ProblemExecutionEvent(
+        IS.RecorderEventCommon("ProblemExecutionEvent"),
+        simulation_time,
+        step,
+        get_name(model),
+        status,
+        termination_status,
+        objective_value,
+        stats.timed_solve_time,
+        exec_time_s,
+    )
+end
+
+"""
+The initial conditions of one key after one model execution, with one entry per device.
+"""
 struct InitialConditionUpdateEvent <: IS.AbstractRecorderEvent
     common::IS.RecorderEventCommon
     simulation_time::Dates.DateTime
     initial_condition_type::String
     component_type::String
-    device_name::String
-    new_value::Float64
-    previous_value::Float64
-    model_name::String
+    model_name::Symbol
+    device_names::Vector{String}
+    new_values::Vector{Float64}
+    previous_values::Vector{Float64}
 end
 
-# A missing initial-condition value is recorded as a sentinel the event schema can hold.
-_recorded_ic_value(::Nothing) = 1e8
+# A missing initial-condition value is recorded as NaN, which the recorder writes as null.
+_recorded_ic_value(::Nothing) = NaN
 _recorded_ic_value(x) = x
 
 function InitialConditionUpdateEvent(
-    simulation_time,
-    ic::InitialCondition,
-    previous_value::Union{Nothing, Float64},
+    simulation_time::Dates.DateTime,
+    ::InitialConditionKey{T, U},
+    initial_conditions::Vector{<:InitialCondition},
+    previous_values::Vector,
     model_name::Symbol,
-)
+) where {T <: InitialConditionType, U <: PSY.Component}
     return InitialConditionUpdateEvent(
         IS.RecorderEventCommon("InitialConditionUpdateEvent"),
         simulation_time,
-        string(get_ic_type(ic)),
-        string(get_component_type(ic)),
-        get_component_name(ic),
-        _recorded_ic_value(get_condition(ic)),
-        _recorded_ic_value(previous_value),
-        string(model_name),
+        IS.strip_module_name(T),
+        IS.strip_module_name(U),
+        model_name,
+        get_component_name.(initial_conditions),
+        Float64[_recorded_ic_value(get_condition(ic)) for ic in initial_conditions],
+        Float64[_recorded_ic_value(x) for x in previous_values],
     )
 end
 
@@ -85,36 +128,36 @@ struct ParameterUpdateEvent <: IS.AbstractRecorderEvent
     parameter_type::String
     component_type::String
     tag::String
-    model_name::String
+    model_name::Symbol
 end
 
 function ParameterUpdateEvent(
-    parameter_type::Type{<:ParameterType},
-    component_type::Type,
+    ::Type{T},
+    ::Type{U},
     tag::String,
     simulation_time::Dates.DateTime,
     model_name::Symbol,
-)
+) where {T <: ParameterType, U}
     return ParameterUpdateEvent(
         IS.RecorderEventCommon("ParameterUpdateEvent"),
         simulation_time,
-        string(parameter_type),
-        string(component_type),
+        IS.strip_module_name(T),
+        IS.strip_module_name(U),
         tag,
-        string(model_name),
+        model_name,
     )
 end
 
 function ParameterUpdateEvent(
-    parameter_type::Type{<:ParameterType},
-    component_type::Type,
+    ::Type{T},
+    ::Type{U},
     attributes::TimeSeriesAttributes,
     simulation_time::Dates.DateTime,
     model_name::Symbol,
-)
+) where {T <: ParameterType, U}
     return ParameterUpdateEvent(
-        parameter_type,
-        component_type,
+        T,
+        U,
         attributes.name,
         simulation_time,
         model_name,
@@ -122,50 +165,48 @@ function ParameterUpdateEvent(
 end
 
 function ParameterUpdateEvent(
-    parameter_type::Type{<:ParameterType},
-    component_type::Type,
-    attributes::EventParametersAttributes,
+    ::Type{T},
+    ::Type{U},
+    ::EventParametersAttributes{S},
     simulation_time::Dates.DateTime,
     model_name::Symbol,
-)
+) where {T <: ParameterType, U, S <: IS.SupplementalAttribute}
     return ParameterUpdateEvent(
-        parameter_type,
-        component_type,
-        "outage - event",
+        T,
+        U,
+        IS.strip_module_name(S),
         simulation_time,
         model_name,
     )
 end
 
 function ParameterUpdateEvent(
-    parameter_type::Type{<:ParameterType},
-    component_type::Type,
+    ::Type{T},
+    ::Type{U},
     attributes::VariableValueAttributes,
     simulation_time::Dates.DateTime,
     model_name::Symbol,
-)
+) where {T <: ParameterType, U}
     return ParameterUpdateEvent(
-        parameter_type,
-        component_type,
-        # TODO: Store as string in the attributes to avoid interpolations
-        encode_key_as_string(get_attribute_key(attributes)),
+        T,
+        U,
+        get_attribute_key_string(attributes),
         simulation_time,
         model_name,
     )
 end
 
 function ParameterUpdateEvent(
-    parameter_type::Type{<:ParameterType},
-    component_type::Type,
+    ::Type{T},
+    ::Type{U},
     attributes::CostFunctionAttributes,
     simulation_time::Dates.DateTime,
     model_name::Symbol,
-)
+) where {T <: ParameterType, U}
     return ParameterUpdateEvent(
-        parameter_type,
-        component_type,
-        # TODO: Store as string in the attributes to avoid interpolations
-        string(get_variable_types(attributes)),
+        T,
+        U,
+        get_variable_types_string(attributes),
         simulation_time,
         model_name,
     )
@@ -174,7 +215,7 @@ end
 struct StateUpdateEvent <: IS.AbstractRecorderEvent
     common::IS.RecorderEventCommon
     simulation_time::Dates.DateTime
-    model_name::String
+    model_name::Symbol
     state_type::String
 end
 
@@ -182,7 +223,7 @@ function StateUpdateEvent(simulation_time::Dates.DateTime, model_name, state_typ
     return StateUpdateEvent(
         IS.RecorderEventCommon("StateUpdateEvent"),
         simulation_time,
-        string(model_name),
+        Symbol(model_name),
         state_type,
     )
 end
@@ -267,8 +308,8 @@ List simulation events of type T in a simulation output directory.
 
   - `output_dir::AbstractString`: Simulation output directory
   - `filter_func::Union{Nothing, Function} = nothing`: Refer to [`show_simulation_events`](@ref).
-  - `step::Int = nothing`: Filter events by step. Required if model is passed.
-  - `model::Int = nothing`: Filter events by model.
+  - `step::Int = nothing`: Filter events by step.
+  - `model_name::String = nothing`: Filter events by model.
 """
 function list_simulation_events(
     ::Type{T},
@@ -277,26 +318,31 @@ function list_simulation_events(
     step = nothing,
     model_name::Union{String, Nothing} = nothing,
 ) where {T <: IS.AbstractRecorderEvent}
-    if !isnothing(model_name) && isnothing(step)
-        throw(ArgumentError("step is required if model_name is passed"))
-    end
-
     recorder_file = _get_simulation_recorder_filename(output_dir)
     events = IS.list_recorder_events(T, recorder_file, filter_func)
 
-    if !isnothing(step)
-        recorder_file = _get_simulation_status_recorder_filename(output_dir)
-        step_range = get_simulation_step_range(recorder_file, step)
-        _filter_by_type_range!(events, step_range)
+    if !isnothing(model_name)
+        name = Symbol(model_name)
+        filter!(x -> x.model_name == name, events)
     end
 
-    if !isnothing(model_name)
-        recorder_file = _get_simulation_status_recorder_filename(output_dir)
-        model_range = get_simulation_model_range(recorder_file, step, model_name)
-        _filter_by_type_range!(events, model_range)
+    if !isnothing(step)
+        executions = _get_step_executions(output_dir, step)
+        filter!(x -> (x.model_name, x.simulation_time) in executions, events)
     end
 
     return events
+end
+
+# A model executes once per simulation time, so (model_name, simulation_time) identifies the
+# execution that wrote an event.
+function _get_step_executions(output_dir::AbstractString, step::Int)
+    events = IS.list_recorder_events(
+        ProblemExecutionEvent,
+        _get_simulation_status_recorder_filename(output_dir),
+        x -> x.step == step && x.status == "start",
+    )
+    return Set((x.model_name, x.simulation_time) for x in events)
 end
 
 function list_simulation_events(
@@ -315,7 +361,7 @@ end
         output_dir::AbstractString,
         filter_func::Union{Nothing,Function} = nothing;
         step = nothing,
-        model = nothing,
+        model_name = nothing,
         wall_time = false,
         kwargs...,
     ) where { T <: IS.AbstractRecorderEvent}
@@ -327,8 +373,8 @@ Show all simulation events of type T in a simulation output directory.
   - `::Type{T}`: Recorder event type
   - `output_dir::AbstractString`: Simulation output directory
   - `filter_func::Union{Nothing, Function} = nothing`: Refer to [`show_recorder_events`](@ref).
-  - `step::Int = nothing`: Filter events by step. Required if model is passed.
-  - `model::Int = nothing`: Filter events by model.
+  - `step::Int = nothing`: Filter events by step.
+  - `model_name::String = nothing`: Filter events by model.
   - `wall_time = false`: If true, show the wall_time timestamp.
 """
 function show_simulation_events(
@@ -336,7 +382,7 @@ function show_simulation_events(
     output_dir::AbstractString,
     filter_func::Union{Nothing, Function} = nothing;
     step = nothing,
-    model = nothing,
+    model_name = nothing,
     wall_time = false,
     kwargs...,
 ) where {T <: IS.AbstractRecorderEvent}
@@ -346,7 +392,7 @@ function show_simulation_events(
         output_dir,
         filter_func;
         step = step,
-        model = model,
+        model_name = model_name,
         wall_time = wall_time,
         kwargs...,
     )
@@ -440,7 +486,8 @@ function show_recorder_events(
     wall_time = false,
     kwargs...,
 ) where {T <: IS.AbstractRecorderEvent}
-    IS.show_recorder_events(io, T, filename, filter_func; kwargs...)
+    events = IS.list_recorder_events(T, filename, filter_func)
+    show_recorder_events(io, events, filter_func; wall_time = wall_time, kwargs...)
 end
 
 function show_recorder_events(
@@ -448,7 +495,57 @@ function show_recorder_events(
     events::Vector{T},
     filter_func::Union{Nothing, Function} = nothing;
     wall_time = false,
+    exclude_columns = Set{String}(),
     kwargs...,
 ) where {T <: IS.AbstractRecorderEvent}
-    IS.show_recorder_events(io, events; kwargs...)
+    IS.show_recorder_events(
+        io,
+        events;
+        exclude_columns = _excluded_columns(wall_time, exclude_columns),
+        kwargs...,
+    )
+end
+
+"""
+Show one row per device: an [`InitialConditionUpdateEvent`](@ref) holds every device of one
+initial-condition key.
+"""
+function show_recorder_events(
+    io::IO,
+    events::Vector{InitialConditionUpdateEvent},
+    filter_func::Union{Nothing, Function} = nothing;
+    wall_time = false,
+    exclude_columns = Set{String}(),
+    kwargs...,
+)
+    if isempty(events)
+        @warn "Found no events of type InitialConditionUpdateEvent"
+        return
+    end
+    table = DataFrame([
+        (
+            timestamp = IS.get_timestamp(event),
+            simulation_time = event.simulation_time,
+            model_name = event.model_name,
+            initial_condition_type = event.initial_condition_type,
+            component_type = event.component_type,
+            device_name = device_name,
+            new_value = event.new_values[i],
+            previous_value = event.previous_values[i],
+        ) for event in events for (i, device_name) in enumerate(event.device_names)
+    ])
+    excluded = intersect(_excluded_columns(wall_time, exclude_columns), names(table))
+    PrettyTables.pretty_table(
+        io,
+        DataFrames.select(table, Not(collect(excluded)));
+        kwargs...,
+    )
+    return
+end
+
+function _excluded_columns(wall_time::Bool, exclude_columns)
+    if wall_time
+        return Set{String}(exclude_columns)
+    end
+    return union(Set{String}(exclude_columns), Set(["timestamp"]))
 end
