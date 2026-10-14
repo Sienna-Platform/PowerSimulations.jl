@@ -327,22 +327,18 @@ function list_simulation_events(
     end
 
     if !isnothing(step)
-        executions = _get_step_executions(output_dir, step)
+        # A model executes once per simulation time, so (model_name, simulation_time)
+        # identifies the execution that wrote an event.
+        starts = IS.list_recorder_events(
+            ProblemExecutionEvent,
+            _get_simulation_status_recorder_filename(output_dir),
+            x -> x.step == step && x.status == "start",
+        )
+        executions = Set((x.model_name, x.simulation_time) for x in starts)
         filter!(x -> (x.model_name, x.simulation_time) in executions, events)
     end
 
     return events
-end
-
-# A model executes once per simulation time, so (model_name, simulation_time) identifies the
-# execution that wrote an event.
-function _get_step_executions(output_dir::AbstractString, step::Int)
-    events = IS.list_recorder_events(
-        ProblemExecutionEvent,
-        _get_simulation_status_recorder_filename(output_dir),
-        x -> x.step == step && x.status == "start",
-    )
-    return Set((x.model_name, x.simulation_time) for x in events)
 end
 
 function list_simulation_events(
@@ -534,18 +530,17 @@ function show_recorder_events(
             previous_value = event.previous_values[i],
         ) for event in events for (i, device_name) in enumerate(event.device_names)
     ])
-    excluded = intersect(_excluded_columns(wall_time, exclude_columns), names(table))
+    excluded = _excluded_columns(wall_time, exclude_columns)
     PrettyTables.pretty_table(
         io,
-        DataFrames.select(table, Not(collect(excluded)));
+        DataFrames.select(table, Not(DataFrames.Cols(in(excluded))));
         kwargs...,
     )
     return
 end
 
 function _excluded_columns(wall_time::Bool, exclude_columns)
-    if wall_time
-        return Set{String}(exclude_columns)
-    end
-    return union(Set{String}(exclude_columns), Set(["timestamp"]))
+    excluded = Set{String}(exclude_columns)
+    wall_time || push!(excluded, "timestamp")
+    return excluded
 end
