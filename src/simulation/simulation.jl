@@ -600,6 +600,7 @@ function _build!(
     end
     =#
 
+    _fill_event_models!(sim)
     _build_decision_models!(sim)
     _build_emulation_model!(sim)
 
