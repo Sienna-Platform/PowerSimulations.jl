@@ -167,6 +167,16 @@ end
 function ParameterUpdateEvent(
     ::Type{T},
     ::Type{U},
+    ::NoAttributes,
+    simulation_time::Dates.DateTime,
+    model_name::Symbol,
+) where {T <: ParameterType, U}
+    return ParameterUpdateEvent(T, U, "", simulation_time, model_name)
+end
+
+function ParameterUpdateEvent(
+    ::Type{T},
+    ::Type{U},
     ::EventParametersAttributes{S},
     simulation_time::Dates.DateTime,
     model_name::Symbol,

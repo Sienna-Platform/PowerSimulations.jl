@@ -435,6 +435,28 @@ function _get_model_store_requirements!(
     return reqs
 end
 
+# The columns `model` writes for `key`; the component axis comes first.
+function _model_columns(model::IOM.AbstractOptimizationModel, key::OptimizationContainerKey)
+    container = get_optimization_container(model)
+    field = get_store_container_type(key)
+    return get_column_names(container, field, getfield(container, field)[key], key)
+end
+
+_writes_key(::Nothing, ::OptimizationContainerKey) = false
+function _writes_key(model::IOM.AbstractOptimizationModel, key::OptimizationContainerKey)
+    should_write_resulting_value(key) || return false
+    container = get_optimization_container(model)
+    return haskey(getfield(container, get_store_container_type(key)), key)
+end
+
+# The emulator store holds the emulator's own outputs for the keys it writes and the system
+# state for the others. The system state can hold more components than the emulator has.
+function _emulation_store_columns(sim::Simulation, key, state_values::InMemoryDataset)
+    em = get_emulation_model(get_models(sim))
+    _writes_key(em, key) && return _model_columns(em, key)
+    return get_column_names(key, state_values)
+end
+
 function _get_emulation_store_requirements(sim::Simulation)
     system_state = get_system_states(get_simulation_state(sim))
     sim_time = get_steps(sim) * get_step_resolution(get_sequence(sim))
@@ -449,11 +471,11 @@ function _get_emulation_store_requirements(sim::Simulation)
         for (key, state_values) in getter(system_state)
             !should_write_resulting_value(key) && continue
             num_time_rows = sim_time ÷ get_data_resolution(state_values)
-            # The last axis is time; the store wants (time, columns...).
-            data_dims = size(state_values.values)[1:(end - 1)]
+            columns = _emulation_store_columns(sim, key, state_values)
+            # The store wants (time, columns...).
             getfield(reqs, field)[key] = Dict(
-                "columns" => get_column_names(key, state_values),
-                "dims" => (num_time_rows, data_dims...),
+                "columns" => columns,
+                "dims" => (num_time_rows, length.(columns)...),
             )
         end
     end
@@ -783,9 +805,33 @@ function _update_system_state!(sim::Simulation, model::EmulationModel)
     system_state = get_system_states(sim_state)
     store = get_simulation_store(sim)
     em_model_name = get_name(model)
+    row_timestamps = [simulation_time]
     for key in get_container_keys(get_optimization_container(model))
         !should_write_resulting_value(key) && continue
         update_system_state!(system_state, key, store, em_model_name, simulation_time)
+        dataset = get_dataset(system_state, key)
+        missing_columns = _missing_state_columns(dataset, first(_model_columns(model, key)))
+        isnothing(missing_columns) && continue
+        update_missing_state_columns!(
+            dataset,
+            key,
+            model,
+            missing_columns,
+            1:1,
+            row_timestamps,
+        )
+    end
+    for key in get_dataset_keys(system_state)
+        _writes_key(model, key) && continue
+        dataset = get_dataset(system_state, key)
+        update_missing_state_columns!(
+            dataset,
+            key,
+            model,
+            axes(dataset.values)[1],
+            1:1,
+            row_timestamps,
+        )
     end
     IS.@record :execution StateUpdateEvent(simulation_time, em_model_name, "SystemState")
     return
@@ -804,6 +850,7 @@ function _update_simulation_state!(sim::Simulation, model::DecisionModel)
     #Order matters; update parameters first to ensure event parameters are updated first
     _update_simulation_state_parameters!(sim, model)
     _update_simulation_state_others!(sim, model)
+    _update_keys_missing_from_model!(sim, model)
     model_name = get_name(model)
     simulation_time = get_current_time(sim)
     IS.@record :execution StateUpdateEvent(simulation_time, model_name, "DecisionState")
@@ -815,10 +862,47 @@ function _update_decision_state_from_store!(sim::Simulation, model_name::Symbol,
     simulation_time = get_current_time(sim)
     state = get_simulation_state(sim)
     model_params = get_decision_model_params(store, model_name)
+    model = get_simulation_model(get_models(sim), model_name)
     for key in keys
         !has_dataset(get_decision_states(state), key) && continue
         res = read_result(DenseAxisArray, store, model_name, key, simulation_time)
         update_decision_state!(state, key, res, simulation_time, model_params)
+        state_data = get_decision_state_data(state, key)
+        missing_columns = _missing_state_columns(state_data, axes(res)[1])
+        isnothing(missing_columns) && continue
+        first_row = find_timestamp_index(state_data.timestamps, simulation_time)
+        state_rows = first_row:get_last_recorded_row(state_data)
+        update_missing_state_columns!(
+            state_data,
+            key,
+            model,
+            missing_columns,
+            state_rows,
+            view(state_data.timestamps, state_rows),
+        )
+    end
+    return
+end
+
+# The state keys `model` does not write still get the extension point, over the state rows
+# that cover the model's window.
+function _update_keys_missing_from_model!(sim::Simulation, model::DecisionModel)
+    decision_states = get_decision_states(get_simulation_state(sim))
+    simulation_time = get_current_time(sim)
+    horizon = get_horizon(model)
+    for key in get_dataset_keys(decision_states)
+        _writes_key(model, key) && continue
+        state_data = get_dataset(decision_states, key)
+        _advance_state_window!(state_data, simulation_time)
+        state_rows = _window_rows(state_data, simulation_time, horizon)
+        update_missing_state_columns!(
+            state_data,
+            key,
+            model,
+            axes(state_data.values)[1],
+            state_rows,
+            view(state_data.timestamps, state_rows),
+        )
     end
     return
 end
@@ -905,6 +989,12 @@ function _write_trailing_state_to_store!(store::SimulationStore, sim::Simulation
     return
 end
 
+# The emulator store writes positionally, so state values are put in its column order.
+_select_store_columns(values::DenseAxisArray{Float64, 1}, columns::Tuple) =
+    axes(values)[1] == columns[1] ? values : values[columns[1]]
+_select_store_columns(values::DenseAxisArray{Float64, 2}, columns::Tuple) =
+    axes(values)[1] == columns[1] ? values : values[columns[1], :]
+
 function _write_state_rows!(
     store::SimulationStore,
     sim::Simulation,
@@ -927,6 +1017,8 @@ function _write_state_rows!(
     decision_dataset = get_dataset(get_decision_states(sim_state), key)
     decision_resolution = get_data_resolution(decision_dataset)
     window_start = first(decision_dataset.timestamps)
+    store_columns =
+        _emulation_store_columns(sim, key, get_dataset(get_system_states(sim_state), key))
     _update_timestamp = max(store_update_time + state_resolution, sim_ini_time)
     while _update_timestamp <= until
         aligned_timestamp =
@@ -943,7 +1035,10 @@ function _write_state_rows!(
             raw_state_values = read_result(DenseAxisArray, store, model_name, key, last_row)
             state_values = _last_recorded_state_value(store, raw_state_values, last_row)
         else
-            state_values = get_decision_state_value(sim_state, key, aligned_timestamp)
+            state_values = _select_store_columns(
+                get_decision_state_value(sim_state, key, aligned_timestamp),
+                store_columns,
+            )
         end
         ix = get_last_recorded_row(em_store, key) + 1
         write_result!(store, model_name, key, ix, _update_timestamp, state_values)
