@@ -458,3 +458,51 @@ end
     # The system has no forecast at a 24 h interval, so the request cannot be honored.
     @test_throws IS.ConflictingInputsError _single_window_simulation(; interval = Hour(24))
 end
+
+function _emulator_resolution_simulation(; decision_system, emulator_system)
+    sys_dm = PSB.build_system(PSITestSystems, decision_system)
+    sys_em =
+        PSB.build_system(PSITestSystems, emulator_system; add_single_time_series = true)
+    models = SimulationModels(;
+        decision_models = [
+            DecisionModel(get_template_nomin_ed_simulation(), sys_dm; name = "DM",
+                optimizer = HiGHS_optimizer),
+        ],
+        emulation_model = EmulationModel(get_template_nomin_ed_simulation(), sys_em;
+            name = "EM", optimizer = HiGHS_optimizer),
+    )
+    sequence = SimulationSequence(; models = models,
+        ini_cond_chronology = InterProblemChronology())
+    return Simulation(; name = "em_resolution", steps = 2, models, sequence,
+        simulation_folder = mktempdir(; cleanup = true))
+end
+
+@testset "Emulator coarser than a decision model is rejected at build" begin
+    # A 5-minute decision model with an hourly emulator.
+    sim = _emulator_resolution_simulation(;
+        decision_system = "c_sys5_ed", emulator_system = "c_sys5_uc")
+    err = try
+        build!(sim; console_level = Logging.AboveMaxLevel)
+        nothing
+    catch e
+        e
+    end
+    @test err isa IS.ConflictingInputsError
+    msg = sprint(showerror, err)
+    @test occursin("EM", msg)
+    @test occursin("1 hour", msg)
+    @test occursin("DM (5 minutes)", msg)
+end
+
+@testset "Emulator at equal or finer resolution than decision models builds" begin
+    # Equal: 5-minute decision model and 5-minute emulator.
+    sim = _emulator_resolution_simulation(;
+        decision_system = "c_sys5_ed", emulator_system = "c_sys5_ed")
+    @test build!(sim; console_level = Logging.AboveMaxLevel) ==
+          PSI.SimulationBuildStatus.BUILT
+    # Finer: hourly decision model and 5-minute emulator.
+    sim = _emulator_resolution_simulation(;
+        decision_system = "c_sys5_uc", emulator_system = "c_sys5_ed")
+    @test build!(sim; console_level = Logging.AboveMaxLevel) ==
+          PSI.SimulationBuildStatus.BUILT
+end

@@ -545,6 +545,28 @@ function _initialize_problem_storage!(
     return simulation_store_params
 end
 
+function _check_emulator_resolution(models::SimulationModels)
+    em = get_emulation_model(models)
+    isnothing(em) && return
+    em_resolution = get_resolution(em)
+    coarser = [
+        m for m in get_decision_models(models) if em_resolution > get_resolution(m)
+    ]
+    isempty(coarser) && return
+    offenders = join(
+        ["$(get_name(m)) ($(Dates.canonicalize(get_resolution(m))))" for m in coarser],
+        ", ",
+    )
+    throw(
+        IS.ConflictingInputsError(
+            "The emulation model $(get_name(em)) has resolution \
+             $(Dates.canonicalize(em_resolution)), which is coarser than the resolution of \
+             the decision model(s): $offenders. The emulation model resolution must be \
+             equal to or finer than every decision model resolution.",
+        ),
+    )
+end
+
 function _build!(
     sim::Simulation;
     setup_simulation_partitions = false,
@@ -552,6 +574,7 @@ function _build!(
     index = nothing,
 )
     set_simulation_build_status!(sim, SimulationBuildStatus.IN_PROGRESS)
+    _check_emulator_resolution(get_models(sim))
     problem_initial_times = _get_simulation_initial_times!(sim)
     sequence = get_sequence(sim)
     step_resolution = get_step_resolution(sequence)
