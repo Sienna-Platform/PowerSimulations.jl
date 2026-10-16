@@ -312,6 +312,64 @@ end
     end
 end
 
+@testset "Reading a state value no model wrote names the component and key" begin
+    # The emulator writes the commitment state without Alta, so Alta's system-state column is
+    # never written and UC's initial conditions read it at the second step.
+    sys_em = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_single_time_series = true)
+    sys_uc = PSB.build_system(PSITestSystems, "c_sys5_uc")
+    sys_ed = deepcopy(sys_em)
+    PSY.transform_single_time_series!(sys_ed, Hour(1), Hour(1))
+    em_template = get_template_basic_uc_simulation()
+    set_device_model!(
+        em_template,
+        DeviceModel(
+            ThermalStandard,
+            ThermalBasicUnitCommitment;
+            attributes = Dict{String, Any}(
+                "filter_function" => x -> PSY.get_name(x) != "Alta",
+            ),
+        ),
+    )
+    models = SimulationModels(;
+        decision_models = [
+            DecisionModel(
+                get_template_basic_uc_simulation(),
+                sys_uc;
+                name = "UC",
+                optimizer = HiGHS_optimizer,
+            ),
+            DecisionModel(
+                get_template_nomin_ed_simulation(),
+                sys_ed;
+                name = "ED",
+                optimizer = HiGHS_optimizer,
+            ),
+        ],
+        emulation_model = EmulationModel(
+            em_template,
+            sys_em;
+            name = "EM",
+            optimizer = HiGHS_optimizer,
+        ),
+    )
+    sim = Simulation(;
+        name = "unwritten_state",
+        steps = 2,
+        models = models,
+        sequence = SimulationSequence(;
+            models = models,
+            ini_cond_chronology = InterProblemChronology(),
+        ),
+        simulation_folder = mktempdir(; cleanup = true),
+    )
+    @test build!(sim; console_level = Logging.Error) == PSI.SimulationBuildStatus.BUILT
+    @test execute!(sim; in_memory = true) == PSI.RunStatus.FAILED
+    log = read(joinpath(sim.internal.logs_dir, PSI.SIMULATION_LOG_FILENAME), String)
+    @test occursin("Alta", log)
+    @test occursin("OnVariable__ThermalStandard", log)
+    @test occursin("device filters", log)
+end
+
 @testset "Advancing a dataset no model writes keeps each value's timestamp" begin
     t0 = DateTime("2024-01-01T00:00:00")
     resolution = Millisecond(Hour(1))
