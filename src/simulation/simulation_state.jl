@@ -79,7 +79,11 @@ function _get_state_params(models::SimulationModels, simulation_step::Dates.Mill
             field_containers = getfield(container, type)
             for key in keys(field_containers)
                 !should_write_resulting_value(key) && continue
-                if !haskey(params, key)
+                if !haskey(params, key) && _is_event_parameter_key(key)
+                    # The emulator reads its event parameters from the decision state, so
+                    # a device type only the emulator applies events to still needs it.
+                    params[key] = (horizon = simulation_step, resolution = model_resolution)
+                elseif !haskey(params, key)
                     @warn "New parameter $key found in emulator only; \
                         not registered by any decision model"
                 else
@@ -94,6 +98,9 @@ function _get_state_params(models::SimulationModels, simulation_step::Dates.Mill
     end
     return params
 end
+
+_is_event_parameter_key(::OptimizationContainerKey) = false
+_is_event_parameter_key(::ParameterKey{<:EventParameter}) = true
 
 _state_models(models::SimulationModels) = _state_models(models, get_emulation_model(models))
 _state_models(models::SimulationModels, ::Nothing) = get_decision_models(models)
@@ -161,6 +168,17 @@ function _get_state_columns(models::SimulationModels)
     return columns
 end
 
+# Event parameters are exogenous state the emulator reads before any event step writes it.
+# Starting them at their no-outage values covers the components no decision model writes,
+# such as a device only the emulator has; every other key starts unset.
+_initial_state_value(::OptimizationContainerKey) = NaN
+_initial_state_value(::ParameterKey{<:EventParameter}) = 0.0
+_initial_state_value(::ParameterKey{AvailableStatusParameter}) = 1.0
+
+# The outaged devices of an event are those of the emulator's system, but a variable's state
+# holds only the components of the models that write it, which need not include all of them.
+_has_component(data::InMemoryDataset, name::String) = name in axes(data.values)[1]
+
 function _initialize_decision_states!(
     sim_state::SimulationState,
     simulation_initial_time::Dates.DateTime,
@@ -174,7 +192,7 @@ function _initialize_decision_states!(
             states,
             key,
             InMemoryDataset(
-                NaN,
+                _initial_state_value(key),
                 simulation_initial_time,
                 key_params.resolution,
                 Int(simulation_step / key_params.resolution),
@@ -230,11 +248,9 @@ function _set_system_states!(
     system_states = get_system_states(sim_state)
     min_res = minimum([v.resolution for v in values(params)])
     for key in state_keys
-        set_dataset!(
-            system_states,
-            key,
-            make_system_state(simulation_initial_time, min_res, columns[key]),
-        )
+        dataset = make_system_state(simulation_initial_time, min_res, columns[key])
+        fill!(dataset.values.data, _initial_state_value(key))
+        set_dataset!(system_states, key, dataset)
     end
     return
 end
@@ -541,6 +557,7 @@ function update_decision_state!(
     event_occurence_index =
         find_aligned_timestamp_index(event_occurrence_data, simulation_time)
     for name in column_names
+        _has_component(state_data, name) || continue
         if event_occurrence_data.values[name, event_occurence_index] > 0.0
             state_data.values[name, (state_data_index + 1):end] .=
                 MISSING_INITIAL_CONDITIONS_TIME_COUNT
@@ -566,6 +583,7 @@ function update_decision_state!(
     event_occurence_index =
         find_aligned_timestamp_index(event_occurrence_data, simulation_time)
     for name in column_names
+        _has_component(state_data, name) || continue
         if event_occurrence_data.values[name, event_occurence_index] > 0.0
             for (time_off, ix) in
                 enumerate((state_data_index + 1):length(state_data.values[name, :]))
@@ -593,6 +611,7 @@ function update_decision_state!(
     event_occurence_index =
         find_aligned_timestamp_index(event_occurrence_data, simulation_time)
     for name in column_names
+        _has_component(state_data, name) || continue
         if event_occurrence_data.values[name, event_occurence_index] > 0.0
             state_data.values[name, (state_data_index + 1):end] .= 0.0
         end
@@ -1073,6 +1092,7 @@ function update_system_state!(
     current_status_values = get_last_recorded_value(current_status_data)
     set_update_timestamp!(system_dataset, simulation_time)
     for name in column_names
+        _has_component(current_status_data, name) || continue
         if event_occurrence_values[name] > 0.0
             current_status_data.values[name, 1] = 0.0
         end
@@ -1099,6 +1119,7 @@ function update_system_state!(
     current_status_values = get_last_recorded_value(current_status_data)
     set_update_timestamp!(system_dataset, simulation_time)
     for name in column_names
+        _has_component(current_status_data, name) || continue
         if event_occurrence_values[name] > 0.0
             current_status_data.values[name, 1] = MISSING_INITIAL_CONDITIONS_TIME_COUNT
         end
@@ -1125,6 +1146,7 @@ function update_system_state!(
     current_status_values = get_last_recorded_value(current_status_data)
     set_update_timestamp!(system_dataset, simulation_time)
     for name in column_names
+        _has_component(current_status_data, name) || continue
         if event_occurrence_values[name] > 0.0
             current_status_data.values[name, 1] = 0.0
         end

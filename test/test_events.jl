@@ -550,3 +550,265 @@ end
         test_reactive_power = true,
     )
 end
+
+# c_sys5_events without the thermal units in `removed_gens`, and with a
+# GeometricDistributionForcedOutage, drawn with certainty, on each of `outage_gens`.
+function events_system(;
+    outage_gens = String[],
+    removed_gens = String[],
+    horizon_interval = nothing,
+)
+    sys = build_system(PSITestSystems, "c_sys5_events")
+    for name in removed_gens
+        remove_component!(sys, get_component(ThermalStandard, sys, name))
+    end
+    isnothing(horizon_interval) || transform_single_time_series!(sys, horizon_interval...)
+    for name in outage_gens
+        add_supplemental_attribute!(
+            sys,
+            get_component(ThermalStandard, sys, name),
+            PSY.GeometricDistributionForcedOutage(;
+                mean_time_to_recovery = 3.0,
+                outage_transition_probability = 1.0,
+            ),
+        )
+    end
+    return sys
+end
+
+function events_simulation(
+    sys_d1,
+    sys_d2,
+    sys_em,
+    event_model;
+    rebuild_model = false,
+)
+    templates = map(1:2) do _
+        template = get_template_basic_uc_simulation()
+        set_network_model!(template, NetworkModel(CopperPlateNetworkModel))
+        set_device_model!(template, Line, StaticBranch)
+        set_service_model!(template, ServiceModel(OnlineReserve{ReserveUp}, RangeReserve))
+        template
+    end
+    decision_models = [
+        DecisionModel(
+            templates[1],
+            sys_d1;
+            name = "D1",
+            initialize_model = false,
+            optimizer = HiGHS_optimizer_small_gap,
+            rebuild_model = rebuild_model,
+        ),
+        DecisionModel(
+            templates[2],
+            sys_d2;
+            name = "D2",
+            initialize_model = false,
+            optimizer = HiGHS_optimizer_small_gap,
+            rebuild_model = rebuild_model,
+        ),
+    ]
+    if isnothing(sys_em)
+        models = SimulationModels(; decision_models = decision_models)
+    else
+        template_em = get_template_nomin_ed_simulation(CopperPlateNetworkModel)
+        set_device_model!(template_em, Line, StaticBranch)
+        models = SimulationModels(;
+            decision_models = decision_models,
+            emulation_model = EmulationModel(
+                template_em,
+                sys_em;
+                name = "EM",
+                optimizer = HiGHS_optimizer_small_gap,
+                rebuild_model = rebuild_model,
+            ),
+        )
+    end
+    sequence = SimulationSequence(;
+        models = models,
+        ini_cond_chronology = InterProblemChronology(),
+        events = [event_model],
+    )
+    return Simulation(;
+        name = "events",
+        steps = 1,
+        models = models,
+        sequence = sequence,
+        simulation_folder = mktempdir(; cleanup = true),
+    )
+end
+
+preset_outage_event(outage_time) =
+    EventModel(GeometricDistributionForcedOutage, POM.PresetTimeCondition([outage_time]))
+
+function event_device_names(model)
+    status = IOM.get_parameter_array(
+        IOM.get_optimization_container(model),
+        AvailableStatusParameter(),
+        ThermalStandard,
+    )
+    return Set(axes(status)[1])
+end
+
+@testset "Outages are applied from the emulator's system when attribute ids diverge" begin
+    outage_time = DateTime("2024-01-01T18:00:00")
+    sys_em = build_system(PSITestSystems, "c_sys5_events")
+    bus = first(get_components(ACBus, sys_em))
+    add_supplemental_attribute!(
+        sys_em,
+        bus,
+        PSY.GeographicInfo(;
+            geo_json = Dict("type" => "Point", "coordinates" => [0.0, 0.0]),
+        ),
+    )
+    res = run_events_simulation(;
+        sys_emulator = sys_em,
+        networks = repeat([CopperPlateNetworkModel], 3),
+        optimizers = repeat([HiGHS_optimizer_small_gap], 3),
+        outage_time = outage_time,
+        outage_length = 3.0,
+        uc_formulation = "basic",
+        ed_formulation = "nomin",
+        feedforward = false,
+        in_memory = true,
+    )
+    test_event_results(;
+        res = res,
+        outage_time = outage_time,
+        outage_length = 3.0,
+        expected_power_recovery = DateTime("2024-01-01T22:00:00"),
+        expected_on_variable_recovery = DateTime("2024-01-01T22:00:00"),
+    )
+end
+
+@testset "Every decision model sees the emulator's outages, and only those" begin
+    # The emulator's system alone decides which outages exist; both of its outages are
+    # drawn at `outage_time`. D1's own outage on Brighton does not affect events.
+    outage_time = DateTime("2024-01-01T18:00:00")
+    outaged = ["Alta", "Park City"]
+    sys_d1 = events_system(;
+        outage_gens = ["Brighton"],
+        horizon_interval = (Day(2), Day(1)),
+    )
+    sys_d2 = events_system(; horizon_interval = (Hour(4), Hour(1)))
+    sys_em = events_system(; outage_gens = outaged)
+    event_model = preset_outage_event(outage_time)
+    sim = events_simulation(sys_d1, sys_d2, sys_em, event_model)
+    @test build!(sim; console_level = Logging.Error) == SimulationBuildStatus.BUILT
+
+    @test POM.get_attribute_device_map(event_model) == Dict(
+        IS.get_id(outage) =>
+            Dict(
+                ThermalStandard =>
+                    Set(get_name.(get_associated_components(sys_em, outage))),
+            )
+        for outage in get_supplemental_attributes(GeometricDistributionForcedOutage, sys_em)
+    )
+    for model in PSI.get_decision_models(PSI.get_models(sim))
+        @test event_device_names(model) == Set(outaged)
+    end
+
+    @test execute!(sim; in_memory = true) == IOM.RunStatus.SUCCESSFULLY_FINALIZED
+    d2 = get_decision_problem_results(SimulationResults(sim; ignore_status = true), "D2")
+    read_d2(name) = read_realized_variable(d2, name; table_format = TableFormat.WIDE)
+    status = read_d2("AvailableStatusParameter__ThermalStandard")
+    p = read_d2("ActivePowerVariable__ThermalStandard")
+    @test Set(names(status, Not(:DateTime))) == Set(outaged)
+    out = outage_time + Hour(1) .<= status.DateTime .<= outage_time + Hour(3)
+    for name in outaged
+        @test all(status[status.DateTime .<= outage_time, name] .== 1.0)
+        @test all(status[out, name] .== 0.0)
+        @test isapprox(p[out, name], zeros(count(out)); atol = 1e-5)
+    end
+end
+
+# Run a simulation whose emulator outages `outaged` while the decision systems lack
+# `emulator_only`, and return the realized results of the emulator and of D2.
+function run_emulator_only_outage(outaged, emulator_only, outage_time)
+    sys_d1 = events_system(;
+        removed_gens = emulator_only,
+        horizon_interval = (Day(2), Day(1)),
+    )
+    sys_d2 = events_system(;
+        removed_gens = emulator_only,
+        horizon_interval = (Hour(4), Hour(1)),
+    )
+    sys_em = events_system(; outage_gens = outaged)
+    sim = events_simulation(sys_d1, sys_d2, sys_em, preset_outage_event(outage_time))
+    @test build!(sim; console_level = Logging.Error) == SimulationBuildStatus.BUILT
+    @test execute!(sim; in_memory = true) == IOM.RunStatus.SUCCESSFULLY_FINALIZED
+    res = SimulationResults(sim; ignore_status = true)
+    return get_emulation_problem_results(res), get_decision_problem_results(res, "D2")
+end
+
+read_wide(res, name) = read_realized_variable(res, name; table_format = TableFormat.WIDE)
+
+# The device is out for the three hours after `outage_time` and available before.
+function test_outaged(res, name, outage_time)
+    status = read_wide(res, "AvailableStatusParameter__ThermalStandard")
+    p = read_wide(res, "ActivePowerVariable__ThermalStandard")
+    out = outage_time + Hour(1) .<= status.DateTime .<= outage_time + Hour(3)
+    @test all(status[status.DateTime .<= outage_time, name] .== 1.0)
+    @test all(status[out, name] .== 0.0)
+    @test isapprox(p[out, name], zeros(count(out)); atol = 1e-5)
+    return
+end
+
+@testset "An outage on a device only the emulator has" begin
+    outage_time = DateTime("2024-01-01T18:00:00")
+    em, d2 = run_emulator_only_outage(["Alta", "Park City"], ["Park City"], outage_time)
+    test_outaged(em, "Park City", outage_time)
+    test_outaged(em, "Alta", outage_time)
+    test_outaged(d2, "Alta", outage_time)
+    status = read_wide(d2, "AvailableStatusParameter__ThermalStandard")
+    @test names(status, Not(:DateTime)) == ["Alta"]
+    @test !("Park City" in names(read_wide(d2, "ActivePowerVariable__ThermalStandard")))
+end
+
+@testset "An outage of a device type no decision model has event parameters for" begin
+    outage_time = DateTime("2024-01-01T18:00:00")
+    em, d2 = run_emulator_only_outage(["Park City"], ["Park City"], outage_time)
+    test_outaged(em, "Park City", outage_time)
+    @test !(
+        "AvailableStatusParameter__ThermalStandard" in
+        list_parameter_names(d2)
+    )
+end
+
+@testset "Events without an emulation model fail the build" begin
+    sys_d1 = events_system(; outage_gens = ["Alta"], horizon_interval = (Day(2), Day(1)))
+    sys_d2 = events_system(; outage_gens = ["Alta"], horizon_interval = (Hour(4), Hour(1)))
+    event_model = preset_outage_event(DateTime("2024-01-01T18:00:00"))
+    sim = events_simulation(sys_d1, sys_d2, nothing, event_model)
+    @test_throws IS.ConflictingInputsError build!(sim; console_level = Logging.Error)
+    @test PSI.get_simulation_build_status(sim) == SimulationBuildStatus.FAILED
+    @test isempty(POM.get_attribute_device_map(event_model))
+end
+
+@testset "Rebuilt models with events (rebuild_model = true)" begin
+    outage_time = DateTime("2024-01-01T18:00:00")
+    sys_d1 = events_system(; horizon_interval = (Day(2), Day(1)))
+    sys_d2 = events_system(; horizon_interval = (Hour(4), Hour(1)))
+    sys_em = events_system(; outage_gens = ["Alta"])
+    event_model = preset_outage_event(outage_time)
+    sim = events_simulation(
+        sys_d1,
+        sys_d2,
+        sys_em,
+        event_model;
+        rebuild_model = true,
+    )
+    @test all(
+        IOM.get_rebuild_model(IOM.get_settings(model)) for
+        model in PSI.get_decision_models(PSI.get_models(sim))
+    )
+    @test build!(sim; console_level = Logging.Error) == SimulationBuildStatus.BUILT
+    @test execute!(sim; in_memory = true) == IOM.RunStatus.SUCCESSFULLY_FINALIZED
+    test_event_results(;
+        res = SimulationResults(sim; ignore_status = true),
+        outage_time = outage_time,
+        outage_length = 3.0,
+        expected_power_recovery = DateTime("2024-01-01T22:00:00"),
+        expected_on_variable_recovery = DateTime("2024-01-01T22:00:00"),
+    )
+end

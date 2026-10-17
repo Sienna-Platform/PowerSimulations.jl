@@ -201,11 +201,11 @@ end
 """
 Attach every event model to the template of every model in the simulation.
 
-Discovery and validation happen in PowerOperationsModels at build time: attaching an
-event model to a template is what makes `build!` find the system's outage attributes,
-populate the event model's `attribute_device_map`, and distribute the event to the
-matching `DeviceModel`s. This function used to do that work itself, per model, against
-a map keyed by model name.
+Every model shares the same event model objects. At simulation build,
+`_fill_event_models!` fills each event model's `attribute_device_map` from the emulator's
+system; each model's build then distributes the event to its matching `DeviceModel`s and
+applies it to the outaged devices that model has. Outage attributes in a decision model's
+own system do not affect events.
 """
 function _attach_events!(
     models::SimulationModels,
