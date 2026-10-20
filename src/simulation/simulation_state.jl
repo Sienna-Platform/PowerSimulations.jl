@@ -849,6 +849,45 @@ function get_system_state_data(state::SimulationState, key::OptimizationContaine
     return get_dataset(get_system_states(state), key)
 end
 
+"""
+Error when a state value read for a component is not finite. Every state value starts as
+`NaN`, so a non-finite value means no model has written it.
+"""
+function _check_state_value(
+    value::Float64,
+    key::OptimizationContainerKey,
+    component_name::AbstractString,
+)
+    isfinite(value) || _throw_state_value_error(value, key, component_name)
+    return
+end
+
+@noinline function _throw_state_value_error(
+    value::Float64,
+    key::OptimizationContainerKey,
+    component_name::AbstractString,
+)
+    throw(
+        IS.InvalidValue(
+            "The simulation state value of $(component_name) in \
+            $(encode_key_as_string(key)) is $(value). Either no model has made this decision \
+            for the time being read, or no model writes this component for this key, which \
+            happens when device filters or formulations differ across models. Review the \
+            models' horizons, intervals and device filters.",
+        ),
+    )
+end
+
+function _get_state_value(
+    values::DenseAxisArray{Float64, 1},
+    key::OptimizationContainerKey,
+    component_name::AbstractString,
+)
+    value = values[component_name]
+    _check_state_value(value, key, component_name)
+    return value
+end
+
 function get_system_state_value(state::SimulationState, key::OptimizationContainerKey)
     return get_dataset_values(get_system_states(state), key)[:, 1]
 end
