@@ -324,15 +324,15 @@ end
     # behavior under test is exercised and (b) the small perturbations to the costs aren't
     # enough to change the decisions that form the correct solution
 
-    # Scenario 1: hot and warm starts
     # TODO the process to empirically tune these values so the tests work everywhere is
     # absolutely horrible, we need a more robust system ASAP
     # https://github.com/Sienna-Platform/PowerSimulations.jl/issues/1460
-    # psy6 re-tune: the pre-psy6 values (1.01, 1.07, 7.40) produced a cold start here
-    # instead of hot+warm under psy6's ThermalMultiStart/network formulation (a different,
-    # equally-optimal commitment schedule from the one on `main`) — re-tuned empirically to
-    # restore the intended hot+warm coverage; scenario 2 below is unaffected and still
-    # contributes the cold start.
+    # 115_STEAM_1 has start_time_limits of (hot = 120, warm = 240, cold = 720) minutes, so at
+    # the hourly resolution a hot start needs a stop 2 or 3 steps earlier and a warm start a
+    # stop 4 to 11 steps earlier. Each scenario below contributes one start type, both in the
+    # single problem and in the simulation.
+
+    # Scenario 1: warm starts
     load_pow_mult_a = 1.0
     therm_pow_mult_a = 1.0
     therm_price_mult_a = 7.40
@@ -348,7 +348,7 @@ end
     c_sys5_pglib2a =
         create_multistart_sys(true, load_pow_mult_a, therm_pow_mult_a, therm_price_mult_a)
 
-    # Scenario 2: hot and cold starts
+    # Scenario 2: cold start
     load_pow_mult_b = 1.05
     therm_pow_mult_b = 1.0
     therm_price_mult_b = 7.4
@@ -364,8 +364,25 @@ end
     c_sys5_pglib2b =
         create_multistart_sys(true, load_pow_mult_b, therm_pow_mult_b, therm_price_mult_b)
 
+    # Scenario 3: hot start
+    load_pow_mult_c = 0.96
+    therm_pow_mult_c = 1.0
+    therm_price_mult_c = 8.5
+    c_sys5_pglib0c = create_multistart_sys(
+        false,
+        load_pow_mult_c,
+        therm_pow_mult_c,
+        therm_price_mult_c;
+        add_ts = false,
+    )
+    c_sys5_pglib1c =
+        create_multistart_sys(false, load_pow_mult_c, therm_pow_mult_c, therm_price_mult_c)
+    c_sys5_pglib2c =
+        create_multistart_sys(true, load_pow_mult_c, therm_pow_mult_c, therm_price_mult_c)
+
     test_generic_mbc_equivalence(c_sys5_pglib0a, c_sys5_pglib1a; multistart = true)
     test_generic_mbc_equivalence(c_sys5_pglib0b, c_sys5_pglib1b; multistart = true)
+    test_generic_mbc_equivalence(c_sys5_pglib0c, c_sys5_pglib1c; multistart = true)
 
     for use_simulation in (false, true)
         (decisions1, decisions2) = run_startup_shutdown_obj_fun_test(
@@ -374,18 +391,23 @@ end
             multistart = true,
             simulation = use_simulation,
         )
-        # NOTE not all of the decision types here have >= 1, we'll do another scenario such that we get full decision coverage across both of them:
-
         (decisions1_2, decisions2_2) = run_startup_shutdown_obj_fun_test(
             c_sys5_pglib1b,
             c_sys5_pglib2b;
             multistart = true,
             simulation = use_simulation,
         )
+        (decisions1_3, decisions2_3) = run_startup_shutdown_obj_fun_test(
+            c_sys5_pglib1c,
+            c_sys5_pglib2c;
+            multistart = true,
+            simulation = use_simulation,
+        )
         @test all(isapprox.(decisions1, decisions2))
         @test all(isapprox.(decisions1_2, decisions2_2))
+        @test all(isapprox.(decisions1_3, decisions2_3))
         # Make sure our tests included all types of startups and shutdowns
-        @test all(approx_geq_1.(decisions1 .+ decisions1_2))
+        @test all(approx_geq_1.(decisions1 .+ decisions1_2 .+ decisions1_3))
     end
 end
 
