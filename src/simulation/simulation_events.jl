@@ -222,7 +222,7 @@ function _update_states_for_device_type!(
     sim_state::SimulationState,
     dtype::DataType,
     device_names::Set{String},
-    event::PSY.Outage,
+    event::PSY.UnplannedOutage,
     event_model::POM.EventModel,
     sim_time::Dates.DateTime,
     last_arg,

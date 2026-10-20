@@ -636,6 +636,15 @@ function IOM.update_container_parameter_values!(
     return
 end
 
+# Statuses come from the model's own system, so `IOM.update_model_parameters!` refreshes
+# every status container once per step, before the per-key updates.
+IOM.update_container_parameter_values!(
+    ::OptimizationContainer,
+    ::IOM.AbstractOptimizationModel,
+    ::ParameterKey{<:POM.ComponentStatusParameter, <:PSY.Device},
+    ::DatasetContainer{InMemoryDataset},
+) = nothing
+
 function IOM.update_container_parameter_values!(
     optimization_container::OptimizationContainer,
     model::IOM.AbstractOptimizationModel,
