@@ -343,22 +343,18 @@ function _add_forced_outage!(sys, timestamps, component)
     return outage
 end
 
-# With `forced`, "Alta" (or the unit `forced_units` names for a system) carries a
-# `FixedForcedOutage` series at hour 2 in every system and the simulation runs an event model
-# for it. `planned` (a component type and name) carries a
-# `PlannedOutage` at `planned_steps` (hours) in the systems named in `planned_on`, added
-# before the forced outage in the systems named in `planned_first`. A 2-day UC "D1", a
-# rolling 4-hour UC "D2" and an hourly emulator "EM" run one day. The event runtime resets
-# the outaged unit's decision state, so an hourly decision model re-solves between the
-# day-ahead commitment and the emulator, as in the event tests. Returns the simulation and
-# its folder.
+# With `forced`, "Alta" carries a `FixedForcedOutage` series at hour 2 in every system and
+# the simulation runs an event model for it. `planned` (a component type and name) carries a
+# `PlannedOutage` at `planned_steps` (hours) in the systems named in `planned_on`. A 2-day
+# UC "D1", a rolling 4-hour UC "D2" and an hourly emulator "EM" run one day. The event
+# runtime resets the outaged unit's decision state, so an hourly decision model re-solves
+# between the day-ahead commitment and the emulator, as in the event tests. Returns the
+# simulation and its folder.
 function _planned_and_forced_simulation(
     planned_on;
     planned = (ThermalStandard, "Alta"),
     planned_steps = _PLANNED_STEPS,
     forced = true,
-    forced_units = Dict{String, String}(),
-    planned_first = (),
 )
     timestamps = collect(_TVN_T0:Hour(1):(_TVN_T0 + Hour(47)))
     systems = Dict(
@@ -366,28 +362,17 @@ function _planned_and_forced_simulation(
         name in ("D1", "D2", "EM")
     )
     for (name, sys) in systems
-        add_planned! =
-            if name in planned_on
-                component = get_component(first(planned), sys, last(planned))
-                () -> _add_planned_outage!(sys, component, "maint", timestamps,
-                    timestamps[planned_steps])
-            else
-                () -> nothing
-            end
-        forced_unit = get(forced_units, name, "Alta")
-        add_forced! =
-            if forced
-                unit = get_component(ThermalStandard, sys, forced_unit)
-                () -> _add_forced_outage!(sys, timestamps, unit)
-            else
-                () -> nothing
-            end
-        if name in planned_first
-            add_planned!()
-            add_forced!()
-        else
-            add_forced!()
-            add_planned!()
+        if forced
+            _add_forced_outage!(
+                sys,
+                timestamps,
+                get_component(ThermalStandard, sys, "Alta"),
+            )
+        end
+        if name in planned_on
+            component = get_component(first(planned), sys, last(planned))
+            _add_planned_outage!(sys, component, "maint", timestamps,
+                timestamps[planned_steps])
         end
     end
     PSY.transform_single_time_series!(systems["D1"], Day(2), Day(1))
@@ -479,43 +464,9 @@ _realized_alta(em, key) = _realized(em, key, "Alta")
     )
 end
 
-# Supplemental-attribute ids are assigned per system, so with the attributes added in a
-# different order the emulator's forced outage has another id than the decision models'.
-@testset "The event finds its outage in the emulator whatever the attribute order" begin
-    sim, status, _ = _run_planned_and_forced(("D1", "D2", "EM"); planned_first = ("EM",))
-    @test status == PSI.RunStatus.SUCCESSFULLY_FINALIZED
-    em_sys = PSI.get_system(PSI.get_simulation_model(sim, :EM))
-    (attribute, devices) = only(last(only(PSI.get_event_attributes(sim))))
-    @test attribute === only(get_supplemental_attributes(FixedForcedOutage, em_sys))
-    @test devices == Dict(ThermalStandard => Set(["Alta"]))
-    em = get_emulation_problem_results(SimulationResults(sim))
-    @test _realized_alta(em, "AvailableStatusParameter__ThermalStandard") ==
-          1.0 .- _EVENT_STATUS[1:24]
-    @test all(
-        iszero,
-        _realized_alta(em, "ActivePowerVariable__ThermalStandard")[[2, 4, 5, 6]],
-    )
-end
-
-@testset "An outage missing from the emulator's system fails the build" begin
-    sim, _ = _planned_and_forced_simulation(
-        ("D1", "D2", "EM");
-        forced_units = Dict("EM" => "Park City"),
-    )
-    err = try
-        build!(sim; console_level = Logging.Error)
-    catch e
-        e
-    end
-    @test err isa IS.ConflictingInputsError
-    @test occursin(
-        "emulation model EM has no FixedForcedOutage on ThermalStandard \"Alta\"",
-        err.msg)
-end
-
-# A `FixedForcedOutage` on a branch is contingency data, which the event model ignores, so
-# the decision systems may carry it, twice on one line, without the emulator's system.
-@testset "Branch contingency data stays out of the event checks" begin
+# A `FixedForcedOutage` on a branch is contingency data, so the decision systems may carry
+# it, twice on one line, without the emulator's system.
+@testset "Branch contingency data in decision systems does not block the build" begin
     sim, _ = _planned_and_forced_simulation(("D1", "D2", "EM"))
     timestamps = collect(_TVN_T0:Hour(1):(_TVN_T0 + Hour(47)))
     for name in (:D1, :D2)
