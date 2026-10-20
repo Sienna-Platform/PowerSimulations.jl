@@ -113,7 +113,7 @@ function IOM.update_initial_conditions!(
     for ic in ics
         comp_name = get_component_name(ic)
         comp = IOM.get_component(ic)
-        if IOM.get_must_run(comp)
+        if IOM.is_always_committed(comp)
             status_val = 1.0
         else
             status_val = get_system_state_value(state, OnVariable(), comp_type)[comp_name]
