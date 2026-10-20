@@ -1,11 +1,15 @@
 # PowerSimulations.jl
 
-[![Main - CI](https://github.com/Sienna-Platform/PowerSimulations.jl/actions/workflows/main-tests.yml/badge.svg)](https://github.com/Sienna-Platform/PowerSimulations.jl/actions/workflows/main-tests.yml)
-[![codecov](https://codecov.io/gh/Sienna-Platform/PowerSimulations.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/Sienna-Platform/PowerSimulations.jl)
-[![Documentation](https://github.com/Sienna-Platform/PowerSimulations.jl/workflows/Documentation/badge.svg)](https://sienna-platform.github.io/PowerSimulations.jl/stable/)
-[![DOI](https://zenodo.org/badge/109443246.svg)](https://zenodo.org/badge/latestdoi/109443246)
-[<img src="https://img.shields.io/badge/slack-@Sienna/PSI-sienna.svg?logo=slack">](https://join.slack.com/t/core-sienna/shared_invite/zt-glam9vdu-o8A9TwZTZqqNTKHa7q3BpQ)
-[![PowerSimulations.jl Downloads](https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Ftotal_downloads%2FPowerSimulations&query=total_requests&label=Downloads)](http://juliapkgstats.com/pkg/PowerSimulations)
+| **Documentation** | **Build Status** |
+|:---:|:---:|
+| [![][docs-sienna-img]][docs-sienna-url] [![][docs-stable-img]][docs-stable-url] [![][docs-dev-img]][docs-dev-url] | [![Main - CI](https://github.com/Sienna-Platform/PowerSimulations.jl/actions/workflows/main-tests.yml/badge.svg)](https://github.com/Sienna-Platform/PowerSimulations.jl/actions/workflows/main-tests.yml) [![codecov](https://codecov.io/gh/Sienna-Platform/PowerSimulations.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/Sienna-Platform/PowerSimulations.jl) [![DOI](https://zenodo.org/badge/109443246.svg)](https://zenodo.org/badge/latestdoi/109443246) [<img src="https://img.shields.io/badge/slack-@Sienna/PSI-sienna.svg?logo=slack">](https://join.slack.com/t/core-sienna/shared_invite/zt-glam9vdu-o8A9TwZTZqqNTKHa7q3BpQ) [![PowerSimulations.jl Downloads](https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Ftotal_downloads%2FPowerSimulations&query=total_requests&label=Downloads)](http://juliapkgstats.com/pkg/PowerSimulations) |
+
+[docs-sienna-img]: https://img.shields.io/badge/Central_Sienna_docs-blue.svg
+[docs-sienna-url]: https://sienna-platform.github.io/Sienna/SiennaDocs/docs/build/index/
+[docs-stable-img]: https://img.shields.io/badge/docs-stable-blue.svg
+[docs-stable-url]: https://sienna-platform.github.io/PowerSimulations.jl/stable/
+[docs-dev-img]: https://img.shields.io/badge/docs-dev-blue.svg
+[docs-dev-url]: https://sienna-platform.github.io/PowerSimulations.jl/dev/
 
 `PowerSimulations.jl` is a Julia package for power system modeling and simulation of Power Systems operations. The objectives of the package are:
 

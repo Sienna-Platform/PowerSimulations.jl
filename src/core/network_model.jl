@@ -16,41 +16,64 @@ _maybe_flatten_pfem(pfem::PFS.PowerFlowEvaluationModel) =
     PFS.flatten_power_flow_evaluation_model(pfem)
 
 """
-Establishes the NetworkModel for a given PowerModels formulation type.
+    NetworkModel(
+        ::Type{T};
+        use_slacks::Bool,
+        PTDF_matrix::Union{PowerNetworkMatrices.PowerNetworkMatrix, Nothing},
+        MODF_matrix::Union{PowerNetworkMatrices.VirtualMODF, Nothing},
+        reduce_radial_branches::Bool,
+        reduce_degree_two_branches::Bool,
+        duals::Vector{DataType},
+        power_flow_evaluation::Union{
+            PowerFlows.PowerFlowEvaluationModel,
+            Vector{PowerFlows.PowerFlowEvaluationModel},
+        },
+    )
+
+Establishes the network model for a given PowerModels formulation type.
 
 # Arguments
-- `::Type{T}` where `T <: PM.AbstractPowerModel`: the power-system formulation type.
 
-# Accepted keyword arguments
-- `use_slacks::Bool` = false
-    Adds slack buses to the network modeling.
-- `PTDF_matrix::Union{PNM.PowerNetworkMatrix, Nothing}` = nothing
-    PTDF/VirtualPTDF matrix produced by PowerNetworkMatrices (optional).
-- `MODF_matrix::Union{PNM.VirtualMODF, Nothing}` = nothing
+  - `::Type{T} where T<:PowerModels.AbstractPowerModel`: PowerModels network formulation type
+  - `use_slacks::Bool = false`: Add slack buses to the network modeling
+  - `PTDF_matrix::Union{`[`PowerNetworkMatrices.PowerNetworkMatrix`](@extref)`, Nothing} = nothing`:
+    PTDF or [`PowerNetworkMatrices.VirtualPTDF`](@extref) matrix (optional)
+  - `MODF_matrix::Union{`[`PowerNetworkMatrices.VirtualMODF`](@extref)`, Nothing} = nothing`:
     VirtualMODF matrix for security-constrained models (N-k contingencies).
     If `nothing` and the template includes a `SecurityConstrainedStaticBranch`
     formulation, the matrix is constructed from the system during
-    `instantiate_network_model!` (same pattern as PTDF).
-- `reduce_radial_branches::Bool` = false
-    Enable radial branch reduction when building network matrices.
-- `reduce_degree_two_branches::Bool` = false
-    Enable degree-two branch reduction when building network matrices.
-- `duals::Vector{DataType}` = Vector{DataType}()
-    Constraint types for which duals should be recorded.
-- `power_flow_evaluation::Union{PFS.PowerFlowEvaluationModel, Vector{PFS.PowerFlowEvaluationModel}}`
-    Power-flow evaluation model(s). A single model is flattened to a vector internally.
+    `instantiate_network_model!` (same pattern as PTDF)
+  - `reduce_radial_branches::Bool = false`: Enable radial branch reduction when building
+    network matrices
+  - `reduce_degree_two_branches::Bool = false`: Enable degree-two branch reduction when
+    building network matrices
+  - `duals::Vector{DataType} = Vector{DataType}()`: Constraint types for which duals should
+    be recorded
+  - `power_flow_evaluation::Union{`[`PowerFlows.PowerFlowEvaluationModel`](@extref)`, Vector{`[`PowerFlows.PowerFlowEvaluationModel`](@extref)`}} = PowerFlows.PowerFlowEvaluationModel[]`:
+    Power-flow evaluation model(s). A single model is flattened to a vector internally
 
 # Notes
-- `modeled_ac_branch_types` and `reduced_branch_tracker` are internal fields managed by the model.
-- `subsystem` can be set after construction via `set_subsystem!(model, id)`.
-- PTDF inputs are validated against the requested reduction flags and may raise
-  a ConflictingInputsError if they are inconsistent with `reduce_radial_branches`
-  or `reduce_degree_two_branches`.
 
-# Examples
-ptdf = PNM.VirtualPTDF(system)
-nw = NetworkModel(PTDFPowerModel; PTDF_matrix = ptdf, reduce_radial_branches = true,
-                  power_flow_evaluation = PFS.PowerFlowEvaluationModel())
+  - `modeled_ac_branch_types` and `reduced_branch_tracker` are internal fields managed by the model.
+  - `subsystem` can be set after construction via `set_subsystem!(model, id)`.
+  - PTDF inputs are validated against the requested reduction flags and may raise
+    a ConflictingInputsError if they are inconsistent with `reduce_radial_branches`
+    or `reduce_degree_two_branches`.
+
+# Example
+
+```julia
+using PowerNetworkMatrices
+using PowerFlows
+
+ptdf = PowerNetworkMatrices.VirtualPTDF(system)
+nw = NetworkModel(
+    PTDFPowerModel;
+    PTDF_matrix = ptdf,
+    reduce_radial_branches = true,
+    power_flow_evaluation = PowerFlows.PowerFlowEvaluationModel(),
+)
+```
 """
 mutable struct NetworkModel{T <: PM.AbstractPowerModel}
     use_slacks::Bool
