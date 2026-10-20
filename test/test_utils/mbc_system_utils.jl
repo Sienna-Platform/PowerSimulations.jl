@@ -539,16 +539,68 @@ function build_sys_decr2(
     return sys
 end
 
-function create_multistart_sys(
-    with_increments::Bool,
-    load_pow_mult,
-    therm_pow_mult,
-    therm_price_mult;
-    add_ts = true,
-)
+const MULTISTART_BACKUP = "Alta"
+const MULTISTART_LOAD = "Bus4"
+const MULTISTART_BACKUP_MAX_MW = 10.0
+const MULTISTART_ON_LOAD_MW = 14.0
+const MULTISTART_OFF_LOAD_MW = 3.0
+
+"""
+Reduce `c_sys5_pglib` to `115_STEAM_1`, one backup unit, and one load, and set the load so
+that it alone decides when `115_STEAM_1` runs. In each hour of `off_hours` the load is below
+the minimum power of `115_STEAM_1`, so the unit must be off; in every other hour the load is
+above the capacity of the backup unit, so the unit must be on. Every forecast window has the
+same profile. The backup unit is cheaper, so `115_STEAM_1` runs at its minimum power and its
+ramp limits do not bind.
+"""
+function _force_multistart_commitment!(sys::System, off_hours)
+    multistart = get_component(SEL_MULTISTART, sys)
+    keep = (get_name(multistart), MULTISTART_BACKUP, MULTISTART_LOAD)
+    for comp in collect(get_components(StaticInjection, sys))
+        get_name(comp) in keep || remove_component!(sys, comp)
+    end
+
+    backup = get_component(ThermalStandard, sys, MULTISTART_BACKUP)
+    set_active_power_limits!(
+        backup,
+        (min = 0.0 * u"MW", max = MULTISTART_BACKUP_MAX_MW * u"MW"),
+    )
+    set_operation_cost!(
+        backup,
+        ThermalGenerationCost(CostCurve(LinearCurve(1.0)), 0.0, 0.0, 0.0),
+    )
+
+    load = get_component(PowerLoad, sys, MULTISTART_LOAD)
+    set_max_active_power!(load, MULTISTART_ON_LOAD_MW * u"MW")
+    resolution = only(PSY.get_time_series_resolutions(sys))
+    horizon_count = IS.get_horizon_count(PSY.get_forecast_horizon(sys), resolution)
+    @assert all(h -> 1 <= h <= horizon_count, off_hours)
+    profile = [
+        h in off_hours ? MULTISTART_OFF_LOAD_MW / MULTISTART_ON_LOAD_MW : 1.0 for
+        h in 1:horizon_count
+    ]
+    load_ts = Deterministic(;
+        name = "max_active_power",
+        data = OrderedDict(
+            it => copy(profile) for it in PSY.get_forecast_initial_times(sys)
+        ),
+        resolution = resolution,
+        interval = PSY.get_forecast_interval(sys),
+    )
+    remove_time_series!(sys, Deterministic, load, "max_active_power")
+    add_time_series!(sys, load, load_ts)
+    return sys
+end
+
+"""
+Build the `ThermalMultiStart` system of the market bid cost tests. `115_STEAM_1` is off in
+the hours `off_hours` of every forecast window and on otherwise (see
+[`_force_multistart_commitment!`](@ref)), so the off durations alone decide the start types.
+"""
+function create_multistart_sys(with_increments::Bool, off_hours; add_ts = true)
     @assert add_ts || !with_increments
     c_sys5_pglib = load_and_fix_system(PSITestSystems, "c_sys5_pglib")
-    tweak_system!(c_sys5_pglib, load_pow_mult, therm_pow_mult, therm_price_mult)
+    _force_multistart_commitment!(c_sys5_pglib, off_hours)
     ms_comp = get_component(SEL_MULTISTART, c_sys5_pglib)
     old_op = get_operation_cost(ms_comp)
     old_ic = IncrementalCurve(get_value_curve(get_variable_operation_cost(old_op)))
