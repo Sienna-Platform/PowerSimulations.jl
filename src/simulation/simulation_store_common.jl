@@ -50,7 +50,9 @@ function _result_values(container, key, x, ::Val{:aux_variables})
     values = IOM.lookup_value(container, key)
     return DenseAxisArray(copy(values.data), values.axes...)
 end
-_result_values(container, key, x, ::Val{:parameters}) = calculate_parameter_values(x)
+# A parameter's reported value applies the component status where the parameter declares it.
+_result_values(container, key, x, ::Val{:parameters}) =
+    calculate_parameter_values(container, key)
 
 _should_export_field(exports, ts, model_name, key, ::Val{:duals}) =
     should_export_dual(exports, ts, model_name, key)

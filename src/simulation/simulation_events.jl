@@ -21,15 +21,54 @@ function apply_simulation_events!(simulation::Simulation)
         # updated every step regardless, or a running outage would freeze the moment the
         # condition stopped holding and never recover.
         may_start = _condition_holds(simulation, event_model)
+        event_type = POM.get_event_type(event_model)
         for (attribute_id, device_type_maps) in POM.get_attribute_device_map(event_model)
+            attribute = PSY.get_supplemental_attribute(sys, attribute_id)
+            attribute isa event_type || error(
+                "Supplemental attribute $attribute_id of the emulator's system is a \
+                 $(typeof(attribute)), but the $event_type event model was filled with \
+                 it. Event models must be filled from the emulator's system.",
+            )
             apply_event_step!(
                 simulation,
                 event_model,
-                PSY.get_supplemental_attribute(sys, attribute_id),
+                attribute,
                 device_type_maps;
                 may_start = may_start,
             )
         end
+    end
+    return
+end
+
+"""
+Fill every event model of the simulation from the emulator's system, before any model is
+built. Events take their outages from the emulator's system only; each model then applies
+the event to the outaged devices it has. Outage attributes in a decision model's own system
+do not affect events; they may serve other formulations, such as security-constrained ones.
+
+Throws `IS.ConflictingInputsError` when the simulation has event models but no emulation
+model.
+"""
+function _fill_event_models!(simulation::Simulation)
+    events = get_events(get_sequence(simulation))
+    isempty(events) && return
+    models = get_models(simulation)
+    em_model = get_emulation_model(models)
+    if isnothing(em_model)
+        throw(
+            IS.ConflictingInputsError(
+                "The simulation sequence has event models but the simulation has no \
+                 emulation model. Outage events are drawn and applied by the emulation \
+                 model from its system: add an emulation model or remove the events from \
+                 the SimulationSequence.",
+            ),
+        )
+    end
+    em_sys = get_system(em_model)
+    for event_model in events
+        outages = POM.discover_event_attribute_device_map(event_model, em_sys)
+        copy!(POM.get_attribute_device_map(event_model), outages)
     end
     return
 end
@@ -183,7 +222,7 @@ function _update_states_for_device_type!(
     sim_state::SimulationState,
     dtype::DataType,
     device_names::Set{String},
-    event::PSY.Outage,
+    event::PSY.UnplannedOutage,
     event_model::POM.EventModel,
     sim_time::Dates.DateTime,
     last_arg,
