@@ -85,11 +85,7 @@ function run_startup_shutdown_test(
 
     # These decisions need to be equal between certain pairs of problems/simulations but need not be approx_geq_1 for the test to be valid
     nullable_decisions = if multistart
-        (
-            _read_one_value(res, PSI.PowerAboveMinimumVariable, gentype, genname),
-            # sometimes useful for debugging clarity to check *another* generator's decisions
-            _read_one_value(res, PSI.OnVariable, gentype, "101_CT_1"),
-        )
+        (_read_one_value(res, PSI.PowerAboveMinimumVariable, gentype, genname),)
     else
         ()
     end
@@ -320,94 +316,37 @@ end
 end
 
 @testset "MarketBidCost with time series startup and shutdown, ThermalMultiStart" begin
-    # The arguments to create_multistart_sys were tuned empirically to ensure (a) the
-    # behavior under test is exercised and (b) the small perturbations to the costs aren't
-    # enough to change the decisions that form the correct solution
-
-    # TODO the process to empirically tune these values so the tests work everywhere is
-    # absolutely horrible, we need a more robust system ASAP
-    # https://github.com/Sienna-Platform/PowerSimulations.jl/issues/1460
-    # 115_STEAM_1 has start_time_limits of (hot = 120, warm = 240, cold = 720) minutes, so at
-    # the hourly resolution a hot start needs a stop 2 or 3 steps earlier and a warm start a
-    # stop 4 to 11 steps earlier. Each scenario below contributes one start type, both in the
-    # single problem and in the simulation.
-
-    # Scenario 1: warm starts
-    load_pow_mult_a = 1.0
-    therm_pow_mult_a = 1.0
-    therm_price_mult_a = 7.40
-    c_sys5_pglib0a = create_multistart_sys(
-        false,
-        load_pow_mult_a,
-        therm_pow_mult_a,
-        therm_price_mult_a;
-        add_ts = false,
+    # 115_STEAM_1 has time_limits of (up = 240, down = 120) minutes and start_time_limits
+    # of (hot = 120, warm = 240, cold = 720) minutes, so at the hourly resolution a start
+    # after 2 or 3 hours off is hot, after 4 to 11 hours off is warm, and after 12 or more
+    # hours off is cold. The load forces the unit off in `off_hours` of each 24-hour window,
+    # so each scenario has known (hot, warm, cold, stop, on) counts per window.
+    scenarios = (
+        (
+            name = "hot and warm starts",
+            off_hours = (4:5..., 10:14...),
+            per_window = (1, 1, 0, 2, 17),
+        ),
+        (name = "cold start", off_hours = (4:16...,), per_window = (0, 0, 1, 1, 11)),
     )
-    c_sys5_pglib1a =
-        create_multistart_sys(false, load_pow_mult_a, therm_pow_mult_a, therm_price_mult_a)
-    c_sys5_pglib2a =
-        create_multistart_sys(true, load_pow_mult_a, therm_pow_mult_a, therm_price_mult_a)
-
-    # Scenario 2: cold start
-    load_pow_mult_b = 1.05
-    therm_pow_mult_b = 1.0
-    therm_price_mult_b = 7.4
-    c_sys5_pglib0b = create_multistart_sys(
-        false,
-        load_pow_mult_b,
-        therm_pow_mult_b,
-        therm_price_mult_b;
-        add_ts = false,
-    )
-    c_sys5_pglib1b =
-        create_multistart_sys(false, load_pow_mult_b, therm_pow_mult_b, therm_price_mult_b)
-    c_sys5_pglib2b =
-        create_multistart_sys(true, load_pow_mult_b, therm_pow_mult_b, therm_price_mult_b)
-
-    # Scenario 3: hot start
-    load_pow_mult_c = 0.96
-    therm_pow_mult_c = 1.0
-    therm_price_mult_c = 8.5
-    c_sys5_pglib0c = create_multistart_sys(
-        false,
-        load_pow_mult_c,
-        therm_pow_mult_c,
-        therm_price_mult_c;
-        add_ts = false,
-    )
-    c_sys5_pglib1c =
-        create_multistart_sys(false, load_pow_mult_c, therm_pow_mult_c, therm_price_mult_c)
-    c_sys5_pglib2c =
-        create_multistart_sys(true, load_pow_mult_c, therm_pow_mult_c, therm_price_mult_c)
-
-    test_generic_mbc_equivalence(c_sys5_pglib0a, c_sys5_pglib1a; multistart = true)
-    test_generic_mbc_equivalence(c_sys5_pglib0b, c_sys5_pglib1b; multistart = true)
-    test_generic_mbc_equivalence(c_sys5_pglib0c, c_sys5_pglib1c; multistart = true)
-
-    for use_simulation in (false, true)
-        (decisions1, decisions2) = run_startup_shutdown_obj_fun_test(
-            c_sys5_pglib1a,
-            c_sys5_pglib2a;
-            multistart = true,
-            simulation = use_simulation,
-        )
-        (decisions1_2, decisions2_2) = run_startup_shutdown_obj_fun_test(
-            c_sys5_pglib1b,
-            c_sys5_pglib2b;
-            multistart = true,
-            simulation = use_simulation,
-        )
-        (decisions1_3, decisions2_3) = run_startup_shutdown_obj_fun_test(
-            c_sys5_pglib1c,
-            c_sys5_pglib2c;
-            multistart = true,
-            simulation = use_simulation,
-        )
-        @test all(isapprox.(decisions1, decisions2))
-        @test all(isapprox.(decisions1_2, decisions2_2))
-        @test all(isapprox.(decisions1_3, decisions2_3))
-        # Make sure our tests included all types of startups and shutdowns
-        @test all(approx_geq_1.(decisions1 .+ decisions1_2 .+ decisions1_3))
+    for scenario in scenarios
+        @testset "$(scenario.name)" begin
+            sys0 = create_multistart_sys(false, scenario.off_hours; add_ts = false)
+            sys1 = create_multistart_sys(false, scenario.off_hours)
+            sys2 = create_multistart_sys(true, scenario.off_hours)
+            test_generic_mbc_equivalence(sys0, sys1; multistart = true)
+            for use_simulation in (false, true)
+                (decisions1, decisions2) = run_startup_shutdown_obj_fun_test(
+                    sys1,
+                    sys2;
+                    multistart = true,
+                    simulation = use_simulation,
+                )
+                window_count = use_simulation ? 2 : 1
+                @test all(isapprox.(decisions1, decisions2))
+                @test all(isapprox.(decisions1, window_count .* scenario.per_window))
+            end
+        end
     end
 end
 
