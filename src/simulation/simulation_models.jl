@@ -12,7 +12,9 @@ the simulation is executed.
 
   - `decision_models::Vector{<:DecisionModel}`: Vector of decision models.
   - `emulation_models::Union{Nothing, EmulationModel}`: Optional argument to include
-   an EmulationModel in the Simulation
+   an EmulationModel in the Simulation. Its resolution must be equal to or finer than the
+   resolution of every decision model; `build!` throws `IS.ConflictingInputsError`
+   otherwise.
 
 # Example
 
