@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Simulation Recorder · PowerSimulations.jl</title><link href="https://fonts.googleapis.com/css?family=Lato|Roboto+Mono" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.0/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.0/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.0/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.11.1/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="PowerSimulations.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit">PowerSimulations.jl</span></div><form class="docs-search" action="../../search/"><input class="docs-search-query" id="documenter-search-query" name="q" type="text" placeholder="Search docs"/></form><ul class="docs-menu"><li><a class="tocitem" href="../../">Introduction</a></li><li><a class="tocitem" href="../logging/">Logging</a></li><li><a class="tocitem" href="../op_problem/">Operation Model</a></li><li class="is-active"><a class="tocitem" href>Simulation Recorder</a><ul class="internal"><li><a class="tocitem" href="#Simulation-Recorder"><span>Simulation Recorder</span></a></li></ul></li><li><span class="tocitem">Model References</span><ul><li><a class="tocitem" href="../../ref/hydro/">Hydro Models</a></li></ul></li><li><span class="tocitem">API</span><ul><li><a class="tocitem" href="../../api/PowerSimulations/">PowerSimulations</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Simulation Recorder</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Simulation Recorder</a></li></ul></nav><div class="docs-right"><a class="docs-edit-link" href="https://github.com/NREL-SIIP/PowerSimulations.jl/blob/master/docs/src/man/simulation_recorder.md" title="Edit on GitHub"><span class="docs-icon fab"></span><span class="docs-label is-hidden-touch">Edit on GitHub</span></a><a class="docs-settings-button fas fa-cog" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-sidebar-button fa fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a></div></header><article class="content" id="documenter-page"><h2 id="Simulation-Recorder"><a class="docs-heading-anchor" href="#Simulation-Recorder">Simulation Recorder</a><a id="Simulation-Recorder-1"></a><a class="docs-heading-anchor-permalink" href="#Simulation-Recorder" title="Permalink"></a></h2><p>PowerSimulations provides the ability to record structured data as events during a simulation. These events can be post-processed to help debug problems.</p><p>By default only SimulationStepEvent and SimulationStageEvent are recorded.  Here is an example.</p><p>Suppose a simulation is run in the directory ./output.</p><p>Assume that setup commands have been run:</p><pre><code class="language-julia">using PowerSimulations
+const PSI = PowerSimulations</code></pre><p>Note that for all functions below you can optionally specify a function to filter events. The function must accept the event type and return true or false.</p><h3 id="Show-all-events-of-type-PSI.SimulationStepEvent"><a class="docs-heading-anchor" href="#Show-all-events-of-type-PSI.SimulationStepEvent">Show all events of type PSI.SimulationStepEvent</a><a id="Show-all-events-of-type-PSI.SimulationStepEvent-1"></a><a class="docs-heading-anchor-permalink" href="#Show-all-events-of-type-PSI.SimulationStepEvent" title="Permalink"></a></h3><pre><code class="language-julia">julia&gt; show_simulation_events(PSI.SimulationStepEvent, &quot;./output/aggregation/1&quot;)
+┌─────────────────────┬─────────────────────┬──────┬────────┐
+│                name │     simulation_time │ step │ status │
+├─────────────────────┼─────────────────────┼──────┼────────┤
+│ SimulationStepEvent │ 2024-01-01T00:00:00 │    1 │  start │
+│ SimulationStepEvent │ 2024-01-01T23:00:00 │    1 │   done │
+│ SimulationStepEvent │ 2024-01-01T23:00:00 │    2 │  start │
+│ SimulationStepEvent │ 2024-01-02T23:00:00 │    2 │   done │
+└─────────────────────┴─────────────────────┴──────┴────────┘</code></pre><h3 id="Show-events-of-type-PSI.SimulationStageEvent-for-a-specific-step-and-stage."><a class="docs-heading-anchor" href="#Show-events-of-type-PSI.SimulationStageEvent-for-a-specific-step-and-stage.">Show events of type PSI.SimulationStageEvent for a specific step and stage.</a><a id="Show-events-of-type-PSI.SimulationStageEvent-for-a-specific-step-and-stage.-1"></a><a class="docs-heading-anchor-permalink" href="#Show-events-of-type-PSI.SimulationStageEvent-for-a-specific-step-and-stage." title="Permalink"></a></h3><pre><code class="language-julia">show_simulation_events(
+    PSI.SimulationStageEvent,
+    &quot;./output/aggregation/1&quot;,
+    x -&gt; x.step == 1 &amp;&amp; x.stage == 2 &amp;&amp; x.status == &quot;start&quot;
+)
+┌──────────────────────┬─────────────────────┬──────┬───────┬────────┐
+│                 name │     simulation_time │ step │ stage │ status │
+├──────────────────────┼─────────────────────┼──────┼───────┼────────┤
+│ SimulationStageEvent │ 2024-01-01T00:00:00 │    1 │     2 │  start │
+│ SimulationStageEvent │ 2024-01-01T00:00:00 │    1 │     2 │  start │
+│ SimulationStageEvent │ 2024-01-01T01:00:00 │    1 │     2 │  start │
+│ SimulationStageEvent │ 2024-01-01T02:00:00 │    1 │     2 │  start │
+│ SimulationStageEvent │ 2024-01-01T03:00:00 │    1 │     2 │  start │
+│ SimulationStageEvent │ 2024-01-01T04:00:00 │    1 │     2 │  start │
+│ SimulationStageEvent │ 2024-01-01T05:00:00 │    1 │     2 │  start │
+│ SimulationStageEvent │ 2024-01-01T06:00:00 │    1 │     2 │  start │
+│ SimulationStageEvent │ 2024-01-01T07:00:00 │    1 │     2 │  start │
+│ SimulationStageEvent │ 2024-01-01T08:00:00 │    1 │     2 │  start │
+│ SimulationStageEvent │ 2024-01-01T09:00:00 │    1 │     2 │  start │
+│ SimulationStageEvent │ 2024-01-01T10:00:00 │    1 │     2 │  start │
+│ SimulationStageEvent │ 2024-01-01T11:00:00 │    1 │     2 │  start │
+│ SimulationStageEvent │ 2024-01-01T12:00:00 │    1 │     2 │  start │
+│ SimulationStageEvent │ 2024-01-01T13:00:00 │    1 │     2 │  start │
+│ SimulationStageEvent │ 2024-01-01T14:00:00 │    1 │     2 │  start │
+│ SimulationStageEvent │ 2024-01-01T15:00:00 │    1 │     2 │  start │
+│ SimulationStageEvent │ 2024-01-01T16:00:00 │    1 │     2 │  start │
+│ SimulationStageEvent │ 2024-01-01T17:00:00 │    1 │     2 │  start │
+│ SimulationStageEvent │ 2024-01-01T18:00:00 │    1 │     2 │  start │
+│ SimulationStageEvent │ 2024-01-01T19:00:00 │    1 │     2 │  start │
+│ SimulationStageEvent │ 2024-01-01T20:00:00 │    1 │     2 │  start │
+│ SimulationStageEvent │ 2024-01-01T21:00:00 │    1 │     2 │  start │
+│ SimulationStageEvent │ 2024-01-01T22:00:00 │    1 │     2 │  start │
+└──────────────────────┴─────────────────────┴──────┴───────┴────────┘</code></pre><h3 id="Enable-other-recorder-events"><a class="docs-heading-anchor" href="#Enable-other-recorder-events">Enable other recorder events</a><a id="Enable-other-recorder-events-1"></a><a class="docs-heading-anchor-permalink" href="#Enable-other-recorder-events" title="Permalink"></a></h3><p>Other types of recorder events can be enabled with a possible performance impact. To do this pass in the specific recorder names to be enabled when you call build.</p><pre><code class="language-julia">sim = Simulation(...)
+recorders = [:simulation]
+build!(sim; recorders = recorders)
+execute!(sim)</code></pre><p>Now we can examine InitialConditionUpdateEvents for specific steps and stages.</p><pre><code class="language-julia">show_simulation_events(
+    PSI.InitialConditionUpdateEvent,
+    &quot;./output/aggregation/1&quot;,
+    x -&gt; x.initial_condition_type == &quot;DeviceStatus&quot;;
+    step = 2,
+    stage = 1
+)
+┌─────────────────────────────┬─────────────────────┬────────────────────────┬─────────────────┬─────────────┬─────┬──────────────┐
+│                        name │     simulation_time │ initial_condition_type │     device_type │ device_name │ val │ stage_number │
+├─────────────────────────────┼─────────────────────┼────────────────────────┼─────────────────┼─────────────┼─────┼──────────────┤
+│ InitialConditionUpdateEvent │ 2024-01-02T00:00:00 │           DeviceStatus │ ThermalStandard │    Solitude │ 0.0 │            1 │
+│ InitialConditionUpdateEvent │ 2024-01-02T00:00:00 │           DeviceStatus │ ThermalStandard │   Park City │ 1.0 │            1 │
+│ InitialConditionUpdateEvent │ 2024-01-02T00:00:00 │           DeviceStatus │ ThermalStandard │        Alta │ 1.0 │            1 │
+│ InitialConditionUpdateEvent │ 2024-01-02T00:00:00 │           DeviceStatus │ ThermalStandard │    Brighton │ 1.0 │            1 │
+│ InitialConditionUpdateEvent │ 2024-01-02T00:00:00 │           DeviceStatus │ ThermalStandard │    Sundance │ 0.0 │            1 │
+└─────────────────────────────┴─────────────────────┴────────────────────────┴─────────────────┴─────────────┴─────┴──────────────┘</code></pre><h3 id="Show-the-wall-time-with-your-events"><a class="docs-heading-anchor" href="#Show-the-wall-time-with-your-events">Show the wall time with your events</a><a id="Show-the-wall-time-with-your-events-1"></a><a class="docs-heading-anchor-permalink" href="#Show-the-wall-time-with-your-events" title="Permalink"></a></h3><p>Sometimes you might want to see how the events line up with the wall time.</p><pre><code class="language-julia">show_simulation_events(
+    PSI.InitialConditionUpdateEvent,
+    &quot;./output/aggregation/1&quot;,
+    x -&gt; x.initial_condition_type == &quot;DeviceStatus&quot;;
+    step = 2,
+    stage = 1,
+    wall_time = true
+)
+┌─────────────────────────┬─────────────────────────────┬─────────────────────┬────────────────────────┬─────────────────┬─────────────┬─────┬──────────────┐
+│               timestamp │                        name │     simulation_time │ initial_condition_type │     device_type │ device_name │ val │ stage_number │
+├─────────────────────────┼─────────────────────────────┼─────────────────────┼────────────────────────┼─────────────────┼─────────────┼─────┼──────────────┤
+│ 2020-04-07T15:08:32.711 │ InitialConditionUpdateEvent │ 2024-01-02T00:00:00 │           DeviceStatus │ ThermalStandard │    Solitude │ 0.0 │            1 │
+│ 2020-04-07T15:08:32.711 │ InitialConditionUpdateEvent │ 2024-01-02T00:00:00 │           DeviceStatus │ ThermalStandard │   Park City │ 1.0 │            1 │
+│ 2020-04-07T15:08:32.711 │ InitialConditionUpdateEvent │ 2024-01-02T00:00:00 │           DeviceStatus │ ThermalStandard │        Alta │ 1.0 │            1 │
+│ 2020-04-07T15:08:32.711 │ InitialConditionUpdateEvent │ 2024-01-02T00:00:00 │           DeviceStatus │ ThermalStandard │    Brighton │ 1.0 │            1 │
+│ 2020-04-07T15:08:32.711 │ InitialConditionUpdateEvent │ 2024-01-02T00:00:00 │           DeviceStatus │ ThermalStandard │    Sundance │ 0.0 │            1 │
+└─────────────────────────┴─────────────────────────────┴─────────────────────┴────────────────────────┴─────────────────┴─────────────┴─────┴──────────────┘</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../op_problem/">« Operation Model</a><a class="docs-footer-nextpage" href="../../ref/hydro/">Hydro Models »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> on <span class="colophon-date" title="Saturday 28 November 2020 04:41">Saturday 28 November 2020</span>. Using Julia version 1.4.2.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
