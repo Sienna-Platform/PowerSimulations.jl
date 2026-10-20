@@ -43,14 +43,10 @@ PowerOperationsOpenAPIModels = "a372b6d7-45a2-44c2-8199-6a724b72e8ff"
 [sources]
 PowerSimulations = {path = ".."}
 InfrastructureSystems = {url = "https://github.com/Sienna-Platform/InfrastructureSystems.jl", rev = "IS4"}
-# DEV-ONLY-ORIGINAL: InfrastructureOptimizationModels = {url = "https://github.com/Sienna-Platform/InfrastructureOptimizationModels.jl", rev = "main"}
-InfrastructureOptimizationModels = {path = "/Users/mbossart/sienna/psy6/time-varying-network/InfrastructureOptimizationModels.jl"}  # DEV-ONLY
-# DEV-ONLY-ORIGINAL: PowerSystems = {url = "https://github.com/Sienna-Platform/PowerSystems.jl", rev = "psy6"}
-PowerSystems = {path = "/Users/mbossart/sienna/psy6/time-varying-network/PowerSystems.jl"}  # DEV-ONLY
-# DEV-ONLY-ORIGINAL: PowerNetworkMatrices = {url = "https://github.com/Sienna-Platform/PowerNetworkMatrices.jl", rev = "psy6"}
-PowerNetworkMatrices = {path = "/Users/mbossart/sienna/psy6/time-varying-network/PowerNetworkMatrices.jl"}  # DEV-ONLY
-# DEV-ONLY-ORIGINAL: PowerOperationsModels = {url = "https://github.com/Sienna-Platform/PowerOperationsModels.jl", rev = "main"}
-PowerOperationsModels = {path = "/Users/mbossart/sienna/psy6/time-varying-network/PowerOperationsModels.jl"}  # DEV-ONLY
+InfrastructureOptimizationModels = {url = "https://github.com/Sienna-Platform/InfrastructureOptimizationModels.jl", rev = "main"}
+PowerSystems = {url = "https://github.com/Sienna-Platform/PowerSystems.jl", rev = "psy6"}
+PowerNetworkMatrices = {url = "https://github.com/Sienna-Platform/PowerNetworkMatrices.jl", rev = "psy6"}
+PowerOperationsModels = {url = "https://github.com/Sienna-Platform/PowerOperationsModels.jl", rev = "main"}
 PowerSystemCaseBuilder = {url = "https://github.com/Sienna-Platform/PowerSystemCaseBuilder.jl", rev = "psy6"}
 PowerFlows = {url = "https://github.com/Sienna-Platform/PowerFlows.jl", rev = "psy6"}
 # PSB depends on these off the psy6 branch; not registered there yet.
@@ -62,8 +58,7 @@ InfrastructureCoreOpenAPIModels = {url = "https://github.com/Sienna-Platform/Pow
 PowerDynamicsOpenAPIModels = {url = "https://github.com/Sienna-Platform/PowerOpenAPIModels.git", rev = "main", subdir = "PowerDynamicsOpenAPIModels.jl"}
 PowerInvestmentsOpenAPIModels = {url = "https://github.com/Sienna-Platform/PowerOpenAPIModels.git", rev = "main", subdir = "PowerInvestmentsOpenAPIModels.jl"}
 PowerOpenAPIModels = {url = "https://github.com/Sienna-Platform/PowerOpenAPIModels.git", rev = "main", subdir = "PowerOpenAPIModels.jl"}
-# DEV-ONLY-ORIGINAL: PowerOperationsOpenAPIModels = {url = "https://github.com/Sienna-Platform/PowerOpenAPIModels.git", rev = "main", subdir = "PowerOperationsOpenAPIModels.jl"}
-PowerOperationsOpenAPIModels = {path = "/Users/mbossart/sienna/psy6/time-varying-network/PowerOpenAPIModels/PowerOperationsOpenAPIModels.jl"}  # DEV-ONLY
+PowerOperationsOpenAPIModels = {url = "https://github.com/Sienna-Platform/PowerOpenAPIModels.git", rev = "main", subdir = "PowerOperationsOpenAPIModels.jl"}
 
 [compat]
 HiGHS = "1"
