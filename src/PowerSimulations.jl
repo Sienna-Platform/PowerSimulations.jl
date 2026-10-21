@@ -460,6 +460,7 @@ import JuMP: optimizer_with_attributes
 import JuMP.Containers: DenseAxisArray, SparseAxisArray
 export optimizer_with_attributes
 import MathOptInterface as MOI
+import MathOptLazy
 import LinearAlgebra
 import SparseArrays
 import JSON3

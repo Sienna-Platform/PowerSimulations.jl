@@ -2052,3 +2052,37 @@ end
         end
     end
 end
+
+@testset "PTDF with lazy FlowRateConstraint (MathOptLazy)" begin
+    c_sys5 = PSB.build_system(PSITestSystems, "c_sys5")
+    function _build_lazy(attributes, optimizer)
+        template = get_thermal_dispatch_template_network(
+            NetworkModel(PTDFPowerModel; PTDF_matrix = PTDF(c_sys5)),
+        )
+        set_device_model!(template, DeviceModel(Line, StaticBranch; attributes))
+        model = DecisionModel(template, c_sys5; optimizer)
+        return model, build!(model; output_dir = mktempdir(; cleanup = true))
+    end
+    model, status = _build_lazy(Dict{String, Any}(), HiGHS_optimizer)
+    @test status == PSI.ModelBuildStatus.BUILT
+    @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+    obj_ref = JuMP.objective_value(PSI.get_jump_model(model))
+
+    # Plain HiGHS does not support lazy constraint sets.
+    _, status = _build_lazy(
+        Dict{String, Any}("lazy" => true),
+        HiGHS_optimizer,
+    )
+    @test status == PSI.ModelBuildStatus.FAILED
+
+    model, status = _build_lazy(
+        Dict{String, Any}("lazy" => true),
+        JuMP.optimizer_with_attributes(
+            () -> MathOptLazy.Optimizer(HiGHS.Optimizer),
+            "log_to_console" => false,
+        ),
+    )
+    @test status == PSI.ModelBuildStatus.BUILT
+    @test solve!(model) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+    @test isapprox(JuMP.objective_value(PSI.get_jump_model(model)), obj_ref; rtol = 1e-6)
+end

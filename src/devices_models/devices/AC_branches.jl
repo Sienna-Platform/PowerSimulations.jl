@@ -90,6 +90,19 @@ the "base case flowgate" use case.
 """
 const MODEL_ALL_BRANCHES_KEY = "model_all_branches"
 
+"""
+Branch DeviceModel attribute. When `true`, `FlowRateConstraint`s are tagged with
+`MathOptLazy.Lazy` and only enter the solver model once violated. Requires the
+optimizer to be wrapped as `MathOptLazy.Optimizer(...)`; a plain solver fails to
+build. Defaults to `false`.
+"""
+const LAZY_FLOW_CONSTRAINTS_KEY = "lazy"
+
+_lazy_tag(device_model::DeviceModel) =
+    MathOptLazy.Lazy(;
+        lazy = get_attribute(device_model, LAZY_FLOW_CONSTRAINTS_KEY) === true,
+    )
+
 # Specialize the generic `ACTransmission` defaults for `MonitoredLine` to add
 # `MODEL_ALL_BRANCHES_KEY` (default `false`) alongside the inherited keys.
 function get_default_attributes(
@@ -398,14 +411,17 @@ function _add_flow_rate_constraint!(
         slack_lb = get_variable(container, FlowActivePowerSlackLowerBound(), T)[name, :]
     end
     limits = min_max_flow_limits(reduction_entry, device_model)
+    lazy_tag = _lazy_tag(device_model)
     for t in time_steps
         con_ub[name, t] = JuMP.@constraint(
             get_jump_model(container),
-            var[name, t] - (use_slacks ? slack_ub[t] : 0.0) <= limits.max
+            var[name, t] - (use_slacks ? slack_ub[t] : 0.0) <= limits.max,
+            lazy_tag
         )
         con_lb[name, t] = JuMP.@constraint(
             get_jump_model(container),
-            var[name, t] + (use_slacks ? slack_lb[t] : 0.0) >= limits.min
+            var[name, t] + (use_slacks ? slack_lb[t] : 0.0) >= limits.min,
+            lazy_tag
         )
     end
     return
@@ -484,6 +500,7 @@ function add_constraints!(
                 all_branch_maps_by_type[reduction][T],
                 name,
                 ts_name,
+                _lazy_tag(device_model),
             )
         else
             _add_flow_rate_constraint!(
@@ -513,6 +530,7 @@ function _add_flow_rate_constraint_with_parameters!(
     branch_maps_by_type::Dict,
     name::String,
     ts_name::String,
+    lazy_tag::MathOptLazy.Lazy,
 ) where {T <: PSY.ACTransmission}
     time_steps = get_time_steps(container)
     if use_slacks
@@ -527,11 +545,13 @@ function _add_flow_rate_constraint_with_parameters!(
         @debug "Branch rating time series applied for branch $(name) at time step $(t)"
         con_ub[name, t] = JuMP.@constraint(
             get_jump_model(container),
-            var[name, t] - (use_slacks ? slack_ub[t] : 0.0) <= param[t] * mult[t]
+            var[name, t] - (use_slacks ? slack_ub[t] : 0.0) <= param[t] * mult[t],
+            lazy_tag
         )
         con_lb[name, t] = JuMP.@constraint(
             get_jump_model(container),
-            var[name, t] + (use_slacks ? slack_lb[t] : 0.0) >= -1.0 * param[t] * mult[t]
+            var[name, t] + (use_slacks ? slack_lb[t] : 0.0) >= -1.0 * param[t] * mult[t],
+            lazy_tag
         )
     end
     return
@@ -579,6 +599,7 @@ function add_constraints!(
         slack_ub = get_variable(container, FlowActivePowerSlackUpperBound(), T)
         slack_lb = get_variable(container, FlowActivePowerSlackLowerBound(), T)
     end
+    lazy_tag = _lazy_tag(device_model)
     for (name, (arc, reduction)) in
         get_constraint_map_by_type(reduced_branch_tracker)[FlowRateConstraint][T]
         # TODO: entry is not type stable here, it can return any type ACTransmission.
@@ -588,11 +609,13 @@ function add_constraints!(
         for t in time_steps
             con_ub[name, t] = JuMP.@constraint(
                 get_jump_model(container),
-                array[name, t] - (use_slacks ? slack_ub[name, t] : 0.0) <= limits.max
+                array[name, t] - (use_slacks ? slack_ub[name, t] : 0.0) <= limits.max,
+                lazy_tag
             )
             con_lb[name, t] = JuMP.@constraint(
                 get_jump_model(container),
-                array[name, t] + (use_slacks ? slack_lb[name, t] : 0.0) >= limits.min
+                array[name, t] + (use_slacks ? slack_lb[name, t] : 0.0) >= limits.min,
+                lazy_tag
             )
         end
     end
@@ -660,6 +683,7 @@ function add_flow_rate_constraint_with_parameters!(
                 branch_map_T,
                 name,
                 ts_name,
+                _lazy_tag(device_model),
             )
         else
             _add_flow_rate_constraint!(

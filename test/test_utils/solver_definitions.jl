@@ -2,6 +2,7 @@
 using Ipopt
 using SCS
 using HiGHS
+import MathOptLazy
 
 ipopt_optimizer =
     JuMP.optimizer_with_attributes(Ipopt.Optimizer, "tol" => 1e-6, "print_level" => 0)
