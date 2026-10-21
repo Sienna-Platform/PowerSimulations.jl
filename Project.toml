@@ -34,6 +34,7 @@ InfrastructureCoreOpenAPIModels = "1f5e1c8d-e0cc-4dbf-8c6d-f2a3d2ae70a8"
 PowerOperationsOpenAPIModels = "a372b6d7-45a2-44c2-8199-6a724b72e8ff"
 
 [sources]
+JuMP = {url = "https://github.com/QXT-Energy/JuMP.jl", rev = "jd/add-to-expression-rtol"}
 InfrastructureSystems = {url = "https://github.com/Sienna-Platform/InfrastructureSystems.jl", rev = "IS4"}
 InfrastructureOptimizationModels = {url = "https://github.com/Sienna-Platform/InfrastructureOptimizationModels.jl", rev = "jd/market_models3"}
 PowerSystems = {url = "https://github.com/Sienna-Platform/PowerSystems.jl", rev = "psy6"}
