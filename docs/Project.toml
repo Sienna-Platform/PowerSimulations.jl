@@ -35,6 +35,7 @@ PowerFlowFileParser = "bed98974-b02e-5e2f-9ee0-a103f5c450dd"
 PowerTableDataParser = "2b750c0e-0bff-11f1-9200-1befd75df6be"
 
 [sources]
+JuMP = {url = "https://github.com/QXT-Energy/JuMP.jl", rev = "jd/add-to-expression-rtol"}
 InfrastructureSystems = {url = "https://github.com/Sienna-Platform/InfrastructureSystems.jl", rev = "IS4"}
 InfrastructureOptimizationModels = {url = "https://github.com/Sienna-Platform/InfrastructureOptimizationModels.jl", rev = "mb/market_models3_time_varying"}
 PowerSystems = {url = "https://github.com/Sienna-Platform/PowerSystems.jl", rev = "mb/time-varying-network"}
