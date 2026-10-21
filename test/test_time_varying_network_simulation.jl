@@ -345,8 +345,11 @@ end
 
 # With `forced`, "Alta" carries a `FixedForcedOutage` series at hour 2 in every system and
 # the simulation runs an event model for it. `planned` (a component type and name) carries a
-# `PlannedOutage` at `planned_steps` (hours) in the systems named in `planned_on`. A 2-day
-# UC "D1", a rolling 4-hour UC "D2" and an hourly emulator "EM" run one day. The event
+# `PlannedOutage` at `planned_steps` (hours) in the systems named in `planned_on`;
+# `planned_steps` is either one range for all of them or a `Dict` of ranges by model name. A
+# 2-day UC "D1", a rolling UC "D2" with a `d2_horizon` window and an hourly emulator "EM" run
+# one day; `uc_template` is the template of both UCs and `d2_feedforwards` the feedforwards
+# into "D2". `customize!` is applied to every system before the outages are added. The event
 # runtime resets the outaged unit's decision state, so an hourly decision model re-solves
 # between the day-ahead commitment and the emulator, as in the event tests. Returns the
 # simulation and its folder.
@@ -355,6 +358,10 @@ function _planned_and_forced_simulation(
     planned = (ThermalStandard, "Alta"),
     planned_steps = _PLANNED_STEPS,
     forced = true,
+    d2_horizon = Hour(4),
+    d2_feedforwards = IOM.AbstractAffectFeedforward[],
+    uc_template = get_template_basic_uc_simulation(),
+    customize! = sys -> nothing,
 )
     timestamps = collect(_TVN_T0:Hour(1):(_TVN_T0 + Hour(47)))
     systems = Dict(
@@ -362,6 +369,7 @@ function _planned_and_forced_simulation(
         name in ("D1", "D2", "EM")
     )
     for (name, sys) in systems
+        customize!(sys)
         if forced
             _add_forced_outage!(
                 sys,
@@ -371,12 +379,12 @@ function _planned_and_forced_simulation(
         end
         if name in planned_on
             component = get_component(first(planned), sys, last(planned))
-            _add_planned_outage!(sys, component, "maint", timestamps,
-                timestamps[planned_steps])
+            steps = planned_steps isa AbstractDict ? planned_steps[name] : planned_steps
+            _add_planned_outage!(sys, component, "maint", timestamps, timestamps[steps])
         end
     end
     PSY.transform_single_time_series!(systems["D1"], Day(2), Day(1))
-    PSY.transform_single_time_series!(systems["D2"], Hour(4), Hour(1))
+    PSY.transform_single_time_series!(systems["D2"], d2_horizon, Hour(1))
 
     template_em = get_template_nomin_ed_simulation()
     set_device_model!(template_em, ThermalStandard, ThermalBasicDispatch)
@@ -387,7 +395,7 @@ function _planned_and_forced_simulation(
     )
     models = SimulationModels(;
         decision_models = [
-            DecisionModel(get_template_basic_uc_simulation(), systems[name];
+            DecisionModel(deepcopy(uc_template), systems[name];
                 name = name,
                 optimizer = HiGHS_optimizer_small_gap, initialize_model = false)
             for name in ("D1", "D2")
@@ -395,18 +403,20 @@ function _planned_and_forced_simulation(
         emulation_model = EmulationModel(template_em, systems["EM"]; name = "EM",
             optimizer = HiGHS_optimizer_small_gap),
     )
+    feedforwards = Dict{String, Vector{IOM.AbstractAffectFeedforward}}(
+        "EM" => [
+            SemiContinuousFeedforward(;
+                component_type = ThermalStandard,
+                source = OnVariable,
+                affected_values = [ActivePowerVariable],
+            ),
+        ],
+    )
+    isempty(d2_feedforwards) || (feedforwards["D2"] = d2_feedforwards)
     sequence = SimulationSequence(;
         models,
         ini_cond_chronology = InterProblemChronology(),
-        feedforwards = Dict(
-            "EM" => [
-                SemiContinuousFeedforward(;
-                    component_type = ThermalStandard,
-                    source = OnVariable,
-                    affected_values = [ActivePowerVariable],
-                ),
-            ],
-        ),
+        feedforwards = feedforwards,
         events = forced ? [event_model] : POM.EventModel[],
     )
     folder = mktempdir(; cleanup = true)
@@ -528,4 +538,114 @@ end
     @test _realized_alta(em, "InjectorStatusParameter__ThermalStandard") ==
           [h in out_steps ? 0.0 : 1.0 for h in 1:24]
     @test all(iszero, _realized_alta(em, "ActivePowerVariable__ThermalStandard")[out_steps])
+end
+
+# Schedules may differ by model: the day-ahead model "D1" builds on an outage at hours 20-22,
+# while the schedule was updated to hours 12-14 in the rolling model "D2" and the emulator.
+# The rolling window covers the outage before "Alta" would have to commit for it.
+const _DAY_AHEAD_OUT = 20:22
+const _UPDATED_OUT = 12:14
+const _UPDATED_SCHEDULES =
+    Dict("D1" => _DAY_AHEAD_OUT, "D2" => _UPDATED_OUT, "EM" => _UPDATED_OUT)
+
+_day_ahead_alta_on(sim) =
+    Float64.(
+        only(
+            values(
+                read_variable(
+                    get_decision_problem_results(SimulationResults(sim), "D1"),
+                    "OnVariable__ThermalStandard";
+                    table_format = TableFormat.WIDE,
+                ),
+            ),
+        )[
+            !,
+            "Alta",
+        ],
+    )
+
+_rolling_results(sim) = get_decision_problem_results(SimulationResults(sim), "D2")
+
+@testset "Each model follows its own schedule when the schedules differ" begin
+    sim, status, _ = _run_planned_and_forced(
+        ("D1", "D2", "EM");
+        planned_steps = _UPDATED_SCHEDULES,
+        forced = false,
+        d2_horizon = Hour(24),
+        uc_template = get_template_standard_uc_simulation(),
+    )
+    @test status == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+    day_ahead_on = _day_ahead_alta_on(sim)
+    @test all(iszero, day_ahead_on[_DAY_AHEAD_OUT])
+    @test all(isone, day_ahead_on[_UPDATED_OUT])
+    rolling_on = _realized(_rolling_results(sim), "OnVariable__ThermalStandard", "Alta")
+    @test all(iszero, rolling_on[_UPDATED_OUT])
+    em = get_emulation_problem_results(SimulationResults(sim))
+    @test all(
+        iszero,
+        _realized_alta(em, "ActivePowerVariable__ThermalStandard")[_UPDATED_OUT],
+    )
+end
+
+# A commitment fixed from the day-ahead model yields to the rolling model's own outage. With
+# every other unit's commitment fixed too, nothing replaces "Alta", so the shortfall is shed
+# through the balance slack.
+@testset "An outage overrides a commitment fixed by a feedforward" begin
+    uc_template = get_template_basic_uc_simulation()
+    set_network_model!(
+        uc_template,
+        NetworkModel(CopperPlateNetworkModel; use_slacks = true),
+    )
+    sim, status, _ = _run_planned_and_forced(
+        ("D1", "D2", "EM");
+        planned_steps = _UPDATED_SCHEDULES,
+        forced = false,
+        d2_horizon = Hour(24),
+        uc_template = uc_template,
+        d2_feedforwards = [
+            FixValueFeedforward(;
+                component_type = ThermalStandard,
+                source = OnVariable,
+                affected_values = [OnVariable],
+            ),
+        ],
+    )
+    @test status == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+    day_ahead_on = _day_ahead_alta_on(sim)
+    rolling = _rolling_results(sim)
+    rolling_on = _realized(rolling, "OnVariable__ThermalStandard", "Alta")
+    for h in 1:24
+        @test rolling_on[h] ≈ (h in _UPDATED_OUT ? 0.0 : day_ahead_on[h]) atol = 1e-6
+    end
+    shed = read_realized_variable(rolling, "SystemBalanceSlackUp__System";
+        table_format = TableFormat.WIDE)[
+        !,
+        2,
+    ]
+    @test all(>(0.0), shed[_UPDATED_OUT])
+end
+
+# An outage in the model's window does not lift "Alta"'s 8-hour minimum up time: the models
+# keep it off before the outage rather than start it for an hour.
+@testset "Minimum up time holds around a planned outage" begin
+    out_steps = 8:10
+    sim, status, _ = _run_planned_and_forced(
+        ("D1", "D2", "EM");
+        planned_steps = out_steps,
+        forced = false,
+        uc_template = get_template_standard_uc_simulation(),
+        customize! = sys -> PSY.set_time_limits!(
+            get_component(ThermalStandard, sys, "Alta"),
+            (up = 480.0, down = 60.0),
+        ),
+    )
+    @test status == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+    for on in (
+        _day_ahead_alta_on(sim)[1:24],
+        _realized(_rolling_results(sim), "OnVariable__ThermalStandard", "Alta"),
+    )
+        @test all(iszero, on[out_steps])
+        starts = [h for h in 2:24 if on[h] > 0.5 && on[h - 1] < 0.5]
+        @test all(h -> all(>(0.5), on[h:min(h + 7, 24)]), starts)
+    end
 end
