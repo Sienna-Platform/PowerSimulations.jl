@@ -26,7 +26,7 @@ PSY ──▶ PSB
 ```
 
 - **Upstream deps:** IOM, POM, PSY, IS, PNM (reduced-network branch time-series routing in parameter updates), HDF5, JuMP, DataFrames, Distributed.
-- **Not deps anymore:** PowerModels (POM network models are native), PowerFlows (PF-in-the-loop is POM's extension; PSI only needs PF in tests), Distributions (events only, fenced).
+- **Not deps anymore:** PowerModels (POM network models are native), PowerFlows (PF-in-the-loop is POM's extension; PSI only needs PF in tests), Distributions.
 - **Downstream:** PowerAnalytics / PowerGraphics consume `SimulationResults`. Results storage, key encoding (`"VariableType__ComponentType"`), and serialization changes have downstream blast radius.
 - **Co-dev wiring:** `Project.toml` and `test/Project.toml` `[sources]` carry git rev pins (IS `IS4`, IOM `main`, PSY `psy6`, PNM `psy6`, POM `main`; test env also pins PSB `psy6`, PF `psy6`, PowerFlowFileParser `psy6`, PowerTableDataParser `psy6`) plus the OpenAPI git pins PSY needs — this is what CI (`julia-buildpkg`/`julia-runtest`) resolves from. `docs/Project.toml` pins the same revs. To co-dev locally against an in-progress sibling checkout without touching these tracked pins, `Pkg.develop(path="../<Sibling>.jl")` from `--project=.` or `--project=test`; that writes only to the gitignored `Manifest.toml`. Switch the tracked pins to `main`/released revs before a PR to `main`. No version bumps: PSI stays `0.38.3` until release.
 
@@ -51,23 +51,20 @@ read state → update feedforward and time-series parameters → update initial 
 src/
 ├── PowerSimulations.jl          # exports, explicit IOM imports, IOM/POM re-export loop, include order
 ├── core/                        # definitions (PSI constants), SimulationStore abstract, cache policy
-│                                # event_keys.jl / event_model.jl — EVENTS-EXCISION, not included
 ├── operation/                   # problem types (GenericOpProblem, UC/ED), simulation solve! entry
 │                                # points, update_model!/update_parameters! adapters, templates
 ├── initial_conditions/          # chronologies, between-solve IC update
 ├── parameters/                  # update_parameters, update_container_parameter_values,
 │                                # update_cost_parameters (highest PSY-psy6 risk file)
 ├── simulation/                  # Simulation, models, sequence, state, stores, results, partitions
-│                                # simulation_events.jl — EVENTS-EXCISION, not included
-├── contingency_model/           # EVENTS-EXCISION, not included
 └── utils/                       # recorder events, simulation show methods (print_pt_v3.jl),
                                  # store dimensions, CSV/system-filename helpers (file_utils.jl),
                                  # single-time-series resolution consistency checks
 ```
 
-## Events are fenced, not gone
+## Simulation events
 
-POM has only the four `EventParameter` types and no-op `add_event_arguments!`/`add_event_constraints!`. Until the event framework moves to POM, every event method in PSI sits inside a `#= EVENTS-EXCISION: … =#` block or behind a commented `include`. `grep -rn EVENTS-EXCISION src test` lists the follow-up. Do not delete fenced code, do not rewrite it, and do not add new event code outside a fence.
+- The simulation event framework is active: `src/simulation/simulation_events.jl` is included in `src/PowerSimulations.jl`, and `apply_simulation_events!` runs after the last model of each step in `_execute!` (`src/simulation/simulation.jl`).
 
 ## Running tests, docs, formatter (verified commands for THIS repo)
 
@@ -142,7 +139,7 @@ Whether a parameter type has a uniform multiplier across all `(device, time)` ce
 `populate_system=true` can return a `System` with 0 time series. `TimeSeriesAttributes.component_name_to_ts_uuid` (now IOM `core/parameter_container.jl`) is populated at build time in POM but not serialized — relevant when touching `_serialize_systems_to_json` in `simulation.jl`.
 
 ## Follow-ups tracked outside this file
-Events framework to POM then unfence; AGC (`AGCReserveDeployment` dropped; POM's `agc.jl` is not compiled); service feedforwards (POM errors on `attach_feedforward!(::ServiceModel, …)`); path pins → git pins before PR; PowerAnalytics/PowerGraphics re-validation; `test/runtests.jl` drops `Aqua.find_persistent_tasks_deps`/`Aqua.test_persistent_tasks` (they resolve a throwaway env from the registry, which can't satisfy PowerSystems' unregistered OpenAPI deps on the psy6 line) — re-enable once those packages are registered, matching the same exclusion already in POM's and IOM's test suites.
+AGC (`AGCReserveDeployment` dropped; POM's `agc.jl` is not compiled); service feedforwards (POM errors on `attach_feedforward!(::ServiceModel, …)`); path pins → git pins before PR; PowerAnalytics/PowerGraphics re-validation; `test/runtests.jl` drops `Aqua.find_persistent_tasks_deps`/`Aqua.test_persistent_tasks` (they resolve a throwaway env from the registry, which can't satisfy PowerSystems' unregistered OpenAPI deps on the psy6 line) — re-enable once those packages are registered, matching the same exclusion already in POM's and IOM's test suites.
 
 ### Upstream bugs found during the excision (not PSI's to fix)
 
