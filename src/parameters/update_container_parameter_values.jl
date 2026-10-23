@@ -145,55 +145,69 @@ function _update_parameter_values!(
     V <: PSY.Component,
     W <: ParameterType,
 }
-    _refresh_time_series_rows!(parameter_array, param, attributes, V, model)
+    source = _reader_source(W, V, parameter_array, attributes, model)
+    if source === nothing
+        _refresh_time_series_rows!(parameter_array, param, attributes, V, model)
+    else
+        # Updated on its own, a parameter reads the reader for itself. Between solves,
+        # `_refresh_reader_parameters!` refreshes it with the others that share the read.
+        reader = get_time_series_reader!(model, source...)
+        IS.read_forecast_window!(reader, get_current_time(model))
+        horizon = length(get_time_steps(get_optimization_container(model)))
+        _write_reader_rows!(reader, parameter_array, param, attributes, V, horizon)
+    end
     return
 end
 
-# A decision model refreshes a parameter backed by dense `Deterministic` forecasts from the
-# reader over every forecast with its series name. Between solves, `update_parameters!`
-# refreshes all such parameters together (`_refresh_reader_parameters!`), so parameters
-# that share a series name share one read; a parameter updated on its own reads for itself.
+# Which reader refreshes a time series parameter between solves, as (series type, name),
+# or `nothing` for one refreshed a series at a time. The per-key update and the batch in
+# `update_parameters!` both ask this, so they cannot disagree about a parameter.
 # ponytail: dense `Deterministic` only. A `DeterministicSingleTimeSeries` reader read is
 # slower than the per-series path (its derived slots are not block cached in InfraStore,
-# NatLabRockies/infrastore#113), so DST keeps the fallback below until that read is fast;
-# then widen to AbstractDeterministic, here and in `_reader_source`.
-function _refresh_time_series_rows!(
-    parameter_array::DenseAxisArray{T, 2},
-    param::ParameterType,
-    attributes::TimeSeriesAttributes{U},
-    ::Type{V},
-    model::DecisionModel,
-) where {
-    T <: Union{JuMP.VariableRef, Float64},
-    U <: PSY.Deterministic,
-    V <: PSY.Component,
-}
-    reader = get_time_series_reader!(model, U, get_time_series_name(attributes))
-    IS.read_forecast_window!(reader, get_current_time(model))
-    horizon = length(get_time_steps(get_optimization_container(model)))
-    _write_reader_rows!(reader, parameter_array, param, attributes, V, horizon)
-    return
-end
-
-# Which reader refreshes a parameter between solves, as (series type, name), or `nothing`
-# for a parameter another path refreshes. Mirrors the routing to the reader method of
-# `_refresh_time_series_rows!`.
-_reader_source(::ParameterKey, ::Any, ::Any, ::IOM.AbstractOptimizationModel) = nothing
+# NatLabRockies/infrastore#113), so DST keeps the per-series path until that read is fast;
+# then widen these methods to AbstractDeterministic.
+_reader_source(
+    ::Type{<:ParameterType},
+    ::Type{<:PSY.Component},
+    ::Any,
+    ::Any,
+    ::IOM.AbstractOptimizationModel,
+) = nothing
 
 _reader_source(
-    ::ParameterKey{<:ParameterType, <:PSY.Component},
-    ::DenseAxisArray{<:Union{JuMP.VariableRef, Float64}, 2},
+    ::Type{<:ParameterType},
+    ::Type{<:PSY.Component},
+    ::DenseAxisArray{<:Union{JuMP.VariableRef, Float64}},
     attributes::TimeSeriesAttributes{U},
     ::DecisionModel,
 ) where {U <: PSY.Deterministic} = (U, get_time_series_name(attributes))
 
 # Reduced branches refresh through the network reduction catalog instead.
 _reader_source(
-    ::ParameterKey{<:TimeSeriesParameter, <:PSY.ACTransmission},
-    ::DenseAxisArray{<:Union{JuMP.VariableRef, Float64}, 2},
+    ::Type{<:TimeSeriesParameter},
+    ::Type{<:PSY.ACTransmission},
+    ::DenseAxisArray{<:Union{JuMP.VariableRef, Float64}},
     ::TimeSeriesAttributes{<:PSY.Deterministic},
     ::DecisionModel,
 ) = nothing
+
+# A service parameter keyed to one service (`key.meta`) refreshes through its own method.
+# Time series service parameters are keyed per service type and refresh like devices.
+_reader_source(
+    ::Type{<:ParameterType},
+    ::Type{<:PSY.Service},
+    ::DenseAxisArray{<:Union{JuMP.VariableRef, Float64}},
+    ::TimeSeriesAttributes{<:PSY.Deterministic},
+    ::DecisionModel,
+) = nothing
+
+_reader_source(
+    ::Type{<:TimeSeriesParameter},
+    ::Type{<:PSY.Service},
+    ::DenseAxisArray{<:Union{JuMP.VariableRef, Float64}},
+    attributes::TimeSeriesAttributes{U},
+    ::DecisionModel,
+) where {U <: PSY.Deterministic} = (U, get_time_series_name(attributes))
 
 """
 Refresh every parameter a time series reader serves, reading each reader once for all the
@@ -204,7 +218,8 @@ function _refresh_reader_parameters!(model::IOM.AbstractOptimizationModel)
     by_source = Dict{Tuple{Type, String}, Vector{ParameterKey}}()
     for (key, parameter) in get_parameters(container)
         source = _reader_source(
-            key,
+            get_entry_type(key),
+            get_component_type(key),
             get_parameter_array(parameter),
             get_attributes(parameter),
             model,
@@ -292,7 +307,7 @@ function _write_forecast_group!(
         _set_time_series_row!(
             parent_param,
             param,
-            view(window, 1:horizon),
+            _window_steps(window, horizon),
             additional_axes,
             i_param,
             ts_name,
@@ -301,6 +316,13 @@ function _write_forecast_group!(
     end
     return
 end
+
+# A window's values for the model's first `horizon` steps. A series with value axes has an
+# `[H, *E]` window, which fills a 3-D container with one flattened (column-major) vector
+# per step, as the build reads it.
+_window_steps(window::AbstractVector, horizon) = view(window, 1:horizon)
+_window_steps(window::AbstractArray, horizon) =
+    [vec(collect(selectdim(window, 1, t))) for t in 1:horizon]
 
 function _refresh_time_series_rows!(
     parameter_array::DenseAxisArray,

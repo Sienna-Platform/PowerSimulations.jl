@@ -100,6 +100,9 @@ end
     @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
           IOM.ModelBuildStatus.BUILT
     _test_value_axes_update!(model, IS.Deterministic, cases, expected)
+    # Refreshed through the reader over the "factors" forecasts.
+    @test (IS.Deterministic, "factors", Dates.Millisecond(Hour(1))) in
+          keys(IOM.get_time_series_readers(IOM.get_internal(model)))
 end
 
 # Adds a 48-hour "factors" series whose steps have the shape of `value_axes`, and returns the
@@ -263,4 +266,49 @@ end
     @test PSI._refresh_reader_parameters!(model) == Set(param_keys)
     @test collect(keys(IOM.get_time_series_readers(IOM.get_internal(model)))) ==
           [(PSY.Deterministic, "max_active_power", Dates.Millisecond(Hour(1)))]
+end
+
+@testset "Reserve requirements refresh from the reader between solves" begin
+    sys = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_reserves = true)
+    template = PowerOperationsProblemTemplate(CopperPlateNetworkModel)
+    set_device_model!(template, ThermalStandard, ThermalBasicDispatch)
+    set_device_model!(template, PowerLoad, StaticPowerLoad)
+    set_service_model!(template, ServiceModel(OnlineReserve{ReserveUp}, RangeReserve))
+    model = DecisionModel(
+        template,
+        sys;
+        optimizer = HiGHS_optimizer,
+        horizon = Hour(24),
+        interval = Hour(24),
+    )
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          IOM.ModelBuildStatus.BUILT
+    container = IOM.get_optimization_container(model)
+    horizon = length(IOM.get_time_steps(container))
+    requirement_keys = [
+        k for k in keys(IOM.get_parameters(container)) if
+        IOM.get_entry_type(k) === RequirementTimeSeriesParameter
+    ]
+    @test !isempty(requirement_keys)
+
+    IOM.advance_execution_count!(model)
+    PSI.update_parameters!(model, PSI.SimulationState())
+    @test Set(requirement_keys) ⊆ PSI._refresh_reader_parameters!(model)
+    start_time = IOM.get_current_time(model)
+    for key in requirement_keys
+        parameter = IOM.get_parameter(container, key)
+        attributes = IOM.get_attributes(parameter)
+        array = IOM.get_parameter_array(parameter)
+        for name in IOM.get_component_names(attributes)
+            expected = PSY.get_time_series_values(
+                PSY.Deterministic,
+                PSY.get_component(IOM.get_component_type(key), sys, name),
+                IOM.get_time_series_name(attributes);
+                start_time = start_time,
+                len = horizon,
+            )
+            @test jump_value.(array[IOM._get_ts_uuid(attributes, name), :].data) ==
+                  expected
+        end
+    end
 end
