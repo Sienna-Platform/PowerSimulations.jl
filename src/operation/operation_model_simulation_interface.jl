@@ -16,13 +16,15 @@ function update_parameters!(
     model::IOM.AbstractOptimizationModel,
     simulation_state::SimulationState,
 )
-    cost_function_unsynch(get_optimization_container(model))
+    container = get_optimization_container(model)
+    cost_function_unsynch(container)
+    IOM.update_model_parameters!(container, model, simulation_state)
     for key in keys(get_parameters(model))
         update_parameter_values!(model, key, simulation_state)
     end
     if !is_synchronized(model)
-        update_objective_function!(get_optimization_container(model))
-        obj_func = get_objective_expression(get_optimization_container(model))
+        update_objective_function!(container)
+        obj_func = get_objective_expression(container)
         set_synchronized_status!(obj_func, true)
     end
     return

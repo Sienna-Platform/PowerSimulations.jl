@@ -397,7 +397,7 @@ function update_decision_state!(
     state::SimulationState,
     key::ParameterKey{ActivePowerOffsetParameter, T},
     column_names::Set{String},
-    event::PSY.Outage,
+    event::PSY.UnplannedOutage,
     event_model::EventModel,
     simulation_time::Dates.DateTime,
     model_params::ModelStoreParams,
@@ -475,7 +475,7 @@ function update_decision_state!(
     state::SimulationState,
     key::OptimizationContainerKey,
     column_names::Set{String},
-    event::PSY.Outage,
+    event::PSY.UnplannedOutage,
     event_model::EventModel,
     simulation_time::Dates.DateTime,
     model_params::ModelStoreParams,
@@ -487,7 +487,7 @@ function update_decision_state!(
     state::SimulationState,
     key::ParameterKey{AvailableStatusChangeCountdownParameter, T},
     column_names::Set{String},
-    event::PSY.Outage,
+    event::PSY.UnplannedOutage,
     event_model::EventModel,
     simulation_time::Dates.DateTime,
     ::ModelStoreParams,
@@ -520,7 +520,7 @@ function update_decision_state!(
     state::SimulationState,
     key::ParameterKey{AvailableStatusParameter, T},
     column_names::Set{String},
-    event::PSY.Outage,
+    event::PSY.UnplannedOutage,
     event_model::EventModel,
     simulation_time::Dates.DateTime,
     model_params::ModelStoreParams,
@@ -544,7 +544,7 @@ function update_decision_state!(
     state::SimulationState,
     key::AuxVarKey{TimeDurationOn, T},
     column_names::Set{String},
-    event::PSY.Outage,
+    event::PSY.UnplannedOutage,
     event_model::EventModel,
     simulation_time::Dates.DateTime,
     model_params::ModelStoreParams,
@@ -570,7 +570,7 @@ function update_decision_state!(
     state::SimulationState,
     key::AuxVarKey{TimeDurationOff, T},
     column_names::Set{String},
-    event::PSY.Outage,
+    event::PSY.UnplannedOutage,
     event_model::EventModel,
     simulation_time::Dates.DateTime,
     model_params::ModelStoreParams,
@@ -598,7 +598,7 @@ function update_decision_state!(
     state::SimulationState,
     key::VariableKey{T, U},
     column_names::Set{String},
-    event::PSY.Outage,
+    event::PSY.UnplannedOutage,
     event_model::EventModel,
     simulation_time::Dates.DateTime,
     model_params::ModelStoreParams,
@@ -767,6 +767,30 @@ function update_missing_state_columns!(
     ::UnitRange{Int},
     ::AbstractVector{Dates.DateTime},
 )
+    return
+end
+
+# A model has a status column only for the components its system schedules. The others take
+# their unscheduled status from the model's own system; a component that system does not
+# contain has no status there, so it keeps the value its last writer left.
+function update_missing_state_columns!(
+    state_data::InMemoryDataset,
+    ::ParameterKey{<:POM.ComponentStatusParameter, D},
+    model::IOM.AbstractOptimizationModel,
+    columns::AbstractVector{String},
+    state_rows::UnitRange{Int},
+    ::AbstractVector{Dates.DateTime},
+) where {D <: PSY.Component}
+    sys = get_system(model)
+    values = state_data.values
+    for name in columns
+        component = PSY.get_component(D, sys, name)
+        isnothing(component) && continue
+        status = POM.unscheduled_component_status(component)
+        for row in state_rows
+            values[name, row] = status
+        end
+    end
     return
 end
 
@@ -1003,7 +1027,7 @@ function update_system_state!(
     state::SimulationState,
     key::OptimizationContainerKey,
     column_names_::Set{String},
-    event::PSY.Outage,
+    event::PSY.UnplannedOutage,
     event_model::EventModel,
     simulation_time::Dates.DateTime,
     rng::AbstractRNG,
@@ -1015,7 +1039,7 @@ function update_system_state!(
     state::SimulationState,
     key::ParameterKey{AvailableStatusParameter, T},
     column_names_::Set{String},
-    event::PSY.Outage,
+    event::PSY.UnplannedOutage,
     event_model::EventModel,
     simulation_time::Dates.DateTime,
     rng::AbstractRNG,
@@ -1039,7 +1063,7 @@ function update_system_state!(
     state::SimulationState,
     key::ParameterKey{AvailableStatusChangeCountdownParameter, T},
     column_names_::Set{String},
-    event::PSY.Outage,
+    event::PSY.UnplannedOutage,
     event_model::EventModel,
     simulation_time::Dates.DateTime,
     rng::AbstractRNG,
@@ -1081,7 +1105,7 @@ function update_system_state!(
     state::SimulationState,
     key::ParameterKey{ActivePowerOffsetParameter, T},
     column_names_::Set{String},
-    event::PSY.Outage,
+    event::PSY.UnplannedOutage,
     event_model::EventModel,
     simulation_time::Dates.DateTime,
     rng::AbstractRNG,
@@ -1116,7 +1140,7 @@ function update_system_state!(
     state::SimulationState,
     key::AuxVarKey{TimeDurationOff, T},
     column_names::Set{String},
-    event::PSY.Outage,
+    event::PSY.UnplannedOutage,
     event_model::EventModel,
     simulation_time::Dates.DateTime,
     rng::AbstractRNG,
@@ -1143,7 +1167,7 @@ function update_system_state!(
     state::SimulationState,
     key::AuxVarKey{TimeDurationOn, T},
     column_names::Set{String},
-    event::PSY.Outage,
+    event::PSY.UnplannedOutage,
     event_model::EventModel,
     simulation_time::Dates.DateTime,
     rng::AbstractRNG,
@@ -1170,7 +1194,7 @@ function update_system_state!(
     state::SimulationState,
     key::VariableKey{T, U},
     column_names::Set{String},
-    ::PSY.Outage,
+    ::PSY.UnplannedOutage,
     event_model::EventModel,
     simulation_time::Dates.DateTime,
     rng::AbstractRNG,
