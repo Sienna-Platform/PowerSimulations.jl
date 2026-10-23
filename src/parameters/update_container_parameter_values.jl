@@ -150,7 +150,8 @@ function _update_parameter_values!(
 end
 
 # A decision model reads every forecast named `ts_name` for the step's window in one
-# reader read, then writes each entry this parameter has a row for. Components that share
+# reader read, shared by every parameter with that series name, then writes each entry
+# this parameter has a row for. Components that share
 # a stored array share a row, so a row is written once.
 # ponytail: dense `Deterministic` only. A `DeterministicSingleTimeSeries` reader read is
 # slower than the per-series path (its derived slots are not block cached in InfraStore,
@@ -168,8 +169,8 @@ function _refresh_time_series_rows!(
     V <: PSY.Component,
 }
     ts_name = get_time_series_name(attributes)
-    reader = get_time_series_reader!(model, U, ts_name)
-    IS.read_forecast_window!(reader, get_current_time(model))
+    # Keys that share a series name share the reader, read once per step.
+    reader = get_time_series_reader!(model, U, ts_name, get_current_time(model))
     horizon = length(get_time_steps(get_optimization_container(model)))
     written = falses(length(axes(parameter_array, 1)))
     for group in 1:IS.get_num_forecast_groups(reader)
