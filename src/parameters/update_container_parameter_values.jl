@@ -149,14 +149,14 @@ function _update_parameter_values!(
     return
 end
 
-# A decision model reads every forecast named `ts_name` for the step's window in one
-# reader read, shared by every parameter with that series name, then writes each entry
-# this parameter has a row for. Components that share
-# a stored array share a row, so a row is written once.
+# A decision model refreshes a parameter backed by dense `Deterministic` forecasts from the
+# reader over every forecast with its series name. Between solves, `update_parameters!`
+# refreshes all such parameters together (`_refresh_reader_parameters!`), so parameters
+# that share a series name share one read; a parameter updated on its own reads for itself.
 # ponytail: dense `Deterministic` only. A `DeterministicSingleTimeSeries` reader read is
 # slower than the per-series path (its derived slots are not block cached in InfraStore,
 # NatLabRockies/infrastore#113), so DST keeps the fallback below until that read is fast;
-# then widen to AbstractDeterministic.
+# then widen to AbstractDeterministic, here and in `_reader_source`.
 function _refresh_time_series_rows!(
     parameter_array::DenseAxisArray{T, 2},
     param::ParameterType,
@@ -168,10 +168,80 @@ function _refresh_time_series_rows!(
     U <: PSY.Deterministic,
     V <: PSY.Component,
 }
-    ts_name = get_time_series_name(attributes)
-    # Keys that share a series name share the reader, read once per step.
-    reader = get_time_series_reader!(model, U, ts_name, get_current_time(model))
+    reader = get_time_series_reader!(model, U, get_time_series_name(attributes))
+    IS.read_forecast_window!(reader, get_current_time(model))
     horizon = length(get_time_steps(get_optimization_container(model)))
+    _write_reader_rows!(reader, parameter_array, param, attributes, V, horizon)
+    return
+end
+
+# Which reader refreshes a parameter between solves, as (series type, name), or `nothing`
+# for a parameter another path refreshes. Mirrors the routing to the reader method of
+# `_refresh_time_series_rows!`.
+_reader_source(::ParameterKey, ::Any, ::Any, ::IOM.AbstractOptimizationModel) = nothing
+
+_reader_source(
+    ::ParameterKey{<:ParameterType, <:PSY.Component},
+    ::DenseAxisArray{<:Union{JuMP.VariableRef, Float64}, 2},
+    attributes::TimeSeriesAttributes{U},
+    ::DecisionModel,
+) where {U <: PSY.Deterministic} = (U, get_time_series_name(attributes))
+
+# Reduced branches refresh through the network reduction catalog instead.
+_reader_source(
+    ::ParameterKey{<:TimeSeriesParameter, <:PSY.ACTransmission},
+    ::DenseAxisArray{<:Union{JuMP.VariableRef, Float64}, 2},
+    ::TimeSeriesAttributes{<:PSY.Deterministic},
+    ::DecisionModel,
+) = nothing
+
+"""
+Refresh every parameter a time series reader serves, reading each reader once for all the
+parameters that share its series name. Returns the keys it refreshed.
+"""
+function _refresh_reader_parameters!(model::IOM.AbstractOptimizationModel)
+    container = get_optimization_container(model)
+    by_source = Dict{Tuple{Type, String}, Vector{ParameterKey}}()
+    for (key, parameter) in get_parameters(container)
+        source = _reader_source(
+            key,
+            get_parameter_array(parameter),
+            get_attributes(parameter),
+            model,
+        )
+        # Parameters that refresh some other way.
+        source === nothing && continue
+        push!(get!(() -> ParameterKey[], by_source, source), key)
+    end
+    horizon = length(get_time_steps(container))
+    for ((U, ts_name), keys) in by_source
+        reader = get_time_series_reader!(model, U, ts_name)
+        IS.read_forecast_window!(reader, get_current_time(model))
+        for key in keys
+            parameter = get_parameter(container, key)
+            _write_reader_rows!(
+                reader,
+                get_parameter_array(parameter),
+                get_entry_type(key)(),
+                get_attributes(parameter),
+                get_component_type(key),
+                horizon,
+            )
+        end
+    end
+    return Set{ParameterKey}(key for keys in values(by_source) for key in keys)
+end
+
+# Writes the reader's current windows into one parameter's rows. Components that share a
+# stored array share a row, so a row is written once.
+function _write_reader_rows!(
+    reader::IS.ForecastReader,
+    parameter_array,
+    param,
+    attributes,
+    ::Type{V},
+    horizon,
+) where {V <: PSY.Component}
     written = falses(length(axes(parameter_array, 1)))
     for group in 1:IS.get_num_forecast_groups(reader)
         _write_forecast_group!(
@@ -187,9 +257,9 @@ function _refresh_time_series_rows!(
     end
     if !all(written)
         error(
-            "The $U time series reader for $(ts_name) has no entry for " *
-            "$(count(!, written)) of the $(length(written)) rows of $(typeof(param)) " *
-            "for $V.",
+            "The time series reader for $(get_time_series_name(attributes)) has no " *
+            "entry for $(count(!, written)) of the $(length(written)) rows of " *
+            "$(typeof(param)) for $V.",
         )
     end
     return

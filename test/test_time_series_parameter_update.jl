@@ -216,3 +216,51 @@ end
     model = _shared_rows_model(sys; horizon = Hour(24), interval = Hour(1))
     _test_shared_rows_update!(model, PSY.DeterministicSingleTimeSeries, 3)
 end
+
+@testset "Parameters sharing a series name refresh together between solves" begin
+    sys = PSB.build_system(PSITestSystems, "c_sys5_re")
+    template = PowerOperationsProblemTemplate(CopperPlateNetworkModel)
+    set_device_model!(template, ThermalStandard, ThermalBasicDispatch)
+    set_device_model!(template, PowerLoad, StaticPowerLoad)
+    set_device_model!(template, RenewableDispatch, RenewableFullDispatch)
+    model = DecisionModel(
+        template,
+        sys;
+        optimizer = HiGHS_optimizer,
+        horizon = Hour(24),
+        interval = Hour(24),
+    )
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          IOM.ModelBuildStatus.BUILT
+    container = IOM.get_optimization_container(model)
+    horizon = length(IOM.get_time_steps(container))
+    param_keys = [
+        IOM.ParameterKey(ActivePowerTimeSeriesParameter, PowerLoad),
+        IOM.ParameterKey(ActivePowerTimeSeriesParameter, RenewableDispatch),
+    ]
+
+    IOM.advance_execution_count!(model)
+    PSI.update_parameters!(model, PSI.SimulationState())
+    start_time = IOM.get_current_time(model)
+    for key in param_keys
+        parameter = IOM.get_parameter(container, key)
+        attributes = IOM.get_attributes(parameter)
+        array = IOM.get_parameter_array(parameter)
+        V = IOM.get_component_type(key)
+        for name in IOM.get_component_names(attributes)
+            expected = PSY.get_time_series_values(
+                PSY.Deterministic,
+                PSY.get_component(V, sys, name),
+                "max_active_power";
+                start_time = start_time,
+                len = horizon,
+            )
+            @test jump_value.(array[IOM._get_ts_uuid(attributes, name), :].data) ==
+                  expected
+        end
+    end
+    # Both parameters refresh in the batch, served by one reader.
+    @test PSI._refresh_reader_parameters!(model) == Set(param_keys)
+    @test collect(keys(IOM.get_time_series_readers(IOM.get_internal(model)))) ==
+          [(PSY.Deterministic, "max_active_power", Dates.Millisecond(Hour(1)))]
+end
