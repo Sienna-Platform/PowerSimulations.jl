@@ -108,7 +108,8 @@ import InfrastructureOptimizationModels:
     get_column_names, OutputsByTime, OutputsByKeyAndTime, make_dataframes
 import InfrastructureOptimizationModels:
     get_parameter_attributes, get_parameter_array, get_parameter_multiplier_array,
-    get_attribute_key, get_time_series_name, _get_ts_uuid, _set_param_value_at!,
+    get_attribute_key, get_attribute_key_string, get_variable_types_string,
+    get_time_series_name, _get_ts_uuid, _set_param_value_at!,
     ValidDataParamEltypes, TimeSeriesAttributes, VariableValueAttributes,
     CostFunctionAttributes, EventParametersAttributes, NoAttributes,
     get_time_series_window

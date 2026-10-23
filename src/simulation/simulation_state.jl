@@ -79,7 +79,11 @@ function _get_state_params(models::SimulationModels, simulation_step::Dates.Mill
             field_containers = getfield(container, type)
             for key in keys(field_containers)
                 !should_write_resulting_value(key) && continue
-                if !haskey(params, key)
+                if !haskey(params, key) && _is_event_parameter_key(key)
+                    # The emulator reads its event parameters from the decision state, so
+                    # a device type only the emulator applies events to still needs it.
+                    params[key] = (horizon = simulation_step, resolution = model_resolution)
+                elseif !haskey(params, key)
                     @warn "New parameter $key found in emulator only; \
                         not registered by any decision model"
                 else
@@ -95,33 +99,107 @@ function _get_state_params(models::SimulationModels, simulation_step::Dates.Mill
     return params
 end
 
-function _initialize_model_states!(
+_is_event_parameter_key(::OptimizationContainerKey) = false
+_is_event_parameter_key(::ParameterKey{<:EventParameter}) = true
+
+_state_models(models::SimulationModels) = _state_models(models, get_emulation_model(models))
+_state_models(models::SimulationModels, ::Nothing) = get_decision_models(models)
+_state_models(models::SimulationModels, em::EmulationModel) =
+    vcat(get_decision_models(models), em)
+
+_axis_labels(axis) = [string(label) for label in axis]
+
+"""
+Merge the columns that `model_name` has for `key` into the state columns collected from
+`owners` so far. Simulation state keeps one dataset per key for all models, so the component
+axis (the first) is the union across models, in the order the models list them. Every other
+axis must be the same in every model. Returns `current` itself when `new` adds no component.
+"""
+function _union_state_columns(
+    key::OptimizationContainerKey,
+    current::Tuple,
+    owners,
+    new::Tuple,
+    model_name::Symbol,
+)
+    if length(current) != length(new) ||
+       any(_axis_labels(current[i]) != _axis_labels(new[i]) for i in 2:length(current))
+        throw(
+            IS.InvalidValue(
+                "Simulation state for $(encode_key_as_string(key)) needs the same axes \
+                besides the component axis in every model. Model $model_name has \
+                $(_axis_labels.(new[2:end])) and model(s) $(join(owners, ", ")) have \
+                $(_axis_labels.(current[2:end])).",
+            ),
+        )
+    end
+    known = Set(current[1])
+    added = [name for name in new[1] if !(name in known)]
+    isempty(added) && return current
+    return (vcat(current[1], added), current[2:end]...)
+end
+
+function _get_state_columns(models::SimulationModels)
+    columns = Dict{OptimizationContainerKey, Tuple}()
+    owners = Dict{OptimizationContainerKey, Vector{Symbol}}()
+    for model in _state_models(models)
+        container = get_optimization_container(model)
+        model_name = get_name(model)
+        for field in fieldnames(DatasetContainer)
+            for (key, value) in getfield(container, field)
+                !should_write_resulting_value(key) && continue
+                model_columns = get_column_names(container, field, value, key)
+                if haskey(columns, key)
+                    columns[key] = _union_state_columns(
+                        key,
+                        columns[key],
+                        owners[key],
+                        model_columns,
+                        model_name,
+                    )
+                    push!(owners[key], model_name)
+                else
+                    columns[key] = model_columns
+                    owners[key] = [model_name]
+                end
+            end
+        end
+    end
+    return columns
+end
+
+# Event parameters are exogenous state the emulator reads before any event step writes it.
+# Starting them at their no-outage values covers the components no decision model writes,
+# such as a device only the emulator has; every other key starts unset.
+_initial_state_value(::OptimizationContainerKey) = NaN
+_initial_state_value(::ParameterKey{<:EventParameter}) = 0.0
+_initial_state_value(::ParameterKey{AvailableStatusParameter}) = 1.0
+
+# The outaged devices of an event are those of the emulator's system, but a variable's state
+# holds only the components of the models that write it, which need not include all of them.
+_has_component(data::InMemoryDataset, name::String) = name in axes(data.values)[1]
+
+function _initialize_decision_states!(
     sim_state::SimulationState,
-    model::IOM.AbstractOptimizationModel,
     simulation_initial_time::Dates.DateTime,
     simulation_step::Dates.Millisecond,
     params::OrderedDict{OptimizationContainerKey, STATE_TIME_PARAMS},
+    columns::Dict{OptimizationContainerKey, Tuple},
 )
     states = get_decision_states(sim_state)
-    container = get_optimization_container(model)
-    for field in fieldnames(DatasetContainer)
-        field_containers = getfield(container, field)
-        field_states = getfield(states, field)
-        for (key, field_container) in field_containers
-            !should_write_resulting_value(key) && continue
-            value_counts = params[key].horizon ÷ params[key].resolution
-            column_names = get_column_names(container, field, field_container, key)
-            # TODO DT: why would we overwrite a key? Is this a bug?
-            if !haskey(field_states, key) || get_num_rows(field_states[key]) < value_counts
-                field_states[key] = InMemoryDataset(
-                    NaN,
-                    simulation_initial_time,
-                    params[key].resolution,
-                    Int(simulation_step / params[key].resolution),
-                    value_counts,
-                    column_names)
-            end
-        end
+    for (key, key_params) in params
+        set_dataset!(
+            states,
+            key,
+            InMemoryDataset(
+                _initial_state_value(key),
+                simulation_initial_time,
+                key_params.resolution,
+                Int(simulation_step / key_params.resolution),
+                key_params.horizon ÷ key_params.resolution,
+                columns[key],
+            ),
+        )
     end
     return
 end
@@ -131,22 +209,15 @@ function _initialize_system_states!(
     ::Nothing,
     simulation_initial_time::Dates.DateTime,
     params::OrderedDict{OptimizationContainerKey, STATE_TIME_PARAMS},
+    columns::Dict{OptimizationContainerKey, Tuple},
 )
-    decision_states = get_decision_states(sim_state)
-    emulator_states = get_system_states(sim_state)
-    min_res = minimum([v.resolution for v in values(params)])
-    for key in get_dataset_keys(decision_states)
-        cols = get_column_names(key, get_dataset(decision_states, key))
-        set_dataset!(
-            emulator_states,
-            key,
-            make_system_state(
-                simulation_initial_time,
-                min_res,
-                cols,
-            ),
-        )
-    end
+    _set_system_states!(
+        sim_state,
+        get_dataset_keys(get_decision_states(sim_state)),
+        simulation_initial_time,
+        params,
+        columns,
+    )
     return
 end
 
@@ -155,64 +226,40 @@ function _initialize_system_states!(
     emulation_model::EmulationModel,
     simulation_initial_time::Dates.DateTime,
     params::OrderedDict{OptimizationContainerKey, STATE_TIME_PARAMS},
+    columns::Dict{OptimizationContainerKey, Tuple},
 )
-    decision_states = get_decision_states(sim_state)
-    emulator_states = get_system_states(sim_state)
-    emulation_container = get_optimization_container(emulation_model)
-    min_res = minimum([v.resolution for v in values(params)])
-
-    for field in fieldnames(DatasetContainer)
-        field_containers = getfield(emulation_container, field)
-        for (key, value) in field_containers
-            !should_write_resulting_value(key) && continue
-            if field == :parameters
-                column_names = get_column_names(key, value)
-            else
-                column_names = get_column_names_from_axis_array(key, value)
-            end
-            set_dataset!(
-                emulator_states,
-                key,
-                make_system_state(
-                    simulation_initial_time,
-                    min_res,
-                    column_names,
-                ),
-            )
-        end
+    state_keys = Set{OptimizationContainerKey}(
+        get_dataset_keys(get_decision_states(sim_state)),
+    )
+    for key in get_container_keys(get_optimization_container(emulation_model))
+        should_write_resulting_value(key) && push!(state_keys, key)
     end
+    _set_system_states!(sim_state, state_keys, simulation_initial_time, params, columns)
+    return
+end
 
-    for key in get_dataset_keys(decision_states)
-        dm_cols = get_column_names(key, get_dataset(decision_states, key))
-        if has_dataset(emulator_states, key)
-            em_cols = get_column_names(key, get_dataset(emulator_states, key))
-            if length(dm_cols) != length(em_cols)
-                error(
-                    "The number of dimensions between the decision states and emulator states don't match",
-                )
-            end
-            if !isempty(symdiff(first(dm_cols), first(em_cols)))
-                error(
-                    "Mismatch in column names for dataset $key: $(symdiff(dm_cols, em_cols)) \
-                    This issue is common when filters are applied to the decision model but not to the emulator model.",
-                )
-            end
-            continue
-        end
-
-        set_dataset!(
-            emulator_states,
-            key,
-            make_system_state(
-                simulation_initial_time,
-                min_res,
-                dm_cols,
-            ),
-        )
+function _set_system_states!(
+    sim_state::SimulationState,
+    state_keys,
+    simulation_initial_time::Dates.DateTime,
+    params::OrderedDict{OptimizationContainerKey, STATE_TIME_PARAMS},
+    columns::Dict{OptimizationContainerKey, Tuple},
+)
+    system_states = get_system_states(sim_state)
+    min_res = minimum([v.resolution for v in values(params)])
+    for key in state_keys
+        dataset = make_system_state(simulation_initial_time, min_res, columns[key])
+        fill!(dataset.values.data, _initial_state_value(key))
+        set_dataset!(system_states, key, dataset)
     end
     return
 end
 
+"""
+Create the decision and system states of a simulation. There is one dataset per key for all
+models; its component axis is the union of the components the models have for the key (see
+`update_missing_state_columns!`).
+"""
 function initialize_simulation_state!(
     sim_state::SimulationState,
     models::SimulationModels,
@@ -220,18 +267,17 @@ function initialize_simulation_state!(
     simulation_initial_time::Dates.DateTime,
 )
     params = _get_state_params(models, simulation_step)
-    for model in get_decision_models(models)
-        _initialize_model_states!(
-            sim_state,
-            model,
-            simulation_initial_time,
-            simulation_step,
-            params,
-        )
-    end
+    columns = _get_state_columns(models)
+    _initialize_decision_states!(
+        sim_state,
+        simulation_initial_time,
+        simulation_step,
+        params,
+        columns,
+    )
     set_last_decision_model!(sim_state, get_name(last(get_decision_models(models))))
     em = get_emulation_model(models)
-    _initialize_system_states!(sim_state, em, simulation_initial_time, params)
+    _initialize_system_states!(sim_state, em, simulation_initial_time, params, columns)
     return
 end
 
@@ -267,7 +313,7 @@ function update_decision_state!(
     model_params::ModelStoreParams,
 ) where {T <: PSY.Component}
     state_data = get_decision_state_data(state, key)
-    column_names = get_column_names(key, state_data)[1]
+    column_names = axes(store_data)[1]
     model_resolution = get_resolution(model_params)
     state_resolution = get_data_resolution(state_data)
     resolution_ratio = model_resolution ÷ state_resolution
@@ -313,7 +359,7 @@ function update_decision_state!(
     state_data = get_decision_state_data(state, key)
     countdown_data =
         get_decision_state_data(state, AvailableStatusChangeCountdownParameter(), T)
-    column_names = get_column_names(key, state_data)[1]
+    column_names = axes(store_data)[1]
     model_resolution = get_resolution(model_params)
     state_resolution = get_data_resolution(state_data)
     resolution_ratio = model_resolution ÷ state_resolution
@@ -376,6 +422,13 @@ function update_decision_state!(
     end
     return
 end
+
+"""
+Write a model's results for `key` into the decision state. The state holds the union of the
+key's components across models, and each model writes only the components it has, so the
+last model to write a component wins. The components a model lacks are handled by
+`update_missing_state_columns!`.
+"""
 function update_decision_state!(
     state::SimulationState,
     key::OptimizationContainerKey,
@@ -384,18 +437,7 @@ function update_decision_state!(
     model_params::ModelStoreParams,
 )
     state_data = get_decision_state_data(state, key)
-    # The state's columns come from the first model that registered the key; a later model
-    # can carry fewer, such as a bus another model's network reduction kept and this one's
-    # did not. Those columns keep their last recorded values.
-    stored = Set{String}(axes(store_data)[1])
-    all_columns = get_column_names(key, state_data)[1]
-    column_names = [name for name in all_columns if name in stored]
-    if length(column_names) < length(all_columns)
-        @warn "$(encode_key_as_string(key)): this model's outputs lack \
-               $(length(all_columns) - length(column_names)) of the state's \
-               $(length(all_columns)) columns; they keep their last recorded values" maxlog =
-            20
-    end
+    column_names = axes(store_data)[1]
     model_resolution = get_resolution(model_params)
     state_resolution = get_data_resolution(state_data)
     resolution_ratio = model_resolution ÷ state_resolution
@@ -515,6 +557,7 @@ function update_decision_state!(
     event_occurence_index =
         find_aligned_timestamp_index(event_occurrence_data, simulation_time)
     for name in column_names
+        _has_component(state_data, name) || continue
         if event_occurrence_data.values[name, event_occurence_index] > 0.0
             state_data.values[name, (state_data_index + 1):end] .=
                 MISSING_INITIAL_CONDITIONS_TIME_COUNT
@@ -540,6 +583,7 @@ function update_decision_state!(
     event_occurence_index =
         find_aligned_timestamp_index(event_occurrence_data, simulation_time)
     for name in column_names
+        _has_component(state_data, name) || continue
         if event_occurrence_data.values[name, event_occurence_index] > 0.0
             for (time_off, ix) in
                 enumerate((state_data_index + 1):length(state_data.values[name, :]))
@@ -567,6 +611,7 @@ function update_decision_state!(
     event_occurence_index =
         find_aligned_timestamp_index(event_occurrence_data, simulation_time)
     for name in column_names
+        _has_component(state_data, name) || continue
         if event_occurrence_data.values[name, event_occurence_index] > 0.0
             state_data.values[name, (state_data_index + 1):end] .= 0.0
         end
@@ -581,7 +626,7 @@ function update_decision_state!(
     model_params::ModelStoreParams,
 )
     state_data = get_decision_state_data(state, key)
-    outages = get_column_names(key, state_data)[1]
+    outages = axes(store_data)[1]
 
     model_resolution = get_resolution(model_params)
     state_resolution = get_data_resolution(state_data)
@@ -658,7 +703,7 @@ function update_decision_state!(
         error("Incorrect Problem Resolution specification: $(state_resolution)")
     end
 
-    column_names = axes(state_data.values)[1]
+    column_names = axes(store_data)[1]
     for t in result_time_index
         state_range = state_data_index:(state_data_index + offset)
         @assert_op state_range[end] <= get_num_rows(state_data)
@@ -679,6 +724,98 @@ function update_decision_state!(
     end
 
     return
+end
+
+"""
+    update_missing_state_columns!(
+        state_data::InMemoryDataset,
+        key::OptimizationContainerKey,
+        model::IOM.AbstractOptimizationModel,
+        columns::AbstractVector{String},
+        state_rows::UnitRange{Int},
+        row_timestamps::AbstractVector{Dates.DateTime},
+    )
+
+Extension point for the state components a model does not produce.
+
+A simulation keeps one state dataset per key for all models, over the union of the
+components the models have for that key. When `model` updates the state it writes the
+components it has, and the last model to write a component wins. This function is then
+called with the components of `key` that `model` lacks (`columns`, on the dataset's first
+axis), and also with every component of each state key that `model` does not have at all.
+
+`state_rows` are the rows of `state_data` that cover `model`'s window at the dataset's
+resolution, and `row_timestamps` their times. For a key the model does not write, the dataset
+is first advanced to the model's window, as it is for a model that writes the key, so the
+rows always start at the model's current time; they stop at the end of the dataset. An implementation may write `state_data.values[column, ..., row]` for those
+columns and rows, computing the values from `model`'s own data (for example its system). It
+must not change other rows, the dataset's timestamps or its update bookkeeping.
+
+The default writes nothing: a component keeps the value its last writer left, and a component
+no model has written keeps the initial `NaN`.
+
+It is called for the decision state after a decision model updates it, with the rows of the
+model's horizon, and for the system state after the emulator updates it, with `state_rows`
+`1:1`. In the system state, the decision-state values copied after the emulator update
+overwrite the components the emulator does not have.
+"""
+function update_missing_state_columns!(
+    ::InMemoryDataset,
+    ::OptimizationContainerKey,
+    ::IOM.AbstractOptimizationModel,
+    ::AbstractVector{String},
+    ::UnitRange{Int},
+    ::AbstractVector{Dates.DateTime},
+)
+    return
+end
+
+# Advance a dataset to the window starting at `simulation_time`, as a model writing the key
+# does when the window passes the end of the dataset's step. A model writing the key then
+# overwrites the rows it covers; here no row is written, so the rows keep their timestamps:
+# they move up by the number of rows the window advanced, and the rows that enter the window
+# hold the values of the last row.
+function _advance_state_window!(
+    state_data::InMemoryDataset,
+    simulation_time::Dates.DateTime,
+)
+    simulation_time > get_end_of_step_timestamp(state_data) || return
+    timestamps = state_data.timestamps
+    resolution = get_data_resolution(state_data)
+    window_start = align_to_dataset_grid(state_data, simulation_time)
+    shift = (window_start - first(timestamps)) ÷ resolution
+    num_rows = length(timestamps)
+    values = state_data.values.data
+    time_axis = ndims(values)
+    for row in 1:num_rows
+        source = min(row + shift, num_rows)
+        selectdim(values, time_axis, row) .= selectdim(values, time_axis, source)
+    end
+    timestamps .= range(window_start; step = resolution, length = num_rows)
+    set_last_recorded_row!(state_data, max(get_last_recorded_row(state_data) - shift, 0))
+    return
+end
+
+# The rows of a dataset that cover `[simulation_time, simulation_time + horizon)`, starting at
+# the row that contains `simulation_time`.
+function _window_rows(
+    state_data::InMemoryDataset,
+    simulation_time::Dates.DateTime,
+    horizon::Dates.Millisecond,
+)
+    timestamps = state_data.timestamps
+    first_row = max(searchsortedlast(timestamps, simulation_time), 1)
+    last_row = searchsortedfirst(timestamps, simulation_time + horizon) - 1
+    return first_row:last_row
+end
+
+# The state components missing from `model_columns`, or `nothing` when there are none. The
+# model's components are a subset of the state's, so equal counts mean none are missing.
+function _missing_state_columns(state_data::InMemoryDataset, model_columns)
+    state_columns = axes(state_data.values)[1]
+    length(model_columns) == length(state_columns) && return nothing
+    present = Set(model_columns)
+    return String[name for name in state_columns if !(name in present)]
 end
 
 function get_decision_state_data(state::SimulationState, key::OptimizationContainerKey)
@@ -710,6 +847,45 @@ end
 
 function get_system_state_data(state::SimulationState, key::OptimizationContainerKey)
     return get_dataset(get_system_states(state), key)
+end
+
+"""
+Error when a state value read for a component is not finite. Every state value starts as
+`NaN`, so a non-finite value means no model has written it.
+"""
+function _check_state_value(
+    value::Float64,
+    key::OptimizationContainerKey,
+    component_name::AbstractString,
+)
+    isfinite(value) || _throw_state_value_error(value, key, component_name)
+    return
+end
+
+@noinline function _throw_state_value_error(
+    value::Float64,
+    key::OptimizationContainerKey,
+    component_name::AbstractString,
+)
+    throw(
+        IS.InvalidValue(
+            "The simulation state value of $(component_name) in \
+            $(encode_key_as_string(key)) is $(value). Either no model has made this decision \
+            for the time being read, or no model writes this component for this key, which \
+            happens when device filters or formulations differ across models. Review the \
+            models' horizons, intervals and device filters.",
+        ),
+    )
+end
+
+function _get_state_value(
+    values::DenseAxisArray{Float64, 1},
+    key::OptimizationContainerKey,
+    component_name::AbstractString,
+)
+    value = values[component_name]
+    _check_state_value(value, key, component_name)
+    return value
 end
 
 function get_system_state_value(state::SimulationState, key::OptimizationContainerKey)
@@ -750,8 +926,63 @@ function update_system_state!(
     res = read_result(DenseAxisArray, store, model_name, key, ix)
     dataset = get_dataset(state, key)
     set_update_timestamp!(dataset, simulation_time)
-    set_dataset_values!(state, key, 1, _last_recorded_state_value(store, res, ix))
+    _set_state_row!(dataset, _last_recorded_state_value(store, res, ix), 1)
     set_last_recorded_row!(dataset, 1)
+    return
+end
+
+# Write one row of a model's output into a state dataset that may hold more components than
+# the model has, or the same components in another order. The output has the components on
+# its first axis, optionally followed by a trailing time axis of length one.
+function _set_state_row!(dataset::InMemoryDataset, value::DenseAxisArray, row::Int)
+    if axes(value)[1] == axes(dataset.values)[1]
+        set_value!(dataset, value, row)
+    else
+        for name in axes(value)[1]
+            _set_component_row!(dataset, value, name, row)
+        end
+    end
+    return
+end
+
+_set_component_row!(
+    dataset::InMemoryDataset{2},
+    value::DenseAxisArray{Float64, 1},
+    name,
+    row,
+) =
+    dataset.values[name, row] = value[name]
+_set_component_row!(
+    dataset::InMemoryDataset{2},
+    value::DenseAxisArray{Float64, 2},
+    name,
+    row,
+) =
+    dataset.values[name, row] = value[name, first(axes(value)[2])]
+
+function _set_component_row!(
+    dataset::InMemoryDataset{3},
+    value::DenseAxisArray{Float64, 2},
+    name,
+    row,
+)
+    component = value[name, :].data
+    for (ix, column) in enumerate(axes(dataset.values)[2])
+        dataset.values[name, column, row] = component[ix]
+    end
+    return
+end
+
+function _set_component_row!(
+    dataset::InMemoryDataset{3},
+    value::DenseAxisArray{Float64, 3},
+    name,
+    row,
+)
+    component = value[name, :, first(axes(value)[3])].data
+    for (ix, column) in enumerate(axes(dataset.values)[2])
+        dataset.values[name, column, row] = component[ix]
+    end
     return
 end
 
@@ -900,6 +1131,7 @@ function update_system_state!(
     current_status_values = get_last_recorded_value(current_status_data)
     set_update_timestamp!(system_dataset, simulation_time)
     for name in column_names
+        _has_component(current_status_data, name) || continue
         if event_occurrence_values[name] > 0.0
             current_status_data.values[name, 1] = 0.0
         end
@@ -926,6 +1158,7 @@ function update_system_state!(
     current_status_values = get_last_recorded_value(current_status_data)
     set_update_timestamp!(system_dataset, simulation_time)
     for name in column_names
+        _has_component(current_status_data, name) || continue
         if event_occurrence_values[name] > 0.0
             current_status_data.values[name, 1] = MISSING_INITIAL_CONDITIONS_TIME_COUNT
         end
@@ -952,6 +1185,7 @@ function update_system_state!(
     current_status_values = get_last_recorded_value(current_status_data)
     set_update_timestamp!(system_dataset, simulation_time)
     for name in column_names
+        _has_component(current_status_data, name) || continue
         if event_occurrence_values[name] > 0.0
             current_status_data.values[name, 1] = 0.0
         end

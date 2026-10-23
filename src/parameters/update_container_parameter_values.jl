@@ -334,13 +334,7 @@ function _update_parameter_values!(
             i_state = state_lookup[name]
             i_param = param_lookup[name]
             state_value = parent_state[i_state, state_data_index]
-            if !isfinite(state_value)
-                error(
-                    "The value for the system state used in $(encode_key_as_string(get_attribute_key(attributes))) is not a finite value $(state_value) \
-                     This is commonly caused by referencing a state value at a time when such decision hasn't been made. \
-                     Consider reviewing your models' horizon and interval definitions",
-                )
-            end
+            _check_state_value(state_value, get_attribute_key(attributes), name)
             _set_param_value_at!(parent_param, state_value, i_param, t)
         end
     end
@@ -385,13 +379,7 @@ function _update_parameter_values!(
             i_state = state_lookup[name]
             i_param = param_lookup[name]
             state_value = parent_state[i_state, state_data_index]
-            if !isfinite(state_value)
-                error(
-                    "The value for the system state used in $(encode_key_as_string(get_attribute_key(attributes))) is not a finite value $(state_value) \
-                     This is commonly caused by referencing a state value at a time when such decision hasn't been made. \
-                     Consider reviewing your models' horizon and interval definitions",
-                )
-            end
+            _check_state_value(state_value, get_attribute_key(attributes), name)
             _set_param_value_at!(parent_param, state_value, i_param, t)
         end
     end
@@ -437,13 +425,7 @@ function _update_parameter_values!(
             i_state = state_lookup[name]
             i_param = param_lookup[name]
             value = round(parent_state[i_state, state_data_index])
-            if !isfinite(value)
-                error(
-                    "The value for the system state used in $(encode_key_as_string(get_attribute_key(attributes))) is not a finite value $(value) \
-                     This is commonly caused by referencing a state value at a time when such decision hasn't been made. \
-                     Consider reviewing your models' horizon and interval definitions",
-                )
-            end
+            _check_state_value(value, get_attribute_key(attributes), name)
             if 0.0 > value || value > 1.0
                 error(
                     "The value for the system state used in $(encode_key_as_string(get_attribute_key(attributes))): $(value) is out of the [0, 1] range",
@@ -476,12 +458,9 @@ function _update_parameter_values!(
     for name in component_names
         i_state = state_lookup[name]
         i_param = param_lookup[name]
-        _set_param_value_at!(
-            parent_param,
-            parent_state[i_state, state_data_index],
-            i_param,
-            1,
-        )
+        state_value = parent_state[i_state, state_data_index]
+        _check_state_value(state_value, get_attribute_key(attributes), name)
+        _set_param_value_at!(parent_param, state_value, i_param, 1)
     end
     return
 end
@@ -549,13 +528,7 @@ function _update_parameter_values!(
         else
             value = round(parent_state[i_state, state_data_index])
         end
-        if !isfinite(value)
-            error(
-                "The value for the system state used in $(encode_key_as_string(get_attribute_key(attributes))) is not a finite value $(value) \
-                 This is commonly caused by referencing a state value at a time when such decision hasn't been made. \
-                 Consider reviewing your models' horizon and interval definitions",
-            )
-        end
+        _check_state_value(value, get_attribute_key(attributes), name)
         if 0.0 > value || value > 1.0
             error(
                 "The value for the system state used in $(encode_key_as_string(get_attribute_key(attributes))): $(value) is out of the [0, 1] range",
@@ -568,7 +541,7 @@ end
 
 function _update_parameter_values!(
     parameter_array::DenseAxisArray{T},
-    attributes::EventParametersAttributes{W, U},
+    ::EventParametersAttributes{W, U},
     ::Type{V},
     model::DecisionModel,
     state::DatasetContainer{InMemoryDataset},
@@ -579,12 +552,11 @@ function _update_parameter_values!(
     V <: PSY.Component,
 }
     current_time = get_current_time(model)
-    # state_values = get_dataset_values(state, get_attribute_key(attributes))
-    state_values =
-        get_dataset_values(state, U(), V)
+    key = ParameterKey(U, V)
+    state_values = get_dataset_values(state, key)
     component_names, time = axes(parameter_array)
     model_resolution = get_resolution(model)
-    state_data = get_dataset(state, U(), V)
+    state_data = get_dataset(state, key)
     state_timestamps = state_data.timestamps
     max_state_index = get_num_rows(state_data)
     if model_resolution < state_data.resolution
@@ -610,13 +582,7 @@ function _update_parameter_values!(
             i_state = state_lookup[name]
             i_param = param_lookup[name]
             value = parent_state[i_state, state_data_index]
-            if !isfinite(value)
-                error(
-                    "The value for the system state used in $(encode_key_as_string(get_attribute_key(attributes))) is not a finite value $(value) \
-                     This is commonly caused by referencing a state value at a time when such decision hasn't been made. \
-                     Consider reviewing your models' horizon and interval definitions",
-                )
-            end
+            _check_state_value(value, key, name)
             _set_param_value_at!(parent_param, value, i_param, t)
         end
     end
