@@ -100,6 +100,9 @@ end
     @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
           IOM.ModelBuildStatus.BUILT
     _test_value_axes_update!(model, IS.Deterministic, cases, expected)
+    # Refreshed through the reader over the "factors" forecasts.
+    @test (IS.Deterministic, "factors", Dates.Millisecond(Hour(1))) in
+          keys(IOM.get_time_series_readers(IOM.get_internal(model)))
 end
 
 # Adds a 48-hour "factors" series whose steps have the shape of `value_axes`, and returns the
@@ -131,4 +134,181 @@ end
     @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
           IOM.ModelBuildStatus.BUILT
     _test_value_axes_update!(model, IS.SingleTimeSeries, cases, expected)
+end
+
+# Gives the Bus4 load the same forecast array as the Bus2 load, so the two share one
+# parameter row (rows dedupe on the stored array's content hash) while Bus3 keeps its own.
+function _share_load_forecast!(sys, ts_type)
+    source = PSY.get_component(PowerLoad, sys, "Bus2")
+    target = PSY.get_component(PowerLoad, sys, "Bus4")
+    if ts_type <: PSY.DeterministicSingleTimeSeries
+        series = PSY.get_time_series(PSY.SingleTimeSeries, source, "max_active_power")
+        PSY.remove_time_series!(sys, PSY.SingleTimeSeries, target, "max_active_power")
+    else
+        series = PSY.get_time_series(ts_type, source, "max_active_power")
+        PSY.remove_time_series!(sys, ts_type, target, "max_active_power")
+    end
+    PSY.add_time_series!(sys, target, series)
+    return
+end
+
+# Steps a built model through `steps` updates and checks, at each one, that every load's
+# row holds that load's own series for the current window, read one series at a time.
+function _test_shared_rows_update!(model, ts_type, steps)
+    container = IOM.get_optimization_container(model)
+    key = IOM.ParameterKey(ActivePowerTimeSeriesParameter, PowerLoad)
+    parameter = IOM.get_parameter(container, key)
+    attributes = IOM.get_attributes(parameter)
+    array = IOM.get_parameter_array(parameter)
+    hashes = Dict(n => IOM._get_ts_uuid(attributes, n) for n in ("Bus2", "Bus3", "Bus4"))
+    @test hashes["Bus2"] == hashes["Bus4"] != hashes["Bus3"]
+    @test length(axes(array, 1)) == 2
+    horizon = length(IOM.get_time_steps(container))
+    sys = IOM.get_system(model)
+    for _ in 1:steps
+        IOM.advance_execution_count!(model)
+        IOM.update_container_parameter_values!(
+            container,
+            model,
+            key,
+            PSI.DatasetContainer{PSI.InMemoryDataset}(),
+        )
+        start_time = IOM.get_current_time(model)
+        for (name, hash) in hashes
+            expected = PSY.get_time_series_values(
+                ts_type,
+                PSY.get_component(PowerLoad, sys, name),
+                "max_active_power";
+                start_time = start_time,
+                len = horizon,
+            )
+            @test jump_value.(array[hash, :].data) == expected
+        end
+    end
+    return
+end
+
+function _shared_rows_model(sys; horizon, interval)
+    template = PowerOperationsProblemTemplate(CopperPlateNetworkModel)
+    set_device_model!(template, ThermalStandard, ThermalBasicDispatch)
+    set_device_model!(template, PowerLoad, StaticPowerLoad)
+    model = DecisionModel(
+        template,
+        sys;
+        optimizer = HiGHS_optimizer,
+        horizon = horizon,
+        interval = interval,
+    )
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          IOM.ModelBuildStatus.BUILT
+    return model
+end
+
+@testset "Loads sharing a forecast array share a row and refresh from the next window" begin
+    sys = PSB.build_system(PSITestSystems, "c_sys5_uc")
+    _share_load_forecast!(sys, PSY.Deterministic)
+    model = _shared_rows_model(sys; horizon = Hour(24), interval = Hour(24))
+    _test_shared_rows_update!(model, PSY.Deterministic, 1)
+end
+
+@testset "Loads sharing a single time series share a row across several steps" begin
+    sys = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_single_time_series = true)
+    PSY.remove_time_series!(sys, PSY.Deterministic)
+    _share_load_forecast!(sys, PSY.DeterministicSingleTimeSeries)
+    PSY.transform_single_time_series!(sys, Hour(24), Hour(1))
+    model = _shared_rows_model(sys; horizon = Hour(24), interval = Hour(1))
+    _test_shared_rows_update!(model, PSY.DeterministicSingleTimeSeries, 3)
+end
+
+@testset "Parameters sharing a series name refresh together between solves" begin
+    sys = PSB.build_system(PSITestSystems, "c_sys5_re")
+    template = PowerOperationsProblemTemplate(CopperPlateNetworkModel)
+    set_device_model!(template, ThermalStandard, ThermalBasicDispatch)
+    set_device_model!(template, PowerLoad, StaticPowerLoad)
+    set_device_model!(template, RenewableDispatch, RenewableFullDispatch)
+    model = DecisionModel(
+        template,
+        sys;
+        optimizer = HiGHS_optimizer,
+        horizon = Hour(24),
+        interval = Hour(24),
+    )
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          IOM.ModelBuildStatus.BUILT
+    container = IOM.get_optimization_container(model)
+    horizon = length(IOM.get_time_steps(container))
+    param_keys = [
+        IOM.ParameterKey(ActivePowerTimeSeriesParameter, PowerLoad),
+        IOM.ParameterKey(ActivePowerTimeSeriesParameter, RenewableDispatch),
+    ]
+
+    IOM.advance_execution_count!(model)
+    PSI.update_parameters!(model, PSI.SimulationState())
+    start_time = IOM.get_current_time(model)
+    for key in param_keys
+        parameter = IOM.get_parameter(container, key)
+        attributes = IOM.get_attributes(parameter)
+        array = IOM.get_parameter_array(parameter)
+        V = IOM.get_component_type(key)
+        for name in IOM.get_component_names(attributes)
+            expected = PSY.get_time_series_values(
+                PSY.Deterministic,
+                PSY.get_component(V, sys, name),
+                "max_active_power";
+                start_time = start_time,
+                len = horizon,
+            )
+            @test jump_value.(array[IOM._get_ts_uuid(attributes, name), :].data) ==
+                  expected
+        end
+    end
+    # Both parameters refresh in the batch, served by one reader.
+    @test PSI._refresh_reader_parameters!(model) == Set(param_keys)
+    @test collect(keys(IOM.get_time_series_readers(IOM.get_internal(model)))) ==
+          [(PSY.Deterministic, "max_active_power", Dates.Millisecond(Hour(1)))]
+end
+
+@testset "Reserve requirements refresh from the reader between solves" begin
+    sys = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_reserves = true)
+    template = PowerOperationsProblemTemplate(CopperPlateNetworkModel)
+    set_device_model!(template, ThermalStandard, ThermalBasicDispatch)
+    set_device_model!(template, PowerLoad, StaticPowerLoad)
+    set_service_model!(template, ServiceModel(OnlineReserve{ReserveUp}, RangeReserve))
+    model = DecisionModel(
+        template,
+        sys;
+        optimizer = HiGHS_optimizer,
+        horizon = Hour(24),
+        interval = Hour(24),
+    )
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          IOM.ModelBuildStatus.BUILT
+    container = IOM.get_optimization_container(model)
+    horizon = length(IOM.get_time_steps(container))
+    requirement_keys = [
+        k for k in keys(IOM.get_parameters(container)) if
+        IOM.get_entry_type(k) === RequirementTimeSeriesParameter
+    ]
+    @test !isempty(requirement_keys)
+
+    IOM.advance_execution_count!(model)
+    PSI.update_parameters!(model, PSI.SimulationState())
+    @test Set(requirement_keys) ⊆ PSI._refresh_reader_parameters!(model)
+    start_time = IOM.get_current_time(model)
+    for key in requirement_keys
+        parameter = IOM.get_parameter(container, key)
+        attributes = IOM.get_attributes(parameter)
+        array = IOM.get_parameter_array(parameter)
+        for name in IOM.get_component_names(attributes)
+            expected = PSY.get_time_series_values(
+                PSY.Deterministic,
+                PSY.get_component(IOM.get_component_type(key), sys, name),
+                IOM.get_time_series_name(attributes);
+                start_time = start_time,
+                len = horizon,
+            )
+            @test jump_value.(array[IOM._get_ts_uuid(attributes, name), :].data) ==
+                  expected
+        end
+    end
 end
