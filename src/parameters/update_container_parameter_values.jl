@@ -145,6 +145,99 @@ function _update_parameter_values!(
     V <: PSY.Component,
     W <: ParameterType,
 }
+    _refresh_time_series_rows!(parameter_array, param, attributes, V, model)
+    return
+end
+
+# A decision model reads every forecast named `ts_name` for the step's window in one
+# reader read, then writes each entry this parameter has a row for. Components that share
+# a stored array share a row, so a row is written once.
+# ponytail: dense `Deterministic` only. A `DeterministicSingleTimeSeries` reader read is
+# slower than the per-series path (its derived slots are not block cached in InfraStore,
+# NatLabRockies/infrastore#113), so DST keeps the fallback below until that read is fast;
+# then widen to AbstractDeterministic.
+function _refresh_time_series_rows!(
+    parameter_array::DenseAxisArray{T, 2},
+    param::ParameterType,
+    attributes::TimeSeriesAttributes{U},
+    ::Type{V},
+    model::DecisionModel,
+) where {
+    T <: Union{JuMP.VariableRef, Float64},
+    U <: PSY.Deterministic,
+    V <: PSY.Component,
+}
+    ts_name = get_time_series_name(attributes)
+    reader = get_time_series_reader!(model, U, ts_name)
+    IS.read_forecast_window!(reader, get_current_time(model))
+    horizon = length(get_time_steps(get_optimization_container(model)))
+    written = falses(length(axes(parameter_array, 1)))
+    for group in 1:IS.get_num_forecast_groups(reader)
+        _write_forecast_group!(
+            parameter_array,
+            param,
+            attributes,
+            V,
+            written,
+            IS.get_forecast_group_windows(reader, group),
+            IS.get_forecast_group_entries(reader, group),
+            horizon,
+        )
+    end
+    if !all(written)
+        error(
+            "The $U time series reader for $(ts_name) has no entry for " *
+            "$(count(!, written)) of the $(length(written)) rows of $(typeof(param)) " *
+            "for $V.",
+        )
+    end
+    return
+end
+
+# Function barrier: `windows` is concrete per group, so each window reads without dispatch.
+function _write_forecast_group!(
+    parameter_array,
+    param,
+    attributes,
+    ::Type{V},
+    written,
+    windows,
+    entries,
+    horizon,
+) where {V <: PSY.Component}
+    ts_name = get_time_series_name(attributes)
+    parent_param = parameter_array.data
+    name_lookup = parameter_array.lookup[1]
+    component_names = get_component_names(attributes)
+    additional_axes = lookup_additional_axes(parameter_array)
+    for (window, entry) in zip(windows, entries)
+        # The reader holds every series of this name; keep the ones this parameter models.
+        owner = entry.owner
+        owner isa V || continue
+        name = PSY.get_name(owner)
+        name in component_names || continue
+        i_param = name_lookup[_get_ts_uuid(attributes, name)]
+        written[i_param] && continue
+        _set_time_series_row!(
+            parent_param,
+            param,
+            view(window, 1:horizon),
+            additional_axes,
+            i_param,
+            ts_name,
+        )
+        written[i_param] = true
+    end
+    return
+end
+
+function _refresh_time_series_rows!(
+    parameter_array::DenseAxisArray,
+    param::ParameterType,
+    attributes::TimeSeriesAttributes{U},
+    ::Type{V},
+    model::Union{DecisionModel, EmulationModel},
+) where {U, V <: PSY.Component}
     initial_forecast_time = get_current_time(model)
     ts_name = get_time_series_name(attributes)
     sys = get_system(model)
