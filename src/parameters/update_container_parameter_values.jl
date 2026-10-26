@@ -251,11 +251,11 @@ end
 # stored array share a row, so a row is written once.
 function _write_reader_rows!(
     reader::IS.ForecastReader,
-    parameter_array,
-    param,
-    attributes,
+    parameter_array::DenseAxisArray{<:Union{JuMP.VariableRef, Float64}},
+    param::ParameterType,
+    attributes::TimeSeriesAttributes,
     ::Type{V},
-    horizon,
+    horizon::Int,
 ) where {V <: PSY.Component}
     written = falses(length(axes(parameter_array, 1)))
     for group in 1:IS.get_num_forecast_groups(reader)
@@ -282,14 +282,14 @@ end
 
 # Function barrier: `windows` is concrete per group, so each window reads without dispatch.
 function _write_forecast_group!(
-    parameter_array,
-    param,
-    attributes,
+    parameter_array::DenseAxisArray{<:Union{JuMP.VariableRef, Float64}},
+    param::ParameterType,
+    attributes::TimeSeriesAttributes,
     ::Type{V},
-    written,
-    windows,
-    entries,
-    horizon,
+    written::BitVector,
+    windows::AbstractVector,
+    entries::AbstractVector{IS.ForecastReaderEntry},
+    horizon::Int,
 ) where {V <: PSY.Component}
     ts_name = get_time_series_name(attributes)
     parent_param = parameter_array.data
@@ -317,9 +317,15 @@ function _write_forecast_group!(
     return
 end
 
-# A window's values for the model's first `horizon` steps. A series with value axes has an
-# `[H, *E]` window, which fills a 3-D container with one flattened (column-major) vector
-# per step, as the build reads it.
+# The values one parameter row takes, one per step of the model's horizon.
+#
+# Most series hold one number per time step, so the window is a vector and the row takes
+# its first `horizon` numbers.
+#
+# A series with value axes holds a small array at each time step (say, one value per block
+# and product). Its window is an array whose first dimension is time, and the parameter has
+# an extra dimension for those values. Each step's array goes into the row as one vector,
+# flattened the same way the build flattens it (IOM `get_time_series_window`).
 _window_steps(window::AbstractVector, horizon) = view(window, 1:horizon)
 _window_steps(window::AbstractArray, horizon) =
     [vec(collect(selectdim(window, 1, t))) for t in 1:horizon]
