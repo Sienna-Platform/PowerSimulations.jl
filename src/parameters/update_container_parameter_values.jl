@@ -216,6 +216,7 @@ parameters that share its series name. Returns the keys it refreshed.
 function _refresh_reader_parameters!(model::IOM.AbstractOptimizationModel)
     container = get_optimization_container(model)
     by_source = Dict{Tuple{Type, String}, Vector{ParameterKey}}()
+    refreshed = Set{ParameterKey}()
     for (key, parameter) in get_parameters(container)
         source = _reader_source(
             get_entry_type(key),
@@ -227,12 +228,13 @@ function _refresh_reader_parameters!(model::IOM.AbstractOptimizationModel)
         # Parameters that refresh some other way.
         source === nothing && continue
         push!(get!(() -> ParameterKey[], by_source, source), key)
+        push!(refreshed, key)
     end
     horizon = length(get_time_steps(container))
-    for ((U, ts_name), keys) in by_source
+    for ((U, ts_name), source_keys) in by_source
         reader = get_time_series_reader!(model, U, ts_name)
         _read_reader!(reader, get_current_time(model))
-        for key in keys
+        for key in source_keys
             parameter = get_parameter(container, key)
             _write_reader_rows!(
                 reader,
@@ -244,7 +246,7 @@ function _refresh_reader_parameters!(model::IOM.AbstractOptimizationModel)
             )
         end
     end
-    return Set{ParameterKey}(key for keys in values(by_source) for key in keys)
+    return refreshed
 end
 
 _read_reader!(reader::IS.ForecastReader, time) = IS.read_forecast_window!(reader, time)
@@ -327,7 +329,7 @@ function _write_reader_group!(
         _set_time_series_row!(
             parent_param,
             param,
-            _entry_steps(values, i_entry, horizon),
+            _entry_row(values, i_entry, horizon),
             additional_axes,
             i_param,
             ts_name,
@@ -337,26 +339,26 @@ function _write_reader_group!(
     return
 end
 
-# The values one parameter row takes, one per step of the model's horizon.
-#
-# Most series hold one number per time step. A forecast entry's window is then a vector and
-# the row takes its first `horizon` numbers; a static group holds one number per entry, the
-# emulator's single step.
-#
 # A series with value axes holds a small array at each time step (say, one value per block
-# and product), and the parameter has an extra dimension for those values. A forecast
-# window is then an array whose first dimension is time, and a static group an array whose
-# first dimension is the entry. Each step's array goes into the row as one vector, flattened
-# the same way the build flattens it (IOM `get_time_series_window`).
-_entry_steps(windows::AbstractVector{<:AbstractArray}, i_entry, horizon) =
-    _window_steps(windows[i_entry], horizon)
-_entry_steps(values::AbstractVector{<:Real}, i_entry, _) = view(values, i_entry:i_entry)
-_entry_steps(values::AbstractArray{<:Real}, i_entry, _) =
-    [vec(collect(selectdim(values, 1, i_entry)))]
+# and product), and the parameter has an extra dimension for those values. Each step's array
+# goes into the row as one vector, flattened the same way the build flattens it (IOM
+# `get_time_series_window`).
 
+# Entry `i_entry`'s row, one value per step of the model's horizon, out of its group's
+# values. A forecast group is a vector of windows, one per entry. A static group's first
+# axis is the entry; the emulator has a single step, so the row holds one value.
+_entry_row(windows::AbstractVector{<:AbstractArray}, i_entry, horizon) =
+    _window_steps(windows[i_entry], horizon)
+_entry_row(values::AbstractVector{<:Real}, i_entry, _) = view(values, i_entry:i_entry)
+_entry_row(values::AbstractArray{<:Real}, i_entry, _) =
+    (vec(selectdim(values, 1, i_entry)),)
+
+# One entry's forecast window as a row, one value per step of the horizon. The window's
+# first axis is time; any further axes are the series' value axes. Steps are views, so a
+# step is strided across the window (time-first) but nothing is copied.
 _window_steps(window::AbstractVector, horizon) = view(window, 1:horizon)
 _window_steps(window::AbstractArray, horizon) =
-    [vec(collect(selectdim(window, 1, t))) for t in 1:horizon]
+    (vec(selectdim(window, 1, t)) for t in 1:horizon)
 
 function _refresh_time_series_rows!(
     parameter_array::DenseAxisArray,
