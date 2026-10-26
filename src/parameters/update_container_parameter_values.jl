@@ -152,20 +152,20 @@ function _update_parameter_values!(
         # Updated on its own, a parameter reads the reader for itself. Between solves,
         # `_refresh_reader_parameters!` refreshes it with the others that share the read.
         reader = get_time_series_reader!(model, source...)
-        IS.read_forecast_window!(reader, get_current_time(model))
+        _read_reader!(reader, get_current_time(model))
         horizon = length(get_time_steps(get_optimization_container(model)))
         _write_reader_rows!(reader, parameter_array, param, attributes, V, horizon)
     end
     return
 end
 
+const _ReaderSeries = Union{PSY.AbstractDeterministic, PSY.SingleTimeSeries}
+
 # Which reader refreshes a time series parameter between solves, as (series type, name),
 # or `nothing` for one refreshed a series at a time. The per-key update and the batch in
 # `update_parameters!` both ask this, so they cannot disagree about a parameter.
-# ponytail: dense `Deterministic` only. A `DeterministicSingleTimeSeries` reader read is
-# slower than the per-series path (its derived slots are not block cached in InfraStore,
-# NatLabRockies/infrastore#113), so DST keeps the per-series path until that read is fast;
-# then widen these methods to AbstractDeterministic.
+# A decision model's parameters hold forecasts and an emulator's hold static series, so the
+# series type alone picks the reader.
 _reader_source(
     ::Type{<:ParameterType},
     ::Type{<:PSY.Component},
@@ -179,15 +179,15 @@ _reader_source(
     ::Type{<:PSY.Component},
     ::DenseAxisArray{<:Union{JuMP.VariableRef, Float64}},
     attributes::TimeSeriesAttributes{U},
-    ::DecisionModel,
-) where {U <: PSY.Deterministic} = (U, get_time_series_name(attributes))
+    ::IOM.AbstractOptimizationModel,
+) where {U <: _ReaderSeries} = (U, get_time_series_name(attributes))
 
 # Reduced branches refresh through the network reduction catalog instead.
 _reader_source(
     ::Type{<:TimeSeriesParameter},
     ::Type{<:PSY.ACTransmission},
     ::DenseAxisArray{<:Union{JuMP.VariableRef, Float64}},
-    ::TimeSeriesAttributes{<:PSY.Deterministic},
+    ::TimeSeriesAttributes{<:PSY.AbstractDeterministic},
     ::DecisionModel,
 ) = nothing
 
@@ -197,8 +197,8 @@ _reader_source(
     ::Type{<:ParameterType},
     ::Type{<:PSY.Service},
     ::DenseAxisArray{<:Union{JuMP.VariableRef, Float64}},
-    ::TimeSeriesAttributes{<:PSY.Deterministic},
-    ::DecisionModel,
+    ::TimeSeriesAttributes{<:_ReaderSeries},
+    ::IOM.AbstractOptimizationModel,
 ) = nothing
 
 _reader_source(
@@ -206,8 +206,8 @@ _reader_source(
     ::Type{<:PSY.Service},
     ::DenseAxisArray{<:Union{JuMP.VariableRef, Float64}},
     attributes::TimeSeriesAttributes{U},
-    ::DecisionModel,
-) where {U <: PSY.Deterministic} = (U, get_time_series_name(attributes))
+    ::IOM.AbstractOptimizationModel,
+) where {U <: _ReaderSeries} = (U, get_time_series_name(attributes))
 
 """
 Refresh every parameter a time series reader serves, reading each reader once for all the
@@ -231,7 +231,7 @@ function _refresh_reader_parameters!(model::IOM.AbstractOptimizationModel)
     horizon = length(get_time_steps(container))
     for ((U, ts_name), keys) in by_source
         reader = get_time_series_reader!(model, U, ts_name)
-        IS.read_forecast_window!(reader, get_current_time(model))
+        _read_reader!(reader, get_current_time(model))
         for key in keys
             parameter = get_parameter(container, key)
             _write_reader_rows!(
@@ -247,10 +247,29 @@ function _refresh_reader_parameters!(model::IOM.AbstractOptimizationModel)
     return Set{ParameterKey}(key for keys in values(by_source) for key in keys)
 end
 
-# Writes the reader's current windows into one parameter's rows. Components that share a
+_read_reader!(reader::IS.ForecastReader, time) = IS.read_forecast_window!(reader, time)
+_read_reader!(reader::IS.StaticTimeSeriesReader, time) =
+    IS.read_static_time_series_values!(reader, time)
+
+_num_reader_groups(reader::IS.ForecastReader) = IS.get_num_forecast_groups(reader)
+_num_reader_groups(reader::IS.StaticTimeSeriesReader) =
+    IS.get_num_static_time_series_groups(reader)
+
+# A group's values, one per entry, and its entries.
+_reader_group(reader::IS.ForecastReader, group) =
+    (
+        IS.get_forecast_group_windows(reader, group),
+        IS.get_forecast_group_entries(reader, group),
+    )
+_reader_group(reader::IS.StaticTimeSeriesReader, group) = (
+    IS.get_static_time_series_group_values(reader, group),
+    IS.get_static_time_series_group_entries(reader, group),
+)
+
+# Writes the reader's current values into one parameter's rows. Components that share a
 # stored array share a row, so a row is written once.
 function _write_reader_rows!(
-    reader::IS.ForecastReader,
+    reader::Union{IS.ForecastReader, IS.StaticTimeSeriesReader},
     parameter_array::DenseAxisArray{<:Union{JuMP.VariableRef, Float64}},
     param::ParameterType,
     attributes::TimeSeriesAttributes,
@@ -258,15 +277,14 @@ function _write_reader_rows!(
     horizon::Int,
 ) where {V <: PSY.Component}
     written = falses(length(axes(parameter_array, 1)))
-    for group in 1:IS.get_num_forecast_groups(reader)
-        _write_forecast_group!(
+    for group in 1:_num_reader_groups(reader)
+        _write_reader_group!(
             parameter_array,
             param,
             attributes,
             V,
             written,
-            IS.get_forecast_group_windows(reader, group),
-            IS.get_forecast_group_entries(reader, group),
+            _reader_group(reader, group)...,
             horizon,
         )
     end
@@ -280,15 +298,17 @@ function _write_reader_rows!(
     return
 end
 
-# Function barrier: `windows` is concrete per group, so each window reads without dispatch.
-function _write_forecast_group!(
+# Function barrier: `values` is concrete per group, so each entry reads without dispatch.
+function _write_reader_group!(
     parameter_array::DenseAxisArray{<:Union{JuMP.VariableRef, Float64}},
     param::ParameterType,
     attributes::TimeSeriesAttributes,
     ::Type{V},
     written::BitVector,
-    windows::AbstractVector,
-    entries::AbstractVector{IS.ForecastReaderEntry},
+    values::AbstractArray,
+    entries::AbstractVector{
+        <:Union{IS.ForecastReaderEntry, IS.StaticTimeSeriesReaderEntry},
+    },
     horizon::Int,
 ) where {V <: PSY.Component}
     ts_name = get_time_series_name(attributes)
@@ -296,7 +316,7 @@ function _write_forecast_group!(
     name_lookup = parameter_array.lookup[1]
     component_names = get_component_names(attributes)
     additional_axes = lookup_additional_axes(parameter_array)
-    for (window, entry) in zip(windows, entries)
+    for (i_entry, entry) in enumerate(entries)
         # The reader holds every series of this name; keep the ones this parameter models.
         owner = entry.owner
         owner isa V || continue
@@ -307,7 +327,7 @@ function _write_forecast_group!(
         _set_time_series_row!(
             parent_param,
             param,
-            _window_steps(window, horizon),
+            _entry_steps(values, i_entry, horizon),
             additional_axes,
             i_param,
             ts_name,
@@ -319,13 +339,21 @@ end
 
 # The values one parameter row takes, one per step of the model's horizon.
 #
-# Most series hold one number per time step, so the window is a vector and the row takes
-# its first `horizon` numbers.
+# Most series hold one number per time step. A forecast entry's window is then a vector and
+# the row takes its first `horizon` numbers; a static group holds one number per entry, the
+# emulator's single step.
 #
 # A series with value axes holds a small array at each time step (say, one value per block
-# and product). Its window is an array whose first dimension is time, and the parameter has
-# an extra dimension for those values. Each step's array goes into the row as one vector,
-# flattened the same way the build flattens it (IOM `get_time_series_window`).
+# and product), and the parameter has an extra dimension for those values. A forecast
+# window is then an array whose first dimension is time, and a static group an array whose
+# first dimension is the entry. Each step's array goes into the row as one vector, flattened
+# the same way the build flattens it (IOM `get_time_series_window`).
+_entry_steps(windows::AbstractVector{<:AbstractArray}, i_entry, horizon) =
+    _window_steps(windows[i_entry], horizon)
+_entry_steps(values::AbstractVector{<:Real}, i_entry, _) = view(values, i_entry:i_entry)
+_entry_steps(values::AbstractArray{<:Real}, i_entry, _) =
+    [vec(collect(selectdim(values, 1, i_entry)))]
+
 _window_steps(window::AbstractVector, horizon) = view(window, 1:horizon)
 _window_steps(window::AbstractArray, horizon) =
     [vec(collect(selectdim(window, 1, t))) for t in 1:horizon]

@@ -134,6 +134,8 @@ end
     @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
           IOM.ModelBuildStatus.BUILT
     _test_value_axes_update!(model, IS.SingleTimeSeries, cases, expected)
+    @test (IS.SingleTimeSeries, "factors", Dates.Millisecond(Hour(1))) in
+          keys(IOM.get_time_series_readers(IOM.get_internal(model)))
 end
 
 # Gives the Bus4 load the same forecast array as the Bus2 load, so the two share one
@@ -218,6 +220,12 @@ end
     PSY.transform_single_time_series!(sys, Hour(24), Hour(1))
     model = _shared_rows_model(sys; horizon = Hour(24), interval = Hour(1))
     _test_shared_rows_update!(model, PSY.DeterministicSingleTimeSeries, 3)
+    @test (
+        PSY.DeterministicSingleTimeSeries,
+        "max_active_power",
+        Dates.Millisecond(Hour(1)),
+    ) in
+          keys(IOM.get_time_series_readers(IOM.get_internal(model)))
 end
 
 @testset "Parameters sharing a series name refresh together between solves" begin
