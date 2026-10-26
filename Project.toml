@@ -35,10 +35,10 @@ PowerOperationsOpenAPIModels = "a372b6d7-45a2-44c2-8199-6a724b72e8ff"
 
 [sources]
 InfrastructureSystems = {url = "https://github.com/Sienna-Platform/InfrastructureSystems.jl", rev = "IS4"}
-InfrastructureOptimizationModels = {url = "https://github.com/Sienna-Platform/InfrastructureOptimizationModels.jl", rev = "main"}
+InfrastructureOptimizationModels = {url = "https://github.com/Sienna-Platform/InfrastructureOptimizationModels.jl", rev = "lk/time-series-readers"}
 PowerSystems = {url = "https://github.com/Sienna-Platform/PowerSystems.jl", rev = "psy6"}
 PowerNetworkMatrices = {url = "https://github.com/Sienna-Platform/PowerNetworkMatrices.jl", rev = "psy6"}
-PowerOperationsModels = {url = "https://github.com/Sienna-Platform/PowerOperationsModels.jl", rev = "main"}
+PowerOperationsModels = {url = "https://github.com/Sienna-Platform/PowerOperationsModels.jl", rev = "lk/time-series-readers"}
 PowerCoreOpenAPIModels = {url = "https://github.com/Sienna-Platform/PowerOpenAPIModels.git", rev = "main", subdir = "PowerCoreOpenAPIModels.jl"}
 InfrastructureTimeSeriesOpenAPIModels = {url = "https://github.com/Sienna-Platform/PowerOpenAPIModels.git", rev = "main", subdir = "InfrastructureTimeSeriesOpenAPIModels.jl"}
 InfrastructureCoreOpenAPIModels = {url = "https://github.com/Sienna-Platform/PowerOpenAPIModels.git", rev = "main", subdir = "InfrastructureCoreOpenAPIModels.jl"}
