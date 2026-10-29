@@ -1071,6 +1071,83 @@ end
     ) == PSI.ModelBuildStatus.FAILED
 end
 
+# MixedBranchesParallel <: AbstractBranchesParallel, not BranchesParallel. Without the
+# AbstractBranchesParallel methods, these helpers fall through to PSY.ACTransmission and
+# FieldError on PSY.get_name (no `.name` field on the parallel group).
+@testset "MixedBranchesParallel TransmissionInterface reduction helpers" begin
+    bus1 = ACBus(;
+        number = 101,
+        name = "bus_101",
+        available = true,
+        bustype = ACBusTypes.PV,
+        angle = 0.0,
+        magnitude = 1.0,
+        voltage_limits = (min = 0.9, max = 1.1),
+        base_voltage = 230.0,
+    )
+    bus2 = ACBus(;
+        number = 102,
+        name = "bus_102",
+        available = true,
+        bustype = ACBusTypes.PV,
+        angle = 0.0,
+        magnitude = 1.0,
+        voltage_limits = (min = 0.9, max = 1.1),
+        base_voltage = 230.0,
+    )
+    arc = Arc(; from = bus1, to = bus2)
+    line = Line(;
+        name = "mixed_line",
+        available = true,
+        active_power_flow = 0.0,
+        reactive_power_flow = 0.0,
+        arc = arc,
+        r = 0.05,
+        x = 0.10,
+        b = (from = 0.01, to = 0.01),
+        g = (from = 0.0, to = 0.0),
+        rating = 100.0,
+        angle_limits = (min = -π / 2, max = π / 2),
+    )
+    monitored = MonitoredLine(;
+        name = "mixed_monitored",
+        available = true,
+        active_power_flow = 0.0,
+        reactive_power_flow = 0.0,
+        arc = arc,
+        r = 0.05,
+        x = 0.10,
+        b = (from = 0.01, to = 0.01),
+        g = (from = 0.0, to = 0.0),
+        flow_limits = (from_to = 50.0, to_from = 50.0),
+        rating = 50.0,
+        angle_limits = (min = -π / 2, max = π / 2),
+    )
+    mbp = PNM.MixedBranchesParallel(PSY.ACTransmission[line, monitored])
+    @test mbp isa PNM.MixedBranchesParallel
+    @test mbp isa PNM.AbstractBranchesParallel
+    @test !(mbp isa PNM.BranchesParallel)
+
+    contributing = PSY.ACTransmission[line, monitored]
+    @test PSI._reduced_entry_in_interface(mbp, contributing)
+
+    @test_throws ArgumentError PSI._reduced_entry_in_interface(
+        mbp,
+        PSY.ACTransmission[line],
+    )
+
+    direction_map = Dict("mixed_line" => 1, "mixed_monitored" => 1)
+    net_reduction_data = PNM.NetworkReductionData()
+    @test PSI._get_direction((101, 102), mbp, direction_map, net_reduction_data) == 1.0
+
+    @test_throws ArgumentError PSI._get_direction(
+        (101, 102),
+        mbp,
+        Dict("mixed_line" => 1, "mixed_monitored" => -1),
+        net_reduction_data,
+    )
+end
+
 @testset "Test ORDC with TimeSeries" begin
     c_sys5_uc = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_reserves = true)
     ordc = first(get_components(PSY.ReserveDemandCurve, c_sys5_uc))

@@ -2050,7 +2050,7 @@ end
 
 function _get_direction(
     arc_tuple::Tuple{Int, Int},
-    reduction_entry::PNM.BranchesParallel,
+    reduction_entry::PNM.AbstractBranchesParallel,
     direction_map::Dict{String, Int},
     net_reduction_data::PNM.NetworkReductionData,
 )
@@ -2114,7 +2114,7 @@ function _reduced_entry_in_interface(
 end
 
 function _reduced_entry_in_interface(
-    reduction_entry::PNM.BranchesParallel,
+    reduction_entry::PNM.AbstractBranchesParallel,
     contributing_devices::Vector{<:PSY.ACTransmission},
 )
     in_interface =
