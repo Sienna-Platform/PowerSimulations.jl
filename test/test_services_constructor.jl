@@ -806,6 +806,84 @@ end
     end
 end
 
+@testset "Test Interfaces on Interchanges with AreaPTDF VariableMax" begin
+    # AreaPTDF VariableMax must call both PTDFBranchFlow and FlowActivePowerVariable
+    # builders (mirroring ConstantMax AreaPTDF) so interchange-only TIs build.
+    sys_rts_da = build_system(PSISystems, "modified_RTS_GMLC_DA_sys")
+    interchange1 = AreaInterchange(;
+        name = "interchange1_2",
+        available = true,
+        active_power_flow = 100.0,
+        flow_limits = (from_to = 1.0, to_from = 1.0),
+        from_area = get_component(Area, sys_rts_da, "1"),
+        to_area = get_component(Area, sys_rts_da, "2"),
+    )
+    interchange2 = AreaInterchange(;
+        name = "interchange1_3",
+        available = true,
+        active_power_flow = 100.0,
+        flow_limits = (from_to = 1.0, to_from = 1.0),
+        from_area = get_component(Area, sys_rts_da, "1"),
+        to_area = get_component(Area, sys_rts_da, "3"),
+    )
+    add_components!(sys_rts_da, [interchange1, interchange2])
+    interface = TransmissionInterface(;
+        name = "interface1_2_3",
+        available = true,
+        active_power_flow_limits = (min = 0.0, max = 1.0),
+        violation_penalty = 1000.0,
+        direction_mapping = Dict("interchange1_2" => 1, "interchange1_3" => -1),
+    )
+    add_service!(sys_rts_da, interface, [interchange1, interchange2])
+    # Attach SingleTimeSeries before transform so forecast params match the system.
+    ref_load = first(get_components(PowerLoad, sys_rts_da))
+    ref_sts = get_time_series(SingleTimeSeries, ref_load, "max_active_power")
+    dates = timestamp(get_data(ref_sts))
+    add_time_series!(
+        sys_rts_da,
+        interface,
+        SingleTimeSeries(
+            "min_active_power_flow_limit",
+            TimeArray(dates, zeros(length(dates)));
+            scaling_factor_multiplier = get_min_active_power_flow_limit,
+        ),
+    )
+    add_time_series!(
+        sys_rts_da,
+        interface,
+        SingleTimeSeries(
+            "max_active_power_flow_limit",
+            TimeArray(dates, ones(length(dates)));
+            scaling_factor_multiplier = get_max_active_power_flow_limit,
+        ),
+    )
+    transform_single_time_series!(sys_rts_da, Hour(24), Hour(1))
+
+    template = ProblemTemplate(NetworkModel(AreaPTDFPowerModel; use_slacks = true))
+    set_device_model!(template, ThermalStandard, ThermalDispatchNoMin)
+    set_device_model!(template, RenewableDispatch, RenewableFullDispatch)
+    set_device_model!(template, PowerLoad, StaticPowerLoad)
+    set_device_model!(template, RenewableNonDispatch, FixedOutput)
+    set_device_model!(template, HydroDispatch, HydroDispatchRunOfRiver)
+    set_device_model!(template, Line, StaticBranchUnbounded)
+    set_device_model!(
+        template,
+        DeviceModel(AreaInterchange, StaticBranchUnbounded; use_slacks = false),
+    )
+    set_service_model!(
+        template,
+        ServiceModel(TransmissionInterface, VariableMaxInterfaceFlow),
+    )
+    ps_model = DecisionModel(
+        template,
+        sys_rts_da;
+        resolution = Hour(1),
+        optimizer = HiGHS_optimizer,
+    )
+    @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+end
+
 @testset "Test Interfaces on Interchanges and Double Circuits with AreaPTDFPowerModel" begin
     sys_rts_da = build_system(PSISystems, "modified_RTS_GMLC_DA_sys")
     transform_single_time_series!(sys_rts_da, Hour(24), Hour(1))

@@ -1939,6 +1939,20 @@ function add_to_expression!(
     service_name = get_service_name(model)
     direction_map = PSY.get_direction_mapping(service)
     contributing_devices_map = get_contributing_devices_map(model)
+    # AreaInterchange contributors are not ACTransmission; dispatch the 6-arg
+    # interchange helper before any Vector{ACTransmission} cast.
+    if _is_interchanges_interfaces(contributing_devices_map)
+        variable = get_variable(container, FlowActivePowerVariable(), PSY.AreaInterchange)
+        _handle_nodal_or_zonal_interfaces(
+            PSY.AreaInterchange,
+            net_reduction_data,
+            direction_map,
+            contributing_devices_map[PSY.AreaInterchange],
+            variable,
+            expression[service_name, :],
+        )
+        return
+    end
     all_contributors = Vector{PSY.ACTransmission}(get_contributing_devices(model))
     seen = Set{Tuple{String, Tuple{Int, Int}, String}}()
     for br_type in keys(contributing_devices_map)

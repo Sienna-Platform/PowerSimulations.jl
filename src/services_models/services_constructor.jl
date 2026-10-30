@@ -789,6 +789,63 @@ function construct_service!(
     container::OptimizationContainer,
     sys::PSY.System,
     ::ModelConstructStage,
+    model::ServiceModel{PSY.TransmissionInterface, VariableMaxInterfaceFlow},
+    devices_template::Dict{Symbol, DeviceModel},
+    incompatible_device_types::Set{<:DataType},
+    network_model::NetworkModel{AreaPTDFPowerModel},
+)
+    name = get_service_name(model)
+    service = PSY.get_component(PSY.TransmissionInterface, sys, name)
+    !PSY.get_available(service) && return
+
+    # This function makes interfaces for the AC Branches
+    add_to_expression!(
+        container,
+        InterfaceTotalFlow,
+        PTDFBranchFlow,
+        service,
+        model,
+        network_model,
+    )
+
+    # This function makes interfaces for the interchanges
+    add_to_expression!(
+        container,
+        InterfaceTotalFlow,
+        FlowActivePowerVariable,
+        service,
+        model,
+        network_model,
+    )
+
+    if get_use_slacks(model)
+        add_to_expression!(
+            container,
+            InterfaceTotalFlow,
+            InterfaceFlowSlackUp,
+            service,
+            model,
+        )
+        add_to_expression!(
+            container,
+            InterfaceTotalFlow,
+            InterfaceFlowSlackDown,
+            service,
+            model,
+        )
+    end
+
+    add_constraints!(container, InterfaceFlowLimit, service, model)
+    add_feedforward_constraints!(container, model, service)
+    add_constraint_dual!(container, sys, model)
+    objective_function!(container, service, model)
+    return
+end
+
+function construct_service!(
+    container::OptimizationContainer,
+    sys::PSY.System,
+    ::ModelConstructStage,
     model::ServiceModel{PSY.TransmissionInterface, U},
     devices_template::Dict{Symbol, DeviceModel},
     incompatible_device_types::Set{<:DataType},
