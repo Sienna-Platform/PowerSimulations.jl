@@ -1256,7 +1256,8 @@ end
         shared_line,
         PSY.ACTransmission[shared_monitored],
     )
-    shared_mbp = PNM.MixedBranchesParallel(PSY.ACTransmission[shared_line, shared_monitored])
+    shared_mbp =
+        PNM.MixedBranchesParallel(PSY.ACTransmission[shared_line, shared_monitored])
     @test_throws ArgumentError PSI._reduced_entry_in_interface(
         shared_mbp,
         PSY.ACTransmission[shared_line],
