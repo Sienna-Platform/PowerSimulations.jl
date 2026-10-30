@@ -1154,6 +1154,84 @@ end
     )
 end
 
+@testset "DegreeTwo series InterfaceTotalFlow keeps both segment contributions" begin
+    # CA-1/C35 share (reduction, arc) under DegreeTwoReduction but have distinct
+    # names in name_to_arc_map. Dedupe must key on (reduction, arc, name) or the
+    # second segment is dropped and InterfaceTotalFlow collapses to one segment.
+    sys = build_system(PSISystems, "modified_RTS_GMLC_DA_sys")
+    transform_single_time_series!(sys, Hour(24), Hour(1))
+    series_chain_1 = get_component(Line, sys, "CA-1")
+    series_chain_2 = get_component(Line, sys, "C35")
+    interface = TransmissionInterface(;
+        name = "interface_series_chain",
+        available = true,
+        active_power_flow_limits = (min = -1e3, max = 1e3),
+        direction_mapping = Dict("CA-1" => 1, "C35" => 1),
+    )
+    ptdf = PTDF(sys; network_reductions = NetworkReduction[DegreeTwoReduction()])
+    add_service!(sys, interface, [series_chain_1, series_chain_2])
+
+    template = get_thermal_dispatch_template_network(
+        NetworkModel(
+            PTDFPowerModel;
+            PTDF_matrix = ptdf,
+            reduce_degree_two_branches = true,
+        ),
+    )
+    set_device_model!(template, Line, StaticBranchUnbounded)
+    set_service_model!(
+        template,
+        ServiceModel(TransmissionInterface, ConstantMaxInterfaceFlow),
+    )
+
+    model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+
+    container = PSI.get_optimization_container(model)
+    interface_expr =
+        PSI.get_expression(container, PSI.InterfaceTotalFlow(), TransmissionInterface)
+    line_flow = PSI.get_expression(container, PSI.PTDFBranchFlow(), Line)
+    net_reduction_data =
+        PSI.get_network_reduction(PSI.get_network_model(PSI.get_template(model)))
+
+    itf = interface_expr["interface_series_chain", 1]
+    seg1 = line_flow["CA-1", 1]
+    seg2 = line_flow["C35", 1]
+    name_to_arc = PNM.get_name_to_arc_map(net_reduction_data, Line)
+    direction_map = Dict("CA-1" => 1, "C35" => 1)
+    function _segment_multiplier(name::String)
+        arc, reduction = name_to_arc[name]
+        entry = net_reduction_data.all_branch_maps_by_type[reduction][Line][arc]
+        return Float64(
+            PSI._get_direction(arc, entry, direction_map, net_reduction_data) *
+            PSI.get_ptdf_orientation_sign(net_reduction_data, Line, name),
+        )
+    end
+    m1 = _segment_multiplier("CA-1")
+    m2 = _segment_multiplier("C35")
+
+    # InterfaceTotalFlow must equal the signed sum of both segment flows, not
+    # either segment alone (the failure mode of (reduction, arc)-only dedupe).
+    for (coef, var) in JuMP.linear_terms(itf)
+        expected = m1 * JuMP.coefficient(seg1, var) + m2 * JuMP.coefficient(seg2, var)
+        @test isapprox(coef, expected; atol = 1e-10)
+    end
+    for (coef, var) in JuMP.linear_terms(seg1)
+        expected = m1 * coef + m2 * JuMP.coefficient(seg2, var)
+        @test isapprox(JuMP.coefficient(itf, var), expected; atol = 1e-10)
+    end
+    for (coef, var) in JuMP.linear_terms(seg2)
+        expected = m1 * JuMP.coefficient(seg1, var) + m2 * coef
+        @test isapprox(JuMP.coefficient(itf, var), expected; atol = 1e-10)
+    end
+    itf_abs = sum(abs(c) for (c, _) in JuMP.linear_terms(itf); init = 0.0)
+    seg1_abs = abs(m1) * sum(abs(c) for (c, _) in JuMP.linear_terms(seg1); init = 0.0)
+    seg2_abs = abs(m2) * sum(abs(c) for (c, _) in JuMP.linear_terms(seg2); init = 0.0)
+    @test !isapprox(itf_abs, seg1_abs; atol = 1e-10)
+    @test !isapprox(itf_abs, seg2_abs; atol = 1e-10)
+end
+
 @testset "MixedBranchesParallel TransmissionInterface builds on PTDFPowerModel" begin
     # Line + MonitoredLine on one arc form MixedBranchesParallel. PNM registers the
     # group under both concrete types; InterfaceTotalFlow must membership-check the

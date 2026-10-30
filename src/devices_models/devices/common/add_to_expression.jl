@@ -1870,16 +1870,18 @@ function _handle_nodal_or_zonal_interfaces(
     net_reduction_data::PNM.NetworkReductionData,
     direction_map::Dict{String, Int},
     all_contributors::Vector{<:PSY.ACTransmission},
-    seen::Set{Tuple{String, Tuple{Int, Int}}},
+    seen::Set{Tuple{String, Tuple{Int, Int}, String}},
     variable::JuMPVariableArray,
     expression::DenseAxisArray, # There is no good type for a DenseAxisArray slice
 ) where {V <: PSY.ACTransmission}
     # Membership uses the full contributor set so MixedBranchesParallel groups are
-    # not judged against a single-type partition. `seen` dedupes by (reduction, arc)
-    # because PNM registers the same mixed group under each member concrete type.
+    # not judged against a single-type partition. `seen` dedupes by
+    # (reduction, arc, name): mixed parallels share a synthetic name across types
+    # and collapse to one contribution; series segments share (reduction, arc) but
+    # keep distinct names and must all contribute.
     all_branch_maps_by_type = net_reduction_data.all_branch_maps_by_type
     for (name, (arc, reduction)) in PNM.get_name_to_arc_map(net_reduction_data, br_type)
-        key = (reduction, arc)
+        key = (reduction, arc, name)
         key in seen && continue
         reduction_entry = all_branch_maps_by_type[reduction][br_type][arc]
         if _reduced_entry_in_interface(reduction_entry, all_contributors)
@@ -1938,7 +1940,7 @@ function add_to_expression!(
     direction_map = PSY.get_direction_mapping(service)
     contributing_devices_map = get_contributing_devices_map(model)
     all_contributors = Vector{PSY.ACTransmission}(get_contributing_devices(model))
-    seen = Set{Tuple{String, Tuple{Int, Int}}}()
+    seen = Set{Tuple{String, Tuple{Int, Int}, String}}()
     for br_type in keys(contributing_devices_map)
         variable = get_variable(container, FlowActivePowerVariable(), br_type)
         _handle_nodal_or_zonal_interfaces(
@@ -2012,15 +2014,16 @@ function add_to_expression!(
     end
 
     # Full contributor set for membership; outer loop only supplies modeled
-    # br_type / flow expression. Dedupe by (reduction, arc) so MixedBranchesParallel
-    # registered under multiple concrete types is counted once (first visit wins).
+    # br_type / flow expression. Dedupe by (reduction, arc, name) so
+    # MixedBranchesParallel registered under multiple concrete types is counted
+    # once, while series segments that share (reduction, arc) still all contribute.
     all_contributors = Vector{PSY.ACTransmission}(get_contributing_devices(model))
-    seen = Set{Tuple{String, Tuple{Int, Int}}}()
+    seen = Set{Tuple{String, Tuple{Int, Int}, String}}()
     all_branch_maps_by_type = net_reduction_data.all_branch_maps_by_type
     for br_type in keys(contributing_devices_map)
         flow_expression = get_expression(container, PTDFBranchFlow(), br_type)
         for (name, (arc, reduction)) in PNM.get_name_to_arc_map(net_reduction_data, br_type)
-            key = (reduction, arc)
+            key = (reduction, arc, name)
             key in seen && continue
             reduction_entry = all_branch_maps_by_type[reduction][br_type][arc]
             if _reduced_entry_in_interface(reduction_entry, all_contributors)
