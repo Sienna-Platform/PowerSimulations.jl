@@ -806,6 +806,94 @@ end
     end
 end
 
+@testset "Test Interfaces on Interchanges with AreaPTDF VariableMax" begin
+    # AreaPTDF VariableMax must call both PTDFBranchFlow and FlowActivePowerVariable
+    # builders (mirroring ConstantMax AreaPTDF) so interchange-only TIs build.
+    sys_rts_da = build_system(PSISystems, "modified_RTS_GMLC_DA_sys")
+    interchange1 = AreaInterchange(;
+        name = "interchange1_2",
+        available = true,
+        active_power_flow = 100.0,
+        flow_limits = (from_to = 1.0, to_from = 1.0),
+        from_area = get_component(Area, sys_rts_da, "1"),
+        to_area = get_component(Area, sys_rts_da, "2"),
+    )
+    interchange2 = AreaInterchange(;
+        name = "interchange1_3",
+        available = true,
+        active_power_flow = 100.0,
+        flow_limits = (from_to = 1.0, to_from = 1.0),
+        from_area = get_component(Area, sys_rts_da, "1"),
+        to_area = get_component(Area, sys_rts_da, "3"),
+    )
+    add_components!(sys_rts_da, [interchange1, interchange2])
+    interface = TransmissionInterface(;
+        name = "interface1_2_3",
+        available = true,
+        active_power_flow_limits = (min = 0.0, max = 1.0),
+        violation_penalty = 1000.0,
+        direction_mapping = Dict("interchange1_2" => 1, "interchange1_3" => -1),
+    )
+    add_service!(sys_rts_da, interface, [interchange1, interchange2])
+    # Attach SingleTimeSeries before transform so forecast params match the system.
+    ref_load = first(get_components(PowerLoad, sys_rts_da))
+    ref_sts = get_time_series(SingleTimeSeries, ref_load, "max_active_power")
+    dates = timestamp(get_data(ref_sts))
+    add_time_series!(
+        sys_rts_da,
+        interface,
+        SingleTimeSeries(
+            "min_active_power_flow_limit",
+            TimeArray(dates, zeros(length(dates)));
+            scaling_factor_multiplier = get_min_active_power_flow_limit,
+        ),
+    )
+    add_time_series!(
+        sys_rts_da,
+        interface,
+        SingleTimeSeries(
+            "max_active_power_flow_limit",
+            TimeArray(dates, ones(length(dates)));
+            scaling_factor_multiplier = get_max_active_power_flow_limit,
+        ),
+    )
+    transform_single_time_series!(sys_rts_da, Hour(24), Hour(1))
+
+    template = ProblemTemplate(NetworkModel(AreaPTDFPowerModel; use_slacks = true))
+    set_device_model!(template, ThermalStandard, ThermalDispatchNoMin)
+    set_device_model!(template, RenewableDispatch, RenewableFullDispatch)
+    set_device_model!(template, PowerLoad, StaticPowerLoad)
+    set_device_model!(template, RenewableNonDispatch, FixedOutput)
+    set_device_model!(template, HydroDispatch, HydroDispatchRunOfRiver)
+    set_device_model!(template, Line, StaticBranchUnbounded)
+    set_device_model!(
+        template,
+        DeviceModel(AreaInterchange, StaticBranchUnbounded; use_slacks = false),
+    )
+    set_service_model!(
+        template,
+        ServiceModel(TransmissionInterface, VariableMaxInterfaceFlow),
+    )
+    ps_model = DecisionModel(
+        template,
+        sys_rts_da;
+        resolution = Hour(1),
+        optimizer = HiGHS_optimizer,
+    )
+    @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+    container = PSI.get_optimization_container(ps_model)
+    interface_expr =
+        PSI.get_expression(container, PSI.InterfaceTotalFlow(), TransmissionInterface)
+    interchange_flow =
+        PSI.get_variable(container, PSI.FlowActivePowerVariable(), AreaInterchange)
+    for t in PSI.get_time_steps(container)
+        expr = interface_expr["interface1_2_3", t]
+        @test JuMP.coefficient(expr, interchange_flow["interchange1_2", t]) == 1.0
+        @test JuMP.coefficient(expr, interchange_flow["interchange1_3", t]) == -1.0
+    end
+end
+
 @testset "Test Interfaces on Interchanges and Double Circuits with AreaPTDFPowerModel" begin
     sys_rts_da = build_system(PSISystems, "modified_RTS_GMLC_DA_sys")
     transform_single_time_series!(sys_rts_da, Hour(24), Hour(1))
@@ -1069,6 +1157,277 @@ end
         console_level = Logging.AboveMaxLevel,  # Ignore expected errors.
         output_dir = mktempdir(; cleanup = true),
     ) == PSI.ModelBuildStatus.FAILED
+end
+
+# MixedBranchesParallel <: AbstractBranchesParallel, not BranchesParallel. Without the
+# AbstractBranchesParallel methods, these helpers fall through to PSY.ACTransmission and
+# FieldError on PSY.get_name (no `.name` field on the parallel group).
+@testset "MixedBranchesParallel TransmissionInterface reduction helpers" begin
+    bus1 = ACBus(;
+        number = 101,
+        name = "bus_101",
+        available = true,
+        bustype = ACBusTypes.PV,
+        angle = 0.0,
+        magnitude = 1.0,
+        voltage_limits = (min = 0.9, max = 1.1),
+        base_voltage = 230.0,
+    )
+    bus2 = ACBus(;
+        number = 102,
+        name = "bus_102",
+        available = true,
+        bustype = ACBusTypes.PV,
+        angle = 0.0,
+        magnitude = 1.0,
+        voltage_limits = (min = 0.9, max = 1.1),
+        base_voltage = 230.0,
+    )
+    arc = Arc(; from = bus1, to = bus2)
+    line = Line(;
+        name = "mixed_line",
+        available = true,
+        active_power_flow = 0.0,
+        reactive_power_flow = 0.0,
+        arc = arc,
+        r = 0.05,
+        x = 0.10,
+        b = (from = 0.01, to = 0.01),
+        g = (from = 0.0, to = 0.0),
+        rating = 100.0,
+        angle_limits = (min = -π / 2, max = π / 2),
+    )
+    monitored = MonitoredLine(;
+        name = "mixed_monitored",
+        available = true,
+        active_power_flow = 0.0,
+        reactive_power_flow = 0.0,
+        arc = arc,
+        r = 0.05,
+        x = 0.10,
+        b = (from = 0.01, to = 0.01),
+        g = (from = 0.0, to = 0.0),
+        flow_limits = (from_to = 50.0, to_from = 50.0),
+        rating = 50.0,
+        angle_limits = (min = -π / 2, max = π / 2),
+    )
+    mbp = PNM.MixedBranchesParallel(PSY.ACTransmission[line, monitored])
+    @test mbp isa PNM.MixedBranchesParallel
+    @test mbp isa PNM.AbstractBranchesParallel
+    @test !(mbp isa PNM.BranchesParallel)
+
+    contributing = PSY.ACTransmission[line, monitored]
+    @test PSI._reduced_entry_in_interface(mbp, contributing)
+
+    # Partitioned single-type vectors (as PSI used to pass from contributing_devices_map)
+    # still throw: allequal membership fails when only one member type is present.
+    @test_throws ArgumentError PSI._reduced_entry_in_interface(
+        mbp,
+        PSY.ACTransmission[line],
+    )
+    @test_throws ArgumentError PSI._reduced_entry_in_interface(
+        mbp,
+        MonitoredLine[monitored],
+    )
+
+    # Type+name leaf match: shared names across concrete types must not collide.
+    shared_line = Line(;
+        name = "shared",
+        available = true,
+        active_power_flow = 0.0,
+        reactive_power_flow = 0.0,
+        arc = arc,
+        r = 0.05,
+        x = 0.10,
+        b = (from = 0.01, to = 0.01),
+        g = (from = 0.0, to = 0.0),
+        rating = 100.0,
+        angle_limits = (min = -π / 2, max = π / 2),
+    )
+    shared_monitored = MonitoredLine(;
+        name = "shared",
+        available = true,
+        active_power_flow = 0.0,
+        reactive_power_flow = 0.0,
+        arc = arc,
+        r = 0.05,
+        x = 0.10,
+        b = (from = 0.01, to = 0.01),
+        g = (from = 0.0, to = 0.0),
+        flow_limits = (from_to = 50.0, to_from = 50.0),
+        rating = 50.0,
+        angle_limits = (min = -π / 2, max = π / 2),
+    )
+    @test !PSI._reduced_entry_in_interface(
+        shared_monitored,
+        PSY.ACTransmission[shared_line],
+    )
+    @test !PSI._reduced_entry_in_interface(
+        shared_line,
+        PSY.ACTransmission[shared_monitored],
+    )
+    shared_mbp =
+        PNM.MixedBranchesParallel(PSY.ACTransmission[shared_line, shared_monitored])
+    @test_throws ArgumentError PSI._reduced_entry_in_interface(
+        shared_mbp,
+        PSY.ACTransmission[shared_line],
+    )
+
+    direction_map = Dict("mixed_line" => 1, "mixed_monitored" => 1)
+    net_reduction_data = PNM.NetworkReductionData()
+    @test PSI._get_direction((101, 102), mbp, direction_map, net_reduction_data) == 1.0
+
+    @test_throws ArgumentError PSI._get_direction(
+        (101, 102),
+        mbp,
+        Dict("mixed_line" => 1, "mixed_monitored" => -1),
+        net_reduction_data,
+    )
+end
+
+@testset "DegreeTwo series InterfaceTotalFlow keeps both segment contributions" begin
+    # CA-1/C35 share (reduction, arc) under DegreeTwoReduction but have distinct
+    # names in name_to_arc_map. Dedupe must key on (reduction, arc, name) or the
+    # second segment is dropped and InterfaceTotalFlow collapses to one segment.
+    sys = build_system(PSISystems, "modified_RTS_GMLC_DA_sys")
+    transform_single_time_series!(sys, Hour(24), Hour(1))
+    series_chain_1 = get_component(Line, sys, "CA-1")
+    series_chain_2 = get_component(Line, sys, "C35")
+    interface = TransmissionInterface(;
+        name = "interface_series_chain",
+        available = true,
+        active_power_flow_limits = (min = -1e3, max = 1e3),
+        direction_mapping = Dict("CA-1" => 1, "C35" => 1),
+    )
+    ptdf = PTDF(sys; network_reductions = NetworkReduction[DegreeTwoReduction()])
+    add_service!(sys, interface, [series_chain_1, series_chain_2])
+
+    template = get_thermal_dispatch_template_network(
+        NetworkModel(
+            PTDFPowerModel;
+            PTDF_matrix = ptdf,
+            reduce_degree_two_branches = true,
+        ),
+    )
+    set_device_model!(template, Line, StaticBranchUnbounded)
+    set_service_model!(
+        template,
+        ServiceModel(TransmissionInterface, ConstantMaxInterfaceFlow),
+    )
+
+    model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+
+    container = PSI.get_optimization_container(model)
+    interface_expr =
+        PSI.get_expression(container, PSI.InterfaceTotalFlow(), TransmissionInterface)
+    line_flow = PSI.get_expression(container, PSI.PTDFBranchFlow(), Line)
+    net_reduction_data =
+        PSI.get_network_reduction(PSI.get_network_model(PSI.get_template(model)))
+
+    itf = interface_expr["interface_series_chain", 1]
+    seg1 = line_flow["CA-1", 1]
+    seg2 = line_flow["C35", 1]
+    name_to_arc = PNM.get_name_to_arc_map(net_reduction_data, Line)
+    direction_map = Dict("CA-1" => 1, "C35" => 1)
+    function _segment_multiplier(name::String)
+        arc, reduction = name_to_arc[name]
+        entry = net_reduction_data.all_branch_maps_by_type[reduction][Line][arc]
+        return Float64(
+            PSI._get_direction(arc, entry, direction_map, net_reduction_data) *
+            PSI.get_ptdf_orientation_sign(net_reduction_data, Line, name),
+        )
+    end
+    m1 = _segment_multiplier("CA-1")
+    m2 = _segment_multiplier("C35")
+
+    # InterfaceTotalFlow must equal the signed sum of both segment flows, not
+    # either segment alone (the failure mode of (reduction, arc)-only dedupe).
+    for (coef, var) in JuMP.linear_terms(itf)
+        expected = m1 * JuMP.coefficient(seg1, var) + m2 * JuMP.coefficient(seg2, var)
+        @test isapprox(coef, expected; atol = 1e-10)
+    end
+    for (coef, var) in JuMP.linear_terms(seg1)
+        expected = m1 * coef + m2 * JuMP.coefficient(seg2, var)
+        @test isapprox(JuMP.coefficient(itf, var), expected; atol = 1e-10)
+    end
+    for (coef, var) in JuMP.linear_terms(seg2)
+        expected = m1 * JuMP.coefficient(seg1, var) + m2 * coef
+        @test isapprox(JuMP.coefficient(itf, var), expected; atol = 1e-10)
+    end
+    itf_abs = sum(abs(c) for (c, _) in JuMP.linear_terms(itf); init = 0.0)
+    seg1_abs = abs(m1) * sum(abs(c) for (c, _) in JuMP.linear_terms(seg1); init = 0.0)
+    seg2_abs = abs(m2) * sum(abs(c) for (c, _) in JuMP.linear_terms(seg2); init = 0.0)
+    @test !isapprox(itf_abs, seg1_abs; atol = 1e-10)
+    @test !isapprox(itf_abs, seg2_abs; atol = 1e-10)
+end
+
+@testset "MixedBranchesParallel TransmissionInterface builds on PTDFPowerModel" begin
+    # Line + MonitoredLine on one arc form MixedBranchesParallel. PNM registers the
+    # group under both concrete types; InterfaceTotalFlow must membership-check the
+    # full contributor set and count the reduced flow once (not once per type).
+    sys = PSB.build_system(PSITestSystems, "c_sys5")
+    line = get_component(Line, sys, "1")
+    add_equivalent_ac_transmission_with_parallel_circuits!(
+        sys,
+        line,
+        PSY.Line,
+        PSY.MonitoredLine,
+    )
+    monitored = get_component(MonitoredLine, sys, "1_copy")
+    @test !isnothing(monitored)
+    # Helper copies `services` by reference from the seed Line; give the copy its
+    # own vector so add_service! can attach to each device independently.
+    set_services!(monitored, Device[])
+
+    interface = TransmissionInterface(;
+        name = "mixed_parallel_ti",
+        available = true,
+        active_power_flow_limits = (min = -1e3, max = 1e3),
+        direction_mapping = Dict(
+            PSY.get_name(line) => 1,
+            PSY.get_name(monitored) => 1,
+        ),
+    )
+    add_service!(sys, interface, [line, monitored])
+
+    template = get_thermal_dispatch_template_network(
+        NetworkModel(PTDFPowerModel; PTDF_matrix = PTDF(sys)),
+    )
+    set_device_model!(template, Line, StaticBranch)
+    set_device_model!(template, MonitoredLine, StaticBranch)
+    set_service_model!(
+        template,
+        ServiceModel(TransmissionInterface, ConstantMaxInterfaceFlow),
+    )
+
+    model = DecisionModel(template, sys; optimizer = HiGHS_optimizer)
+    @test build!(model; output_dir = mktempdir(; cleanup = true)) ==
+          PSI.ModelBuildStatus.BUILT
+
+    container = PSI.get_optimization_container(model)
+    interface_expr =
+        PSI.get_expression(container, PSI.InterfaceTotalFlow(), TransmissionInterface)
+    line_flow = PSI.get_expression(container, PSI.PTDFBranchFlow(), Line)
+    ml_flow = PSI.get_expression(container, PSI.PTDFBranchFlow(), MonitoredLine)
+
+    reduced_names = intersect(String.(axes(line_flow, 1)), String.(axes(ml_flow, 1)))
+    reduced_names = filter(n -> occursin("double_circuit", n), reduced_names)
+    @test length(reduced_names) == 1
+    reduced_name = only(reduced_names)
+
+    itf = interface_expr["mixed_parallel_ti", 1]
+    # First-visit type wins; both type containers hold the same reduced AffExpr.
+    # Coefficients must match 1× that flow, not 2× from double-counting.
+    ref_flow = line_flow[reduced_name, 1]
+    for (coef, var) in JuMP.linear_terms(ref_flow)
+        @test isapprox(JuMP.coefficient(itf, var), coef; atol = 1e-10)
+    end
+    itf_abs = sum(abs(c) for (c, _) in JuMP.linear_terms(itf))
+    ref_abs = sum(abs(c) for (c, _) in JuMP.linear_terms(ref_flow))
+    @test isapprox(itf_abs, ref_abs; atol = 1e-10)
+    @test !isapprox(itf_abs, 2 * ref_abs; atol = 1e-10)
 end
 
 @testset "Test ORDC with TimeSeries" begin

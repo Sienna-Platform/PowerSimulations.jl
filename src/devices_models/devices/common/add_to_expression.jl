@@ -1869,14 +1869,23 @@ function _handle_nodal_or_zonal_interfaces(
     br_type::Type{V},
     net_reduction_data::PNM.NetworkReductionData,
     direction_map::Dict{String, Int},
-    contributing_devices::Vector{V},
+    all_contributors::Vector{<:PSY.ACTransmission},
+    seen::Set{Tuple{String, Tuple{Int, Int}, String}},
     variable::JuMPVariableArray,
     expression::DenseAxisArray, # There is no good type for a DenseAxisArray slice
 ) where {V <: PSY.ACTransmission}
+    # Membership uses the full contributor set so MixedBranchesParallel groups are
+    # not judged against a single-type partition. `seen` dedupes by
+    # (reduction, arc, name): mixed parallels share a synthetic name across types
+    # and collapse to one contribution; series segments share (reduction, arc) but
+    # keep distinct names and must all contribute.
     all_branch_maps_by_type = net_reduction_data.all_branch_maps_by_type
     for (name, (arc, reduction)) in PNM.get_name_to_arc_map(net_reduction_data, br_type)
+        key = (reduction, arc, name)
+        key in seen && continue
         reduction_entry = all_branch_maps_by_type[reduction][br_type][arc]
-        if _reduced_entry_in_interface(reduction_entry, contributing_devices)
+        if _reduced_entry_in_interface(reduction_entry, all_contributors)
+            push!(seen, key)
             if isempty(direction_map)
                 direction = 1.0
             else
@@ -1930,13 +1939,30 @@ function add_to_expression!(
     service_name = get_service_name(model)
     direction_map = PSY.get_direction_mapping(service)
     contributing_devices_map = get_contributing_devices_map(model)
-    for (br_type, contributing_devices) in contributing_devices_map
+    # AreaInterchange contributors are not ACTransmission; dispatch the 6-arg
+    # interchange helper before any Vector{ACTransmission} cast.
+    if _is_interchanges_interfaces(contributing_devices_map)
+        variable = get_variable(container, FlowActivePowerVariable(), PSY.AreaInterchange)
+        _handle_nodal_or_zonal_interfaces(
+            PSY.AreaInterchange,
+            net_reduction_data,
+            direction_map,
+            contributing_devices_map[PSY.AreaInterchange],
+            variable,
+            expression[service_name, :],
+        )
+        return
+    end
+    all_contributors = Vector{PSY.ACTransmission}(get_contributing_devices(model))
+    seen = Set{Tuple{String, Tuple{Int, Int}, String}}()
+    for br_type in keys(contributing_devices_map)
         variable = get_variable(container, FlowActivePowerVariable(), br_type)
         _handle_nodal_or_zonal_interfaces(
             br_type,
             net_reduction_data,
             direction_map,
-            contributing_devices,
+            all_contributors,
+            seen,
             variable,
             expression[service_name, :],
         )
@@ -2001,12 +2027,21 @@ function add_to_expression!(
         return
     end
 
-    for (br_type, contributing_devices) in contributing_devices_map
+    # Full contributor set for membership; outer loop only supplies modeled
+    # br_type / flow expression. Dedupe by (reduction, arc, name) so
+    # MixedBranchesParallel registered under multiple concrete types is counted
+    # once, while series segments that share (reduction, arc) still all contribute.
+    all_contributors = Vector{PSY.ACTransmission}(get_contributing_devices(model))
+    seen = Set{Tuple{String, Tuple{Int, Int}, String}}()
+    all_branch_maps_by_type = net_reduction_data.all_branch_maps_by_type
+    for br_type in keys(contributing_devices_map)
         flow_expression = get_expression(container, PTDFBranchFlow(), br_type)
-        all_branch_maps_by_type = net_reduction_data.all_branch_maps_by_type
         for (name, (arc, reduction)) in PNM.get_name_to_arc_map(net_reduction_data, br_type)
+            key = (reduction, arc, name)
+            key in seen && continue
             reduction_entry = all_branch_maps_by_type[reduction][br_type][arc]
-            if _reduced_entry_in_interface(reduction_entry, contributing_devices)
+            if _reduced_entry_in_interface(reduction_entry, all_contributors)
+                push!(seen, key)
                 if isempty(direction_map)
                     direction = 1.0
                 else
@@ -2050,7 +2085,7 @@ end
 
 function _get_direction(
     arc_tuple::Tuple{Int, Int},
-    reduction_entry::PNM.BranchesParallel,
+    reduction_entry::PNM.AbstractBranchesParallel,
     direction_map::Dict{String, Int},
     net_reduction_data::PNM.NetworkReductionData,
 )
@@ -2098,15 +2133,14 @@ end
 
 # These checks can be moved to happen at the service template check level
 function _reduced_entry_in_interface(
-    reduction_entry::PSY.ACTransmission,
+    reduction_entry::T,
     contributing_devices::Vector{<:PSY.ACTransmission},
-)
-    reduction_entry_name = PSY.get_name(reduction_entry)
-    # This is compared by name given that the reduction data uses copies of the devices
-    # so, simple comparisons will not work
+) where {T <: PSY.ACTransmission}
+    # Reduction data uses copies, so identity compare fails; match by concrete
+    # type and name so Line("shared") does not match MonitoredLine("shared").
+    entry_name = PSY.get_name(reduction_entry)
     for device in contributing_devices
-        device_name = PSY.get_name(device)
-        if reduction_entry_name == device_name
+        if device isa T && PSY.get_name(device) == entry_name
             return true
         end
     end
@@ -2114,7 +2148,7 @@ function _reduced_entry_in_interface(
 end
 
 function _reduced_entry_in_interface(
-    reduction_entry::PNM.BranchesParallel,
+    reduction_entry::PNM.AbstractBranchesParallel,
     contributing_devices::Vector{<:PSY.ACTransmission},
 )
     in_interface =
