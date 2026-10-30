@@ -1220,6 +1220,48 @@ end
         MonitoredLine[monitored],
     )
 
+    # Type+name leaf match: shared names across concrete types must not collide.
+    shared_line = Line(;
+        name = "shared",
+        available = true,
+        active_power_flow = 0.0,
+        reactive_power_flow = 0.0,
+        arc = arc,
+        r = 0.05,
+        x = 0.10,
+        b = (from = 0.01, to = 0.01),
+        g = (from = 0.0, to = 0.0),
+        rating = 100.0,
+        angle_limits = (min = -π / 2, max = π / 2),
+    )
+    shared_monitored = MonitoredLine(;
+        name = "shared",
+        available = true,
+        active_power_flow = 0.0,
+        reactive_power_flow = 0.0,
+        arc = arc,
+        r = 0.05,
+        x = 0.10,
+        b = (from = 0.01, to = 0.01),
+        g = (from = 0.0, to = 0.0),
+        flow_limits = (from_to = 50.0, to_from = 50.0),
+        rating = 50.0,
+        angle_limits = (min = -π / 2, max = π / 2),
+    )
+    @test !PSI._reduced_entry_in_interface(
+        shared_monitored,
+        PSY.ACTransmission[shared_line],
+    )
+    @test !PSI._reduced_entry_in_interface(
+        shared_line,
+        PSY.ACTransmission[shared_monitored],
+    )
+    shared_mbp = PNM.MixedBranchesParallel(PSY.ACTransmission[shared_line, shared_monitored])
+    @test_throws ArgumentError PSI._reduced_entry_in_interface(
+        shared_mbp,
+        PSY.ACTransmission[shared_line],
+    )
+
     direction_map = Dict("mixed_line" => 1, "mixed_monitored" => 1)
     net_reduction_data = PNM.NetworkReductionData()
     @test PSI._get_direction((101, 102), mbp, direction_map, net_reduction_data) == 1.0

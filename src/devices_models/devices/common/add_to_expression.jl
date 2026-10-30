@@ -2133,15 +2133,14 @@ end
 
 # These checks can be moved to happen at the service template check level
 function _reduced_entry_in_interface(
-    reduction_entry::PSY.ACTransmission,
+    reduction_entry::T,
     contributing_devices::Vector{<:PSY.ACTransmission},
-)
-    reduction_entry_name = PSY.get_name(reduction_entry)
-    # This is compared by name given that the reduction data uses copies of the devices
-    # so, simple comparisons will not work
+) where {T <: PSY.ACTransmission}
+    # Reduction data uses copies, so identity compare fails; match by concrete
+    # type and name so Line("shared") does not match MonitoredLine("shared").
+    entry_name = PSY.get_name(reduction_entry)
     for device in contributing_devices
-        device_name = PSY.get_name(device)
-        if reduction_entry_name == device_name
+        if device isa T && PSY.get_name(device) == entry_name
             return true
         end
     end
