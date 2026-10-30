@@ -1869,14 +1869,21 @@ function _handle_nodal_or_zonal_interfaces(
     br_type::Type{V},
     net_reduction_data::PNM.NetworkReductionData,
     direction_map::Dict{String, Int},
-    contributing_devices::Vector{V},
+    all_contributors::Vector{<:PSY.ACTransmission},
+    seen::Set{Tuple{String, Tuple{Int, Int}}},
     variable::JuMPVariableArray,
     expression::DenseAxisArray, # There is no good type for a DenseAxisArray slice
 ) where {V <: PSY.ACTransmission}
+    # Membership uses the full contributor set so MixedBranchesParallel groups are
+    # not judged against a single-type partition. `seen` dedupes by (reduction, arc)
+    # because PNM registers the same mixed group under each member concrete type.
     all_branch_maps_by_type = net_reduction_data.all_branch_maps_by_type
     for (name, (arc, reduction)) in PNM.get_name_to_arc_map(net_reduction_data, br_type)
+        key = (reduction, arc)
+        key in seen && continue
         reduction_entry = all_branch_maps_by_type[reduction][br_type][arc]
-        if _reduced_entry_in_interface(reduction_entry, contributing_devices)
+        if _reduced_entry_in_interface(reduction_entry, all_contributors)
+            push!(seen, key)
             if isempty(direction_map)
                 direction = 1.0
             else
@@ -1930,13 +1937,16 @@ function add_to_expression!(
     service_name = get_service_name(model)
     direction_map = PSY.get_direction_mapping(service)
     contributing_devices_map = get_contributing_devices_map(model)
-    for (br_type, contributing_devices) in contributing_devices_map
+    all_contributors = Vector{PSY.ACTransmission}(get_contributing_devices(model))
+    seen = Set{Tuple{String, Tuple{Int, Int}}}()
+    for br_type in keys(contributing_devices_map)
         variable = get_variable(container, FlowActivePowerVariable(), br_type)
         _handle_nodal_or_zonal_interfaces(
             br_type,
             net_reduction_data,
             direction_map,
-            contributing_devices,
+            all_contributors,
+            seen,
             variable,
             expression[service_name, :],
         )
@@ -2001,12 +2011,20 @@ function add_to_expression!(
         return
     end
 
-    for (br_type, contributing_devices) in contributing_devices_map
+    # Full contributor set for membership; outer loop only supplies modeled
+    # br_type / flow expression. Dedupe by (reduction, arc) so MixedBranchesParallel
+    # registered under multiple concrete types is counted once (first visit wins).
+    all_contributors = Vector{PSY.ACTransmission}(get_contributing_devices(model))
+    seen = Set{Tuple{String, Tuple{Int, Int}}}()
+    all_branch_maps_by_type = net_reduction_data.all_branch_maps_by_type
+    for br_type in keys(contributing_devices_map)
         flow_expression = get_expression(container, PTDFBranchFlow(), br_type)
-        all_branch_maps_by_type = net_reduction_data.all_branch_maps_by_type
         for (name, (arc, reduction)) in PNM.get_name_to_arc_map(net_reduction_data, br_type)
+            key = (reduction, arc)
+            key in seen && continue
             reduction_entry = all_branch_maps_by_type[reduction][br_type][arc]
-            if _reduced_entry_in_interface(reduction_entry, contributing_devices)
+            if _reduced_entry_in_interface(reduction_entry, all_contributors)
+                push!(seen, key)
                 if isempty(direction_map)
                     direction = 1.0
                 else
