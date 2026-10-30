@@ -882,6 +882,16 @@ end
     )
     @test build!(ps_model; output_dir = mktempdir(; cleanup = true)) ==
           PSI.ModelBuildStatus.BUILT
+    container = PSI.get_optimization_container(ps_model)
+    interface_expr =
+        PSI.get_expression(container, PSI.InterfaceTotalFlow(), TransmissionInterface)
+    interchange_flow =
+        PSI.get_variable(container, PSI.FlowActivePowerVariable(), AreaInterchange)
+    for t in PSI.get_time_steps(container)
+        expr = interface_expr["interface1_2_3", t]
+        @test JuMP.coefficient(expr, interchange_flow["interchange1_2", t]) == 1.0
+        @test JuMP.coefficient(expr, interchange_flow["interchange1_3", t]) == -1.0
+    end
 end
 
 @testset "Test Interfaces on Interchanges and Double Circuits with AreaPTDFPowerModel" begin
