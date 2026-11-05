@@ -9,7 +9,6 @@ function update_parameter_values!(
     optimization_container = get_optimization_container(model)
     input = get_decision_states(simulation_state)
     update_container_parameter_values!(optimization_container, model, key, input)
-    IOM.update_parameter_coefficients!(optimization_container, key)
     parameter_attributes = get_parameter_attributes(optimization_container, key)
     IS.@record :execution ParameterUpdateEvent(
         T,
