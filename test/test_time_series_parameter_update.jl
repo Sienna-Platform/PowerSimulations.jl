@@ -40,6 +40,11 @@ end
 # and checks each one against `expected`.
 function _test_value_axes_update!(model, ts_type, cases, expected)
     container = IOM.get_optimization_container(model)
+    # A left-hand-side parameter needs a model that rebuilds every step, which template
+    # validation sets for a model whose components carry one.
+    if any(IOM.requires_rebuild(P) for (P, _, _, _) in cases)
+        IOM.set_rebuild_model!(IOM.get_settings(container), true)
+    end
     time_steps = IOM.get_time_steps(container)
     parameters = map(cases, expected) do (P, V, component, _), values
         parameter = IOM.add_time_series_parameter_container!(
