@@ -16,7 +16,9 @@ function update_parameters!(
     model::IOM.AbstractOptimizationModel,
     simulation_state::SimulationState,
 )
-    cost_function_unsynch(get_optimization_container(model))
+    container = get_optimization_container(model)
+    cost_function_unsynch(container)
+    IOM.update_model_parameters!(container, model, simulation_state)
     # Parameters a time series reader serves refresh together, one read per reader.
     refreshed = _refresh_reader_parameters!(model)
     for key in keys(get_parameters(model))
@@ -26,7 +28,6 @@ function update_parameters!(
             update_parameter_values!(model, key, simulation_state)
         end
     end
-    container = get_optimization_container(model)
     if _edits_in_place(container) && !is_synchronized(container)
         rewrite_variant_costs!(model)
         update_objective_function!(container)
