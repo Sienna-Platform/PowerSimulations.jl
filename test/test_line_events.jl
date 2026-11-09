@@ -59,6 +59,7 @@ function build_line_outage_simulation(;
     outages = Pair{Vector{String}, <:TimeArray}[],
     removed = String[],
     parallel_pair = false,
+    network_model = DCPNetworkModel,
 )
     sys_d1 = line_outage_system(; line_names, outages, removed, parallel_pair)
     transform_single_time_series!(sys_d1, Day(2), Day(1))
@@ -143,41 +144,44 @@ function em_objectives(em)
 end
 
 @testset "Line outage in a simulation matches removing the line" begin
-    dates = collect(DateTime("2024-01-01T00:00:00"):Hour(1):DateTime("2024-01-02T23:00:00"))
-    outage_data = zeros(length(dates))
-    outage_data[3] = 1.0
-    outage_data[10:12] .= 1.0
-    outage_data[20] = 1.0
-    em = run_line_outage_simulation(;
-        outages = [[LINE_OUTAGE_NAME] => TimeArray(dates, outage_data)],
-    )
-    em_removed = run_line_outage_simulation(; removed = [LINE_OUTAGE_NAME])
-    em_intact = run_line_outage_simulation()
+    for network_model in (DCPNetworkModel, PTDFNetworkModel)
+        @show "FOO" network_model
+        dates = collect(DateTime("2024-01-01T00:00:00"):Hour(1):DateTime("2024-01-02T23:00:00"))
+        outage_data = zeros(length(dates))
+        outage_data[3] = 1.0
+        outage_data[10:12] .= 1.0
+        outage_data[20] = 1.0
+        em = run_line_outage_simulation(;
+            outages = [[LINE_OUTAGE_NAME] => TimeArray(dates, outage_data)],
+        )
+        em_removed = run_line_outage_simulation(; removed = [LINE_OUTAGE_NAME], network_model)
+        em_intact = run_line_outage_simulation(; network_model)
 
-    status = read_em(em, "AvailableStatusParameter__Line")[!, LINE_OUTAGE_NAME]
-    n_steps = length(status)
-    # A profile value of 1 means the line is out at that step (see the thermal
-    # FixedForcedOutage testset in test_events.jl).
-    @test status == 1.0 .- outage_data[1:n_steps]
-    out = status .== 0.0
-    @test any(out) && !all(out)
+        status = read_em(em, "AvailableStatusParameter__Line")[!, LINE_OUTAGE_NAME]
+        n_steps = length(status)
+        # A profile value of 1 means the line is out at that step (see the thermal
+        # FixedForcedOutage testset in test_events.jl).
+        @test status == 1.0 .- outage_data[1:n_steps]
+        out = status .== 0.0
+        @test any(out) && !all(out)
 
-    flow = read_em(em, "FlowActivePowerVariable__Line")[!, LINE_OUTAGE_NAME]
-    va = read_em(em, "VoltageAngle__ACBus")
-    dtheta = va[!, "nodeA"] .- va[!, "nodeB"]
-    @test isapprox(flow[out], zeros(count(out)); atol = 1e-6)
-    # The open line does not tie its terminal angles together...
-    @test all(abs.(dtheta[out]) .> 1e-4)
-    # ...and once restored it follows Ohm's law with one fixed susceptance again.
-    in_service = .!out .& (abs.(dtheta) .> 1e-4)
-    ratios = flow[in_service] ./ dtheta[in_service]
-    @test all(isapprox.(ratios, first(ratios); rtol = 1e-6))
+        flow = read_em(em, "FlowActivePowerVariable__Line")[!, LINE_OUTAGE_NAME]
+        va = read_em(em, "VoltageAngle__ACBus")
+        dtheta = va[!, "nodeA"] .- va[!, "nodeB"]
+        @test isapprox(flow[out], zeros(count(out)); atol = 1e-6)
+        # The open line does not tie its terminal angles together...
+        @test all(abs.(dtheta[out]) .> 1e-4)
+        # ...and once restored it follows Ohm's law with one fixed susceptance again.
+        in_service = .!out .& (abs.(dtheta) .> 1e-4)
+        ratios = flow[in_service] ./ dtheta[in_service]
+        @test all(isapprox.(ratios, first(ratios); rtol = 1e-6))
 
-    objectives = em_objectives(em)
-    @test isapprox(objectives[out], em_objectives(em_removed)[out]; rtol = 1e-6)
-    @test isapprox(objectives[.!out], em_objectives(em_intact)[.!out]; rtol = 1e-6)
-    # Guard against a fixture where losing the line changes nothing.
-    @test !isapprox(objectives[out], em_objectives(em_intact)[out]; rtol = 1e-4)
+        objectives = em_objectives(em)
+        @test isapprox(objectives[out], em_objectives(em_removed)[out]; rtol = 1e-6)
+        @test isapprox(objectives[.!out], em_objectives(em_intact)[.!out]; rtol = 1e-6)
+        # Guard against a fixture where losing the line changes nothing.
+        @test !isapprox(objectives[out], em_objectives(em_intact)[out]; rtol = 1e-4)
+    end
 end
 
 @testset "Line outages that island a bus match removing the lines" begin
@@ -218,134 +222,144 @@ end
 end
 
 @testset "Outage of one line in a parallel pair matches removing that line" begin
-    dates = collect(DateTime("2024-01-01T00:00:00"):Hour(1):DateTime("2024-01-02T23:00:00"))
-    outage_data = zeros(length(dates))
-    outage_data[4:6] .= 1.0
-    outage_data[18] = 1.0
-    profile = TimeArray(dates, outage_data)
-    em = run_line_outage_simulation(;
-        parallel_pair = true,
-        outages = [[LINE_OUTAGE_NAME] => profile],
-    )
-    em_removed = run_line_outage_simulation(;
-        parallel_pair = true,
-        removed = [LINE_OUTAGE_NAME],
-    )
-    em_intact = run_line_outage_simulation(; parallel_pair = true)
+    for network_model in (DCPNetworkModel, PTDFNetworkModel)
+        dates = collect(DateTime("2024-01-01T00:00:00"):Hour(1):DateTime("2024-01-02T23:00:00"))
+        outage_data = zeros(length(dates))
+        outage_data[4:6] .= 1.0
+        outage_data[18] = 1.0
+        profile = TimeArray(dates, outage_data)
+        em = run_line_outage_simulation(;
+            parallel_pair = true,
+            outages = [[LINE_OUTAGE_NAME] => profile],
+            network_model
+        )
+        em_removed = run_line_outage_simulation(;
+            parallel_pair = true,
+            removed = [LINE_OUTAGE_NAME],
+            network_model
+        )
+        em_intact = run_line_outage_simulation(; parallel_pair = true, network_model)
 
-    status = read_em(em, "AvailableStatusParameter__Line")
-    n_steps = nrow(status)
-    @test status[!, LINE_OUTAGE_NAME] == 1.0 .- outage_data[1:n_steps]
-    out = status[!, LINE_OUTAGE_NAME] .== 0.0
-    @test any(out) && !all(out)
+        status = read_em(em, "AvailableStatusParameter__Line")
+        n_steps = nrow(status)
+        @test status[!, LINE_OUTAGE_NAME] == 1.0 .- outage_data[1:n_steps]
+        out = status[!, LINE_OUTAGE_NAME] .== 0.0
+        @test any(out) && !all(out)
 
-    # The pair is reported as one corridor flow, not per circuit.
-    flow = read_em(em, "FlowActivePowerVariable__Line")
-    @test LINE_OUTAGE_NAME ∉ names(flow) && PARALLEL_LINE_NAME ∉ names(flow)
-    corridor = flow[!, parallel_group_name()]
-    # The surviving circuit keeps the corridor connected.
-    @test all(abs.(corridor[out]) .> 1e-6)
+        # The pair is reported as one corridor flow, not per circuit.
+        flow = read_em(em, "FlowActivePowerVariable__Line")
+        @test LINE_OUTAGE_NAME ∉ names(flow) && PARALLEL_LINE_NAME ∉ names(flow)
+        corridor = flow[!, parallel_group_name()]
+        # The surviving circuit keeps the corridor connected.
+        @test all(abs.(corridor[out]) .> 1e-6)
 
-    # Losing one of two identical circuits halves the corridor's susceptance.
-    va = read_em(em, "VoltageAngle__ACBus")
-    dtheta = va[!, "nodeA"] .- va[!, "nodeB"]
-    moving = abs.(dtheta) .> 1e-4
-    @test all(moving[out])
-    ratios_out = corridor[out] ./ dtheta[out]
-    ratios_in = corridor[.!out .& moving] ./ dtheta[.!out .& moving]
-    @test all(isapprox.(ratios_in, first(ratios_in); rtol = 1e-6))
-    @test all(isapprox.(ratios_out, first(ratios_in) / 2; rtol = 1e-6))
+        # Losing one of two identical circuits halves the corridor's susceptance.
+        va = read_em(em, "VoltageAngle__ACBus")
+        dtheta = va[!, "nodeA"] .- va[!, "nodeB"]
+        moving = abs.(dtheta) .> 1e-4
+        @test all(moving[out])
+        ratios_out = corridor[out] ./ dtheta[out]
+        ratios_in = corridor[.!out .& moving] ./ dtheta[.!out .& moving]
+        @test all(isapprox.(ratios_in, first(ratios_in); rtol = 1e-6))
+        @test all(isapprox.(ratios_out, first(ratios_in) / 2; rtol = 1e-6))
 
-    objectives = em_objectives(em)
-    @test isapprox(objectives[out], em_objectives(em_removed)[out]; rtol = 1e-6)
-    @test isapprox(objectives[.!out], em_objectives(em_intact)[.!out]; rtol = 1e-6)
-    @test !isapprox(objectives[out], em_objectives(em_intact)[out]; rtol = 1e-4)
+        objectives = em_objectives(em)
+        @test isapprox(objectives[out], em_objectives(em_removed)[out]; rtol = 1e-6)
+        @test isapprox(objectives[.!out], em_objectives(em_intact)[.!out]; rtol = 1e-6)
+        @test !isapprox(objectives[out], em_objectives(em_intact)[out]; rtol = 1e-4)
+    end
 end
 
 @testset "One outage on several lines matches removing all of them" begin
-    dates = collect(DateTime("2024-01-01T00:00:00"):Hour(1):DateTime("2024-01-02T23:00:00"))
-    outage_data = zeros(length(dates))
-    outage_data[6:9] .= 1.0
-    outage_data[17] = 1.0
-    line_names = NON_ISLANDING_LINE_NAMES
-    em = run_line_outage_simulation(;
-        line_names,
-        outages = [line_names => TimeArray(dates, outage_data)],
-    )
-    em_removed = run_line_outage_simulation(; line_names, removed = line_names)
-    em_intact = run_line_outage_simulation(; line_names)
+    for network_model in (DCPNetworkModel, PTDFNetworkModel)
+        dates = collect(DateTime("2024-01-01T00:00:00"):Hour(1):DateTime("2024-01-02T23:00:00"))
+        outage_data = zeros(length(dates))
+        outage_data[6:9] .= 1.0
+        outage_data[17] = 1.0
+        line_names = NON_ISLANDING_LINE_NAMES
+        em = run_line_outage_simulation(;
+            line_names,
+            outages = [line_names => TimeArray(dates, outage_data)],
+            network_model
+        )
+        em_removed = run_line_outage_simulation(; line_names, removed = line_names, network_model)
+        em_intact = run_line_outage_simulation(; line_names, network_model)
 
-    status = read_em(em, "AvailableStatusParameter__Line")
-    n_steps = nrow(status)
-    for name in line_names
-        @test status[!, name] == 1.0 .- outage_data[1:n_steps]
+        status = read_em(em, "AvailableStatusParameter__Line")
+        n_steps = nrow(status)
+        for name in line_names
+            @test status[!, name] == 1.0 .- outage_data[1:n_steps]
+        end
+        out = status[!, first(line_names)] .== 0.0
+        @test any(out) && !all(out)
+
+        flow = read_em(em, "FlowActivePowerVariable__Line")
+        for name in line_names
+            @test isapprox(flow[out, name], zeros(count(out)); atol = 1e-6)
+        end
+
+        objectives = em_objectives(em)
+        @test isapprox(objectives[out], em_objectives(em_removed)[out]; rtol = 1e-6)
+        @test isapprox(objectives[.!out], em_objectives(em_intact)[.!out]; rtol = 1e-6)
+        @test !isapprox(objectives[out], em_objectives(em_intact)[out]; rtol = 1e-4)
     end
-    out = status[!, first(line_names)] .== 0.0
-    @test any(out) && !all(out)
-
-    flow = read_em(em, "FlowActivePowerVariable__Line")
-    for name in line_names
-        @test isapprox(flow[out, name], zeros(count(out)); atol = 1e-6)
-    end
-
-    objectives = em_objectives(em)
-    @test isapprox(objectives[out], em_objectives(em_removed)[out]; rtol = 1e-6)
-    @test isapprox(objectives[.!out], em_objectives(em_intact)[.!out]; rtol = 1e-6)
-    @test !isapprox(objectives[out], em_objectives(em_intact)[out]; rtol = 1e-4)
 end
 
 @testset "Overlapping outages on different lines each start and end on their own" begin
-    dates = collect(DateTime("2024-01-01T00:00:00"):Hour(1):DateTime("2024-01-02T23:00:00"))
-    line_1, line_2 = NON_ISLANDING_LINE_NAMES
-    # Outage 1 starts, then outage 2, then outage 1 ends, then outage 2 ends.
-    outage_1 = zeros(length(dates))
-    outage_1[4:11] .= 1.0
-    outage_2 = zeros(length(dates))
-    outage_2[8:15] .= 1.0
-    line_names = NON_ISLANDING_LINE_NAMES
-    em = run_line_outage_simulation(;
-        line_names,
-        outages = [
-            [line_1] => TimeArray(dates, outage_1),
-            [line_2] => TimeArray(dates, outage_2),
-        ],
-    )
-    em_only_1 = run_line_outage_simulation(; line_names, removed = [line_1])
-    em_only_2 = run_line_outage_simulation(; line_names, removed = [line_2])
-    em_both = run_line_outage_simulation(; line_names, removed = line_names)
-    em_intact = run_line_outage_simulation(; line_names)
+    for network_model in (DCPNetworkModel, PTDFNetworkModel)
+        dates = collect(DateTime("2024-01-01T00:00:00"):Hour(1):DateTime("2024-01-02T23:00:00"))
+        line_1, line_2 = NON_ISLANDING_LINE_NAMES
+        # Outage 1 starts, then outage 2, then outage 1 ends, then outage 2 ends.
+        outage_1 = zeros(length(dates))
+        outage_1[4:11] .= 1.0
+        outage_2 = zeros(length(dates))
+        outage_2[8:15] .= 1.0
+        line_names = NON_ISLANDING_LINE_NAMES
+        em = run_line_outage_simulation(;
+            line_names,
+            outages = [
+                [line_1] => TimeArray(dates, outage_1),
+                [line_2] => TimeArray(dates, outage_2),
+            ],
+            network_model
+        )
+        em_only_1 = run_line_outage_simulation(; line_names, removed = [line_1], network_model)
+        em_only_2 = run_line_outage_simulation(; line_names, removed = [line_2], network_model)
+        em_both = run_line_outage_simulation(; line_names, removed = line_names, network_model)
+        em_intact = run_line_outage_simulation(; line_names, network_model)
 
-    status = read_em(em, "AvailableStatusParameter__Line")
-    n_steps = nrow(status)
-    @test status[!, line_1] == 1.0 .- outage_1[1:n_steps]
-    @test status[!, line_2] == 1.0 .- outage_2[1:n_steps]
-    out_1 = status[!, line_1] .== 0.0
-    out_2 = status[!, line_2] .== 0.0
-    only_1 = out_1 .& .!out_2
-    only_2 = out_2 .& .!out_1
-    both = out_1 .& out_2
-    neither = .!out_1 .& .!out_2
-    @test any(only_1) && any(only_2) && any(both) && any(neither)
+        status = read_em(em, "AvailableStatusParameter__Line")
+        n_steps = nrow(status)
+        @test status[!, line_1] == 1.0 .- outage_1[1:n_steps]
+        @test status[!, line_2] == 1.0 .- outage_2[1:n_steps]
+        out_1 = status[!, line_1] .== 0.0
+        out_2 = status[!, line_2] .== 0.0
+        only_1 = out_1 .& .!out_2
+        only_2 = out_2 .& .!out_1
+        both = out_1 .& out_2
+        neither = .!out_1 .& .!out_2
+        @test any(only_1) && any(only_2) && any(both) && any(neither)
 
-    flow = read_em(em, "FlowActivePowerVariable__Line")
-    @test isapprox(flow[out_1, line_1], zeros(count(out_1)); atol = 1e-6)
-    @test isapprox(flow[out_2, line_2], zeros(count(out_2)); atol = 1e-6)
+        flow = read_em(em, "FlowActivePowerVariable__Line")
+        @test isapprox(flow[out_1, line_1], zeros(count(out_1)); atol = 1e-6)
+        @test isapprox(flow[out_2, line_2], zeros(count(out_2)); atol = 1e-6)
 
-    objectives = em_objectives(em)
-    for (mask, reference) in (
-        only_1 => em_only_1,
-        only_2 => em_only_2,
-        both => em_both,
-        neither => em_intact,
-    )
-        @test isapprox(objectives[mask], em_objectives(reference)[mask]; rtol = 1e-6)
+        objectives = em_objectives(em)
+        for (mask, reference) in (
+            only_1 => em_only_1,
+            only_2 => em_only_2,
+            both => em_both,
+            neither => em_intact,
+        )
+            @test isapprox(objectives[mask], em_objectives(reference)[mask]; rtol = 1e-6)
+        end
+        # Guard against a fixture where the overlap is indistinguishable from either single
+        # outage, which would let a stuck or early-cleared status pass.
+        @test !isapprox(objectives[both], em_objectives(em_only_1)[both]; rtol = 1e-4)
+        @test !isapprox(objectives[both], em_objectives(em_only_2)[both]; rtol = 1e-4)
+        @test !isapprox(objectives[only_1], em_objectives(em_intact)[only_1]; rtol = 1e-4)
+        @test !isapprox(objectives[only_2], em_objectives(em_intact)[only_2]; rtol = 1e-4)
     end
-    # Guard against a fixture where the overlap is indistinguishable from either single
-    # outage, which would let a stuck or early-cleared status pass.
-    @test !isapprox(objectives[both], em_objectives(em_only_1)[both]; rtol = 1e-4)
-    @test !isapprox(objectives[both], em_objectives(em_only_2)[both]; rtol = 1e-4)
-    @test !isapprox(objectives[only_1], em_objectives(em_intact)[only_1]; rtol = 1e-4)
-    @test !isapprox(objectives[only_2], em_objectives(em_intact)[only_2]; rtol = 1e-4)
 end
 
 @testset "Line outages that island an unserved load make the emulator infeasible" begin
