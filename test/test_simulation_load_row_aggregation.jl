@@ -55,7 +55,7 @@ end
         PowerLoad,
     )
     bus_number = PSY.get_number(PSY.get_bus(load))
-    refs = collect(IOM.get_row_aggregate_refs(param_container, bus_number))
+    refs, coefficient = IOM.get_row_aggregate_refs(param_container, bus_number)
     @test eltype(refs) == JuMP.VariableRef
     values = collect(
         IOM.get_parameter_column_values(param_container, PSY.get_name(load)),
@@ -65,7 +65,7 @@ end
         values[t] * (multiplier[PSY.get_name(load), t] + multiplier[PSY.get_name(twin), t])
         for t in eachindex(values)
     ]
-    @test JuMP.fix_value.(refs) ≈ expected
+    @test coefficient .* JuMP.fix_value.(refs) ≈ expected
 
     @test Matrix(_realized_thermal(recurrent)[!, 2:end]) ≈
           Matrix(_realized_thermal(rebuilt)[!, 2:end])
