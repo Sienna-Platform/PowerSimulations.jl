@@ -5,31 +5,44 @@
 # the same system with the line deleted, and otherwise one with the line intact.
 
 const LINE_OUTAGE_NAME = "1"  # nodeA -> nodeB; not a bridge, and the dispatch uses it
+# nodeB -> nodeC and nodeC -> nodeD: together these are nodeC's only connections, so
+# losing both islands nodeC (Solitude, PVBus5, and load Bus3) from the rest of the system.
+const ISLANDING_LINE_NAMES = ["4", "5"]
 
-function line_outage_system(; outage_profile = nothing, remove_line = false)
+function line_outage_system(;
+    line_names = [LINE_OUTAGE_NAME],
+    outage_profile = nothing,
+    remove_line = false,
+)
     sys = build_system(PSITestSystems, "c_sys5_events")
-    line = get_component(Line, sys, LINE_OUTAGE_NAME)
-    # Event lines may not carry an angle-difference constraint; open the window in every
-    # variant so the intact reference sees the same network.
-    set_angle_limits!(line, (min = -π, max = π))
-    if remove_line
-        remove_component!(sys, line)
-    elseif !isnothing(outage_profile)
-        outage = PSY.FixedForcedOutage(; outage_status = 0.0)
-        add_supplemental_attribute!(sys, line, outage)
-        PSY.add_time_series!(
-            sys,
-            outage,
-            PSY.SingleTimeSeries("outage_profile", outage_profile),
-        )
+    for line_name in line_names
+        line = get_component(Line, sys, line_name)
+        # Event lines may not carry an angle-difference constraint; open the window in
+        # every variant so the intact reference sees the same network.
+        set_angle_limits!(line, (min = -π, max = π))
+        if remove_line
+            remove_component!(sys, line)
+        elseif !isnothing(outage_profile)
+            outage = PSY.FixedForcedOutage(; outage_status = 0.0)
+            add_supplemental_attribute!(sys, line, outage)
+            PSY.add_time_series!(
+                sys,
+                outage,
+                PSY.SingleTimeSeries("outage_profile", outage_profile),
+            )
+        end
     end
     return sys
 end
 
-function run_line_outage_simulation(; outage_profile = nothing, remove_line = false)
-    sys_d1 = line_outage_system(; outage_profile, remove_line)
+function run_line_outage_simulation(;
+    line_names = [LINE_OUTAGE_NAME],
+    outage_profile = nothing,
+    remove_line = false,
+)
+    sys_d1 = line_outage_system(; line_names, outage_profile, remove_line)
     transform_single_time_series!(sys_d1, Day(2), Day(1))
-    sys_em = line_outage_system(; outage_profile, remove_line)
+    sys_em = line_outage_system(; line_names, outage_profile, remove_line)
 
     template_d1 = get_template_basic_uc_simulation()
     set_network_model!(template_d1, NetworkModel(DCPNetworkModel))
@@ -137,5 +150,40 @@ end
     @test isapprox(objectives[out], em_objectives(em_removed)[out]; rtol = 1e-6)
     @test isapprox(objectives[.!out], em_objectives(em_intact)[.!out]; rtol = 1e-6)
     # Guard against a fixture where losing the line changes nothing.
+    @test !isapprox(objectives[out], em_objectives(em_intact)[out]; rtol = 1e-4)
+end
+
+@testset "Line outages that island a bus match removing the lines" begin
+    dates = collect(DateTime("2024-01-01T00:00:00"):Hour(1):DateTime("2024-01-02T23:00:00"))
+    outage_data = zeros(length(dates))
+    outage_data[5:8] .= 1.0
+    outage_data[15] = 1.0
+    profile = TimeArray(dates, outage_data)
+    line_names = ISLANDING_LINE_NAMES
+    em = run_line_outage_simulation(; line_names, outage_profile = profile)
+    em_removed = run_line_outage_simulation(; line_names, remove_line = true)
+    em_intact = run_line_outage_simulation(; line_names)
+
+    status = read_em(em, "AvailableStatusParameter__Line")
+    n_steps = nrow(status)
+    for name in line_names
+        @test status[!, name] == 1.0 .- outage_data[1:n_steps]
+    end
+    out = status[!, first(line_names)] .== 0.0
+    @test any(out) && !all(out)
+
+    flow = read_em(em, "FlowActivePowerVariable__Line")
+    for name in line_names
+        @test isapprox(flow[out, name], zeros(count(out)); atol = 1e-6)
+    end
+
+    # While islanded, nodeC must serve its own load with its own generation.
+    thermal = read_em(em, "ActivePowerVariable__ThermalStandard")
+    thermal_removed = read_em(em_removed, "ActivePowerVariable__ThermalStandard")
+    @test isapprox(thermal[out, "Solitude"], thermal_removed[out, "Solitude"]; rtol = 1e-6)
+
+    objectives = em_objectives(em)
+    @test isapprox(objectives[out], em_objectives(em_removed)[out]; rtol = 1e-6)
+    @test isapprox(objectives[.!out], em_objectives(em_intact)[.!out]; rtol = 1e-6)
     @test !isapprox(objectives[out], em_objectives(em_intact)[out]; rtol = 1e-4)
 end
