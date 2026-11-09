@@ -8,13 +8,22 @@ const LINE_OUTAGE_NAME = "1"  # nodeA -> nodeB; not a bridge, and the dispatch u
 # nodeB -> nodeC and nodeC -> nodeD: together these are nodeC's only connections, so
 # losing both islands nodeC (Solitude, PVBus5, and load Bus3) from the rest of the system.
 const ISLANDING_LINE_NAMES = ["4", "5"]
+# The helper below splits LINE_OUTAGE_NAME into two identical halves; this is the new one.
+const PARALLEL_LINE_NAME = LINE_OUTAGE_NAME * "_copy"
 
 function line_outage_system(;
     line_names = [LINE_OUTAGE_NAME],
     outage_profile = nothing,
     remove_line = false,
+    parallel_pair = false,
 )
     sys = build_system(PSITestSystems, "c_sys5_events")
+    if parallel_pair
+        line = get_component(Line, sys, LINE_OUTAGE_NAME)
+        # Set before splitting so the copy inherits the open window too.
+        set_angle_limits!(line, (min = -π, max = π))
+        add_equivalent_ac_transmission_with_parallel_circuits!(sys, line, Line)
+    end
     for line_name in line_names
         line = get_component(Line, sys, line_name)
         # Event lines may not carry an angle-difference constraint; open the window in
@@ -35,14 +44,22 @@ function line_outage_system(;
     return sys
 end
 
-function run_line_outage_simulation(;
+# PowerNetworkMatrices names a parallel group after its arc's bus numbers.
+function parallel_group_name()
+    sys = line_outage_system(; parallel_pair = true)
+    arc = get_arc(get_component(Line, sys, LINE_OUTAGE_NAME))
+    return "$(get_number(get_from(arc)))_$(get_number(get_to(arc)))_double_circuit"
+end
+
+function build_line_outage_simulation(;
     line_names = [LINE_OUTAGE_NAME],
     outage_profile = nothing,
     remove_line = false,
+    parallel_pair = false,
 )
-    sys_d1 = line_outage_system(; line_names, outage_profile, remove_line)
+    sys_d1 = line_outage_system(; line_names, outage_profile, remove_line, parallel_pair)
     transform_single_time_series!(sys_d1, Day(2), Day(1))
-    sys_em = line_outage_system(; line_names, outage_profile, remove_line)
+    sys_em = line_outage_system(; line_names, outage_profile, remove_line, parallel_pair)
 
     template_d1 = get_template_basic_uc_simulation()
     set_network_model!(template_d1, NetworkModel(DCPNetworkModel))
@@ -91,6 +108,11 @@ function run_line_outage_simulation(;
         simulation_folder = mktempdir(; cleanup = true),
     )
     @test build!(sim; console_level = Logging.Error) == SimulationBuildStatus.BUILT
+    return sim
+end
+
+function run_line_outage_simulation(; kwargs...)
+    sim = build_line_outage_simulation(; kwargs...)
     @test execute!(sim; in_memory = true) == IOM.RunStatus.SUCCESSFULLY_FINALIZED
     return get_emulation_problem_results(SimulationResults(sim; ignore_status = true))
 end
@@ -186,4 +208,57 @@ end
     @test isapprox(objectives[out], em_objectives(em_removed)[out]; rtol = 1e-6)
     @test isapprox(objectives[.!out], em_objectives(em_intact)[.!out]; rtol = 1e-6)
     @test !isapprox(objectives[out], em_objectives(em_intact)[out]; rtol = 1e-4)
+end
+
+@testset "Outage of one line in a parallel pair matches removing that line" begin
+    dates = collect(DateTime("2024-01-01T00:00:00"):Hour(1):DateTime("2024-01-02T23:00:00"))
+    outage_data = zeros(length(dates))
+    outage_data[4:6] .= 1.0
+    outage_data[18] = 1.0
+    profile = TimeArray(dates, outage_data)
+    em = run_line_outage_simulation(; parallel_pair = true, outage_profile = profile)
+    em_removed = run_line_outage_simulation(; parallel_pair = true, remove_line = true)
+    em_intact = run_line_outage_simulation(; parallel_pair = true)
+
+    status = read_em(em, "AvailableStatusParameter__Line")
+    n_steps = nrow(status)
+    @test status[!, LINE_OUTAGE_NAME] == 1.0 .- outage_data[1:n_steps]
+    out = status[!, LINE_OUTAGE_NAME] .== 0.0
+    @test any(out) && !all(out)
+
+    # The pair is reported as one corridor flow, not per circuit.
+    flow = read_em(em, "FlowActivePowerVariable__Line")
+    @test LINE_OUTAGE_NAME ∉ names(flow) && PARALLEL_LINE_NAME ∉ names(flow)
+    corridor = flow[!, parallel_group_name()]
+    # The surviving circuit keeps the corridor connected.
+    @test all(abs.(corridor[out]) .> 1e-6)
+
+    # Losing one of two identical circuits halves the corridor's susceptance.
+    va = read_em(em, "VoltageAngle__ACBus")
+    dtheta = va[!, "nodeA"] .- va[!, "nodeB"]
+    moving = abs.(dtheta) .> 1e-4
+    @test all(moving[out])
+    ratios_out = corridor[out] ./ dtheta[out]
+    ratios_in = corridor[.!out .& moving] ./ dtheta[.!out .& moving]
+    @test all(isapprox.(ratios_in, first(ratios_in); rtol = 1e-6))
+    @test all(isapprox.(ratios_out, first(ratios_in) / 2; rtol = 1e-6))
+
+    objectives = em_objectives(em)
+    @test isapprox(objectives[out], em_objectives(em_removed)[out]; rtol = 1e-6)
+    @test isapprox(objectives[.!out], em_objectives(em_intact)[.!out]; rtol = 1e-6)
+    @test !isapprox(objectives[out], em_objectives(em_intact)[out]; rtol = 1e-4)
+end
+
+@testset "Line outages that island an unserved load make the emulator infeasible" begin
+    # nodeA -> nodeB and nodeB -> nodeC are nodeB's only connections; nodeB carries load
+    # Bus2 and no generation, so with no slacks the island cannot balance.
+    line_names = ["1", "4"]
+    dates = collect(DateTime("2024-01-01T00:00:00"):Hour(1):DateTime("2024-01-02T23:00:00"))
+    # Out for the whole horizon so the last emulator solve is islanded regardless of
+    # when within a step the event is applied.
+    profile = TimeArray(dates, ones(length(dates)))
+    sim = build_line_outage_simulation(; line_names, outage_profile = profile)
+    @test execute!(sim; in_memory = true) == IOM.RunStatus.FAILED
+    em_model = PSI.get_emulation_model(PSI.get_models(sim))
+    @test JuMP.termination_status(IOM.get_jump_model(em_model)) == JuMP.INFEASIBLE
 end

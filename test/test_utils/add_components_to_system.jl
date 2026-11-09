@@ -4,19 +4,20 @@ function get_copied_line(
     copied_line = Line(;
         name = PSY.get_name(line) * "_copy",
         available = PSY.get_available(line),
-        active_power_flow = PSY.get_active_power_flow(line),
-        reactive_power_flow = PSY.get_reactive_power_flow(line),
+        active_power_flow = PSY.get_active_power_flow(line, PSY.u"CU"),
+        reactive_power_flow = PSY.get_reactive_power_flow(line, PSY.u"CU"),
         arc = PSY.get_arc(line),
-        r = PSY.get_r(line),
-        x = PSY.get_x(line),
-        b = PSY.get_b(line),
-        rating = PSY.get_rating(line),
+        r = PSY.get_r(line, PSY.u"CU"),
+        x = PSY.get_x(line, PSY.u"CU"),
+        b = PSY.get_b(line, PSY.u"CU"),
+        rating = PSY.get_rating(line, PSY.u"CU"),
         angle_limits = PSY.get_angle_limits(line),
-        rating_b = PSY.get_rating_b(line),
-        rating_c = PSY.get_rating_c(line),
-        g = PSY.get_g(line),
+        rating_b = PSY.get_rating_b(line, PSY.u"CU"),
+        rating_c = PSY.get_rating_c(line, PSY.u"CU"),
+        g = PSY.get_g(line, PSY.u"CU"),
         services = PSY.get_services(line),
         ext = PSY.get_ext(line),
+        input_basis = PSY.u"CU",
     )
     return copied_line
 end
@@ -93,19 +94,19 @@ function add_equivalent_ac_transmission_with_parallel_circuits!(
     ac_transmission::PSY.Line,
     ::Type{T},
 ) where {T <: PSY.Line}
-    rating_new = PSY.get_rating(ac_transmission) / 2
-    x_new = PSY.get_x(ac_transmission) * 2
-    r_new = PSY.get_r(ac_transmission) * 2
+    rating_new = PSY.get_rating(ac_transmission, PSY.u"SU") / 2
+    x_new = PSY.get_x(ac_transmission, PSY.u"SU") * 2
+    r_new = PSY.get_r(ac_transmission, PSY.u"SU") * 2
     ac_transmission_copy_parallel = get_copied_line(ac_transmission)
+    add_component!(sys, ac_transmission_copy_parallel)
 
     #Set ratings the half so the case remains equivalent to the original
-    set_rating!(ac_transmission, rating_new)
-    set_rating!(ac_transmission_copy_parallel, rating_new)
-    set_x!(ac_transmission, x_new)
-    set_x!(ac_transmission_copy_parallel, x_new)
-    set_r!(ac_transmission, r_new)
-    set_r!(ac_transmission_copy_parallel, r_new)
-    add_component!(sys, ac_transmission_copy_parallel)
+    set_rating!(ac_transmission, rating_new * PSY.u"SU")
+    set_rating!(ac_transmission_copy_parallel, rating_new * PSY.u"SU")
+    set_x!(ac_transmission, x_new * PSY.u"SU")
+    set_x!(ac_transmission_copy_parallel, x_new * PSY.u"SU")
+    set_r!(ac_transmission, r_new * PSY.u"SU")
+    set_r!(ac_transmission_copy_parallel, r_new * PSY.u"SU")
 end
 
 function add_reserve_product_without_requirement_time_series!(
