@@ -87,11 +87,11 @@ function _check_component_sets(sim::Simulation)
     return
 end
 
-# The components that any decision model or the emulator writes to the simulation state for
-# `key`.
-function _state_writers(sim::Simulation, key::OptimizationContainerKey)
+# The components that `models` write for `key`. The decision state is written by the
+# decision models; the system state also by the emulator.
+function _state_writers(models, key::OptimizationContainerKey)
     names = Set{String}()
-    for model in _state_models(get_models(sim))
+    for model in models
         _writes_key(model, key) || continue
         union!(names, string.(first(_model_columns(model, key))))
     end
@@ -123,8 +123,8 @@ function _throw_missing_writer(model, source_key, what, missing_names, remedy)
     )
 end
 
-# Each feedforward parameter is read from the state of its source key for every component
-# of the parameter.
+# Each feedforward parameter is read from the decision state of its source key for every
+# component of the parameter.
 function _check_parameter_sources(sim::Simulation, model)
     remedy = "Give a model that writes the source every unit the feedforward sets."
     get_allow_different_components(sim) ||
@@ -134,7 +134,7 @@ function _check_parameter_sources(sim::Simulation, model)
         attributes = get_attributes(parameter)
         attributes isa VariableValueAttributes || continue
         source_key = get_attribute_key(attributes)
-        writers = _state_writers(sim, source_key)
+        writers = _state_writers(get_decision_models(get_models(sim)), source_key)
         names = string.(axes(get_parameter_array(parameter))[1])
         missing_names = setdiff(names, writers)
         isempty(missing_names) && continue
@@ -145,12 +145,12 @@ function _check_parameter_sources(sim::Simulation, model)
 end
 
 # The initial power of a unit that is not must-run is taken with its status, read from the
-# `OnVariable` of the state.
+# `OnVariable` of the system state.
 function _check_initial_power_sources(sim::Simulation, model)
     for (key, ics) in get_initial_conditions(model)
         get_entry_type(key) === DevicePower || continue
         status_key = VariableKey(OnVariable, get_component_type(key))
-        writers = _state_writers(sim, status_key)
+        writers = _state_writers(_state_models(get_models(sim)), status_key)
         missing_names = Set{String}(
             get_component_name(ic) for ic in ics if
             !IOM.get_must_run(IOM.get_component(ic)) && !(get_component_name(ic) in writers)

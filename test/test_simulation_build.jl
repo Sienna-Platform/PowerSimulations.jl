@@ -709,3 +709,46 @@ end
     @test build!(sim; console_level = Logging.AboveMaxLevel) ==
           PSI.SimulationBuildStatus.BUILT
 end
+
+@testset "A feedforward source written only by the emulator fails at build" begin
+    # The emulator commits Alta, but feedforwards read the decision state, which only the
+    # decision models write, and the UC does not model Alta.
+    sys_em = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_single_time_series = true)
+    sys_uc = PSB.build_system(PSITestSystems, "c_sys5_uc")
+    sys_ed = deepcopy(sys_em)
+    PSY.transform_single_time_series!(sys_ed, Hour(1), Hour(1))
+    set_available!(get_component(ThermalStandard, sys_uc, "Alta"), false)
+    models = SimulationModels(;
+        decision_models = [
+            DecisionModel(get_template_basic_uc_simulation(), sys_uc; name = "UC",
+                optimizer = HiGHS_optimizer),
+            DecisionModel(get_template_nomin_ed_simulation(), sys_ed; name = "ED",
+                optimizer = HiGHS_optimizer),
+        ],
+        emulation_model = EmulationModel(get_template_basic_uc_simulation(), sys_em;
+            name = "EM", optimizer = HiGHS_optimizer),
+    )
+    sequence = SimulationSequence(;
+        models,
+        feedforwards = Dict(
+            "ED" => [
+                SemiContinuousFeedforward(;
+                    component_type = ThermalStandard,
+                    source = OnVariable,
+                    affected_values = [ActivePowerVariable],
+                ),
+            ],
+        ),
+        ini_cond_chronology = InterProblemChronology(),
+        allow_different_components = true,
+    )
+    sim = Simulation(; name = "em_only_source", steps = 1, models, sequence,
+        simulation_folder = mktempdir(; cleanup = true))
+    err = _build_error(sim)
+    @test err isa IS.ConflictingInputsError
+    msg = sprint(showerror, err)
+    @test occursin("ED", msg) && occursin("Alta", msg)
+    @test occursin("OnStatusParameter__ThermalStandard", msg)
+    on_key = PSI.VariableKey(OnVariable, ThermalStandard)
+    @test "Alta" in first(PSI._model_columns(PSI.get_emulation_model(models), on_key))
+end
