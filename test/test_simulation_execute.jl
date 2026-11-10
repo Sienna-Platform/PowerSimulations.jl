@@ -709,3 +709,31 @@ end
     @test JuMP.num_variables(IOM.get_jump_model(ed)) > 0
     @test !isempty(IOM.get_variables(IOM.get_optimization_container(ed)))
 end
+
+@testset "A must-run unit carries its time on across steps" begin
+    sys = PSB.build_system(PSITestSystems, "c_sys5_uc")
+    PSY.set_commitment_mode!(
+        PSY.get_component(PSY.ThermalStandard, sys, "Alta"),
+        PSY.CommitmentModes.MUST_RUN,
+    )
+    models = SimulationModels(;
+        decision_models = [
+            DecisionModel(
+                get_template_standard_uc_simulation(),
+                sys;
+                name = "UC",
+                optimizer = HiGHS_optimizer,
+            ),
+        ],
+    )
+    sequence = SimulationSequence(; models, ini_cond_chronology = InterProblemChronology())
+    sim = Simulation(;
+        name = "must_run",
+        steps = 2,
+        models,
+        sequence,
+        simulation_folder = mktempdir(; cleanup = true),
+    )
+    @test build!(sim; console_level = Logging.Error) == PSI.SimulationBuildStatus.BUILT
+    @test execute!(sim; in_memory = true) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+end
