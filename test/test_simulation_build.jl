@@ -697,6 +697,58 @@ _feedforward_constraint_rows(model) = [
     @test all(names -> !("Alta" in names) && "Park City" in names, rows)
 end
 
+# A new sequence and simulation over the models of `sim`, with the same feedforward.
+function _resequenced_simulation(sim; allow_different_components)
+    models = PSI.get_models(sim)
+    sequence = SimulationSequence(;
+        models,
+        feedforwards = Dict(
+            "ED" => [
+                SemiContinuousFeedforward(;
+                    component_type = ThermalStandard,
+                    source = OnVariable,
+                    affected_values = [ActivePowerVariable],
+                ),
+            ],
+        ),
+        ini_cond_chronology = InterProblemChronology(),
+        allow_different_components,
+    )
+    return Simulation(; name = "resequenced", steps = 1, models, sequence,
+        simulation_folder = mktempdir(; cleanup = true))
+end
+
+_ed_feedforwards(sim) =
+    IOM.get_feedforwards(
+        POM.get_device_models(
+            PSI.get_template(PSI.get_simulation_model(PSI.get_models(sim), :ED)),
+        )[:ThermalStandard],
+    )
+
+@testset "A feedforward restriction is decided at every build" begin
+    sim = _state_source_simulation(; uc_without = "Alta", allow_different_components = true)
+    warning = (:warn, r"leaves 1 components? out of the feedforward")
+    for _ in 1:2
+        @test build!(sim; console_level = Logging.AboveMaxLevel) ==
+              PSI.SimulationBuildStatus.BUILT
+        @test_logs warning min_level = Logging.Warn PSI._check_state_sources(sim)
+    end
+
+    allowed = _resequenced_simulation(sim; allow_different_components = true)
+    @test build!(allowed; console_level = Logging.AboveMaxLevel) ==
+          PSI.SimulationBuildStatus.BUILT
+    @test_logs warning min_level = Logging.Warn PSI._check_state_sources(allowed)
+
+    default = _resequenced_simulation(sim; allow_different_components = false)
+    err = _build_error(default)
+    @test err isa IS.ConflictingInputsError
+    @test occursin("allow_different_components = true", sprint(showerror, err))
+    @test only(_ed_feedforwards(default)) isa SemiContinuousFeedforward
+    @test isnothing(POM.get_feedforward_components(only(_ed_feedforwards(default))))
+    ed = PSI.get_simulation_model(PSI.get_models(default), :ED)
+    @test !haskey(IOM.get_internal(ed).ext, PSI.FEEDFORWARD_SOURCES_KEY)
+end
+
 @testset "A feedforward source built after its target fails at build" begin
     # Both models look a day ahead, so the dispatch can be listed first.
     models = SimulationModels(;

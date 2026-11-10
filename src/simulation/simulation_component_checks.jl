@@ -101,9 +101,13 @@ end
 const FEEDFORWARD_SOURCES_KEY = "feedforward_sources"
 
 # A feedforward of a model restricted to the components that the decision models built
-# before it write for its source key. `left_out` holds the components the restriction takes
+# before it write for its source key. `original` is the feedforward as attached, at
+# position `index` of `device_model`. `left_out` holds the components the restriction takes
 # away from it; with no such writer the feedforward is kept whole (`restricted = false`).
 struct _FeedforwardRestriction
+    device_model::IOM.DeviceModel
+    index::Int
+    original::POM.ComponentSubsetFeedforward
     source_key::OptimizationContainerKey
     affected_keys::Vector{OptimizationContainerKey}
     left_out::Set{String}
@@ -119,11 +123,24 @@ _template_device_models(model) =
 _feedforward_device_names(ff, devices) =
     Set{String}(PSY.get_name(d) for d in POM.feedforward_devices(ff, devices))
 
+# Puts back the feedforwards of `model` as they were attached, so a later build or sequence
+# starts from them.
+function _restore_feedforwards!(model::DecisionModel)
+    restrictions = pop!(IOM.get_internal(model).ext, FEEDFORWARD_SOURCES_KEY, nothing)
+    isnothing(restrictions) && return
+    for restriction in restrictions::Vector{_FeedforwardRestriction}
+        IOM.get_feedforwards(restriction.device_model)[restriction.index] =
+            restriction.original
+    end
+    return
+end
+
 # Applies each feedforward of `model` that can leave components out only to the components
 # that the decision models built before `model` write for its source key. A component
 # outside them is built as if the feedforward were not attached. A source key that no such
 # model writes leaves the feedforward whole for `_check_state_sources` to report.
 function _restrict_feedforwards!(sim::Simulation, model::DecisionModel)
+    _restore_feedforwards!(model)
     decision_models = get_decision_models(get_models(sim))
     built = decision_models[1:(findfirst(m -> m === model, decision_models) - 1)]
     restrictions = _FeedforwardRestriction[]
@@ -144,7 +161,7 @@ function _restrict_feedforwards!(sim::Simulation, model::DecisionModel)
             restricted && (feedforwards[ix] = restricted_ff)
             push!(
                 restrictions,
-                _FeedforwardRestriction(source_key,
+                _FeedforwardRestriction(device_model, ix, ff, source_key,
                     collect(OptimizationContainerKey, POM.get_affected_values(ff)),
                     left_out, restricted),
             )
