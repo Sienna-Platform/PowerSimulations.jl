@@ -144,3 +144,21 @@ end
 
     @test_throws IS.ConflictingInputsError SimulationSequence(models = models)
 end
+
+@testset "SimulationSequence records whether models may differ in components" begin
+    make_models() = SimulationModels([
+        DecisionModel(MockOperationProblem; horizon = Hour(48), name = "DAUC"),
+    ])
+    default_sequence = SimulationSequence(; models = make_models())
+    @test !PSI.get_allow_different_components(default_sequence)
+
+    sequence = SimulationSequence(;
+        models = make_models(),
+        allow_different_components = true,
+    )
+    @test PSI.get_allow_different_components(sequence)
+
+    text = sprint(show, MIME"text/plain"(), sequence)
+    @test occursin("Allow Different Components", text)
+    @test occursin("true", text)
+end

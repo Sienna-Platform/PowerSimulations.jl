@@ -234,6 +234,10 @@ Construct the simulation sequence between decision and emulation models.
     and variables are exchanged between decision and emulation models.
   - `ini_cond_chronology::InitialConditionChronology =  InterProblemChronology()`: Define
     information sharing model between stages with [`InterProblemChronology`](@ref)
+  - `allow_different_components::Bool = false`: allow the models to hold different components
+    for the same key. By default the build fails when they differ. When `true`, the simulation
+    state holds every model's components, and each feedforward applies only to the components
+    its source model writes.
 
 # Example
 
@@ -275,12 +279,14 @@ mutable struct SimulationSequence
     current_execution_index::Int64
     uuid::Base.UUID
     events::Vector{<:POM.EventModel}
+    allow_different_components::Bool
 
     function SimulationSequence(;
         models::SimulationModels,
         feedforwards = Dict{String, Vector{<:AbstractAffectFeedforward}}(),
         ini_cond_chronology = InterProblemChronology(),
         events = POM.EventModel[],
+        allow_different_components::Bool = false,
     )
         # Allow strings or symbols as keys; convert to symbols.
         intervals = determine_intervals(models)
@@ -311,6 +317,7 @@ mutable struct SimulationSequence
             0,
             sequence_uuid,
             events,
+            allow_different_components,
         )
     end
 end
@@ -326,4 +333,6 @@ function IOM.get_interval(sequence::SimulationSequence, model::DecisionModel)
 end
 
 get_events(sequence::SimulationSequence) = sequence.events
+get_allow_different_components(sequence::SimulationSequence) =
+    sequence.allow_different_components
 get_execution_order(sequence::SimulationSequence) = sequence.execution_order

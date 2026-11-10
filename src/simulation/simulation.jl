@@ -103,6 +103,8 @@ end
 ###################### Simulation Accessor Functions ####################
 get_initial_time(sim::Simulation) = sim.initial_time
 get_sequence(sim::Simulation) = sim.sequence
+get_allow_different_components(sim::Simulation) =
+    get_allow_different_components(get_sequence(sim))
 get_steps(sim::Simulation) = sim.steps
 IOM.get_current_time(sim::Simulation) = get_current_time(get_simulation_state(sim))
 get_simulation_model(s::Simulation, name) = get_simulation_model(get_models(s), name)
@@ -579,6 +581,9 @@ function _build!(
     sequence = get_sequence(sim)
     step_resolution = get_step_resolution(sequence)
     simulation_models = get_models(sim)
+    if get_allow_different_components(sequence)
+        @info "Models may hold different components; the simulation state holds every model's components."
+    end
 
     if !isnothing(partitions) && !isnothing(index)
         step_range = get_absolute_step_range(partitions, index)
