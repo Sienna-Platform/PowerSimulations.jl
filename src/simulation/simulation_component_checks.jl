@@ -98,6 +98,93 @@ function _state_writers(models, key::OptimizationContainerKey)
     return names
 end
 
+const FEEDFORWARD_SOURCES_KEY = "feedforward_sources"
+
+# A feedforward of a model restricted to the components that the decision models built
+# before it write for its source key. `left_out` holds the components the restriction takes
+# away from it; with no such writer the feedforward is kept whole (`restricted = false`).
+struct _FeedforwardRestriction
+    source_key::OptimizationContainerKey
+    affected_keys::Vector{OptimizationContainerKey}
+    left_out::Set{String}
+    restricted::Bool
+end
+
+_template_device_models(model) =
+    Iterators.flatten((
+        values(POM.get_device_models(get_template(model))),
+        values(POM.get_branch_models(get_template(model))),
+    ))
+
+_feedforward_device_names(ff, devices) =
+    Set{String}(PSY.get_name(d) for d in POM.feedforward_devices(ff, devices))
+
+# Applies each feedforward of `model` that can leave components out only to the components
+# that the decision models built before `model` write for its source key. A component
+# outside them is built as if the feedforward were not attached. A source key that no such
+# model writes leaves the feedforward whole for `_check_state_sources` to report.
+function _restrict_feedforwards!(sim::Simulation, model::DecisionModel)
+    decision_models = get_decision_models(get_models(sim))
+    built = decision_models[1:(findfirst(m -> m === model, decision_models) - 1)]
+    restrictions = _FeedforwardRestriction[]
+    for device_model in _template_device_models(model)
+        feedforwards = IOM.get_feedforwards(device_model)
+        isempty(feedforwards) && continue
+        devices = collect(IOM.get_available_components(device_model, get_system(model)))
+        for (ix, ff) in enumerate(feedforwards)
+            ff isa POM.ComponentSubsetFeedforward || continue
+            source_key = POM.get_optimization_container_key(ff)
+            writers = _state_writers(built, source_key)
+            restricted_ff = POM.restrict_feedforward(ff, writers)
+            left_out = setdiff(
+                _feedforward_device_names(ff, devices),
+                _feedforward_device_names(restricted_ff, devices),
+            )
+            restricted = !isempty(writers)
+            restricted && (feedforwards[ix] = restricted_ff)
+            push!(
+                restrictions,
+                _FeedforwardRestriction(source_key,
+                    collect(OptimizationContainerKey, POM.get_affected_values(ff)),
+                    left_out, restricted),
+            )
+        end
+    end
+    IOM.get_internal(model).ext[FEEDFORWARD_SOURCES_KEY] = restrictions
+    return
+end
+
+# A component left out of a feedforward because its only writers are built after the model
+# would never be set from the state. Each restriction that leaves components out is logged.
+function _check_feedforward_restrictions(sim::Simulation, model, reads_parameters::Bool)
+    restrictions = get(IOM.get_internal(model).ext, FEEDFORWARD_SOURCES_KEY, nothing)
+    isnothing(restrictions) && return
+    for restriction in restrictions::Vector{_FeedforwardRestriction}
+        (; source_key, affected_keys, left_out, restricted) = restriction
+        isempty(left_out) && continue
+        source = encode_key_as_string(source_key)
+        affected = join(encode_key_as_string.(affected_keys), ", ")
+        late = intersect(left_out,
+            _state_writers(get_decision_models(get_models(sim)), source_key))
+        if reads_parameters && !isempty(late)
+            throw(
+                IS.ConflictingInputsError(
+                    "$(get_name(model)) is built before the model that writes $source \
+                     for $(_shown_names(late)), so its feedforward on $affected leaves \
+                     them out. List the models that write a feedforward's source before \
+                     the models that read it.",
+                ),
+            )
+        end
+        restricted || continue
+        n_left_out = length(left_out)
+        @warn "$(get_name(model)) leaves $n_left_out $(n_left_out == 1 ? "component" : "components") \
+               out of the feedforward on $affected, since no model built before it writes \
+               $source for them: $(_shown_names(left_out))"
+    end
+    return
+end
+
 function _total_executions(sim::Simulation, n::Int)
     return count(==(n), get_execution_order(sim)) * get_steps(sim)
 end
@@ -135,10 +222,25 @@ function _check_parameter_sources(sim::Simulation, model)
         missing_names = setdiff(names, writers)
         isempty(missing_names) && continue
         _throw_missing_writer(model, source_key, encode_key_as_string(key),
-            missing_names,
-            "Give a model that writes the source every unit the feedforward sets.")
+            missing_names, _parameter_source_remedy(sim, model, source_key))
     end
     return
+end
+
+# Allowing different components restricts a `ComponentSubsetFeedforward` to the components
+# its source's writers hold, so the hint applies only to those feedforwards.
+function _parameter_source_remedy(sim::Simulation, model, source_key)
+    remedy = "Give a model that writes the source every unit the feedforward sets."
+    get_allow_different_components(sim) && return remedy
+    restrictable = any(
+        ff isa POM.ComponentSubsetFeedforward &&
+        POM.get_optimization_container_key(ff) == source_key for
+        device_model in _template_device_models(model) for
+        ff in IOM.get_feedforwards(device_model)
+    )
+    restrictable || return remedy
+    return "$remedy If the models are meant to hold different components, \
+            $_ALLOW_DIFFERENT_COMPONENTS_HINT."
 end
 
 # The initial power of a unit that is not must-run is taken with its status, read from the
@@ -166,7 +268,9 @@ function _check_state_sources(sim::Simulation)
     models = get_models(sim)
     for n in unique(get_execution_order(sim))
         model = get_simulation_model(models, n)
-        _reads_parameters_from_state(sim, n) && _check_parameter_sources(sim, model)
+        reads_parameters = _reads_parameters_from_state(sim, n)
+        _check_feedforward_restrictions(sim, model, reads_parameters)
+        reads_parameters && _check_parameter_sources(sim, model)
         _reads_initial_conditions_from_state(sim, n) &&
             _check_initial_power_sources(sim, model)
     end

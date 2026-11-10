@@ -344,6 +344,7 @@ function _build_single_model_for_simulation(
         # TODO-PJ: Temporary while are able to switch from PJ to POI
         container = get_optimization_container(model)
         container.built_for_recurrent_solves = true
+        get_allow_different_components(sim) && _restrict_feedforwards!(sim, model)
         POM.build_model!(model)
         sim.internal.date_ref[model_number] = initial_time
         set_status!(model, ModelBuildStatus.BUILT)
