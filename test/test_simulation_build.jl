@@ -506,3 +506,144 @@ end
     @test build!(sim; console_level = Logging.AboveMaxLevel) ==
           PSI.SimulationBuildStatus.BUILT
 end
+
+# A UC and a 5-minute ED over the 5-bus systems; `uc_without` names a unit the UC does not
+# model, and `ed_thermal` is the ED's thermal formulation.
+function _state_source_simulation(;
+    uc_without = nothing,
+    ed_thermal = ThermalDispatchNoMin,
+    feedforward = true,
+    ed_must_run = nothing,
+    allow_different_components = false,
+)
+    sys_uc = PSB.build_system(PSITestSystems, "c_sys5_uc")
+    sys_ed = PSB.build_system(PSITestSystems, "c_sys5_ed")
+    isnothing(uc_without) ||
+        set_available!(get_component(ThermalStandard, sys_uc, uc_without), false)
+    isnothing(ed_must_run) ||
+        set_commitment_mode!(get_component(ThermalStandard, sys_ed, ed_must_run),
+            CommitmentModes.MUST_RUN)
+    template_ed = get_template_nomin_ed_simulation()
+    set_device_model!(template_ed, ThermalStandard, ed_thermal)
+    models = create_simulation_build_test_problems(
+        get_template_basic_uc_simulation(), template_ed, sys_uc, sys_ed)
+    feedforwards = Dict(
+        "ED" => [
+            SemiContinuousFeedforward(;
+                component_type = ThermalStandard,
+                source = OnVariable,
+                affected_values = [ActivePowerVariable],
+            ),
+        ],
+    )
+    sequence = SimulationSequence(;
+        models,
+        feedforwards = feedforward ? feedforwards : Dict(),
+        ini_cond_chronology = InterProblemChronology(),
+        allow_different_components,
+    )
+    return Simulation(; name = "state_sources", steps = 1, models, sequence,
+        simulation_folder = mktempdir(; cleanup = true))
+end
+
+_build_error(sim) =
+    try
+        build!(sim; console_level = Logging.AboveMaxLevel)
+        nothing
+    catch e
+        e
+    end
+
+@testset "Models with different units fail at build by default" begin
+    @test build!(_state_source_simulation(); console_level = Logging.AboveMaxLevel) ==
+          PSI.SimulationBuildStatus.BUILT
+    err = _build_error(_state_source_simulation(; uc_without = "Alta"))
+    @test err isa IS.ConflictingInputsError
+    msg = sprint(showerror, err)
+    @test occursin("UC", msg) && occursin("ED", msg) && occursin("Alta", msg)
+    @test occursin("ActivePowerVariable__ThermalStandard", msg)
+    @test occursin("allow_different_components = true", msg)
+end
+
+@testset "An emulator with different units fails at build by default" begin
+    sys_dm = PSB.build_system(PSITestSystems, "c_sys5_ed")
+    sys_em = PSB.build_system(PSITestSystems, "c_sys5_ed"; add_single_time_series = true)
+    set_available!(get_component(ThermalStandard, sys_em, "Alta"), false)
+    models = SimulationModels(;
+        decision_models = [
+            DecisionModel(get_template_nomin_ed_simulation(), sys_dm; name = "DM",
+                optimizer = HiGHS_optimizer),
+        ],
+        emulation_model = EmulationModel(get_template_nomin_ed_simulation(), sys_em;
+            name = "EM", optimizer = HiGHS_optimizer),
+    )
+    sequence = SimulationSequence(; models, ini_cond_chronology = InterProblemChronology())
+    sim = Simulation(; name = "em_components", steps = 1, models, sequence,
+        simulation_folder = mktempdir(; cleanup = true))
+    err = _build_error(sim)
+    @test err isa IS.ConflictingInputsError
+    msg = sprint(showerror, err)
+    @test occursin("EM", msg) && occursin("DM", msg) && occursin("Alta", msg)
+    @test occursin("allow_different_components = true", msg)
+end
+
+@testset "Must-run units do not trip the default check" begin
+    # Both models commit units, so each leaves the must-run Alta out of its OnVariable.
+    sys_uc = PSB.build_system(PSITestSystems, "c_sys5_uc")
+    sys_ed = PSB.build_system(PSITestSystems, "c_sys5_ed")
+    for sys in (sys_uc, sys_ed)
+        set_commitment_mode!(get_component(ThermalStandard, sys, "Alta"),
+            CommitmentModes.MUST_RUN)
+    end
+    template_ed = get_template_nomin_ed_simulation()
+    set_device_model!(template_ed, ThermalStandard, ThermalBasicUnitCommitment)
+    models = create_simulation_build_test_problems(
+        get_template_basic_uc_simulation(), template_ed, sys_uc, sys_ed)
+    sequence = SimulationSequence(; models, ini_cond_chronology = InterProblemChronology())
+    sim = Simulation(; name = "must_run", steps = 1, models, sequence,
+        simulation_folder = mktempdir(; cleanup = true))
+    @test build!(sim; console_level = Logging.AboveMaxLevel) ==
+          PSI.SimulationBuildStatus.BUILT
+    on_key = PSI.VariableKey(OnVariable, ThermalStandard)
+    for model in PSI.get_decision_models(PSI.get_models(sim))
+        @test !("Alta" in first(PSI._model_columns(model, on_key)))
+    end
+end
+
+@testset "Models with different units build when allowed" begin
+    sim = _state_source_simulation(; uc_without = "Alta", allow_different_components = true)
+    @test build!(sim; console_level = Logging.AboveMaxLevel) ==
+          PSI.SimulationBuildStatus.BUILT
+end
+
+@testset "Models with different units compare initial conditions on the units they share" begin
+    sys_uc = PSB.build_system(PSITestSystems, "c_sys5_uc")
+    sys_ed = PSB.build_system(PSITestSystems, "c_sys5_ed")
+    # The ED does not model Brighton, and starts Park City 50 MW above where the UC does.
+    set_available!(get_component(ThermalStandard, sys_ed, "Brighton"), false)
+    park_city = get_component(ThermalStandard, sys_ed, "Park City")
+    set_active_power!(park_city, (get_active_power(park_city, u"SU") + 0.5) * u"SU")
+    # Ramp limits give the ED a DevicePower initial condition to compare with the UC's.
+    template_ed = get_template_nomin_ed_simulation()
+    set_device_model!(template_ed, ThermalStandard, ThermalStandardDispatch)
+    models = create_simulation_build_test_problems(
+        get_template_standard_uc_simulation(), template_ed, sys_uc, sys_ed)
+    sequence = SimulationSequence(;
+        models,
+        ini_cond_chronology = InterProblemChronology(),
+        allow_different_components = true,
+    )
+    sim = Simulation(; name = "ic_shared_units", steps = 1, models, sequence,
+        simulation_folder = mktempdir(; cleanup = true))
+    @test build!(sim; console_level = Logging.AboveMaxLevel) ==
+          PSI.SimulationBuildStatus.BUILT
+
+    reconcile() =
+        PSI._initial_conditions_reconciliation!(
+            PSI.get_decision_models(PSI.get_models(sim)),
+        )
+    ics =
+        @test_logs (:info, r"mismatch on component Park City") match_mode = :any reconcile()
+    power = ics[IOM.InitialConditionKey(POM.DevicePower, ThermalStandard)]
+    @test "Brighton" in keys(power[1]) && !("Brighton" in keys(power[2]))
+end

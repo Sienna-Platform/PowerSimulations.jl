@@ -1,5 +1,6 @@
 # Parameters written to the simulation state whose columns differ between models. Each model
 # fills them for the loads named in its device model, with a value that identifies the model.
+# Non-empty "segments" give the parameters a second axis between the loads and time.
 struct UnionColumnsParameter <: IOM.ParameterType end
 IOM.should_write_resulting_value(::Type{UnionColumnsParameter}) = true
 
@@ -9,7 +10,12 @@ struct UnionColumnsProbe <: POM.AbstractLoadFormulation end
 POM.get_default_time_series_names(::Type{PowerLoad}, ::Type{UnionColumnsProbe}) =
     Dict{Type{<:IOM.TimeSeriesParameter}, String}()
 POM.get_default_attributes(::Type{PowerLoad}, ::Type{UnionColumnsProbe}) =
-    Dict{String, Any}("parameters" => DataType[], "columns" => String[], "value" => 0.0)
+    Dict{String, Any}(
+        "parameters" => DataType[],
+        "columns" => String[],
+        "segments" => String[],
+        "value" => 0.0,
+    )
 
 function _fill_probe_parameters!(
     container::IOM.OptimizationContainer,
@@ -30,6 +36,8 @@ function POM.construct_device!(
     model::IOM.DeviceModel{PowerLoad, UnionColumnsProbe},
     ::IOM.NetworkModel,
 )
+    segments = IOM.get_attribute(model, "segments")
+    inner_axes = isempty(segments) ? () : (segments,)
     for T in IOM.get_attribute(model, "parameters")
         IOM.add_param_container_shared_axes!(
             container,
@@ -37,6 +45,7 @@ function POM.construct_device!(
             IOM.NoAttributes(),
             Float64,
             IOM.get_attribute(model, "columns"),
+            inner_axes...,
             IOM.get_time_steps(container),
         )
     end
@@ -63,7 +72,7 @@ function IOM.update_container_parameter_values!(
     return
 end
 
-function _probe_template(template, parameters, columns, value)
+function _probe_template(template, parameters, columns, value, segments = String[])
     set_device_model!(
         template,
         DeviceModel(
@@ -72,6 +81,7 @@ function _probe_template(template, parameters, columns, value)
             attributes = Dict{String, Any}(
                 "parameters" => DataType[parameters...],
                 "columns" => columns,
+                "segments" => segments,
                 "value" => value,
             ),
         ),
@@ -115,6 +125,7 @@ function _run_union_columns_simulation(models; steps = 1)
     sequence = SimulationSequence(;
         models = models,
         ini_cond_chronology = InterProblemChronology(),
+        allow_different_components = true,
     )
     sim = Simulation(;
         name = "union_columns",
@@ -295,6 +306,7 @@ end
         sequence = SimulationSequence(;
             models = models,
             ini_cond_chronology = InterProblemChronology(),
+            allow_different_components = true,
         ),
         simulation_folder = mktempdir(; cleanup = true),
     )
@@ -334,4 +346,28 @@ end
         @test occursin("gen", message)
         @test occursin("UC", message)
     end
+end
+
+@testset "A 3-D key compares only its component axis" begin
+    segments = ["1", "2"]
+    function build_3d(ed_columns)
+        models = _union_columns_models(;
+            uc = ([UnionColumnsParameter], ["Bus2", "Bus3"], 1.0, segments),
+            ed = ([UnionColumnsParameter], ed_columns, 2.0, segments),
+        )
+        sequence =
+            SimulationSequence(; models, ini_cond_chronology = InterProblemChronology())
+        sim = Simulation(; name = "component_axis_3d", steps = 1, models, sequence,
+            simulation_folder = mktempdir(; cleanup = true))
+        return try
+            build!(sim; console_level = Logging.AboveMaxLevel)
+        catch e
+            e
+        end
+    end
+    @test build_3d(["Bus3", "Bus2"]) == PSI.SimulationBuildStatus.BUILT
+    err = build_3d(["Bus2"])
+    @test err isa IS.ConflictingInputsError
+    msg = sprint(showerror, err)
+    @test occursin(IOM.encode_key_as_string(UNION_KEY), msg) && occursin("Bus3", msg)
 end

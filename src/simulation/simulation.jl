@@ -269,7 +269,8 @@ function _ic_values_reconciled(all_values::Vector)
 end
 
 # Compare initial conditions for all `InitialConditionType`s with the
-# `requires_reconciliation` trait across `models`, log @info messages for mismatches
+# `requires_reconciliation` trait across `models`, log @info messages for mismatches.
+# Values are compared on the components every model with the key holds.
 function _initial_conditions_reconciliation!(
     models::Vector{<:IOM.AbstractOptimizationModel})
     model_names = get_name.(models)
@@ -298,12 +299,8 @@ function _initial_conditions_reconciliation!(
             ic_vals_per_model[i] = ic_vals_per_component
         end
 
-        # Assert that all models have the same components for current ic_key
-        @assert allequal(Set.(keys.(values(ic_vals_per_model)))) "For IC key $ic_key, not all models have the same components"
-
-        # For each component in current ic_key, compare values across models
-        component_names = keys(first(values(ic_vals_per_model)))
-        for component_name in component_names
+        component_names = intersect(Set.(keys.(values(ic_vals_per_model)))...)
+        for component_name in sort!(collect(component_names))
             all_values = [result[component_name] for result in values(ic_vals_per_model)]
             if !_ic_values_reconciled(all_values)
                 has_mismatches = true
@@ -369,7 +366,6 @@ function _build_decision_models!(sim::Simulation)
             end
         end
     end
-    _initial_conditions_reconciliation!(get_decision_models(get_models(sim)))
     return
 end
 
@@ -631,6 +627,8 @@ function _build!(
     _fill_event_models!(sim)
     _build_decision_models!(sim)
     _build_emulation_model!(sim)
+    _check_component_sets(sim)
+    _initial_conditions_reconciliation!(get_decision_models(simulation_models))
 
     TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "Initialize Simulation State" begin
         _initialize_simulation_state!(sim)
