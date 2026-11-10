@@ -219,10 +219,9 @@ function _update_pwl_offsets!(
         IOM.update_pwl_offset!(
             container,
             rows[component_name, t],
-            T,
+            component,
             U,
             D,
-            component_name,
             t,
             first(PSY.get_x_coords(converted)),
         )
