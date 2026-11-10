@@ -102,8 +102,8 @@ const FEEDFORWARD_SOURCES_KEY = "feedforward_sources"
 
 # A feedforward of a model restricted to the components that the decision models built
 # before it write for its source key. `original` is the feedforward as attached, at
-# position `index` of `device_model`. `left_out` holds the components the restriction takes
-# away from it; with no such writer the feedforward is kept whole (`restricted = false`).
+# position `index` of `device_model`. `left_out` holds the components outside those writers.
+# With no such writer, or none left out, the feedforward is kept whole (`restricted = false`).
 struct _FeedforwardRestriction
     device_model::IOM.DeviceModel
     index::Int
@@ -123,9 +123,22 @@ _template_device_models(model) =
 _feedforward_device_names(ff, devices) =
     Set{String}(PSY.get_name(d) for d in POM.feedforward_devices(ff, devices))
 
+# The decision models built before `model` and those built after it. The emulator is built
+# after every decision model.
+function _decision_models_around(sim::Simulation, model::DecisionModel)
+    decision_models = get_decision_models(get_models(sim))
+    ix = findfirst(m -> m === model, decision_models)
+    return decision_models[1:(ix - 1)], decision_models[(ix + 1):end]
+end
+
+function _decision_models_around(sim::Simulation, ::EmulationModel)
+    decision_models = get_decision_models(get_models(sim))
+    return decision_models, empty(decision_models)
+end
+
 # Puts back the feedforwards of `model` as they were attached, so a later build or sequence
 # starts from them.
-function _restore_feedforwards!(model::DecisionModel)
+function _restore_feedforwards!(model::Union{DecisionModel, EmulationModel})
     restrictions = pop!(IOM.get_internal(model).ext, FEEDFORWARD_SOURCES_KEY, nothing)
     isnothing(restrictions) && return
     for restriction in restrictions::Vector{_FeedforwardRestriction}
@@ -139,10 +152,12 @@ end
 # that the decision models built before `model` write for its source key. A component
 # outside them is built as if the feedforward were not attached. A source key that no such
 # model writes leaves the feedforward whole for `_check_state_sources` to report.
-function _restrict_feedforwards!(sim::Simulation, model::DecisionModel)
+function _restrict_feedforwards!(
+    sim::Simulation,
+    model::Union{DecisionModel, EmulationModel},
+)
     _restore_feedforwards!(model)
-    decision_models = get_decision_models(get_models(sim))
-    built = decision_models[1:(findfirst(m -> m === model, decision_models) - 1)]
+    built, _ = _decision_models_around(sim, model)
     restrictions = _FeedforwardRestriction[]
     for device_model in _template_device_models(model)
         feedforwards = IOM.get_feedforwards(device_model)
@@ -157,7 +172,7 @@ function _restrict_feedforwards!(sim::Simulation, model::DecisionModel)
                 _feedforward_device_names(ff, devices),
                 _feedforward_device_names(restricted_ff, devices),
             )
-            restricted = !isempty(writers)
+            restricted = !isempty(writers) && !isempty(left_out)
             restricted && (feedforwards[ix] = restricted_ff)
             push!(
                 restrictions,
@@ -171,18 +186,30 @@ function _restrict_feedforwards!(sim::Simulation, model::DecisionModel)
     return
 end
 
+function _prepare_feedforwards!(
+    sim::Simulation,
+    model::Union{DecisionModel, EmulationModel},
+)
+    if get_allow_different_components(sim)
+        _restrict_feedforwards!(sim, model)
+    else
+        _restore_feedforwards!(model)
+    end
+    return
+end
+
 # A component left out of a feedforward because its only writers are built after the model
 # would never be set from the state. Each restriction that leaves components out is logged.
 function _check_feedforward_restrictions(sim::Simulation, model, reads_parameters::Bool)
     restrictions = get(IOM.get_internal(model).ext, FEEDFORWARD_SOURCES_KEY, nothing)
     isnothing(restrictions) && return
+    _, later = _decision_models_around(sim, model)
     for restriction in restrictions::Vector{_FeedforwardRestriction}
         (; source_key, affected_keys, left_out, restricted) = restriction
         isempty(left_out) && continue
         source = encode_key_as_string(source_key)
         affected = join(encode_key_as_string.(affected_keys), ", ")
-        late = intersect(left_out,
-            _state_writers(get_decision_models(get_models(sim)), source_key))
+        late = intersect(left_out, _state_writers(later, source_key))
         if reads_parameters && !isempty(late)
             throw(
                 IS.ConflictingInputsError(
@@ -239,16 +266,17 @@ function _check_parameter_sources(sim::Simulation, model)
         missing_names = setdiff(names, writers)
         isempty(missing_names) && continue
         _throw_missing_writer(model, source_key, encode_key_as_string(key),
-            missing_names, _parameter_source_remedy(sim, model, source_key))
+            missing_names, _parameter_source_remedy(sim, model, source_key, writers))
     end
     return
 end
 
 # Allowing different components restricts a `ComponentSubsetFeedforward` to the components
-# its source's writers hold, so the hint applies only to those feedforwards.
-function _parameter_source_remedy(sim::Simulation, model, source_key)
+# its source's decision-model `writers` hold, so the hint applies only to those feedforwards
+# and only when such a writer exists.
+function _parameter_source_remedy(sim::Simulation, model, source_key, writers)
     remedy = "Give a model that writes the source every unit the feedforward sets."
-    get_allow_different_components(sim) && return remedy
+    (get_allow_different_components(sim) || isempty(writers)) && return remedy
     restrictable = any(
         ff isa POM.ComponentSubsetFeedforward &&
         POM.get_optimization_container_key(ff) == source_key for

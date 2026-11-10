@@ -344,11 +344,7 @@ function _build_single_model_for_simulation(
         # TODO-PJ: Temporary while are able to switch from PJ to POI
         container = get_optimization_container(model)
         container.built_for_recurrent_solves = true
-        if get_allow_different_components(sim)
-            _restrict_feedforwards!(sim, model)
-        else
-            _restore_feedforwards!(model)
-        end
+        _prepare_feedforwards!(sim, model)
         POM.build_model!(model)
         sim.internal.date_ref[model_number] = initial_time
         set_status!(model, ModelBuildStatus.BUILT)
@@ -383,6 +379,7 @@ function _build_emulation_model!(sim::Simulation)
 
     try
         initial_time = _prepare_model_for_simulation!(model, sim)
+        _prepare_feedforwards!(sim, model)
         TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "Problem Emulation $(get_name(model))" begin
             POM.build_model!(model)
         end

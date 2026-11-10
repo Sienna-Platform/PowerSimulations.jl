@@ -182,7 +182,7 @@ end
 
 function _attach_feedforwards(models::SimulationModels, feedforwards)
     names = Set(string.(get_model_names(models)))
-    foreach(_restore_feedforwards!, get_decision_models(models))
+    foreach(_restore_feedforwards!, _state_models(models))
     ff_dict = Dict{Symbol, Vector}()
     for (model_name, model_feedforwards) in feedforwards
         if model_name ∈ names
