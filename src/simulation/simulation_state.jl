@@ -311,7 +311,9 @@ function update_decision_state!(
     store_data::DenseAxisArray{Float64, 2},
     simulation_time::Dates.DateTime,
     model_params::ModelStoreParams,
+    model_name::Symbol,
 ) where {T <: PSY.Component}
+    _check_state_input(store_data, key, model_name)
     state_data = get_decision_state_data(state, key)
     column_names = axes(store_data)[1]
     model_resolution = get_resolution(model_params)
@@ -355,7 +357,9 @@ function update_decision_state!(
     store_data::DenseAxisArray{Float64, 2},
     simulation_time::Dates.DateTime,
     model_params::ModelStoreParams,
+    model_name::Symbol,
 ) where {T <: PSY.Component}
+    _check_state_input(store_data, key, model_name)
     state_data = get_decision_state_data(state, key)
     countdown_data =
         get_decision_state_data(state, AvailableStatusChangeCountdownParameter(), T)
@@ -435,7 +439,9 @@ function update_decision_state!(
     store_data::DenseAxisArray{Float64, 2},
     simulation_time::Dates.DateTime,
     model_params::ModelStoreParams,
+    model_name::Symbol,
 )
+    _check_state_input(store_data, key, model_name)
     state_data = get_decision_state_data(state, key)
     column_names = axes(store_data)[1]
     model_resolution = get_resolution(model_params)
@@ -624,7 +630,9 @@ function update_decision_state!(
     store_data::DenseAxisArray{Float64, 3},
     simulation_time::Dates.DateTime,
     model_params::ModelStoreParams,
+    model_name::Symbol,
 )
+    _check_state_input(store_data, key, model_name)
     state_data = get_decision_state_data(state, key)
     outages = axes(store_data)[1]
 
@@ -672,7 +680,9 @@ function update_decision_state!(
     store_data::DenseAxisArray{Float64, 2},
     simulation_time::Dates.DateTime,
     model_params::ModelStoreParams,
+    model_name::Symbol,
 ) where {T <: PSY.Component, S <: Union{TimeDurationOff, TimeDurationOn}}
+    _check_state_input(store_data, key, model_name)
     state_data = get_decision_state_data(state, key)
     model_resolution = get_resolution(model_params)
     state_resolution = get_data_resolution(state_data)
@@ -878,6 +888,48 @@ end
     )
 end
 
+"""
+Error when a model's output for the simulation state holds a non-finite value. The state
+treats `NaN` as "no model has written this", so a model must never produce one. With
+`time_axis`, the last axis of `values` is time.
+"""
+function _check_state_input(
+    values::DenseAxisArray{Float64},
+    key::OptimizationContainerKey,
+    model_name::Symbol,
+    time_axis::Bool = true,
+)
+    data = values.data
+    @inbounds for ix in eachindex(data)
+        isfinite(data[ix]) && continue
+        _throw_state_input_error(values, ix, key, model_name, time_axis)
+    end
+    return
+end
+
+@noinline function _throw_state_input_error(
+    values::DenseAxisArray{Float64},
+    linear_index::Int,
+    key::OptimizationContainerKey,
+    model_name::Symbol,
+    time_axis::Bool,
+)
+    position = Tuple(CartesianIndices(values.data)[linear_index])
+    labels = [axes(values)[d][position[d]] for d in eachindex(position)]
+    where_msg = if time_axis
+        "at time index $(labels[end])"
+    else
+        "at the current time"
+    end
+    throw(
+        IS.InvalidValue(
+            "Model $(model_name) produced a non-finite value ($(values.data[linear_index])) \
+            for component $(labels[1]) in $(encode_key_as_string(key)) $(where_msg) \
+            for the simulation state. The simulation state only holds finite model output.",
+        ),
+    )
+end
+
 function _get_state_value(
     values::DenseAxisArray{Float64, 1},
     key::OptimizationContainerKey,
@@ -924,9 +976,11 @@ function update_system_state!(
     em_data = get_em_data(store)
     ix = get_last_recorded_row(em_data, key)
     res = read_result(DenseAxisArray, store, model_name, key, ix)
+    row_values = _last_recorded_state_value(store, res, ix)
+    _check_state_input(row_values, key, model_name, false)
     dataset = get_dataset(state, key)
     set_update_timestamp!(dataset, simulation_time)
-    _set_state_row!(dataset, _last_recorded_state_value(store, res, ix), 1)
+    _set_state_row!(dataset, row_values, 1)
     set_last_recorded_row!(dataset, 1)
     return
 end
