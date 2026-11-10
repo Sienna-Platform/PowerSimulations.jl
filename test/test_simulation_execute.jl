@@ -754,10 +754,13 @@ end
     end
 end
 
-@testset "Results read back each model's own units when they differ" begin
+# Executes a UC and an ED in which `model` does not model `unit`, and reads back each
+# model's realized thermal power.
+function _realized_power_with_unit_left_out(model, unit)
     sys_uc = PSB.build_system(PSITestSystems, "c_sys5_uc")
     sys_ed = PSB.build_system(PSITestSystems, "c_sys5_ed")
-    set_available!(get_component(ThermalStandard, sys_uc, "Alta"), false)
+    sys = model == "UC" ? sys_uc : sys_ed
+    set_available!(get_component(ThermalStandard, sys, unit), false)
     models = SimulationModels(;
         decision_models = [
             DecisionModel(get_template_basic_uc_simulation(), sys_uc;
@@ -777,10 +780,20 @@ end
     @test execute!(sim; in_memory = false) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
 
     results = SimulationResults(sim)
-    power(name) = read_realized_variable(
-        get_decision_problem_results(results, name),
-        "ActivePowerVariable__ThermalStandard",
+    return Dict(
+        name => read_realized_variable(
+            get_decision_problem_results(results, name),
+            "ActivePowerVariable__ThermalStandard",
+        ) for name in ("UC", "ED")
     )
-    @test !("Alta" in power("UC").name)
-    @test "Alta" in power("ED").name
+end
+
+@testset "Results read back each model's own units when they differ" begin
+    power = _realized_power_with_unit_left_out("UC", "Alta")
+    @test !("Alta" in power["UC"].name)
+    @test "Alta" in power["ED"].name
+
+    power = _realized_power_with_unit_left_out("ED", "Park City")
+    @test "Park City" in power["UC"].name
+    @test !("Park City" in power["ED"].name)
 end
