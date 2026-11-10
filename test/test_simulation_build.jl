@@ -682,6 +682,44 @@ end
     @test occursin("OnStatusParameter__ThermalStandard", msg)
 end
 
+# The UC dispatches without commitment, so no model writes the status the ED's
+# feedforward reads.
+function _no_source_simulation(allow_different_components)
+    template_uc = get_template_basic_uc_simulation()
+    set_device_model!(template_uc, ThermalStandard, ThermalDispatchNoMin)
+    models = create_simulation_build_test_problems(template_uc,
+        get_template_nomin_ed_simulation(),
+        PSB.build_system(PSITestSystems, "c_sys5_uc"),
+        PSB.build_system(PSITestSystems, "c_sys5_ed"))
+    sequence = SimulationSequence(;
+        models,
+        feedforwards = Dict(
+            "ED" => [
+                SemiContinuousFeedforward(;
+                    component_type = ThermalStandard,
+                    source = OnVariable,
+                    affected_values = [ActivePowerVariable],
+                ),
+            ],
+        ),
+        ini_cond_chronology = InterProblemChronology(),
+        allow_different_components,
+    )
+    return Simulation(; name = "no_source", steps = 1, models, sequence,
+        simulation_folder = mktempdir(; cleanup = true))
+end
+
+@testset "A feedforward whose source no model writes fails at build" begin
+    for allow_different_components in (false, true)
+        err = _build_error(_no_source_simulation(allow_different_components))
+        @test err isa IS.ConflictingInputsError
+        msg = sprint(showerror, err)
+        @test occursin("ED", msg) && occursin("OnStatusParameter__ThermalStandard", msg)
+        @test occursin("no model writes", msg)
+        @test !occursin("allow_different_components", msg)
+    end
+end
+
 @testset "A must-run unit needs no feedforward source" begin
     sim = _state_source_simulation(;
         uc_without = "Alta",

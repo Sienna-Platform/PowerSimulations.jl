@@ -126,10 +126,6 @@ end
 # Each feedforward parameter is read from the decision state of its source key for every
 # component of the parameter.
 function _check_parameter_sources(sim::Simulation, model)
-    remedy = "Give a model that writes the source every unit the feedforward sets."
-    get_allow_different_components(sim) ||
-        (remedy *= " If the models are meant to hold different components, \
-                     $_ALLOW_DIFFERENT_COMPONENTS_HINT.")
     for (key, parameter) in get_parameters(get_optimization_container(model))
         attributes = get_attributes(parameter)
         attributes isa VariableValueAttributes || continue
@@ -139,7 +135,8 @@ function _check_parameter_sources(sim::Simulation, model)
         missing_names = setdiff(names, writers)
         isempty(missing_names) && continue
         _throw_missing_writer(model, source_key, encode_key_as_string(key),
-            missing_names, remedy)
+            missing_names,
+            "Give a model that writes the source every unit the feedforward sets.")
     end
     return
 end
