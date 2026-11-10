@@ -753,3 +753,34 @@ end
         @test step_rows == collect(1.0:Float64(window))
     end
 end
+
+@testset "Results read back each model's own units when they differ" begin
+    sys_uc = PSB.build_system(PSITestSystems, "c_sys5_uc")
+    sys_ed = PSB.build_system(PSITestSystems, "c_sys5_ed")
+    set_available!(get_component(ThermalStandard, sys_uc, "Alta"), false)
+    models = SimulationModels(;
+        decision_models = [
+            DecisionModel(get_template_basic_uc_simulation(), sys_uc;
+                name = "UC", optimizer = HiGHS_optimizer),
+            DecisionModel(get_template_nomin_ed_simulation(), sys_ed;
+                name = "ED", optimizer = HiGHS_optimizer),
+        ],
+    )
+    sequence = SimulationSequence(;
+        models,
+        ini_cond_chronology = InterProblemChronology(),
+        allow_different_components = true,
+    )
+    sim = Simulation(; name = "different_units", steps = 2, models, sequence,
+        simulation_folder = mktempdir(; cleanup = true))
+    @test build!(sim; console_level = Logging.Error) == PSI.SimulationBuildStatus.BUILT
+    @test execute!(sim; in_memory = false) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    results = SimulationResults(sim)
+    power(name) = read_realized_variable(
+        get_decision_problem_results(results, name),
+        "ActivePowerVariable__ThermalStandard",
+    )
+    @test !("Alta" in power("UC").name)
+    @test "Alta" in power("ED").name
+end

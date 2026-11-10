@@ -633,6 +633,7 @@ function _build!(
     TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "Initialize Simulation State" begin
         _initialize_simulation_state!(sim)
     end
+    _check_state_sources(sim)
 
     TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "Initialize Problem Storage" begin
         open_store(HdfSimulationStore, get_store_dir(sim), "w") do store

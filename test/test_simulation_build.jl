@@ -611,7 +611,11 @@ end
 end
 
 @testset "Models with different units build when allowed" begin
-    sim = _state_source_simulation(; uc_without = "Alta", allow_different_components = true)
+    sim = _state_source_simulation(;
+        uc_without = "Alta",
+        feedforward = false,
+        allow_different_components = true,
+    )
     @test build!(sim; console_level = Logging.AboveMaxLevel) ==
           PSI.SimulationBuildStatus.BUILT
 end
@@ -646,4 +650,62 @@ end
         @test_logs (:info, r"mismatch on component Park City") match_mode = :any reconcile()
     power = ics[IOM.InitialConditionKey(POM.DevicePower, ThermalStandard)]
     @test "Brighton" in keys(power[1]) && !("Brighton" in keys(power[2]))
+end
+
+@testset "An initial power without a status source fails at build unless the unit is must-run" begin
+    # The ED gives every unit an initial power, and only the UC commits units.
+    dispatch = (;
+        ed_thermal = ThermalStandardDispatch,
+        feedforward = false,
+        allow_different_components = true,
+    )
+    @test build!(_state_source_simulation(; dispatch...);
+        console_level = Logging.AboveMaxLevel) == PSI.SimulationBuildStatus.BUILT
+    err = _build_error(_state_source_simulation(; uc_without = "Alta", dispatch...))
+    @test err isa IS.ConflictingInputsError
+    msg = sprint(showerror, err)
+    @test occursin("ED", msg) && occursin("Alta", msg) && occursin("OnVariable", msg)
+    @test occursin("must-run", msg)
+    # A must-run unit's status is taken as on, so it needs no model to commit it.
+    sim = _state_source_simulation(; uc_without = "Alta", ed_must_run = "Alta", dispatch...)
+    @test build!(sim; console_level = Logging.AboveMaxLevel) ==
+          PSI.SimulationBuildStatus.BUILT
+end
+
+@testset "A feedforward with no source for a unit fails at build" begin
+    err = _build_error(
+        _state_source_simulation(; uc_without = "Alta", allow_different_components = true),
+    )
+    @test err isa IS.ConflictingInputsError
+    msg = sprint(showerror, err)
+    @test occursin("ED", msg) && occursin("Alta", msg)
+    @test occursin("OnStatusParameter__ThermalStandard", msg)
+end
+
+@testset "A must-run unit needs no feedforward source" begin
+    sim = _state_source_simulation(;
+        uc_without = "Alta",
+        ed_must_run = "Alta",
+        allow_different_components = true,
+    )
+    @test build!(sim; console_level = Logging.AboveMaxLevel) ==
+          PSI.SimulationBuildStatus.BUILT
+end
+
+@testset "A model that never reads the state skips the writer checks" begin
+    # No model commits units, so the ED's initial power has no status source, but a single
+    # execution keeps the ED's own initial conditions.
+    template_ed = get_template_nomin_ed_simulation()
+    set_device_model!(template_ed, ThermalStandard, ThermalStandardDispatch)
+    models = SimulationModels(;
+        decision_models = [
+            DecisionModel(template_ed, PSB.build_system(PSITestSystems, "c_sys5_ed");
+                name = "ED", optimizer = HiGHS_optimizer),
+        ],
+    )
+    sequence = SimulationSequence(; models, ini_cond_chronology = InterProblemChronology())
+    sim = Simulation(; name = "no_state_reads", steps = 1, models, sequence,
+        simulation_folder = mktempdir(; cleanup = true))
+    @test build!(sim; console_level = Logging.AboveMaxLevel) ==
+          PSI.SimulationBuildStatus.BUILT
 end

@@ -86,3 +86,92 @@ function _check_component_sets(sim::Simulation)
     _check_each_key(_initial_condition_components(models), "initial condition ")
     return
 end
+
+# The components that any decision model or the emulator writes to the simulation state for
+# `key`.
+function _state_writers(sim::Simulation, key::OptimizationContainerKey)
+    names = Set{String}()
+    for model in _state_models(get_models(sim))
+        _writes_key(model, key) || continue
+        union!(names, string.(first(_model_columns(model, key))))
+    end
+    return names
+end
+
+function _total_executions(sim::Simulation, n::Int)
+    return count(==(n), get_execution_order(sim)) * get_steps(sim)
+end
+
+# Every execution but the simulation's first updates the parameters of the model it runs.
+function _reads_parameters_from_state(sim::Simulation, n::Int)
+    first_run = first(get_execution_order(sim)) == n ? 1 : 0
+    return _total_executions(sim, n) > first_run
+end
+
+# A model keeps its own initial conditions at its first execution.
+_reads_initial_conditions_from_state(sim::Simulation, n::Int) =
+    get_ini_cond_chronology(sim) isa InterProblemChronology &&
+    _total_executions(sim, n) > 1
+
+function _throw_missing_writer(model, source_key, what, missing_names, remedy)
+    throw(
+        IS.ConflictingInputsError(
+            "$(get_name(model)) reads $(encode_key_as_string(source_key)) from the \
+             simulation state for $what, but no model writes it for \
+             $(_shown_names(missing_names)). $remedy",
+        ),
+    )
+end
+
+# Each feedforward parameter is read from the state of its source key for every component
+# of the parameter.
+function _check_parameter_sources(sim::Simulation, model)
+    remedy = "Give a model that writes the source every unit the feedforward sets."
+    get_allow_different_components(sim) ||
+        (remedy *= " If the models are meant to hold different components, \
+                     $_ALLOW_DIFFERENT_COMPONENTS_HINT.")
+    for (key, parameter) in get_parameters(get_optimization_container(model))
+        attributes = get_attributes(parameter)
+        attributes isa VariableValueAttributes || continue
+        source_key = get_attribute_key(attributes)
+        writers = _state_writers(sim, source_key)
+        names = string.(axes(get_parameter_array(parameter))[1])
+        missing_names = setdiff(names, writers)
+        isempty(missing_names) && continue
+        _throw_missing_writer(model, source_key, encode_key_as_string(key),
+            missing_names, remedy)
+    end
+    return
+end
+
+# The initial power of a unit that is not must-run is taken with its status, read from the
+# `OnVariable` of the state.
+function _check_initial_power_sources(sim::Simulation, model)
+    for (key, ics) in get_initial_conditions(model)
+        get_entry_type(key) === DevicePower || continue
+        status_key = VariableKey(OnVariable, get_component_type(key))
+        writers = _state_writers(sim, status_key)
+        missing_names = Set{String}(
+            get_component_name(ic) for ic in ics if
+            !IOM.get_must_run(IOM.get_component(ic)) && !(get_component_name(ic) in writers)
+        )
+        isempty(missing_names) && continue
+        _throw_missing_writer(model, status_key,
+            "the status behind the initial power of a unit", missing_names,
+            "Commit those units in some model, or make them must-run.")
+    end
+    return
+end
+
+# Every value a model reads from the simulation state by component name must have a model
+# that writes it.
+function _check_state_sources(sim::Simulation)
+    models = get_models(sim)
+    for n in unique(get_execution_order(sim))
+        model = get_simulation_model(models, n)
+        _reads_parameters_from_state(sim, n) && _check_parameter_sources(sim, model)
+        _reads_initial_conditions_from_state(sim, n) &&
+            _check_initial_power_sources(sim, model)
+    end
+    return
+end
