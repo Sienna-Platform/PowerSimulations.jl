@@ -257,8 +257,7 @@ end
 
 """
 Create the decision and system states of a simulation. There is one dataset per key for all
-models; its component axis is the union of the components the models have for the key (see
-`update_missing_state_columns!`).
+models; its component axis is the union of the components the models have for the key.
 """
 function initialize_simulation_state!(
     sim_state::SimulationState,
@@ -430,8 +429,8 @@ end
 """
 Write a model's results for `key` into the decision state. The state holds the union of the
 key's components across models, and each model writes only the components it has, so the
-last model to write a component wins. The components a model lacks are handled by
-`update_missing_state_columns!`.
+last model to write a component wins. A component no model has written keeps its initial
+value.
 """
 function update_decision_state!(
     state::SimulationState,
@@ -734,98 +733,6 @@ function update_decision_state!(
     end
 
     return
-end
-
-"""
-    update_missing_state_columns!(
-        state_data::InMemoryDataset,
-        key::OptimizationContainerKey,
-        model::IOM.AbstractOptimizationModel,
-        columns::AbstractVector{String},
-        state_rows::UnitRange{Int},
-        row_timestamps::AbstractVector{Dates.DateTime},
-    )
-
-Extension point for the state components a model does not produce.
-
-A simulation keeps one state dataset per key for all models, over the union of the
-components the models have for that key. When `model` updates the state it writes the
-components it has, and the last model to write a component wins. This function is then
-called with the components of `key` that `model` lacks (`columns`, on the dataset's first
-axis), and also with every component of each state key that `model` does not have at all.
-
-`state_rows` are the rows of `state_data` that cover `model`'s window at the dataset's
-resolution, and `row_timestamps` their times. For a key the model does not write, the dataset
-is first advanced to the model's window, as it is for a model that writes the key, so the
-rows always start at the model's current time; they stop at the end of the dataset. An implementation may write `state_data.values[column, ..., row]` for those
-columns and rows, computing the values from `model`'s own data (for example its system). It
-must not change other rows, the dataset's timestamps or its update bookkeeping.
-
-The default writes nothing: a component keeps the value its last writer left, and a component
-no model has written keeps the initial `NaN`.
-
-It is called for the decision state after a decision model updates it, with the rows of the
-model's horizon, and for the system state after the emulator updates it, with `state_rows`
-`1:1`. In the system state, the decision-state values copied after the emulator update
-overwrite the components the emulator does not have.
-"""
-function update_missing_state_columns!(
-    ::InMemoryDataset,
-    ::OptimizationContainerKey,
-    ::IOM.AbstractOptimizationModel,
-    ::AbstractVector{String},
-    ::UnitRange{Int},
-    ::AbstractVector{Dates.DateTime},
-)
-    return
-end
-
-# Advance a dataset to the window starting at `simulation_time`, as a model writing the key
-# does when the window passes the end of the dataset's step. A model writing the key then
-# overwrites the rows it covers; here no row is written, so the rows keep their timestamps:
-# they move up by the number of rows the window advanced, and the rows that enter the window
-# hold the values of the last row.
-function _advance_state_window!(
-    state_data::InMemoryDataset,
-    simulation_time::Dates.DateTime,
-)
-    simulation_time > get_end_of_step_timestamp(state_data) || return
-    timestamps = state_data.timestamps
-    resolution = get_data_resolution(state_data)
-    window_start = align_to_dataset_grid(state_data, simulation_time)
-    shift = (window_start - first(timestamps)) ÷ resolution
-    num_rows = length(timestamps)
-    values = state_data.values.data
-    time_axis = ndims(values)
-    for row in 1:num_rows
-        source = min(row + shift, num_rows)
-        selectdim(values, time_axis, row) .= selectdim(values, time_axis, source)
-    end
-    timestamps .= range(window_start; step = resolution, length = num_rows)
-    set_last_recorded_row!(state_data, max(get_last_recorded_row(state_data) - shift, 0))
-    return
-end
-
-# The rows of a dataset that cover `[simulation_time, simulation_time + horizon)`, starting at
-# the row that contains `simulation_time`.
-function _window_rows(
-    state_data::InMemoryDataset,
-    simulation_time::Dates.DateTime,
-    horizon::Dates.Millisecond,
-)
-    timestamps = state_data.timestamps
-    first_row = max(searchsortedlast(timestamps, simulation_time), 1)
-    last_row = searchsortedfirst(timestamps, simulation_time + horizon) - 1
-    return first_row:last_row
-end
-
-# The state components missing from `model_columns`, or `nothing` when there are none. The
-# model's components are a subset of the state's, so equal counts mean none are missing.
-function _missing_state_columns(state_data::InMemoryDataset, model_columns)
-    state_columns = axes(state_data.values)[1]
-    length(model_columns) == length(state_columns) && return nothing
-    present = Set(model_columns)
-    return String[name for name in state_columns if !(name in present)]
 end
 
 function get_decision_state_data(state::SimulationState, key::OptimizationContainerKey)

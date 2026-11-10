@@ -834,33 +834,9 @@ function _update_system_state!(sim::Simulation, model::EmulationModel)
     system_state = get_system_states(sim_state)
     store = get_simulation_store(sim)
     em_model_name = get_name(model)
-    row_timestamps = [simulation_time]
     for key in get_container_keys(get_optimization_container(model))
         !should_write_resulting_value(key) && continue
         update_system_state!(system_state, key, store, em_model_name, simulation_time)
-        dataset = get_dataset(system_state, key)
-        missing_columns = _missing_state_columns(dataset, first(_model_columns(model, key)))
-        isnothing(missing_columns) && continue
-        update_missing_state_columns!(
-            dataset,
-            key,
-            model,
-            missing_columns,
-            1:1,
-            row_timestamps,
-        )
-    end
-    for key in get_dataset_keys(system_state)
-        _writes_key(model, key) && continue
-        dataset = get_dataset(system_state, key)
-        update_missing_state_columns!(
-            dataset,
-            key,
-            model,
-            axes(dataset.values)[1],
-            1:1,
-            row_timestamps,
-        )
     end
     IS.@record :execution StateUpdateEvent(simulation_time, em_model_name, "SystemState")
     return
@@ -879,7 +855,6 @@ function _update_simulation_state!(sim::Simulation, model::DecisionModel)
     #Order matters; update parameters first to ensure event parameters are updated first
     _update_simulation_state_parameters!(sim, model)
     _update_simulation_state_others!(sim, model)
-    _update_keys_missing_from_model!(sim, model)
     model_name = get_name(model)
     simulation_time = get_current_time(sim)
     IS.@record :execution StateUpdateEvent(simulation_time, model_name, "DecisionState")
@@ -891,47 +866,10 @@ function _update_decision_state_from_store!(sim::Simulation, model_name::Symbol,
     simulation_time = get_current_time(sim)
     state = get_simulation_state(sim)
     model_params = get_decision_model_params(store, model_name)
-    model = get_simulation_model(get_models(sim), model_name)
     for key in keys
         !has_dataset(get_decision_states(state), key) && continue
         res = read_result(DenseAxisArray, store, model_name, key, simulation_time)
         update_decision_state!(state, key, res, simulation_time, model_params, model_name)
-        state_data = get_decision_state_data(state, key)
-        missing_columns = _missing_state_columns(state_data, axes(res)[1])
-        isnothing(missing_columns) && continue
-        first_row = find_timestamp_index(state_data.timestamps, simulation_time)
-        state_rows = first_row:get_last_recorded_row(state_data)
-        update_missing_state_columns!(
-            state_data,
-            key,
-            model,
-            missing_columns,
-            state_rows,
-            view(state_data.timestamps, state_rows),
-        )
-    end
-    return
-end
-
-# The state keys `model` does not write still get the extension point, over the state rows
-# that cover the model's window.
-function _update_keys_missing_from_model!(sim::Simulation, model::DecisionModel)
-    decision_states = get_decision_states(get_simulation_state(sim))
-    simulation_time = get_current_time(sim)
-    horizon = get_horizon(model)
-    for key in get_dataset_keys(decision_states)
-        _writes_key(model, key) && continue
-        state_data = get_dataset(decision_states, key)
-        _advance_state_window!(state_data, simulation_time)
-        state_rows = _window_rows(state_data, simulation_time, horizon)
-        update_missing_state_columns!(
-            state_data,
-            key,
-            model,
-            axes(state_data.values)[1],
-            state_rows,
-            view(state_data.timestamps, state_rows),
-        )
     end
     return
 end
