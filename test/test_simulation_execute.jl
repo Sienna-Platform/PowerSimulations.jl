@@ -735,5 +735,12 @@ end
         simulation_folder = mktempdir(; cleanup = true),
     )
     @test build!(sim; console_level = Logging.Error) == PSI.SimulationBuildStatus.BUILT
-    @test execute!(sim; in_memory = true) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+    @test execute!(sim; in_memory = false) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+    results = SimulationResults(sim)
+    uc = get_decision_problem_results(results, "UC")
+    time_on = read_realized_aux_variable(uc, "TimeDurationOn__ThermalStandard")
+    alta = time_on[time_on.name .== "Alta", :value]
+    @test !isempty(alta)
+    @test all(isfinite, alta)
+    @test all(>(0.0), alta)
 end
