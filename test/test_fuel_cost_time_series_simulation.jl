@@ -33,7 +33,7 @@
     PSY.set_operation_cost!(
         thermal,
         PSY.ThermalGenerationCost(;
-            variable_operation_cost = PSY.FuelCurve(PSY.LinearCurve(0.0, 5.0), fuel_key),
+            variable_operation_cost = PSY.FuelCurve(PSY.LinearCurve(0.0, 5.0), PSY.MMBtu, fuel_key),
             fixed = PSY.get_fixed(old_cost),
             start_up = PSY.get_start_up(old_cost),
             shut_down = PSY.get_shut_down(old_cost),
