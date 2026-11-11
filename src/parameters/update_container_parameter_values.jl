@@ -924,8 +924,6 @@ function IOM.update_container_parameter_values!(
         model,
         input,
     )
-    _edits_in_place(optimization_container) &&
-        _fix_parameter_value!(optimization_container, parameter_array, parameter_attributes)
     return
 end
 
@@ -952,8 +950,6 @@ function IOM.update_container_parameter_values!(
         model,
         input,
     )
-    _edits_in_place(optimization_container) &&
-        _fix_parameter_value!(optimization_container, parameter_array, parameter_attributes)
     return
 end
 

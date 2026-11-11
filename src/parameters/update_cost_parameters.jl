@@ -1,7 +1,7 @@
-# A `rebuild_model` model is rebuilt from its parameter values right after the update, so its
-# objective and rows are not edited in place: the old build need not hold the terms a new
-# step's curves price (a bid offered only on a later day has none), and a released model's
-# JuMP model holds nothing at all.
+# The update edits the objective and rows in place only if the model does not rebuild.
+# A rebuilt model reads its parameter values in the next build. The old build can lack
+# the terms of a new step's curves, for example a bid offered only on a later day.
+# A released model has an empty JuMP model.
 _edits_in_place(container::OptimizationContainer) =
     !IOM.get_rebuild_model(IOM.get_settings(container))
 

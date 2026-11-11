@@ -1078,7 +1078,10 @@ function update_model!(model::IOM.AbstractOptimizationModel, sim::Simulation)
     update_model!(model, get_simulation_state(sim), get_ini_cond_chronology(sim))
     if get_rebuild_model(model)
         container = get_optimization_container(model)
-        reset_optimization_model!(container)
+        # A released model was reset when it was released.
+        if !IOM.is_released(model)
+            reset_optimization_model!(container)
+        end
         # The build reads time series at the initial time; the model's clock needs it back.
         initial_time = get_initial_time(model)
         set_initial_time!(model, get_current_time(sim))
@@ -1108,8 +1111,8 @@ function _release_model!(model::IOM.AbstractOptimizationModel)
     return
 end
 
-# A rebuilt model is built again before each of its solves, so its build from `build!` is
-# only used by the model that solves first: that solve skips the update and rebuild.
+# A rebuilt model builds again before each solve. Only the first model in the execution
+# order uses its build from `build!`, because its first solve skips the update and rebuild.
 function _release_waiting_models!(sim::Simulation)
     models = get_models(sim)
     execution_order = get_execution_order(sim)
@@ -1123,22 +1126,13 @@ function _release_waiting_models!(sim::Simulation)
     return
 end
 
-# The position in the execution order of each model's last execution within a step.
-function _last_executions(sim::Simulation)
-    last_executions = Dict{Int, Int}()
-    for (ix, model_number) in enumerate(get_execution_order(sim))
-        last_executions[model_number] = ix
-    end
-    return last_executions
-end
-
 function _release_solved_model!(
     model::IOM.AbstractOptimizationModel,
     last_execution::Bool,
 )
     if last_execution
         _release_model!(model)
-    elseif get_rebuild_model(model)
+    else
         _release_built_model!(model)
     end
     return
@@ -1194,7 +1188,6 @@ function _execute!(
     store = get_simulation_store(sim)
     _prepare_execution_store!(sim, store, cache_size_mib, min_cache_flush_size_mib)
     _release_waiting_models!(sim)
-    last_executions = _last_executions(sim)
     store_params = get_params(store)
     if !isnothing(exports)
         exports = _as_results_export(exports, store_params)
@@ -1302,16 +1295,15 @@ function _execute!(
                     # from the optimization container have been called.
                     # See https://github.com/Sienna-Platform/PowerSimulations.jl/pull/793#discussion_r761545526
                     # for reference
-                    if warm_start_enabled(model)
-                        _apply_warm_start!(model)
-                    end
-
+                    # A released model loses its JuMP model, so it skips the warm start.
+                    last_execution =
+                        step == steps && ix == findlast(==(model_number), execution_order)
                     if status == RunStatus.SUCCESSFULLY_FINALIZED &&
-                       IOM.get_release_model(model)
-                        _release_solved_model!(
-                            model,
-                            step == steps && ix == last_executions[model_number],
-                        )
+                       IOM.get_release_model(model) &&
+                       (last_execution || get_rebuild_model(model))
+                        _release_solved_model!(model, last_execution)
+                    elseif warm_start_enabled(model)
+                        _apply_warm_start!(model)
                     end
                 end #execution problem timer
             catch

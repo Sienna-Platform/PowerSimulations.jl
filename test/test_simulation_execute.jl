@@ -695,14 +695,10 @@ end
 
 @testset "A released model refuses its JuMP model" begin
     sim = _run(_fix_value_feedforward_simulation(1; released = ("ED",)))
-    err = try
-        IOM.get_jump_model(PSI.get_simulation_model(sim, :ED))
-        nothing
-    catch e
-        e
-    end
-    @test err isa ArgumentError
-    @test occursin("release_model = true", err.msg)
+    @test_throws ArgumentError IOM.get_jump_model(PSI.get_simulation_model(sim, :ED))
+    @test_throws "release_model = true" IOM.get_jump_model(
+        PSI.get_simulation_model(sim, :ED),
+    )
 end
 
 @testset "A model without release_model is untouched" begin
