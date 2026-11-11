@@ -17,13 +17,19 @@ function update_parameters!(
     simulation_state::SimulationState,
 )
     cost_function_unsynch(get_optimization_container(model))
+    # Parameters a time series reader serves refresh together, one read per reader.
+    refreshed = _refresh_reader_parameters!(model)
     for key in keys(get_parameters(model))
-        update_parameter_values!(model, key, simulation_state)
+        if key in refreshed
+            _record_parameter_update(model, key)
+        else
+            update_parameter_values!(model, key, simulation_state)
+        end
     end
-    if !is_synchronized(model)
-        update_objective_function!(get_optimization_container(model))
-        obj_func = get_objective_expression(get_optimization_container(model))
-        set_synchronized_status!(obj_func, true)
+    container = get_optimization_container(model)
+    if _edits_in_place(container) && !is_synchronized(container)
+        update_objective_function!(container)
+        set_synchronized_status!(get_objective_expression(container), true)
     end
     return
 end

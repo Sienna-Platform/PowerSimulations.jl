@@ -161,3 +161,62 @@ end
     @test only(_deployed_fraction_in_model(emulator, reserve_em)) ≈
           _LHS_FRACTION * profile[4]
 end
+
+function _lhs_emulation_models(profile; release_model = false)
+    sys_ed, _ = _lhs_storage_system(profile)
+    sys_em, _ = _lhs_storage_system(profile)
+    return SimulationModels(;
+        decision_models = [
+            DecisionModel(
+                _lhs_storage_template(),
+                sys_ed;
+                name = "ED",
+                optimizer = HiGHS_optimizer,
+                release_model = release_model,
+            ),
+        ],
+        emulation_model = EmulationModel(
+            _lhs_storage_template(),
+            sys_em;
+            name = "EM",
+            optimizer = HiGHS_optimizer,
+            release_model = release_model,
+        ),
+    )
+end
+
+# The battery's award of a reserve splits between its charge and discharge sides; the split
+# is degenerate, so separate builds may solve to different splits of the same total. The
+# total per reserve is compared instead.
+function _realized_emulator_values(sim)
+    results = get_emulation_problem_results(SimulationResults(sim))
+    values = Dict{String, Vector{Float64}}()
+    for key in list_variable_names(results)
+        df = sort(read_realized_variable(results, key), [:DateTime, :name])
+        total = replace(
+            key,
+            "AncillaryServiceVariableCharge" => "AncillaryServiceVariable",
+            "AncillaryServiceVariableDischarge" => "AncillaryServiceVariable",
+        )
+        values[total] = get(values, total, zeros(nrow(df))) .+ df.value
+    end
+    return values
+end
+
+@testset "A released emulator keeps its results" begin
+    profile = collect(range(0.2, 0.9; length = 48))
+    # The emulator rebuilds and runs four times per step.
+    kept = _run_lhs_simulation(_lhs_emulation_models(profile); steps = 2)
+    released =
+        _run_lhs_simulation(_lhs_emulation_models(profile; release_model = true); steps = 2)
+    released_values = _realized_emulator_values(released)
+    kept_values = _realized_emulator_values(kept)
+    @test keys(released_values) == keys(kept_values)
+    for (key, values) in kept_values
+        @test isapprox(released_values[key], values; atol = 1e-6)
+    end
+    for name in (:ED, :EM)
+        @test IOM.is_released(PSI.get_simulation_model(released, name))
+        @test !IOM.is_released(PSI.get_simulation_model(kept, name))
+    end
+end

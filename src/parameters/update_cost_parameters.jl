@@ -1,3 +1,10 @@
+# The update edits the objective and rows in place only if the model does not rebuild.
+# A rebuilt model reads its parameter values in the next build. The old build can lack
+# the terms of a new step's curves, for example a bid offered only on a later day.
+# A released model has an empty JuMP model.
+_edits_in_place(container::OptimizationContainer) =
+    !IOM.get_rebuild_model(IOM.get_settings(container))
+
 function _update_parameter_values!(
     parameter_array::DenseAxisArray,
     ::T,
@@ -11,10 +18,11 @@ function _update_parameter_values!(
     time_steps = get_time_steps(get_optimization_container(model))
     horizon = time_steps[end]
     container = get_optimization_container(model)
-    is_synchronized(container) && error(
-        "Cannot update $(T) on a synchronized container; objective expressions would " *
-        "be re-augmented and double-counted",
-    )
+    _edits_in_place(container) && is_synchronized(container) &&
+        error(
+            "Cannot update $(T) on a synchronized container; objective expressions would " *
+            "be re-augmented and double-counted",
+        )
     template = get_template(model)
     device_model = get_model(template, V)
     components = IOM.get_available_components(device_model, get_system(model))
@@ -56,10 +64,11 @@ function _update_service_cost_parameter_values!(
     time_steps = get_time_steps(get_optimization_container(model))
     horizon = time_steps[end]
     container = get_optimization_container(model)
-    is_synchronized(container) && error(
-        "Cannot update $(T) on a synchronized container; objective expressions would " *
-        "be re-augmented and double-counted",
-    )
+    _edits_in_place(container) && is_synchronized(container) &&
+        error(
+            "Cannot update $(T) on a synchronized container; objective expressions would " *
+            "be re-augmented and double-counted",
+        )
     system = get_system(model)
     ts_type = get_deterministic_time_series_type(system)
     for service_name in axes(parameter_array, 1)
@@ -330,6 +339,9 @@ function _update_scalar_cost_values!(
     for (t, raw_value) in enumerate(raw_values)
         value = unwrap_for_param(param, raw_value, additional_axes)
         _set_param_value!(parameter_array, _maybe_tuple(param, value), name, t)
+    end
+    _edits_in_place(container) || return
+    for t in eachindex(raw_values)
         update_variable_cost!(
             param,
             container,
@@ -381,6 +393,7 @@ function handle_variable_cost_parameter(
         name,
         power_units,
     )
+    _edits_in_place(container) || return
     _update_pwl_offsets!(param, container, component, raw_values, power_units, formulation)
     return
 end
@@ -442,6 +455,9 @@ function _update_piecewise_cost_values!(
     for (t, value::PSY.PiecewiseStepData) in enumerate(raw_values)
         unwrapped_value = unwrap_for_param(T(), value, additional_axes)
         _set_param_value!(parameter_array, unwrapped_value, name, t)
+    end
+    _edits_in_place(container) || return
+    for (t, value::PSY.PiecewiseStepData) in enumerate(raw_values)
         update_variable_cost!(
             param,
             container,
@@ -521,6 +537,9 @@ function _update_fuel_cost_values!(
 )
     for (t, value) in enumerate(raw_values)
         _set_param_value!(parameter_array, value, name, t)
+    end
+    _edits_in_place(container) || return
+    for t in eachindex(raw_values)
         update_variable_cost!(
             FuelCostParameter(),
             container,
