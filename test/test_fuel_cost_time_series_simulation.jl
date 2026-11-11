@@ -3,42 +3,7 @@
 # time-varying fuel cost must get a fresh FuelCostParameter read every simulation step, not
 # a value frozen at build time.
 @testset "FuelCostParameter time series updates across simulation steps" begin
-    sys = deepcopy(PSB.build_system(PSITestSystems, "c_sys5_uc"))
-    thermal = first(PSY.get_components(PSY.ThermalStandard, sys))
-
-    # Mirror an existing Deterministic forecast's windows/resolution/interval exactly, so
-    # the new "fuel_cost" series is compatible with the rest of the system's forecasts (a
-    # System cannot mix Deterministic and DeterministicSingleTimeSeries) and is read with
-    # the same horizon the model already uses for the load.
-    load = first(PSY.get_components(PSY.PowerLoad, sys))
-    load_ts = PSY.get_time_series(PSY.Deterministic, load, "max_active_power")
-    windows = collect(pairs(get_data(load_ts)))
-    horizon_count = length(last(first(windows)))
-
-    # Distinct values per window/step, so a frozen (never-updated) parameter would read
-    # back step 1's values at step 2 and fail the comparison below.
-    fuel_cost_data = OrderedDict{DateTime, Vector{Float64}}(
-        dt => Float64.((100 * step_ix) .+ (1:horizon_count))
-        for (step_ix, (dt, _)) in enumerate(windows)
-    )
-    fuel_ts = PSY.Deterministic(;
-        name = "fuel_cost",
-        data = fuel_cost_data,
-        resolution = IS.get_resolution(load_ts),
-        interval = IS.get_interval(load_ts),
-    )
-    fuel_key = PSY.add_time_series!(sys, thermal, fuel_ts)
-
-    old_cost = PSY.get_operation_cost(thermal)
-    PSY.set_operation_cost!(
-        thermal,
-        PSY.ThermalGenerationCost(;
-            variable_operation_cost = PSY.FuelCurve(PSY.LinearCurve(0.0, 5.0), fuel_key),
-            fixed = PSY.get_fixed(old_cost),
-            start_up = PSY.get_start_up(old_cost),
-            shut_down = PSY.get_shut_down(old_cost),
-        ),
-    )
+    sys, thermal, fuel_cost_data, windows = fuel_cost_time_series_system()
 
     template = test_template_unit_commitment(CopperPlateNetworkModel)
     model = DecisionModel(

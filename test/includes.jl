@@ -52,6 +52,7 @@ include("test_utils/mbc_system_utils.jl")
 include("test_utils/mbc_simulation_utils.jl")
 include("test_utils/events_simulation_utils.jl")
 include("test_utils/iec_simulation_utils.jl")
+include("test_utils/fuel_cost_system_utils.jl")
 
 ENV["RUNNING_PSI_TESTS"] = "true"
 ENV["SIENNA_RANDOM_SEED"] = 1234  # Set a fixed seed for reproducibility in tests

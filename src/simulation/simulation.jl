@@ -1078,14 +1078,63 @@ function update_model!(model::IOM.AbstractOptimizationModel, sim::Simulation)
     update_model!(model, get_simulation_state(sim), get_ini_cond_chronology(sim))
     if get_rebuild_model(model)
         container = get_optimization_container(model)
-        reset_optimization_model!(container)
+        # A released model was reset when it was released.
+        if !IOM.is_released(model)
+            reset_optimization_model!(container)
+        end
         # The build reads time series at the initial time; the model's clock needs it back.
         initial_time = get_initial_time(model)
         set_initial_time!(model, get_current_time(sim))
         POM.build_problem!(container, get_template(model), get_system(model))
         set_initial_time!(model, initial_time)
+        IOM.set_released!(model, false)
     end
 
+    return
+end
+
+# Frees the model's JuMP model and solver copy. The parameter and initial condition values
+# stay, because a rebuilt model's next build reads them.
+function _release_built_model!(model::IOM.AbstractOptimizationModel)
+    reset_optimization_model!(get_optimization_container(model))
+    IOM.set_released!(model, true)
+    return
+end
+
+# Frees everything a model holds for its solves, once it has no solve left in the simulation.
+function _release_model!(model::IOM.AbstractOptimizationModel)
+    _release_built_model!(model)
+    container = get_optimization_container(model)
+    empty!(IOM.get_parameters(container))
+    empty!(IOM.get_initial_conditions(container))
+    empty_time_series_cache!(model)
+    return
+end
+
+# A rebuilt model builds again before each solve. Only the first model in the execution
+# order uses its build from `build!`, because its first solve skips the update and rebuild.
+function _release_waiting_models!(sim::Simulation)
+    models = get_models(sim)
+    execution_order = get_execution_order(sim)
+    for model_number in unique(execution_order)
+        model_number == first(execution_order) && continue
+        model = get_simulation_model(models, model_number)
+        if IOM.get_release_model(model) && get_rebuild_model(model)
+            _release_built_model!(model)
+        end
+    end
+    return
+end
+
+function _release_solved_model!(
+    model::IOM.AbstractOptimizationModel,
+    last_execution::Bool,
+)
+    if last_execution
+        _release_model!(model)
+    else
+        _release_built_model!(model)
+    end
     return
 end
 
@@ -1138,6 +1187,7 @@ function _execute!(
     num_executions = steps * length(execution_order)
     store = get_simulation_store(sim)
     _prepare_execution_store!(sim, store, cache_size_mib, min_cache_flush_size_mib)
+    _release_waiting_models!(sim)
     store_params = get_params(store)
     if !isnothing(exports)
         exports = _as_results_export(exports, store_params)
@@ -1245,7 +1295,14 @@ function _execute!(
                     # from the optimization container have been called.
                     # See https://github.com/Sienna-Platform/PowerSimulations.jl/pull/793#discussion_r761545526
                     # for reference
-                    if warm_start_enabled(model)
+                    # A released model loses its JuMP model, so it skips the warm start.
+                    last_execution =
+                        step == steps && ix == findlast(==(model_number), execution_order)
+                    if status == RunStatus.SUCCESSFULLY_FINALIZED &&
+                       IOM.get_release_model(model) &&
+                       (last_execution || get_rebuild_model(model))
+                        _release_solved_model!(model, last_execution)
+                    elseif warm_start_enabled(model)
                         _apply_warm_start!(model)
                     end
                 end #execution problem timer
@@ -1284,6 +1341,17 @@ Solves the simulation model for sequential Simulations.
 
 The optional keyword argument `exports` controls exporting of results to CSV files as
 the simulation runs.
+
+A model built with `release_model = true` frees its JuMP model and solver copy once the
+simulation no longer needs them, to lower the simulation's peak memory:
+
+  - with `rebuild_model = true`, the model is released after each solve and while it waits
+    for its first solve, and is built again before each solve;
+  - with `rebuild_model = false`, the model is released after its last solve.
+
+A model's last solve also frees its parameter and initial condition values and its time
+series cache. Its results stay in the simulation store, but the model itself cannot be
+inspected after the simulation: reading its JuMP model raises an error.
 
 # Example
 ```julia

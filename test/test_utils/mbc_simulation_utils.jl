@@ -141,6 +141,7 @@ function build_generic_mbc_model(sys::System;
     standard::Bool = false,
     device_to_formulation = FormulationDict(),
     optimizer = HiGHS_optimizer_small_gap,
+    rebuild_model = false,
 )
     template = PowerOperationsProblemTemplate(
         NetworkModel(
@@ -167,6 +168,7 @@ function build_generic_mbc_model(sys::System;
         name = "UC",
         store_variable_names = true,
         optimizer = optimizer,
+        rebuild_model = rebuild_model,
     )
     return model
 end
