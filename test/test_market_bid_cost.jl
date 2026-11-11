@@ -770,7 +770,7 @@ end
             ),
         )
         row = rows["Test Unit1", t]
-        @test JuMP.normalized_rhs(row) == 0.0
+        @test iszero(JuMP.normalized_rhs(row))
         @test isapprox(
             -JuMP.normalized_coefficient(row, status["Test Unit1", t]),
             expected;

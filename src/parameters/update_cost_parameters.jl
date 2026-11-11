@@ -223,6 +223,22 @@ function _update_pwl_offsets!(
     component_name = PSY.get_name(component)
     rows = get_constraint(container, _linear_block_offer_constraint(P), T)
     U = _linked_power_variable(container, rows[component_name, 1], T, component_name, 1)
+    _update_pwl_offset_rows!(container, rows, component, raw_values, power_units, U, D)
+    return
+end
+
+# Function barrier: `U` comes from a runtime search of the container, so the per-step loop
+# is specialized here on the concrete variable type.
+function _update_pwl_offset_rows!(
+    container::OptimizationContainer,
+    rows,
+    component::PSY.Component,
+    raw_values,
+    power_units::IS.AbstractUnitSystem,
+    ::Type{U},
+    ::Type{D},
+) where {U <: VariableType, D <: AbstractDeviceFormulation}
+    component_name = PSY.get_name(component)
     for (t, value::PSY.PiecewiseStepData) in enumerate(raw_values)
         converted = _converted_piecewise_data(container, value, component, power_units)
         IOM.update_pwl_offset!(
