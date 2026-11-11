@@ -704,6 +704,81 @@ end
     @test isapprox(_anchor_at_t(model_updated, 2), second_anchor; atol = 1e-9)
 end
 
+@testset "MarketBidCost first-breakpoint update keeps a dispatch model's OnStatusParameter" begin
+    # A dispatch ED under a SemiContinuousFeedforward builds the row as
+    # `power == Σ δ + p1 * status`. The update must move `p1` on the status term, or a unit
+    # the UC turns off keeps an offset and the ED is infeasible (#1716).
+    sys = build_sys_incr(false, true, false; do_override_min_x = false)
+    unit1 = get_component(SEL_INCR, sys)
+    offer_curve = get_incremental_offer_curves(get_operation_cost(unit1))
+    ts_key = IS.get_time_series_key(get_value_curve(offer_curve))
+    forecast = IS.get_time_series(unit1, ts_key)
+    interval = IS.get_interval(forecast)
+    horizon_count = IS.get_horizon_count(forecast)
+
+    function _template(formulation)
+        template = PowerOperationsProblemTemplate(NetworkModel(CopperPlateNetworkModel))
+        set_formulations!(template, sys, FormulationDict(ThermalStandard => formulation))
+        return template
+    end
+    uc = DecisionModel(_template(ThermalBasicUnitCommitment), sys;
+        name = "UC", optimizer = HiGHS_optimizer_small_gap)
+    ed = DecisionModel(_template(ThermalBasicDispatch), sys;
+        name = "ED", optimizer = HiGHS_optimizer_small_gap)
+    models = SimulationModels(; decision_models = [uc, ed])
+    sequence = SimulationSequence(;
+        models = models,
+        feedforwards = Dict(
+            "ED" => [
+                SemiContinuousFeedforward(;
+                    component_type = ThermalStandard,
+                    source = OnVariable,
+                    affected_values = [ActivePowerVariable],
+                ),
+            ],
+        ),
+        ini_cond_chronology = InterProblemChronology(),
+    )
+    sim = Simulation(;
+        name = "mbc_semicontinuous",
+        steps = 2,
+        models = models,
+        sequence = sequence,
+        initial_time = TIME1,
+        simulation_folder = mktempdir(),
+    )
+    @test build!(sim) == PSI.SimulationBuildStatus.BUILT
+    @test execute!(sim) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    # After the second step the rows hold that step's curves: RHS 0 and the new first
+    # breakpoint on the status parameter.
+    curves = IS.get_time_series_values(
+        unit1, ts_key; start_time = TIME1 + interval, len = horizon_count)
+    container = PSI.get_optimization_container(ed)
+    rows = get_constraint(
+        container, PiecewiseLinearBlockIncrementalOfferConstraint, ThermalStandard)
+    status = PSI.get_parameter_array(container, OnStatusParameter, ThermalStandard)
+    for t in axes(status, 2)
+        expected = first(
+            get_x_coords(
+                PSI.get_piecewise_curve_per_system_unit(
+                    curves[t],
+                    IS.get_power_units(offer_curve),
+                    get_base_power(sys),
+                    get_base_power(unit1),
+                ),
+            ),
+        )
+        row = rows["Test Unit1", t]
+        @test iszero(JuMP.normalized_rhs(row))
+        @test isapprox(
+            -JuMP.normalized_coefficient(row, status["Test Unit1", t]),
+            expected;
+            atol = 1e-9,
+        )
+    end
+end
+
 for decremental in (false, true)
     adj = decremental ? "decremental" : "incremental"
     @testset "MarketBidCost $(adj) update zeroes the blocks past a shorter curve's end" begin

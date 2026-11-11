@@ -205,8 +205,8 @@ _linear_block_offer_constraint(::Type{DecrementalPiecewiseLinearBreakpointParame
 _update_pwl_offsets!(::AbstractPiecewiseLinearSlopeParameter, args...) = nothing
 
 """
-Move the block-offer rows' offsets to the new first breakpoints. The branch mirrors
-`add_pwl_constraint_delta!` (IOM `objective_function_pwl_delta.jl`).
+Move the block-offer rows' offsets to the new first breakpoints. IOM's `update_pwl_offset!`
+shares the build's offset logic, so the update matches `add_pwl_constraint_delta!`.
 """
 function _update_pwl_offsets!(
     ::P,
@@ -223,30 +223,33 @@ function _update_pwl_offsets!(
     component_name = PSY.get_name(component)
     rows = get_constraint(container, _linear_block_offer_constraint(P), T)
     U = _linked_power_variable(container, rows[component_name, 1], T, component_name, 1)
-    constant_offset = IOM._include_constant_min_gen_power_in_constraint(T, U, D)
-    constant_offset || IOM._include_min_gen_power_in_constraint(T, U, D) || return
-    first_breakpoints = [
-        first(
-            PSY.get_x_coords(
-                _converted_piecewise_data(container, value, component, power_units),
-            ),
-        ) for value::PSY.PiecewiseStepData in raw_values
-    ]
-    if constant_offset
-        for (t, p1) in enumerate(first_breakpoints)
-            JuMP.set_normalized_rhs(rows[component_name, t], p1)
-        end
-    else
-        on_vars = get_variable(container, OnVariable, T)
-        has_on_variable::Bool = component_name in axes(on_vars, 1)
-        for (t, p1) in enumerate(first_breakpoints)
-            if has_on_variable
-                JuMP.set_normalized_coefficient(
-                    rows[component_name, t], on_vars[component_name, t], -p1)
-            else
-                JuMP.set_normalized_rhs(rows[component_name, t], p1)
-            end
-        end
+    _update_pwl_offset_rows!(container, rows, component, raw_values, power_units, U, D)
+    return
+end
+
+# Function barrier: `U` comes from a runtime search of the container, so the per-step loop
+# is specialized here on the concrete variable type.
+function _update_pwl_offset_rows!(
+    container::OptimizationContainer,
+    rows,
+    component::PSY.Component,
+    raw_values,
+    power_units::IS.AbstractUnitSystem,
+    ::Type{U},
+    ::Type{D},
+) where {U <: VariableType, D <: AbstractDeviceFormulation}
+    component_name = PSY.get_name(component)
+    for (t, value::PSY.PiecewiseStepData) in enumerate(raw_values)
+        converted = _converted_piecewise_data(container, value, component, power_units)
+        IOM.update_pwl_offset!(
+            container,
+            rows[component_name, t],
+            component,
+            U,
+            D,
+            t,
+            first(PSY.get_x_coords(converted)),
+        )
     end
     return
 end
