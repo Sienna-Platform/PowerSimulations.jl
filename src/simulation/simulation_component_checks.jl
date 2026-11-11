@@ -164,7 +164,7 @@ function _restrict_feedforwards!(
         isempty(feedforwards) && continue
         devices = collect(IOM.get_available_components(device_model, get_system(model)))
         for (ix, ff) in enumerate(feedforwards)
-            POM.supports_component_subset(ff) || continue
+            POM.supports_component_subset(typeof(ff)) || continue
             source_key = POM.get_optimization_container_key(ff)
             writers = _state_writers(built, source_key)
             restricted_ff = POM.restrict_feedforward(ff, writers)
@@ -278,7 +278,7 @@ function _parameter_source_remedy(sim::Simulation, model, source_key, writers)
     remedy = "Give a model that writes the source every unit the feedforward sets."
     (get_allow_different_components(sim) || isempty(writers)) && return remedy
     restrictable = any(
-        POM.supports_component_subset(ff) &&
+        POM.supports_component_subset(typeof(ff)) &&
         POM.get_optimization_container_key(ff) == source_key for
         device_model in _template_device_models(model) for
         ff in IOM.get_feedforwards(device_model)
