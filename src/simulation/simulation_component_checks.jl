@@ -107,7 +107,7 @@ const FEEDFORWARD_SOURCES_KEY = "feedforward_sources"
 struct _FeedforwardRestriction
     device_model::IOM.DeviceModel
     index::Int
-    original::POM.ComponentSubsetFeedforward
+    original::AbstractAffectFeedforward
     source_key::OptimizationContainerKey
     affected_keys::Vector{OptimizationContainerKey}
     left_out::Set{String}
@@ -164,7 +164,7 @@ function _restrict_feedforwards!(
         isempty(feedforwards) && continue
         devices = collect(IOM.get_available_components(device_model, get_system(model)))
         for (ix, ff) in enumerate(feedforwards)
-            ff isa POM.ComponentSubsetFeedforward || continue
+            POM.supports_component_subset(ff) || continue
             source_key = POM.get_optimization_container_key(ff)
             writers = _state_writers(built, source_key)
             restricted_ff = POM.restrict_feedforward(ff, writers)
@@ -271,14 +271,14 @@ function _check_parameter_sources(sim::Simulation, model)
     return
 end
 
-# Allowing different components restricts a `ComponentSubsetFeedforward` to the components
-# its source's decision-model `writers` hold, so the hint applies only to those feedforwards
-# and only when such a writer exists.
+# Allowing different components restricts each feedforward that supports a component subset
+# to the components its source's decision-model `writers` hold, so the hint applies only to
+# those feedforwards and only when such a writer exists.
 function _parameter_source_remedy(sim::Simulation, model, source_key, writers)
     remedy = "Give a model that writes the source every unit the feedforward sets."
     (get_allow_different_components(sim) || isempty(writers)) && return remedy
     restrictable = any(
-        ff isa POM.ComponentSubsetFeedforward &&
+        POM.supports_component_subset(ff) &&
         POM.get_optimization_container_key(ff) == source_key for
         device_model in _template_device_models(model) for
         ff in IOM.get_feedforwards(device_model)
