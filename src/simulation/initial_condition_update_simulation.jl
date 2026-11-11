@@ -47,6 +47,7 @@ function IOM.update_initial_conditions!(
     # so this step scales the data to the model resolution.
     scale = model_resolution / state_resolution
     for ic in ics
+        isnothing(get_value(ic)) && continue
         set_ic_quantity!(ic, _get_state_value(var_val, key, get_component_name(ic)) / scale)
     end
     return
