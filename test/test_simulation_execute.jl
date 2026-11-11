@@ -713,7 +713,7 @@ end
     @test !isempty(IOM.get_variables(IOM.get_optimization_container(ed)))
 end
 
-@testset "A must-run unit carries its time on across steps" begin
+@testset "A must-run unit reports finite time-on values" begin
     sys = PSB.build_system(PSITestSystems, "c_sys5_uc")
     PSY.set_commitment_mode!(
         PSY.get_component(PSY.ThermalStandard, sys, "Alta"),
@@ -746,4 +746,10 @@ end
     @test !isempty(alta)
     @test all(isfinite, alta)
     @test all(>(0.0), alta)
+    # The count restarts at 1 in each step's solve window and grows by 1 per row.
+    window = length(alta) ÷ 2
+    @test length(alta) == 2 * window
+    for step_rows in Iterators.partition(alta, window)
+        @test step_rows == collect(1.0:Float64(window))
+    end
 end
