@@ -120,8 +120,12 @@ Some steps may be specific to NLR's HPC `Kestrel` cluster.
 
  2. Copy the code below into a Julia file called `configure_parallel_simulation.jl`. Modify the
     runtime parameters as needed, especially the CPU and memory resource requirements.
+    Your Julia environment must include `JSON` and `PowerSimulations`.
 
 ```
+using JSON
+using PowerSimulations
+
 """
     configure_parallel_simulation(;
         script::AbstractString,
@@ -197,7 +201,7 @@ function configure_parallel_simulation(;
         "name" => "medium",
         "num_cpus" => 8,
         "memory" => "200g",
-        "runtime" => "PT4H",
+        "runtime" => "PT3H",
     )
     build_command =
         "$julia_cmd $script setup --simulation-name=$simulation_name " *
@@ -237,6 +241,9 @@ function configure_parallel_simulation(;
             "nodes" => 1,
             "walltime" => "01:00:00",
         ),
+        # Walltime must cover one "medium" job plus the "small" join job. Torc does not start
+        # a job on an allocation whose remaining walltime is shorter than the job's runtime.
+        # Four hours fits the common "short" partition.
         Dict(
             "name" => "work",
             "account" => account,
@@ -362,18 +369,15 @@ end
 
 ```
 julia> include("configure_parallel_simulation.jl")
-julia> num_steps = 365
-julia> period = 7
-julia> num_overlap_steps = 1
-julia> configure_parallel_simulation(
-    script = "my_simulation.jl",  # this is your build/execute script
-    num_steps,
-    period,
-    "my_simulation_output",
-    account="<your-hpc-account>",
-    num_overlap_steps=1,
-    project_path=".",  # This optionally specifies the Julia project environment to load.
-)
+julia> configure_parallel_simulation(;
+           script = "my_simulation.jl",  # this is your build/execute script
+           num_steps = 365,
+           num_period_steps = 7,
+           output_dir = "my_simulation_output",
+           account = "<your-hpc-account>",
+           num_overlap_steps = 1,
+           project_path = ".",  # This optionally specifies the Julia project environment to load.
+       )
 Created torc workflow spec in workflow.json.
 ```
 
@@ -383,28 +387,28 @@ Exit Julia.
 
  3. Submit the workflow.
 
- ```
- torc submit workflow.json
- ```
+```
+torc submit workflow.json
+```
 
  4. Torc will run a final command to join the simulation partitions into one unified file. You can
     load the results as you normally would.
 
 ```
-julia> results = SimulationResults("<output-dir>/job-outputs/<simulation-name>")
+julia> results = SimulationResults("<output-dir>/<simulation-name>")
 ```
 
 Note the log files and results for each partition are located in
-`<output-dir>/job-outputs/<simulation-name>/simulation_partitions`
+`<output-dir>/<simulation-name>/simulation_partitions`
 
 If any partition fails, the join command fails and records a failed status in
-`<output-dir>/job-outputs/<simulation-name>/results/status.json`. Each failed partition,
+`<output-dir>/<simulation-name>/results/status.json`. Each failed partition,
 along with the simulation steps that it covers, is logged in
-`<output-dir>/job-outputs/<simulation-name>/logs/join_partitioned_simulation.log`.
+`<output-dir>/<simulation-name>/logs/join_partitioned_simulation.log`.
 Re-run the command with the `--skip-failures` option to skip the failed partitions and merge
 the results of the successful ones. The status of the simulation remains a failure, so the
 results must be loaded with `SimulationResults(path; ignore_status=true)`.
 
 ```
-$ julia --project=<path> my_simulation.jl join --simulation-name=<simulation-name> --output-dir=<output-dir>/job-outputs --skip-failures
+$ julia --project=<path> my_simulation.jl join --simulation-name=<simulation-name> --output-dir=<output-dir> --skip-failures
 ```
