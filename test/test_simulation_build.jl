@@ -513,6 +513,13 @@ _status_feedforward() = SemiContinuousFeedforward(;
     affected_values = [ActivePowerVariable],
 )
 
+_power_bound_feedforward(; source = ActivePowerVariable) = UpperBoundFeedforward(;
+    component_type = ThermalStandard,
+    source,
+    affected_values = [ActivePowerVariable],
+    add_slacks = true,
+)
+
 # A UC and a 5-minute ED over the 5-bus systems; `uc_without` names a unit the UC does not
 # model, `ed_thermal` is the ED's thermal formulation and `feedforward` the ED's thermal
 # feedforward, if any.
@@ -613,7 +620,11 @@ end
 end
 
 @testset "Models with different units build when allowed" begin
-    sim = _state_source_simulation(; uc_without = "Alta", allow_different_components = true)
+    sim = _state_source_simulation(;
+        uc_without = "Alta",
+        feedforward = nothing,
+        allow_different_components = true,
+    )
     @test build!(sim; console_level = Logging.AboveMaxLevel) ==
           PSI.SimulationBuildStatus.BUILT
 end
@@ -670,17 +681,63 @@ end
           PSI.SimulationBuildStatus.BUILT
 end
 
-@testset "A feedforward with no source for a unit fails at build unless allowed" begin
+@testset "A semicontinuous feedforward needs a status source for every unit" begin
     # Both models hold Alta, but only the ED commits it: the UC runs it as must-run, so the
-    # UC writes no status for it.
-    err = _build_error(_state_source_simulation(; uc_must_run = "Alta", steps = 2))
+    # UC writes no status for it. A semicontinuous feedforward applies to every unit, so
+    # allowing different components cannot help and the error does not suggest it.
+    for allow_different_components in (false, true)
+        err = _build_error(
+            _state_source_simulation(; uc_must_run = "Alta", steps = 2,
+                allow_different_components),
+        )
+        @test err isa IS.ConflictingInputsError
+        msg = sprint(showerror, err)
+        @test occursin("ED", msg) && occursin("Alta", msg)
+        @test occursin("OnStatusParameter__ThermalStandard", msg)
+        @test !occursin("allow_different_components", msg)
+    end
+end
+
+@testset "A semicontinuous feedforward fails at build for a unit its source model lacks" begin
+    for (ed_thermal, scheduled_power) in (
+        (ThermalDispatchNoMin, ActivePowerVariable),
+        (ThermalCompactDispatch, PowerAboveMinimumVariable),
+    )
+        feedforward = SemiContinuousFeedforward(;
+            component_type = ThermalStandard,
+            source = OnVariable,
+            affected_values = [scheduled_power],
+        )
+        err = _build_error(
+            _state_source_simulation(;
+                uc_without = "Alta",
+                ed_thermal,
+                feedforward,
+                allow_different_components = true,
+            ),
+        )
+        @test err isa IS.ConflictingInputsError
+        msg = sprint(showerror, err)
+        @test occursin("ED", msg) && occursin("Alta", msg)
+        @test occursin("OnStatusParameter__ThermalStandard", msg)
+        @test !occursin("allow_different_components", msg)
+    end
+end
+
+@testset "A bound feedforward with no source for a unit fails at build unless allowed" begin
+    # The UC runs Alta as must-run, so it writes no status for it.
+    feedforward = _power_bound_feedforward(; source = OnVariable)
+    err = _build_error(
+        _state_source_simulation(; uc_must_run = "Alta", feedforward, steps = 2),
+    )
     @test err isa IS.ConflictingInputsError
     msg = sprint(showerror, err)
     @test occursin("ED", msg) && occursin("Alta", msg)
-    @test occursin("OnStatusParameter__ThermalStandard", msg)
+    @test occursin("UpperBoundValueParameter__ThermalStandard", msg)
     @test occursin("allow_different_components = true", msg)
     sim = _state_source_simulation(;
         uc_must_run = "Alta",
+        feedforward,
         steps = 2,
         allow_different_components = true,
     )
@@ -696,13 +753,20 @@ _feedforward_constraint_rows(model, constraint = POM.FeedforwardSemiContinuousCo
     ]
 
 @testset "A feedforward leaves out the components its source model lacks" begin
-    sim = _state_source_simulation(; uc_without = "Alta", allow_different_components = true)
+    sim = _state_source_simulation(;
+        uc_without = "Alta",
+        feedforward = _power_bound_feedforward(),
+        allow_different_components = true,
+    )
     @test build!(sim; console_level = Logging.AboveMaxLevel) ==
           PSI.SimulationBuildStatus.BUILT
     # The build logs to the simulation's own logger, so the check is replayed here.
     @test_logs (:warn, r"leaves 1 components? out of the feedforward") min_level =
         Logging.Warn PSI._check_state_sources(sim)
-    rows = _feedforward_constraint_rows(PSI.get_simulation_model(PSI.get_models(sim), :ED))
+    rows = _feedforward_constraint_rows(
+        PSI.get_simulation_model(PSI.get_models(sim), :ED),
+        POM.FeedforwardUpperBoundConstraint,
+    )
     @test !isempty(rows)
     @test all(names -> !("Alta" in names) && "Park City" in names, rows)
 end
@@ -712,15 +776,7 @@ function _resequenced_simulation(sim; allow_different_components)
     models = PSI.get_models(sim)
     sequence = SimulationSequence(;
         models,
-        feedforwards = Dict(
-            "ED" => [
-                SemiContinuousFeedforward(;
-                    component_type = ThermalStandard,
-                    source = OnVariable,
-                    affected_values = [ActivePowerVariable],
-                ),
-            ],
-        ),
+        feedforwards = Dict("ED" => [_power_bound_feedforward()]),
         ini_cond_chronology = InterProblemChronology(),
         allow_different_components,
     )
@@ -736,7 +792,11 @@ _ed_feedforwards(sim) =
     )
 
 @testset "A feedforward restriction is decided at every build" begin
-    sim = _state_source_simulation(; uc_without = "Alta", allow_different_components = true)
+    sim = _state_source_simulation(;
+        uc_without = "Alta",
+        feedforward = _power_bound_feedforward(),
+        allow_different_components = true,
+    )
     warning = (:warn, r"leaves 1 components? out of the feedforward")
     for _ in 1:2
         @test build!(sim; console_level = Logging.AboveMaxLevel) ==
@@ -753,7 +813,7 @@ _ed_feedforwards(sim) =
     err = _build_error(default)
     @test err isa IS.ConflictingInputsError
     @test occursin("allow_different_components = true", sprint(showerror, err))
-    @test only(_ed_feedforwards(default)) isa SemiContinuousFeedforward
+    @test only(_ed_feedforwards(default)) isa UpperBoundFeedforward
     @test isnothing(POM.get_feedforward_components(only(_ed_feedforwards(default))))
     ed = PSI.get_simulation_model(PSI.get_models(default), :ED)
     @test !haskey(IOM.get_internal(ed).ext, PSI.FEEDFORWARD_SOURCES_KEY)
@@ -773,15 +833,7 @@ end
     )
     sequence = SimulationSequence(;
         models,
-        feedforwards = Dict(
-            "ED" => [
-                SemiContinuousFeedforward(;
-                    component_type = ThermalStandard,
-                    source = OnVariable,
-                    affected_values = [ActivePowerVariable],
-                ),
-            ],
-        ),
+        feedforwards = Dict("ED" => [_power_bound_feedforward()]),
         ini_cond_chronology = InterProblemChronology(),
         allow_different_components = true,
     )
@@ -790,29 +842,17 @@ end
     err = _build_error(sim)
     @test err isa IS.ConflictingInputsError
     msg = sprint(showerror, err)
-    @test occursin("ED", msg) && occursin("OnVariable__ThermalStandard", msg)
+    @test occursin("ED", msg) && occursin("ActivePowerVariable__ThermalStandard", msg)
     @test occursin(
         "List the models that write a feedforward's source before the models that read it",
         msg,
     )
 end
 
-@testset "A compact dispatch rejects a partial semicontinuous feedforward" begin
-    err = _build_error(
-        _state_source_simulation(;
-            uc_without = "Alta",
-            ed_thermal = ThermalCompactDispatch,
-            allow_different_components = true,
-        ),
-    )
-    @test err isa ArgumentError
-    msg = sprint(showerror, err)
-    @test occursin("ThermalCompactDispatch", msg) && occursin("Alta", msg)
-end
-
 @testset "A restricted simulation runs" begin
     sim = _state_source_simulation(;
         uc_without = "Alta",
+        feedforward = _power_bound_feedforward(),
         allow_different_components = true,
         steps = 2,
     )
@@ -851,18 +891,21 @@ end
 end
 
 @testset "A feedforward that leaves nothing out stays whole" begin
-    sim = _state_source_simulation(; allow_different_components = true)
+    sim = _state_source_simulation(;
+        feedforward = _power_bound_feedforward(),
+        allow_different_components = true,
+    )
     @test build!(sim; console_level = Logging.AboveMaxLevel) ==
           PSI.SimulationBuildStatus.BUILT
     @test isnothing(POM.get_feedforward_components(only(_ed_feedforwards(sim))))
 end
 
-# A UC that does not model Alta and an hourly emulator that does, with a status
+# A UC that does not model Alta and an hourly emulator that does, with a power bound
 # feedforward on the emulator.
 function _emulator_feedforward_simulation(models; allow_different_components)
     sequence = SimulationSequence(;
         models,
-        feedforwards = Dict("EM" => [_status_feedforward()]),
+        feedforwards = Dict("EM" => [_power_bound_feedforward()]),
         ini_cond_chronology = InterProblemChronology(),
         allow_different_components,
     )
@@ -890,7 +933,10 @@ _em_feedforwards(models) =
     sim = _emulator_feedforward_simulation(models; allow_different_components = true)
     @test build!(sim; console_level = Logging.AboveMaxLevel) ==
           PSI.SimulationBuildStatus.BUILT
-    rows = _feedforward_constraint_rows(PSI.get_emulation_model(models))
+    rows = _feedforward_constraint_rows(
+        PSI.get_emulation_model(models),
+        POM.FeedforwardUpperBoundConstraint,
+    )
     @test !isempty(rows)
     @test all(names -> !("Alta" in names) && "Park City" in names, rows)
     @test POM.get_feedforward_components(only(_em_feedforwards(models))) isa Set
@@ -966,7 +1012,7 @@ end
           PSI.SimulationBuildStatus.BUILT
 end
 
-@testset "A feedforward leaves out a unit only the emulator writes" begin
+@testset "A feedforward source written only by the emulator fails at build" begin
     # The emulator commits Alta, but feedforwards read the decision state, which only the
     # decision models write, and the UC does not model Alta.
     sys_em = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_single_time_series = true)
@@ -1000,10 +1046,11 @@ end
     )
     sim = Simulation(; name = "em_only_source", steps = 1, models, sequence,
         simulation_folder = mktempdir(; cleanup = true))
-    @test build!(sim; console_level = Logging.AboveMaxLevel) ==
-          PSI.SimulationBuildStatus.BUILT
-    rows = _feedforward_constraint_rows(PSI.get_simulation_model(models, :ED))
-    @test !isempty(rows) && all(names -> !("Alta" in names), rows)
+    err = _build_error(sim)
+    @test err isa IS.ConflictingInputsError
+    msg = sprint(showerror, err)
+    @test occursin("ED", msg) && occursin("Alta", msg)
+    @test occursin("OnStatusParameter__ThermalStandard", msg)
     on_key = PSI.VariableKey(OnVariable, ThermalStandard)
     @test "Alta" in first(PSI._model_columns(PSI.get_emulation_model(models), on_key))
 end

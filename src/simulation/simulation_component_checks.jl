@@ -266,20 +266,29 @@ function _check_parameter_sources(sim::Simulation, model)
         missing_names = setdiff(names, writers)
         isempty(missing_names) && continue
         _throw_missing_writer(model, source_key, encode_key_as_string(key),
-            missing_names, _parameter_source_remedy(sim, model, source_key, writers))
+            missing_names, _parameter_source_remedy(sim, model, key, source_key, writers))
     end
     return
 end
 
 # Allowing different components restricts each feedforward that supports a component subset
 # to the components its source's decision-model `writers` hold, so the hint applies only to
-# those feedforwards and only when such a writer exists.
-function _parameter_source_remedy(sim::Simulation, model, source_key, writers)
+# a parameter set by such a feedforward and only when such a writer exists.
+function _parameter_source_remedy(
+    sim::Simulation,
+    model,
+    parameter_key,
+    source_key,
+    writers,
+)
     remedy = "Give a model that writes the source every unit the feedforward sets."
     (get_allow_different_components(sim) || isempty(writers)) && return remedy
+    parameter_type = get_entry_type(parameter_key)
+    component_type = get_component_type(parameter_key)
     restrictable = any(
         POM.supports_component_subset(typeof(ff)) &&
-        POM.get_optimization_container_key(ff) == source_key for
+        POM.get_optimization_container_key(ff) == source_key &&
+        POM.get_default_parameter_type(ff, component_type) === parameter_type for
         device_model in _template_device_models(model) for
         ff in IOM.get_feedforwards(device_model)
     )
