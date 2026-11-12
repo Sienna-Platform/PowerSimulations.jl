@@ -96,8 +96,7 @@ Run one operation of a partitioned simulation from command-line arguments.
 
 # Options
 
-  - `--output-dir=<path>`: Path for simulation outputs. Required for all operations unless
-    the environment variable `JADE_RUNTIME_OUTPUT` is set.
+  - `--output-dir=<path>`: Path for simulation outputs. Required for all operations.
   - `--simulation-name=<name>`: Simulation name. Required for all operations.
   - `--num-steps=<n>`, `--num-period-steps=<n>`, `--num-overlap-steps=<n>`: Definition of
     the partitions. Required by `setup`, except for `--num-overlap-steps`, which defaults
@@ -157,6 +156,8 @@ function process_simulation_partition_cli_args(build_function, execute_function,
     if haskey(options, "output-dir")
         output_dir = options["output-dir"]
     elseif haskey(ENV, "JADE_RUNTIME_OUTPUT")
+        # This is preserved for legacy purposes. Torc is now used and always passes
+        # output-dir.
         output_dir = joinpath(ENV["JADE_RUNTIME_OUTPUT"], "job-outputs")
     else
         error("output-dir must be specified as a CLI option or environment variable")
