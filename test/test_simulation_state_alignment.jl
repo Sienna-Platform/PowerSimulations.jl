@@ -63,7 +63,7 @@ end
     )
     store_data = DenseAxisArray(reshape([1.0, 2.0, 3.0, 4.0], 1, 2, 2), ["gen"], 1:2, 1:2)
     params = PSI.ModelStoreParams(1, 2, resolution, resolution, 100.0, UUIDs.uuid4())
-    PSI.update_decision_state!(state, key, store_data, ts, params)
+    PSI.update_decision_state!(state, key, store_data, ts, params, :M)
     values = PSI.get_decision_state_value(state, key)
     @test values["gen", "1", :].data == [1.0, 3.0]
     @test values["gen", "2", :].data == [2.0, 4.0]

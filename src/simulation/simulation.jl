@@ -890,7 +890,7 @@ function _update_decision_state_from_store!(sim::Simulation, model_name::Symbol,
     for key in keys
         !has_dataset(get_decision_states(state), key) && continue
         res = read_result(DenseAxisArray, store, model_name, key, simulation_time)
-        update_decision_state!(state, key, res, simulation_time, model_params)
+        update_decision_state!(state, key, res, simulation_time, model_params, model_name)
         state_data = get_decision_state_data(state, key)
         missing_columns = _missing_state_columns(state_data, axes(res)[1])
         isnothing(missing_columns) && continue

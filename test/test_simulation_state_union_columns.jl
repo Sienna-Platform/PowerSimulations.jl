@@ -219,7 +219,7 @@ end
         PSI.InMemoryDataset(-1.0, ts, resolution, 1, 2, ["gen", "other"]),
     )
     store_data = DenseAxisArray([1.0 2.0], ["gen"], 1:2)
-    PSI.update_decision_state!(state, key_2d, store_data, ts, params)
+    PSI.update_decision_state!(state, key_2d, store_data, ts, params, :M)
     values = PSI.get_decision_state_value(state, key_2d)
     @test values["gen", :].data == [1.0, 2.0]
     @test values["other", :].data == [-1.0, -1.0]
@@ -232,7 +232,7 @@ end
         PSI.InMemoryDataset(-1.0, ts, resolution, 1, 2, (["gen", "other"], ["1", "2"])),
     )
     store_data = DenseAxisArray(reshape([1.0, 2.0, 3.0, 4.0], 1, 2, 2), ["gen"], 1:2, 1:2)
-    PSI.update_decision_state!(state, key_3d, store_data, ts, params)
+    PSI.update_decision_state!(state, key_3d, store_data, ts, params, :M)
     values = PSI.get_decision_state_value(state, key_3d)
     @test values["gen", "1", :].data == [1.0, 3.0]
     @test values["other", "2", :].data == [-1.0, -1.0]
@@ -386,4 +386,34 @@ end
     @test dataset.values["gen", :].data == [3.0, 4.0, 4.0, 4.0]
     @test PSI.get_last_recorded_row(dataset) == 2
     @test PSI._window_rows(dataset, t0 + Hour(2), Millisecond(Hour(3))) == 1:3
+end
+
+@testset "A model output with a non-finite value is rejected" begin
+    ts = DateTime("2024-01-01T00:00:00")
+    resolution = Millisecond(Hour(1))
+    params = PSI.ModelStoreParams(1, 2, resolution, resolution, 100.0, UUIDs.uuid4())
+    keys = (
+        PSI.VariableKey(ActivePowerVariable, ThermalStandard),
+        PSI.AuxVarKey(PSI.TimeDurationOn, ThermalStandard),
+    )
+    for key in keys
+        state = PSI.SimulationState()
+        PSI.set_dataset!(
+            PSI.get_decision_states(state),
+            key,
+            PSI.InMemoryDataset(0.0, ts, resolution, 1, 2, ["gen"]),
+        )
+        store_data = DenseAxisArray([1.0 NaN], ["gen"], 1:2)
+        err = try
+            PSI.update_decision_state!(state, key, store_data, ts, params, :UC)
+            nothing
+        catch e
+            e
+        end
+        @test err isa IS.InvalidValue
+        message = sprint(showerror, err)
+        @test occursin(IOM.encode_key_as_string(key), message)
+        @test occursin("gen", message)
+        @test occursin("UC", message)
+    end
 end

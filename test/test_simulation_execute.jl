@@ -710,3 +710,44 @@ end
     @test JuMP.num_variables(IOM.get_jump_model(ed)) > 0
     @test !isempty(IOM.get_variables(IOM.get_optimization_container(ed)))
 end
+
+@testset "A must-run unit reports finite time-on values" begin
+    sys = PSB.build_system(PSITestSystems, "c_sys5_uc")
+    PSY.set_commitment_mode!(
+        PSY.get_component(PSY.ThermalStandard, sys, "Alta"),
+        PSY.CommitmentModes.MUST_RUN,
+    )
+    models = SimulationModels(;
+        decision_models = [
+            DecisionModel(
+                get_template_standard_uc_simulation(),
+                sys;
+                name = "UC",
+                optimizer = HiGHS_optimizer,
+            ),
+        ],
+    )
+    sequence = SimulationSequence(; models, ini_cond_chronology = InterProblemChronology())
+    sim = Simulation(;
+        name = "must_run",
+        steps = 2,
+        models,
+        sequence,
+        simulation_folder = mktempdir(; cleanup = true),
+    )
+    @test build!(sim; console_level = Logging.Error) == PSI.SimulationBuildStatus.BUILT
+    @test execute!(sim; in_memory = false) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+    results = SimulationResults(sim)
+    uc = get_decision_problem_results(results, "UC")
+    time_on = read_realized_aux_variable(uc, "TimeDurationOn__ThermalStandard")
+    alta = time_on[time_on.name .== "Alta", :value]
+    @test !isempty(alta)
+    @test all(isfinite, alta)
+    @test all(>(0.0), alta)
+    # The count restarts at 1 in each step's solve window and grows by 1 per row.
+    window = length(alta) ÷ 2
+    @test length(alta) == 2 * window
+    for step_rows in Iterators.partition(alta, window)
+        @test step_rows == collect(1.0:Float64(window))
+    end
+end
