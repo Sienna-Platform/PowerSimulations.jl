@@ -1,38 +1,5 @@
 # POM keys the ORDC cost parameters of every reserve of a type into one container.
 
-function _add_ts_ordc!(
-    sys,
-    name::String,
-    static_ordc;
-    reserve_type = OnlineReserve{ReserveUp},
-    incrs_x = (0.0, 0.0, 0.0),
-    incrs_y = (0.0, 0.0, 0.0),
-    create_extra_tranches = false,
-)
-    baseline_curve = PSY.get_variable(static_ordc)
-    power_units = PSY.get_power_units(baseline_curve)
-    fd = PSY.get_function_data(PSY.get_value_curve(baseline_curve))
-    ordc_ts = reserve_type(;
-        name = name,
-        available = true,
-        time_frame = PSY.get_time_frame(static_ordc),
-    )
-    add_service!(sys, ordc_ts, get_components(ThermalStandard, sys))
-    pwl_ts = make_deterministic_ts(
-        sys,
-        "variable_cost",
-        fd,
-        incrs_x,
-        incrs_y;
-        override_min_x = 0.0,
-        override_max_x = last(get_x_coords(fd)),
-        create_extra_tranches = create_extra_tranches,
-    )
-    pwl_key = add_time_series!(sys, ordc_ts, pwl_ts)
-    PSY.set_variable!(ordc_ts, PSY.make_market_bid_ts_curve(pwl_key, nothing, power_units))
-    return ordc_ts
-end
-
 @testset "Time-varying ORDC cost parameters update between steps" begin
     sys = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_reserves = true)
     static_ordc = first(get_components(PSY.has_demand_curve, PSY.OnlineReserve, sys))

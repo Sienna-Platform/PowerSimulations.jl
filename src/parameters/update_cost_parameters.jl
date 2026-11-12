@@ -23,12 +23,15 @@ function _update_parameter_values!(
             "Cannot update $(T) on a synchronized container; objective expressions would " *
             "be re-augmented and double-counted",
         )
-    template = get_template(model)
-    device_model = get_model(template, V)
-    components = IOM.get_available_components(device_model, get_system(model))
-    ts_type = get_deterministic_time_series_type(get_system(model))
-    for component in components
-        name = PSY.get_name(component)
+    system = get_system(model)
+    ts_type = get_deterministic_time_series_type(system)
+    # The build made rows only for components with the series; availability can change since.
+    for name in axes(parameter_array, 1)
+        component = PSY.get_component(V, system, name)
+        isnothing(component) && error(
+            "Component $(V) named '$(name)' is no longer in the system; " *
+            "cannot update parameter $(T)",
+        )
         op_cost = PSY.get_operation_cost(component)
         # `handle_variable_cost_parameter` is responsible for figuring out whether there is
         # actually time variance for this particular component and, if so, performing the update
@@ -314,7 +317,6 @@ function handle_variable_cost_parameter(
     T <: Union{StartupCostParameter, ShutdownCostParameter, AbstractCostAtMinParameter},
 }
     is_time_variant(_get_parameter_field(T, op_cost)) || return
-    container = get_optimization_container(model)
     ts_name = _cost_ts_name(param, component, op_cost)
     raw_values = get_time_series_values!(
         ts_type,
@@ -324,16 +326,7 @@ function handle_variable_cost_parameter(
         initial_forecast_time,
         horizon,
     )
-    _update_scalar_cost_values!(
-        param,
-        container,
-        raw_values,
-        parameter_array,
-        parameter_multiplier,
-        attributes,
-        component,
-        name,
-    )
+    _update_scalar_cost_values!(param, raw_values, parameter_array, name)
     return
 end
 
@@ -341,12 +334,8 @@ end
 # per-step loop is specialized here on its concrete runtime element type.
 function _update_scalar_cost_values!(
     param::T,
-    container::OptimizationContainer,
     raw_values,
     parameter_array,
-    parameter_multiplier,
-    attributes,
-    component,
     name,
 ) where {
     T <: Union{StartupCostParameter, ShutdownCostParameter, AbstractCostAtMinParameter},
@@ -355,18 +344,6 @@ function _update_scalar_cost_values!(
     for (t, raw_value) in enumerate(raw_values)
         value = unwrap_for_param(param, raw_value, additional_axes)
         _set_param_value!(parameter_array, _maybe_tuple(param, value), name, t)
-    end
-    _edits_in_place(container) || return
-    for t in eachindex(raw_values)
-        update_variable_cost!(
-            param,
-            container,
-            parameter_array,
-            parameter_multiplier,
-            attributes,
-            component,
-            t,
-        )
     end
     return
 end
@@ -515,7 +492,6 @@ function handle_variable_cost_parameter(
         "Compact-power fuel cost conversion is not implemented for $(name); " *
         "no current formulation sets uses_compact_power=true for FuelCostParameter.",
     )
-    container = get_optimization_container(model)
     device_model = get_model(get_template(model), typeof(component))
     ts_name = IOM.get_time_series_names(device_model)[FuelCostParameter]
     raw_values = get_time_series_values!(
@@ -526,46 +502,15 @@ function handle_variable_cost_parameter(
         initial_forecast_time,
         horizon,
     )
-    _update_fuel_cost_values!(
-        container,
-        raw_values,
-        parameter_array,
-        parameter_multiplier,
-        attributes,
-        component,
-        fuel_curve,
-        name,
-    )
+    _update_fuel_cost_values!(raw_values, parameter_array, name)
     return
 end
 
 # Function barrier: `raw_values` comes back from the time-series read abstractly typed, so the
 # per-step loop is specialized here on its concrete runtime element type.
-function _update_fuel_cost_values!(
-    container::OptimizationContainer,
-    raw_values,
-    parameter_array,
-    parameter_multiplier,
-    attributes,
-    component,
-    fuel_curve,
-    name,
-)
+function _update_fuel_cost_values!(raw_values, parameter_array, name)
     for (t, value) in enumerate(raw_values)
         _set_param_value!(parameter_array, value, name, t)
-    end
-    _edits_in_place(container) || return
-    for t in eachindex(raw_values)
-        update_variable_cost!(
-            FuelCostParameter(),
-            container,
-            parameter_array,
-            parameter_multiplier,
-            attributes,
-            component,
-            fuel_curve,
-            t,
-        )
     end
     return
 end
@@ -596,54 +541,6 @@ function _update_pwl_cost_expression(
         )
     end
     return gen_cost
-end
-
-# For multi-start variables, we need to get a subset of the parameter
-_index_into_param(cost_data, ::T) where {T <: Union{StartVariable, MultiStartVariable}} =
-    start_up_cost(cost_data, T)
-_index_into_param(cost_data, ::VariableType) = cost_data
-
-get_update_multiplier(::DecrementalCostAtMinParameter) = -1.0
-get_update_multiplier(::IncrementalCostAtMinParameter) = 1.0
-get_update_multiplier(::ObjectiveFunctionParameter) = 1.0
-
-# Mirrors the per-component decomposition done at build time, so recurrent solves
-# update the same constituent expression that contributed to ProductionCostExpression.
-_constituent_cost_expression(::StartupCostParameter) = StartUpCostExpression
-_constituent_cost_expression(::ShutdownCostParameter) = ShutDownCostExpression
-_constituent_cost_expression(::AbstractCostAtMinParameter) = FixedCostExpression
-
-# General case
-function update_variable_cost!(
-    parameter::ObjectiveFunctionParameter,
-    container::OptimizationContainer,
-    parameter_array::DenseAxisArray{T},
-    parameter_multiplier::JuMPFloatArray,
-    attributes::CostFunctionAttributes{T},
-    component::U,
-    time_period::Int,
-) where {T, U <: PSY.Component}
-    component_name = PSY.get_name(component)
-    cost_data = parameter_array[component_name, time_period]
-    mult_ = parameter_multiplier[component_name, time_period]
-    mult2 = get_update_multiplier(parameter)
-    constituent_type = _constituent_cost_expression(parameter)
-    for MyVariableType in get_variable_types(attributes)
-        variable = get_variable(container, MyVariableType, U)
-        my_cost_data = _index_into_param(cost_data, MyVariableType())
-        iszero(my_cost_data) && continue
-        cost_expr = variable[component_name, time_period] * my_cost_data * mult_ * mult2
-        add_to_objective_variant_expression!(container, cost_expr)
-        set_expression!(
-            container,
-            ProductionCostExpression,
-            cost_expr,
-            component,
-            time_period,
-        )
-        set_expression!(container, constituent_type, cost_expr, component, time_period)
-    end
-    return
 end
 
 get_update_multiplier(::IncrementalPiecewiseLinearSlopeParameter) = 1.0
@@ -681,36 +578,78 @@ function update_variable_cost!(
         )
     signed_cost = mult2 * mult_ * gen_cost
     add_to_objective_variant_expression!(container, signed_cost)
-    set_expression!(
-        container,
-        ProductionCostExpression,
-        signed_cost,
-        component,
-        time_period,
-    )
-    set_expression!(container, FuelCostExpression, signed_cost, component, time_period)
+    IOM.add_variant_cost_to_expression!(
+        container, ProductionCostExpression, signed_cost, T, component_name, time_period)
     return
 end
 
-# Special case for fuel cost
-function update_variable_cost!(
-    ::FuelCostParameter,
-    container::OptimizationContainer,
-    parameter_array::JuMPFloatArray,
-    parameter_multiplier::JuMPFloatArray,
-    ::CostFunctionAttributes{Float64},
-    component::T,
-    fuel_curve::PSY.FuelCurve,
-    time_period::Int,
-) where {T <: PSY.Component}
-    component_name = PSY.get_name(component)
-    fuel_cost = parameter_array[component_name, time_period]
-    iszero(fuel_cost) && return
-    mult_ = parameter_multiplier[component_name, time_period]
-    expression = get_expression(container, FuelConsumptionExpression, T)
-    cost_expr = expression[component_name, time_period] * fuel_cost * mult_
-    add_to_objective_variant_expression!(container, cost_expr)
-    set_expression!(container, ProductionCostExpression, cost_expr, component, time_period)
-    set_expression!(container, FuelCostExpression, cost_expr, component, time_period)
+"""
+Re-add the time-variant scalar cost terms after the reset that precedes an in-place update.
+Calls the build's own writers, which read the parameter values just written, so the update
+keeps the build's `dt` scaling, must-run skips and no-load terms.
+"""
+function rewrite_variant_costs!(model::IOM.AbstractOptimizationModel)
+    container = get_optimization_container(model)
+    system = get_system(model)
+    for device_model in values(IOM.get_device_models(get_template(model)))
+        _rewrite_variant_costs!(container, device_model, system)
+    end
     return
 end
+
+_rewrite_variant_costs!(::OptimizationContainer, ::DeviceModel, ::PSY.System) = nothing
+
+function _rewrite_variant_costs!(
+    container::OptimizationContainer,
+    ::DeviceModel{T, D},
+    system::PSY.System,
+) where {T <: PSY.Device, D <: AbstractDeviceFormulation}
+    if has_container_key(container, StartupCostParameter, T)
+        devices = _built_components(container, StartupCostParameter, T, system)
+        for U in _cost_variable_types(container, StartupCostParameter, T)
+            IOM.add_start_up_cost!(container, U, devices, D)
+        end
+    end
+    if has_container_key(container, ShutdownCostParameter, T)
+        devices = _built_components(container, ShutdownCostParameter, T, system)
+        for U in _cost_variable_types(container, ShutdownCostParameter, T)
+            IOM.add_shut_down_cost!(container, U, devices, D)
+        end
+    end
+    # Cost at min and a fuel price both price the OnVariable term; write it once per device.
+    on_devices = T[]
+    for P in
+        (IncrementalCostAtMinParameter, DecrementalCostAtMinParameter, FuelCostParameter)
+        has_container_key(container, P, T) || continue
+        append!(on_devices, _built_components(container, P, T, system))
+    end
+    unique!(on_devices)
+    filter!(d -> IOM.is_time_variant_proportional(PSY.get_operation_cost(d)), on_devices)
+    if !isempty(on_devices) && has_container_key(container, OnVariable, T)
+        POM.add_proportional_cost!(container, OnVariable, on_devices, D)
+    end
+    if has_container_key(container, FuelCostParameter, T)
+        for d in _built_components(container, FuelCostParameter, T, system)
+            fuel_curve = PSY.get_variable_operation_cost(PSY.get_operation_cost(d))
+            IOM._add_time_varying_fuel_variable_cost!(
+                container, ActivePowerVariable, d,
+                PSY.get_fuel_cost_time_series(fuel_curve))
+        end
+    end
+    return
+end
+
+# Components with a row in the parameter `P` of `T`.
+_built_components(
+    container::OptimizationContainer,
+    ::Type{P},
+    ::Type{T},
+    system::PSY.System,
+) where {P, T} =
+    T[
+        PSY.get_component(T, system, name) for
+        name in axes(get_parameter_array(container, P, T), 1)
+    ]
+
+_cost_variable_types(container::OptimizationContainer, ::Type{P}, ::Type{T}) where {P, T} =
+    IOM.get_variable_types(get_parameter_attributes(container, ParameterKey(P, T)))

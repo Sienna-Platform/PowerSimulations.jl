@@ -297,9 +297,7 @@ end
             RangeReserve;
             attributes = Dict{String, Any}(
                 "service_filter" => make_selector(
-                    x -> PSY.get_name(x) != "ORDC1",
-                    OnlineReserve{ReserveUp},
-                ),
+                    x -> PSY.get_name(x) != "ORDC1", OnlineReserve{ReserveUp}),
             ),
         ),
     )
