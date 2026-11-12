@@ -326,7 +326,8 @@ end
             ThermalStandard,
             ThermalBasicUnitCommitment;
             attributes = Dict{String, Any}(
-                "filter_function" => x -> PSY.get_name(x) != "Alta",
+                "device_filter" =>
+                    make_selector(x -> PSY.get_name(x) != "Alta", ThermalStandard),
             ),
         ),
     )
