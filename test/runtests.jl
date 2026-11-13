@@ -4,7 +4,9 @@ include("includes.jl")
 import Aqua
 Aqua.test_undefined_exports(PowerSimulations)
 Aqua.test_ambiguities(PowerSimulations)
-Aqua.test_stale_deps(PowerSimulations)
+# PowerMatricesCore is unregistered, so it is a direct dependency only to give its
+# `[sources]` entry effect for PowerNetworkMatrices.
+Aqua.test_stale_deps(PowerSimulations; ignore = [:PowerMatricesCore])
 Aqua.test_unbound_args(PowerSimulations)
 # Aqua.find_persistent_tasks_deps / Aqua.test_persistent_tasks resolve a fresh, throwaway
 # environment per dependency from the registry. On the psy6 line, PowerSystems' dependency
