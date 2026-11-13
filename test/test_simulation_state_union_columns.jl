@@ -1,38 +1,21 @@
 # Parameters written to the simulation state whose columns differ between models. Each model
 # fills them for the loads named in its device model, with a value that identifies the model.
+# Non-empty "segments" give the parameters a second axis between the loads and time.
 struct UnionColumnsParameter <: IOM.ParameterType end
-struct FilledColumnsParameter <: IOM.ParameterType end
 IOM.should_write_resulting_value(::Type{UnionColumnsParameter}) = true
-IOM.should_write_resulting_value(::Type{FilledColumnsParameter}) = true
 
 const UNION_KEY = IOM.ParameterKey{UnionColumnsParameter, PowerLoad}("")
-const FILLED_KEY = IOM.ParameterKey{FilledColumnsParameter, PowerLoad}("")
-
-# State columns a model lacks for `FilledColumnsParameter` are filled with this value.
-const FILL_VALUES = Dict(:UC => 10.0, :ED => 20.0, :EM => 30.0)
-const FILL_CALLS = Tuple{Symbol, Vector{String}, UnitRange{Int}, Vector{DateTime}}[]
-
-function PSI.update_missing_state_columns!(
-    state_data::IOM.InMemoryDataset,
-    ::IOM.ParameterKey{FilledColumnsParameter, PowerLoad},
-    model::IOM.AbstractOptimizationModel,
-    columns::AbstractVector{String},
-    state_rows::UnitRange{Int},
-    row_timestamps::AbstractVector{Dates.DateTime},
-)
-    name = IOM.get_name(model)
-    push!(FILL_CALLS, (name, copy(columns), state_rows, collect(row_timestamps)))
-    for column in columns, row in state_rows
-        state_data.values[column, row] = FILL_VALUES[name]
-    end
-    return
-end
 
 struct UnionColumnsProbe <: POM.AbstractLoadFormulation end
 POM.get_default_time_series_names(::Type{PowerLoad}, ::Type{UnionColumnsProbe}) =
     Dict{Type{<:IOM.TimeSeriesParameter}, String}()
 POM.get_default_attributes(::Type{PowerLoad}, ::Type{UnionColumnsProbe}) =
-    Dict{String, Any}("parameters" => DataType[], "columns" => String[], "value" => 0.0)
+    Dict{String, Any}(
+        "parameters" => DataType[],
+        "columns" => String[],
+        "segments" => String[],
+        "value" => 0.0,
+    )
 
 function _fill_probe_parameters!(
     container::IOM.OptimizationContainer,
@@ -53,6 +36,8 @@ function POM.construct_device!(
     model::IOM.DeviceModel{PowerLoad, UnionColumnsProbe},
     ::IOM.NetworkModel,
 )
+    segments = IOM.get_attribute(model, "segments")
+    inner_axes = isempty(segments) ? () : (segments,)
     for T in IOM.get_attribute(model, "parameters")
         IOM.add_param_container_shared_axes!(
             container,
@@ -60,6 +45,7 @@ function POM.construct_device!(
             IOM.NoAttributes(),
             Float64,
             IOM.get_attribute(model, "columns"),
+            inner_axes...,
             IOM.get_time_steps(container),
         )
     end
@@ -78,7 +64,7 @@ POM.construct_device!(
 function IOM.update_container_parameter_values!(
     container::IOM.OptimizationContainer,
     model::IOM.AbstractOptimizationModel,
-    ::IOM.ParameterKey{<:Union{UnionColumnsParameter, FilledColumnsParameter}, PowerLoad},
+    ::IOM.ParameterKey{UnionColumnsParameter, PowerLoad},
     ::IOM.DatasetContainer{IOM.InMemoryDataset},
 )
     template = IOM.get_template(model)
@@ -86,7 +72,7 @@ function IOM.update_container_parameter_values!(
     return
 end
 
-function _probe_template(template, parameters, columns, value)
+function _probe_template(template, parameters, columns, value, segments = String[])
     set_device_model!(
         template,
         DeviceModel(
@@ -95,6 +81,7 @@ function _probe_template(template, parameters, columns, value)
             attributes = Dict{String, Any}(
                 "parameters" => DataType[parameters...],
                 "columns" => columns,
+                "segments" => segments,
                 "value" => value,
             ),
         ),
@@ -138,6 +125,7 @@ function _run_union_columns_simulation(models; steps = 1)
     sequence = SimulationSequence(;
         models = models,
         ini_cond_chronology = InterProblemChronology(),
+        allow_different_components = true,
     )
     sim = Simulation(;
         name = "union_columns",
@@ -270,48 +258,6 @@ end
     @test all(==(3.0), Matrix(df[!, em_columns]))
 end
 
-@testset "Models fill the state columns they lack through the extension point" begin
-    empty!(FILL_CALLS)
-    models = _union_columns_models(;
-        uc = ([FilledColumnsParameter], ["Bus2", "Bus3"], 1.0),
-        ed = ([FilledColumnsParameter], ["Bus3", "Bus4"], 2.0),
-        # The emulator does not have the key at all.
-        em = ([UnionColumnsParameter], ["Bus2"], 3.0),
-    )
-    sim = _run_union_columns_simulation(models)
-
-    dataset, row = _last_ed_row(sim, FILLED_KEY)
-    @test dataset.values["Bus3", row] == 2.0
-    @test dataset.values["Bus4", row] == 2.0
-    @test dataset.values["Bus2", row] == FILL_VALUES[:ED]
-
-    @test any(c -> c[1] == :UC && c[2] == ["Bus4"] && !isempty(c[3]), FILL_CALLS)
-    @test any(c -> c[1] == :ED && c[2] == ["Bus2"] && !isempty(c[3]), FILL_CALLS)
-    em_calls = filter(c -> c[1] == :EM, FILL_CALLS)
-    @test !isempty(em_calls)
-    @test all(c -> sort(c[2]) == ["Bus2", "Bus3", "Bus4"] && c[3] == 1:1, em_calls)
-end
-
-@testset "A model without the key fills its whole window" begin
-    empty!(FILL_CALLS)
-    # Only ED writes the key. UC solves each day before ED, so at the second step UC's window
-    # starts past the rows the key's dataset holds.
-    models = _union_columns_models(;
-        uc = (DataType[], String[], 1.0),
-        ed = ([FilledColumnsParameter], ["Bus2", "Bus3"], 2.0),
-    )
-    sim = _run_union_columns_simulation(models; steps = 2)
-
-    uc_calls = filter(c -> c[1] == :UC, FILL_CALLS)
-    t0 = PSI.get_initial_time(sim)
-    @test length(uc_calls) == 2
-    for (window_start, (_, columns, rows, timestamps)) in zip((t0, t0 + Day(1)), uc_calls)
-        @test columns == ["Bus2", "Bus3"]
-        @test length(rows) == length(timestamps) == 24
-        @test timestamps == collect(range(window_start; step = Hour(1), length = 24))
-    end
-end
-
 @testset "Reading a state value no model wrote names the component and key" begin
     # The emulator writes the commitment state without Alta, so Alta's system-state column is
     # never written and UC's initial conditions read it at the second step.
@@ -360,6 +306,7 @@ end
         sequence = SimulationSequence(;
             models = models,
             ini_cond_chronology = InterProblemChronology(),
+            allow_different_components = true,
         ),
         simulation_folder = mktempdir(; cleanup = true),
     )
@@ -369,23 +316,6 @@ end
     @test occursin("Alta", log)
     @test occursin("OnVariable__ThermalStandard", log)
     @test occursin("device filters", log)
-end
-
-@testset "Advancing a dataset no model writes keeps each value's timestamp" begin
-    t0 = DateTime("2024-01-01T00:00:00")
-    resolution = Millisecond(Hour(1))
-    dataset = PSI.InMemoryDataset(NaN, t0, resolution, 2, 4, ["gen"])
-    dataset.values["gen", :] = [1.0, 2.0, 3.0, 4.0]
-    PSI.set_last_recorded_row!(dataset, 4)
-
-    PSI._advance_state_window!(dataset, t0 + Hour(1))
-    @test dataset.timestamps[1] == t0
-
-    PSI._advance_state_window!(dataset, t0 + Hour(2))
-    @test dataset.timestamps == collect(range(t0 + Hour(2); step = Hour(1), length = 4))
-    @test dataset.values["gen", :].data == [3.0, 4.0, 4.0, 4.0]
-    @test PSI.get_last_recorded_row(dataset) == 2
-    @test PSI._window_rows(dataset, t0 + Hour(2), Millisecond(Hour(3))) == 1:3
 end
 
 @testset "A model output with a non-finite value is rejected" begin
@@ -416,4 +346,28 @@ end
         @test occursin("gen", message)
         @test occursin("UC", message)
     end
+end
+
+@testset "A 3-D key compares only its component axis" begin
+    segments = ["1", "2"]
+    function build_3d(ed_columns)
+        models = _union_columns_models(;
+            uc = ([UnionColumnsParameter], ["Bus2", "Bus3"], 1.0, segments),
+            ed = ([UnionColumnsParameter], ed_columns, 2.0, segments),
+        )
+        sequence =
+            SimulationSequence(; models, ini_cond_chronology = InterProblemChronology())
+        sim = Simulation(; name = "component_axis_3d", steps = 1, models, sequence,
+            simulation_folder = mktempdir(; cleanup = true))
+        return try
+            build!(sim; console_level = Logging.AboveMaxLevel)
+        catch e
+            e
+        end
+    end
+    @test build_3d(["Bus3", "Bus2"]) == PSI.SimulationBuildStatus.BUILT
+    err = build_3d(["Bus2"])
+    @test err isa IS.ConflictingInputsError
+    msg = sprint(showerror, err)
+    @test occursin(IOM.encode_key_as_string(UNION_KEY), msg) && occursin("Bus3", msg)
 end

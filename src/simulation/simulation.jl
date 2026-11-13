@@ -103,6 +103,8 @@ end
 ###################### Simulation Accessor Functions ####################
 get_initial_time(sim::Simulation) = sim.initial_time
 get_sequence(sim::Simulation) = sim.sequence
+get_allow_different_components(sim::Simulation) =
+    get_allow_different_components(get_sequence(sim))
 get_steps(sim::Simulation) = sim.steps
 IOM.get_current_time(sim::Simulation) = get_current_time(get_simulation_state(sim))
 get_simulation_model(s::Simulation, name) = get_simulation_model(get_models(s), name)
@@ -267,7 +269,8 @@ function _ic_values_reconciled(all_values::Vector)
 end
 
 # Compare initial conditions for all `InitialConditionType`s with the
-# `requires_reconciliation` trait across `models`, log @info messages for mismatches
+# `requires_reconciliation` trait across `models`, log @info messages for mismatches.
+# Values are compared on the components every model with the key holds.
 function _initial_conditions_reconciliation!(
     models::Vector{<:IOM.AbstractOptimizationModel})
     model_names = get_name.(models)
@@ -296,12 +299,8 @@ function _initial_conditions_reconciliation!(
             ic_vals_per_model[i] = ic_vals_per_component
         end
 
-        # Assert that all models have the same components for current ic_key
-        @assert allequal(Set.(keys.(values(ic_vals_per_model)))) "For IC key $ic_key, not all models have the same components"
-
-        # For each component in current ic_key, compare values across models
-        component_names = keys(first(values(ic_vals_per_model)))
-        for component_name in component_names
+        component_names = intersect(Set.(keys.(values(ic_vals_per_model)))...)
+        for component_name in sort!(collect(component_names))
             all_values = [result[component_name] for result in values(ic_vals_per_model)]
             if !_ic_values_reconciled(all_values)
                 has_mismatches = true
@@ -345,6 +344,7 @@ function _build_single_model_for_simulation(
         # TODO-PJ: Temporary while are able to switch from PJ to POI
         container = get_optimization_container(model)
         container.built_for_recurrent_solves = true
+        _prepare_feedforwards!(sim, model)
         POM.build_model!(model)
         sim.internal.date_ref[model_number] = initial_time
         set_status!(model, ModelBuildStatus.BUILT)
@@ -367,7 +367,6 @@ function _build_decision_models!(sim::Simulation)
             end
         end
     end
-    _initial_conditions_reconciliation!(get_decision_models(get_models(sim)))
     return
 end
 
@@ -380,6 +379,7 @@ function _build_emulation_model!(sim::Simulation)
 
     try
         initial_time = _prepare_model_for_simulation!(model, sim)
+        _prepare_feedforwards!(sim, model)
         TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "Problem Emulation $(get_name(model))" begin
             POM.build_model!(model)
         end
@@ -579,6 +579,9 @@ function _build!(
     sequence = get_sequence(sim)
     step_resolution = get_step_resolution(sequence)
     simulation_models = get_models(sim)
+    if get_allow_different_components(sequence)
+        @info "Models may hold different components; the simulation state holds every model's components."
+    end
 
     if !isnothing(partitions) && !isnothing(index)
         step_range = get_absolute_step_range(partitions, index)
@@ -626,10 +629,13 @@ function _build!(
     _fill_event_models!(sim)
     _build_decision_models!(sim)
     _build_emulation_model!(sim)
+    _check_component_sets(sim)
+    _initial_conditions_reconciliation!(get_decision_models(simulation_models))
 
     TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "Initialize Simulation State" begin
         _initialize_simulation_state!(sim)
     end
+    _check_state_sources(sim)
 
     TimerOutputs.@timeit BUILD_PROBLEMS_TIMER "Initialize Problem Storage" begin
         open_store(HdfSimulationStore, get_store_dir(sim), "w") do store
@@ -829,33 +835,9 @@ function _update_system_state!(sim::Simulation, model::EmulationModel)
     system_state = get_system_states(sim_state)
     store = get_simulation_store(sim)
     em_model_name = get_name(model)
-    row_timestamps = [simulation_time]
     for key in get_container_keys(get_optimization_container(model))
         !should_write_resulting_value(key) && continue
         update_system_state!(system_state, key, store, em_model_name, simulation_time)
-        dataset = get_dataset(system_state, key)
-        missing_columns = _missing_state_columns(dataset, first(_model_columns(model, key)))
-        isnothing(missing_columns) && continue
-        update_missing_state_columns!(
-            dataset,
-            key,
-            model,
-            missing_columns,
-            1:1,
-            row_timestamps,
-        )
-    end
-    for key in get_dataset_keys(system_state)
-        _writes_key(model, key) && continue
-        dataset = get_dataset(system_state, key)
-        update_missing_state_columns!(
-            dataset,
-            key,
-            model,
-            axes(dataset.values)[1],
-            1:1,
-            row_timestamps,
-        )
     end
     IS.@record :execution StateUpdateEvent(simulation_time, em_model_name, "SystemState")
     return
@@ -874,7 +856,6 @@ function _update_simulation_state!(sim::Simulation, model::DecisionModel)
     #Order matters; update parameters first to ensure event parameters are updated first
     _update_simulation_state_parameters!(sim, model)
     _update_simulation_state_others!(sim, model)
-    _update_keys_missing_from_model!(sim, model)
     model_name = get_name(model)
     simulation_time = get_current_time(sim)
     IS.@record :execution StateUpdateEvent(simulation_time, model_name, "DecisionState")
@@ -886,47 +867,10 @@ function _update_decision_state_from_store!(sim::Simulation, model_name::Symbol,
     simulation_time = get_current_time(sim)
     state = get_simulation_state(sim)
     model_params = get_decision_model_params(store, model_name)
-    model = get_simulation_model(get_models(sim), model_name)
     for key in keys
         !has_dataset(get_decision_states(state), key) && continue
         res = read_result(DenseAxisArray, store, model_name, key, simulation_time)
         update_decision_state!(state, key, res, simulation_time, model_params, model_name)
-        state_data = get_decision_state_data(state, key)
-        missing_columns = _missing_state_columns(state_data, axes(res)[1])
-        isnothing(missing_columns) && continue
-        first_row = find_timestamp_index(state_data.timestamps, simulation_time)
-        state_rows = first_row:get_last_recorded_row(state_data)
-        update_missing_state_columns!(
-            state_data,
-            key,
-            model,
-            missing_columns,
-            state_rows,
-            view(state_data.timestamps, state_rows),
-        )
-    end
-    return
-end
-
-# The state keys `model` does not write still get the extension point, over the state rows
-# that cover the model's window.
-function _update_keys_missing_from_model!(sim::Simulation, model::DecisionModel)
-    decision_states = get_decision_states(get_simulation_state(sim))
-    simulation_time = get_current_time(sim)
-    horizon = get_horizon(model)
-    for key in get_dataset_keys(decision_states)
-        _writes_key(model, key) && continue
-        state_data = get_dataset(decision_states, key)
-        _advance_state_window!(state_data, simulation_time)
-        state_rows = _window_rows(state_data, simulation_time, horizon)
-        update_missing_state_columns!(
-            state_data,
-            key,
-            model,
-            axes(state_data.values)[1],
-            state_rows,
-            view(state_data.timestamps, state_rows),
-        )
     end
     return
 end

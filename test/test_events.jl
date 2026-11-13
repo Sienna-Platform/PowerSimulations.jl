@@ -582,6 +582,7 @@ function events_simulation(
     sys_em,
     event_model;
     rebuild_model = false,
+    allow_different_components = false,
 )
     templates = map(1:2) do _
         template = get_template_basic_uc_simulation()
@@ -628,6 +629,7 @@ function events_simulation(
         models = models,
         ini_cond_chronology = InterProblemChronology(),
         events = [event_model],
+        allow_different_components,
     )
     return Simulation(;
         name = "events",
@@ -734,7 +736,8 @@ function run_emulator_only_outage(outaged, emulator_only, outage_time)
         horizon_interval = (Hour(4), Hour(1)),
     )
     sys_em = events_system(; outage_gens = outaged)
-    sim = events_simulation(sys_d1, sys_d2, sys_em, preset_outage_event(outage_time))
+    sim = events_simulation(sys_d1, sys_d2, sys_em, preset_outage_event(outage_time);
+        allow_different_components = true)
     @test build!(sim; console_level = Logging.Error) == SimulationBuildStatus.BUILT
     @test execute!(sim; in_memory = true) == IOM.RunStatus.SUCCESSFULLY_FINALIZED
     res = SimulationResults(sim; ignore_status = true)

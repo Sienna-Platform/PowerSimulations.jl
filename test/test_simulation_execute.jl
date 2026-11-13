@@ -751,3 +751,144 @@ end
         @test step_rows == collect(1.0:Float64(window))
     end
 end
+
+# Executes a UC and an ED in which `model` does not model `unit`, and reads back each
+# model's realized thermal power.
+function _realized_power_with_unit_left_out(model, unit)
+    sys_uc = PSB.build_system(PSITestSystems, "c_sys5_uc")
+    sys_ed = PSB.build_system(PSITestSystems, "c_sys5_ed")
+    sys = model == "UC" ? sys_uc : sys_ed
+    set_available!(get_component(ThermalStandard, sys, unit), false)
+    models = SimulationModels(;
+        decision_models = [
+            DecisionModel(get_template_basic_uc_simulation(), sys_uc;
+                name = "UC", optimizer = HiGHS_optimizer),
+            DecisionModel(get_template_nomin_ed_simulation(), sys_ed;
+                name = "ED", optimizer = HiGHS_optimizer),
+        ],
+    )
+    sequence = SimulationSequence(;
+        models,
+        ini_cond_chronology = InterProblemChronology(),
+        allow_different_components = true,
+    )
+    sim = Simulation(; name = "different_units", steps = 2, models, sequence,
+        simulation_folder = mktempdir(; cleanup = true))
+    @test build!(sim; console_level = Logging.Error) == PSI.SimulationBuildStatus.BUILT
+    @test execute!(sim; in_memory = false) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    results = SimulationResults(sim)
+    return Dict(
+        name => read_realized_variable(
+            get_decision_problem_results(results, name),
+            "ActivePowerVariable__ThermalStandard",
+        ) for name in ("UC", "ED")
+    )
+end
+
+@testset "Results read back each model's own units when they differ" begin
+    power = _realized_power_with_unit_left_out("UC", "Alta")
+    @test !("Alta" in power["UC"].name)
+    @test "Alta" in power["ED"].name
+
+    power = _realized_power_with_unit_left_out("ED", "Park City")
+    @test "Park City" in power["UC"].name
+    @test !("Park City" in power["ED"].name)
+end
+
+# D1 commits every unit, D2 commits all but Park City with its status fixed to D1's, and D3
+# dispatches D2's units with a semicontinuous feedforward on D2's status.
+function _three_stage_subset_simulation()
+    left_out = "Park City"
+    sys_d1 = PSB.build_system(PSITestSystems, "c_sys5_uc")
+    sys_d2 = PSB.build_system(PSITestSystems, "c_sys5_uc")
+    sys_d3 = PSB.build_system(PSITestSystems, "c_sys5_ed")
+    for sys in (sys_d2, sys_d3)
+        set_available!(get_component(ThermalStandard, sys, left_out), false)
+    end
+    template_uc = get_template_basic_uc_simulation()
+    set_network_model!(
+        template_uc,
+        NetworkModel(CopperPlateNetworkModel; use_slacks = true),
+    )
+    template_ed = get_template_nomin_ed_simulation()
+    set_network_model!(
+        template_ed,
+        NetworkModel(CopperPlateNetworkModel; use_slacks = true),
+    )
+    models = SimulationModels(;
+        decision_models = [
+            DecisionModel(template_uc, sys_d1; name = "D1", optimizer = HiGHS_optimizer),
+            DecisionModel(deepcopy(template_uc), sys_d2; name = "D2",
+                optimizer = HiGHS_optimizer),
+            DecisionModel(template_ed, sys_d3; name = "D3", optimizer = HiGHS_optimizer),
+        ],
+    )
+    sequence = SimulationSequence(;
+        models,
+        feedforwards = Dict(
+            "D2" => [
+                FixValueFeedforward(;
+                    component_type = ThermalStandard,
+                    source = OnVariable,
+                    affected_values = [OnVariable],
+                ),
+            ],
+            "D3" => [
+                SemiContinuousFeedforward(;
+                    component_type = ThermalStandard,
+                    source = OnVariable,
+                    affected_values = [ActivePowerVariable],
+                ),
+            ],
+        ),
+        ini_cond_chronology = InterProblemChronology(),
+        allow_different_components = true,
+    )
+    sim = Simulation(; name = "three_stage_subset", steps = 2, models, sequence,
+        simulation_folder = mktempdir(; cleanup = true))
+    return sim, left_out, PSY.get_name.(get_components(ThermalStandard, sys_d1))
+end
+
+_on_by_hour(df) = Dict((row.DateTime, row.name) => row.value for row in eachrow(df))
+
+@testset "A semicontinuous feedforward reads the status of a model fixed to a larger one" begin
+    sim, left_out, all_units = _three_stage_subset_simulation()
+    @test build!(sim; console_level = Logging.Error) == PSI.SimulationBuildStatus.BUILT
+    # Each feedforward's source model holds every unit of its target, so none is restricted.
+    @test_logs min_level = Logging.Warn PSI._check_state_sources(sim)
+    @test execute!(sim; in_memory = false) == PSI.RunStatus.SUCCESSFULLY_FINALIZED
+
+    on_key = PSI.VariableKey(OnVariable, ThermalStandard)
+    state_data = PSI.get_decision_state_data(PSI.get_simulation_state(sim), on_key)
+    @test issetequal(axes(state_data.values)[1], all_units)
+
+    results = SimulationResults(sim)
+    on(name) = read_realized_variable(
+        get_decision_problem_results(results, name),
+        "OnVariable__ThermalStandard",
+    )
+    d1_on = _on_by_hour(on("D1"))
+    d2 = on("D2")
+    @test !(left_out in d2.name)
+    @test issetequal(unique(d2.name), setdiff(all_units, [left_out]))
+    @test all(row -> d1_on[(row.DateTime, row.name)] ≈ row.value, eachrow(d2))
+    d2_on = _on_by_hour(d2)
+
+    status = read_parameter(
+        get_decision_problem_results(results, "D3"),
+        "OnStatusParameter__ThermalStandard",
+    )
+    @test length(status) == 48
+    compared = 0
+    for (window_start, df) in status
+        @test issetequal(unique(df.name), setdiff(all_units, [left_out]))
+        # D2's status for a day is in the state while D3 runs within that day.
+        for row in eachrow(df)
+            floor(row.DateTime, Day) == floor(window_start, Day) || continue
+            @test row.value ≈ d2_on[(floor(row.DateTime, Hour), row.name)]
+            compared += 1
+        end
+    end
+    @test compared > 0
+end
