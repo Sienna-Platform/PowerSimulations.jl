@@ -102,8 +102,9 @@ const FEEDFORWARD_SOURCES_KEY = "feedforward_sources"
 
 # A feedforward of a model restricted to the components that the decision models built
 # before it write for its source key. `original` is the feedforward as attached, at
-# position `index` of `device_model`. `left_out` holds the components outside those writers.
-# With no such writer, or none left out, the feedforward is kept whole (`restricted = false`).
+# position `index` of `device_model`. `left_out` holds the components outside those
+# writers. With no such writer, or none left out, the feedforward is kept whole
+# (`restricted = false`).
 struct _FeedforwardRestriction
     device_model::IOM.DeviceModel
     index::Int

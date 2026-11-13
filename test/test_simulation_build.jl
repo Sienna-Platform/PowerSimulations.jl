@@ -521,8 +521,8 @@ _power_bound_feedforward(; source = ActivePowerVariable) = UpperBoundFeedforward
 )
 
 # A UC and a 5-minute ED over the 5-bus systems; `uc_without` names a unit the UC does not
-# model, `ed_without` a unit removed from the ED's system, `ed_thermal` is the ED's thermal formulation and `feedforward` the ED's thermal
-# feedforward, if any.
+# model, `ed_without` a unit removed from the ED's system, `ed_thermal` is the ED's thermal
+# formulation and `feedforward` the ED's thermal feedforward, if any.
 function _state_source_simulation(;
     uc_without = nothing,
     ed_without = nothing,
