@@ -5,7 +5,7 @@ transmission element and how that rating is turned into optimization
 constraints. It covers every reduction type produced by
 `PowerNetworkMatrices` (PNM), the formulations that consume the rating, the
 difference between linear and nonlinear network models, the parallel-branch
-aggregation attribute and its defaults, and the branch-rating time series.
+aggregation attribute, and the branch-rating time series.
 
 For the per-formulation constraint algebra (variable names, slacks, objective
 terms) see the [`PowerSystems.Branch` Formulations](@ref) page in the
@@ -58,23 +58,38 @@ on the `DeviceModel` as an attribute:
 
   - **Attribute key:** `"parallel_branch_max_rating_method"` (the constant
     `PARALLEL_BRANCH_MAX_RATING_KEY`).
-  - **Default:** `"single_element_contingency"`.
+  - **No default:** there is no defensible default policy, so the attribute must
+    be set explicitly on the `DeviceModel`. Building a model in which the
+    reduction produces a homogeneous parallel group without it errors.
 
 Valid values:
 
-| Value                                    | Aggregated rating                            | Meaning                                                                                                                                           |
-|:---------------------------------------- |:-------------------------------------------- |:------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `"single_element_contingency"` (default) | ``\sum_i S_i - \max_i S_i``                  | N-1 surviving capacity after the largest-rated circuit trips. A single-circuit group has zero capacity under this policy                          |
-| `"sum_of_max"`                           | ``\sum_i S_i``                               | Each circuit independently loadable to its own thermal limit (least conservative)                                                                 |
-| `"impedance_averaged"`                   | ``\sum_i f_i S_i,\; f_i = b_i / \sum_k b_k`` | Susceptance-weighted average, reflecting how DC flow physically splits across the group. Errors if total series susceptance is zero or non-finite |
+| Value                          | Aggregated rating                            | Meaning                                                                                                                                           |
+|:------------------------------ |:-------------------------------------------- |:------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"single_element_contingency"` | ``\sum_i S_i - \max_i S_i``                  | N-1 surviving capacity after the largest-rated circuit trips. A single-circuit group has zero capacity under this policy                          |
+| `"sum_of_max"`                 | ``\sum_i S_i``                               | Each circuit independently loadable to its own thermal limit (least conservative)                                                                 |
+| `"impedance_averaged"`         | ``\sum_i f_i S_i,\; f_i = b_i / \sum_k b_k`` | Susceptance-weighted average, reflecting how DC flow physically splits across the group. Errors if total series susceptance is zero or non-finite |
+
+Set it like any other `DeviceModel` attribute:
+
+```julia
+set_device_model!(
+    template,
+    DeviceModel(
+        Line,
+        StaticBranch;
+        attributes = Dict("parallel_branch_max_rating_method" => "sum_of_max"),
+    ),
+)
+```
 
 `PNM.MixedBranchesParallel` (a parallel group whose members carry different
 `DeviceModel` preferences) always uses `sum_of_max`, because there is no
 defensible way to pick one member's attribute for the whole group.
 
 Security-constrained branch formulations carry one additional default
-attribute, `"include_planned_outages" => false`, alongside the same
-`"single_element_contingency"` parallel default.
+attribute, `"include_planned_outages" => false`, and require the same explicit
+`"parallel_branch_max_rating_method"`.
 
 ## How the rating enters the optimization
 
@@ -209,7 +224,7 @@ endpoints so reduction does not collapse it (e.g. via `irreducible_buses`).
 
 | Setting                                                             | Default                                                   |
 |:------------------------------------------------------------------- |:--------------------------------------------------------- |
-| `"parallel_branch_max_rating_method"` (`AbstractBranchFormulation`) | `"single_element_contingency"`                            |
+| `"parallel_branch_max_rating_method"` (`AbstractBranchFormulation`) | none — must be set explicitly                             |
 | Security-constrained extra attribute                                | `"include_planned_outages" => false`                      |
 | `MixedBranchesParallel` aggregation                                 | `sum_of_max` (attribute ignored)                          |
 | Single branch / transformer rating                                  | `PSY.get_rating`                                          |

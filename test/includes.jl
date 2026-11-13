@@ -43,6 +43,12 @@ const ISOPT = IS.Optimization
 const BASE_DIR = string(dirname(dirname(pathof(PowerSimulations))))
 const DATA_DIR = joinpath(BASE_DIR, "test/test_data")
 
+# `parallel_branch_max_rating_method` has no default: any template whose network
+# reduction can produce a homogeneous parallel group must pick a policy.
+const PARALLEL_RATING = Dict{String, Any}(
+    "parallel_branch_max_rating_method" => "single_element_contingency",
+)
+
 include("test_utils/common_operation_model.jl")
 include("test_utils/model_checks.jl")
 include("test_utils/mock_operation_models.jl")

@@ -59,9 +59,11 @@ end
 """
 DeviceModel attribute key selecting which `PowerNetworkMatrices` function aggregates
 the individual circuit ratings of a `PNM.BranchesParallel` into a single maximum flow
-limit. Valid values: `"single_element_contingency"` (default; N-1, post-trip surviving
-capacity), `"sum_of_max"` (plain Σ Sᵢ), `"impedance_averaged"` (susceptance-weighted
-average). `PNM.MixedBranchesParallel` groups always use `sum_of_max`.
+limit. Has no default: it must be set explicitly whenever the network reduction can
+produce a homogeneous parallel group. Valid values: `"single_element_contingency"`
+(N-1, post-trip surviving capacity), `"sum_of_max"` (plain Σ Sᵢ),
+`"impedance_averaged"` (susceptance-weighted average). `PNM.MixedBranchesParallel`
+groups always use `sum_of_max`.
 """
 const PARALLEL_BRANCH_MAX_RATING_KEY = "parallel_branch_max_rating_method"
 
@@ -69,7 +71,7 @@ function get_default_attributes(
     ::Type{U},
     ::Type{V},
 ) where {U <: PSY.ACTransmission, V <: AbstractBranchFormulation}
-    return Dict{String, Any}(PARALLEL_BRANCH_MAX_RATING_KEY => "single_element_contingency")
+    return Dict{String, Any}(PARALLEL_BRANCH_MAX_RATING_KEY => "")
 end
 
 function get_default_attributes(
@@ -77,7 +79,7 @@ function get_default_attributes(
     ::Type{V},
 ) where {U <: PSY.ACTransmission, V <: AbstractSecurityConstrainedStaticBranch}
     return Dict{String, Any}(
-        PARALLEL_BRANCH_MAX_RATING_KEY => "single_element_contingency",
+        PARALLEL_BRANCH_MAX_RATING_KEY => "",
         "include_planned_outages" => false,
     )
 end
@@ -97,7 +99,7 @@ function get_default_attributes(
     ::Type{V},
 ) where {V <: AbstractBranchFormulation}
     return Dict{String, Any}(
-        PARALLEL_BRANCH_MAX_RATING_KEY => "single_element_contingency",
+        PARALLEL_BRANCH_MAX_RATING_KEY => "",
         MODEL_ALL_BRANCHES_KEY => false,
     )
 end
@@ -107,7 +109,7 @@ function get_default_attributes(
     ::Type{V},
 ) where {V <: AbstractSecurityConstrainedStaticBranch}
     return Dict{String, Any}(
-        PARALLEL_BRANCH_MAX_RATING_KEY => "single_element_contingency",
+        PARALLEL_BRANCH_MAX_RATING_KEY => "",
         "include_planned_outages" => false,
         MODEL_ALL_BRANCHES_KEY => false,
     )
@@ -117,15 +119,17 @@ end
 # `MixedBranchesParallel` ignores the attribute and always uses the plain sum, since
 # the constituent branches may carry different DeviceModel preferences and there is
 # no defensible way to pick one.
-function _get_parallel_branch_max_rating(model::DeviceModel, bp::PNM.BranchesParallel)
+function _get_parallel_branch_max_rating(
+    model::DeviceModel{D, M},
+    bp::PNM.BranchesParallel,
+) where {D, M}
     name = get_attribute(model, PARALLEL_BRANCH_MAX_RATING_KEY)
     name == "single_element_contingency" &&
         return PNM.get_single_element_contingency_rating(bp)
     name == "sum_of_max" && return PNM.get_sum_of_max_rating(bp)
     name == "impedance_averaged" && return PNM.get_impedance_averaged_rating(bp)
     error(
-        "Unknown $PARALLEL_BRANCH_MAX_RATING_KEY value: $(repr(name)). " *
-        "Valid: \"single_element_contingency\", \"sum_of_max\", \"impedance_averaged\".",
+        "Attribute $PARALLEL_BRANCH_MAX_RATING_KEY on DeviceModel{$D, $M} must be set to one of \"single_element_contingency\", \"sum_of_max\", or \"impedance_averaged\". Note that parallel merges of mixed branch types always use \"sum_of_max\".",
     )
 end
 

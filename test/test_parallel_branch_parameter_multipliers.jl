@@ -9,6 +9,7 @@
         time_series_names = Dict(
             BranchRatingTimeSeriesParameter => "branch_rating",
         ),
+        attributes = PARALLEL_RATING,
     )
 
     branches_with_rating_ts = ["1", "2", "6"]
