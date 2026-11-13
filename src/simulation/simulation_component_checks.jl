@@ -120,8 +120,8 @@ _template_device_models(model) =
         values(POM.get_branch_models(get_template(model))),
     ))
 
-_feedforward_device_names(ff, devices) =
-    Set{String}(PSY.get_name(d) for d in POM.feedforward_devices(ff, devices))
+_feedforward_device_names(ff, devices, sys) =
+    Set{String}(PSY.get_name(d) for d in POM.feedforward_devices(ff, devices, sys))
 
 # The decision models built before `model` and those built after it. The emulator is built
 # after every decision model.
@@ -159,18 +159,19 @@ function _restrict_feedforwards!(
     _restore_feedforwards!(model)
     built, _ = _decision_models_around(sim, model)
     restrictions = _FeedforwardRestriction[]
+    sys = get_system(model)
     for device_model in _template_device_models(model)
         feedforwards = IOM.get_feedforwards(device_model)
         isempty(feedforwards) && continue
-        devices = collect(IOM.get_available_components(device_model, get_system(model)))
+        devices = collect(IOM.get_available_components(device_model, sys))
         for (ix, ff) in enumerate(feedforwards)
             POM.supports_component_subset(typeof(ff)) || continue
             source_key = POM.get_optimization_container_key(ff)
             writers = _state_writers(built, source_key)
-            restricted_ff = POM.restrict_feedforward(ff, writers)
+            restricted_ff = POM.restrict_feedforward(ff, writers, sys)
             left_out = setdiff(
-                _feedforward_device_names(ff, devices),
-                _feedforward_device_names(restricted_ff, devices),
+                _feedforward_device_names(ff, devices, sys),
+                _feedforward_device_names(restricted_ff, devices, sys),
             )
             restricted = !isempty(writers) && !isempty(left_out)
             restricted && (feedforwards[ix] = restricted_ff)

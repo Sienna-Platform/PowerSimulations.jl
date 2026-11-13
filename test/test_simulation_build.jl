@@ -521,10 +521,11 @@ _power_bound_feedforward(; source = ActivePowerVariable) = UpperBoundFeedforward
 )
 
 # A UC and a 5-minute ED over the 5-bus systems; `uc_without` names a unit the UC does not
-# model, `ed_thermal` is the ED's thermal formulation and `feedforward` the ED's thermal
+# model, `ed_without` a unit removed from the ED's system, `ed_thermal` is the ED's thermal formulation and `feedforward` the ED's thermal
 # feedforward, if any.
 function _state_source_simulation(;
     uc_without = nothing,
+    ed_without = nothing,
     ed_thermal = ThermalDispatchNoMin,
     feedforward = _status_feedforward(),
     uc_must_run = nothing,
@@ -536,6 +537,8 @@ function _state_source_simulation(;
     sys_ed = PSB.build_system(PSITestSystems, "c_sys5_ed")
     isnothing(uc_without) ||
         set_available!(get_component(ThermalStandard, sys_uc, uc_without), false)
+    isnothing(ed_without) ||
+        remove_component!(sys_ed, get_component(ThermalStandard, sys_ed, ed_without))
     for (sys, must_run) in ((sys_uc, uc_must_run), (sys_ed, ed_must_run))
         isnothing(must_run) ||
             set_commitment_mode!(get_component(ThermalStandard, sys, must_run),
@@ -814,7 +817,8 @@ _ed_feedforwards(sim) =
     @test err isa IS.ConflictingInputsError
     @test occursin("allow_different_components = true", sprint(showerror, err))
     @test only(_ed_feedforwards(default)) isa UpperBoundFeedforward
-    @test isnothing(POM.get_feedforward_components(only(_ed_feedforwards(default))))
+    @test POM.get_feedforward_components(only(_ed_feedforwards(default))) ==
+          make_selector(ThermalStandard)
     ed = PSI.get_simulation_model(PSI.get_models(default), :ED)
     @test !haskey(IOM.get_internal(ed).ext, PSI.FEEDFORWARD_SOURCES_KEY)
 end
@@ -897,7 +901,30 @@ end
     )
     @test build!(sim; console_level = Logging.AboveMaxLevel) ==
           PSI.SimulationBuildStatus.BUILT
-    @test isnothing(POM.get_feedforward_components(only(_ed_feedforwards(sim))))
+    @test POM.get_feedforward_components(only(_ed_feedforwards(sim))) ==
+          make_selector(ThermalStandard)
+end
+
+_selected_names(ff, sys) =
+    Set(get_name.(get_components(POM.get_feedforward_components(ff), sys)))
+
+@testset "A feedforward source may write units that the target's system lacks" begin
+    sim = _state_source_simulation(;
+        uc_without = "Park City",
+        ed_without = "Alta",
+        feedforward = _power_bound_feedforward(),
+        allow_different_components = true,
+    )
+    @test build!(sim; console_level = Logging.AboveMaxLevel) ==
+          PSI.SimulationBuildStatus.BUILT
+    ed = PSI.get_simulation_model(PSI.get_models(sim), :ED)
+    ed_sys = PSI.get_system(ed)
+    @test isnothing(get_component(ThermalStandard, ed_sys, "Alta"))
+    @test _selected_names(only(_ed_feedforwards(sim)), ed_sys) ==
+          Set(["Brighton", "Solitude", "Sundance"])
+    rows = _feedforward_constraint_rows(ed, POM.FeedforwardUpperBoundConstraint)
+    @test !isempty(rows)
+    @test all(names -> issetequal(names, ["Brighton", "Solitude", "Sundance"]), rows)
 end
 
 # A UC that does not model Alta and an hourly emulator that does, with a power bound
@@ -939,11 +966,13 @@ _em_feedforwards(models) =
     )
     @test !isempty(rows)
     @test all(names -> !("Alta" in names) && "Park City" in names, rows)
-    @test POM.get_feedforward_components(only(_em_feedforwards(models))) isa Set
+    @test _selected_names(only(_em_feedforwards(models)), sys_em) ==
+          Set(["Brighton", "Park City", "Solitude", "Sundance"])
 
     # A new sequence starts from the feedforward as attached.
     _emulator_feedforward_simulation(models; allow_different_components = false)
-    @test isnothing(POM.get_feedforward_components(only(_em_feedforwards(models))))
+    @test POM.get_feedforward_components(only(_em_feedforwards(models))) ==
+          make_selector(ThermalStandard)
 end
 
 # The UC dispatches without commitment, so no model writes the status the ED's
