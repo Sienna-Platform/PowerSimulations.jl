@@ -46,5 +46,7 @@ PowerFlowFileParser = {url = "https://github.com/Sienna-Platform/PowerFlowFilePa
 PowerTableDataParser = {url = "https://github.com/NLR-Sienna/PowerTableDataParser.jl", rev = "psy6"}
 
 [compat]
-HiGHS = "1"
+# HiGHS 1.16 (HiGHS.jl 1.27) can report a worse solution as optimal when given a MIP start:
+# https://github.com/ERGO-Code/HiGHS/issues/3642
+HiGHS = "1.0 - 1.26"
 julia = "^1.11"
