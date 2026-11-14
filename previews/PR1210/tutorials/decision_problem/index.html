@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Single-step Problem · PowerSimulations.jl</title><meta name="title" content="Single-step Problem · PowerSimulations.jl"/><meta property="og:title" content="Single-step Problem · PowerSimulations.jl"/><meta property="twitter:title" content="Single-step Problem · PowerSimulations.jl"/><meta name="description" content="Documentation for PowerSimulations.jl."/><meta property="og:description" content="Documentation for PowerSimulations.jl."/><meta property="twitter:description" content="Documentation for PowerSimulations.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="PowerSimulations.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">PowerSimulations.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Welcome Page</a></li><li><a class="tocitem" href="../../quick_start_guide/">Quick Start Guide</a></li><li><span class="tocitem">Tutorials</span><ul><li class="is-active"><a class="tocitem" href>Single-step Problem</a><ul class="internal"><li><a class="tocitem" href="#Introduction"><span>Introduction</span></a></li><li><a class="tocitem" href="#Load-Packages"><span>Load Packages</span></a></li><li><a class="tocitem" href="#Data"><span>Data</span></a></li><li><a class="tocitem" href="#Define-a-problem-specification-with-an-ProblemTemplate"><span>Define a problem specification with an <code>ProblemTemplate</code></span></a></li><li><a class="tocitem" href="#DecisionModel"><span><code>DecisionModel</code></span></a></li><li><a class="tocitem" href="#Results-Inspection"><span>Results Inspection</span></a></li><li><a class="tocitem" href="#Plotting"><span>Plotting</span></a></li></ul></li><li><a class="tocitem" href="../pcm_simulation/">Multi-stage Production Cost Simulation</a></li></ul></li><li><span class="tocitem">Modeler Guide</span><ul><li><a class="tocitem" href="../../modeler_guide/definitions/">Definitions</a></li><li><a class="tocitem" href="../../modeler_guide/psi_structure/">PowerSimulations.jl Modeling Structure</a></li><li><a class="tocitem" href="../../modeler_guide/problem_templates/">Operations <code>ProblemTemplate</code>s</a></li><li><a class="tocitem" href="../../modeler_guide/running_a_simulation/">Simulation</a></li><li><a class="tocitem" href="../../modeler_guide/read_results/">Read results</a></li><li><a class="tocitem" href="../../modeler_guide/simulation_recorder/">Simulation Recorder</a></li><li><a class="tocitem" href="../../modeler_guide/logging/">Logging</a></li><li><a class="tocitem" href="../../modeler_guide/debugging_infeasible_models/">Debugging infeasible models</a></li><li><a class="tocitem" href="../../modeler_guide/parallel_simulations/">Parallel Simulations</a></li><li><a class="tocitem" href="../../modeler_guide/modeling_faq/">Modeling FAQ</a></li></ul></li><li><span class="tocitem">Model Developer Guide</span><ul><li><a class="tocitem" href="../../model_developer_guide/structure_of_operation_problem/">Operation Problem Structure</a></li><li><a class="tocitem" href="../../model_developer_guide/troubleshooting/">Troubleshooting</a></li></ul></li><li><span class="tocitem">Code Base Developer Guide</span><ul><li><a class="tocitem" href="../../code_base_developer_guide/developer/">Developer Guide</a></li><li><a class="tocitem" href="../../code_base_developer_guide/troubleshooting/">Troubleshooting</a></li><li><a class="tocitem" href="../../code_base_developer_guide/internal/">Internals</a></li></ul></li><li><span class="tocitem">Formulation Library</span><ul><li><a class="tocitem" href="../../formulation_library/Introduction/">Introduction</a></li><li><a class="tocitem" href="../../formulation_library/General/">General</a></li><li><a class="tocitem" href="../../formulation_library/Network/">Network</a></li><li><a class="tocitem" href="../../formulation_library/ThermalGen/">Thermal Generation</a></li><li><a class="tocitem" href="../../formulation_library/RenewableGen/">Renewable Generation</a></li><li><a class="tocitem" href="../../formulation_library/Load/">Load</a></li><li><a class="tocitem" href="../../formulation_library/Branch/">Branch</a></li><li><a class="tocitem" href="../../formulation_library/Service/">Services</a></li><li><a class="tocitem" href="../../formulation_library/Feedforward/">Feedforwards</a></li><li><a class="tocitem" href="../../formulation_library/Piecewise/">Piecewise Linear Cost</a></li></ul></li><li><a class="tocitem" href="../../api/PowerSimulations/">API Reference</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>Single-step Problem</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Single-step Problem</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/NREL-Sienna/PowerSimulations.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/NREL-Sienna/PowerSimulations.jl/blob/main/docs/src/tutorials/decision_problem.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="op_problem_tutorial"><a class="docs-heading-anchor" href="#op_problem_tutorial">Operations problems with <a href="https://github.com/NREL-Sienna/PowerSimulations.jl">PowerSimulations.jl</a></a><a id="op_problem_tutorial-1"></a><a class="docs-heading-anchor-permalink" href="#op_problem_tutorial" title="Permalink"></a></h1><p><strong>Originally Contributed by</strong>: Clayton Barrows</p><h2 id="Introduction"><a class="docs-heading-anchor" href="#Introduction">Introduction</a><a id="Introduction-1"></a><a class="docs-heading-anchor-permalink" href="#Introduction" title="Permalink"></a></h2><p>PowerSimulations.jl supports the construction and solution of optimal power system scheduling problems (Operations Problems). Operations problems form the fundamental building blocks for sequential simulations. This example shows how to specify and customize a the mathematics that will be applied to the data with an <code>ProblemTemplate</code>, build and execute an <code>DecisionModel</code>, and access the results.</p><h2 id="Load-Packages"><a class="docs-heading-anchor" href="#Load-Packages">Load Packages</a><a id="Load-Packages-1"></a><a class="docs-heading-anchor-permalink" href="#Load-Packages" title="Permalink"></a></h2><pre><code class="language-julia hljs">using PowerSystems
+using PowerSimulations
+using HydroPowerSimulations
+using PowerSystemCaseBuilder
+using HiGHS # solver
+using Dates</code></pre><h2 id="Data"><a class="docs-heading-anchor" href="#Data">Data</a><a id="Data-1"></a><a class="docs-heading-anchor-permalink" href="#Data" title="Permalink"></a></h2><div class="admonition is-info"><header class="admonition-header">Note</header><div class="admonition-body"><p><code>PowerSystemCaseBuilder.jl</code> is a helper library that makes it easier to reproduce examples in the documentation and tutorials. Normally you would pass your local files to create the system data instead of calling the function <code>build_system</code>. For more details visit <a href="https://nrel-sienna.github.io/PowerSystems.jl/stable/tutorials/powersystembuilder/">PowerSystemCaseBuilder Documentation</a></p></div></div><pre><code class="language-julia hljs">sys = build_system(PSISystems, &quot;modified_RTS_GMLC_DA_sys&quot;)</code></pre><table>
+  <caption style = "text-align: left;">System</caption>
+  <thead>
+    <tr class = "header headerLastRow">
+      <th style = "text-align: left;">Property</th>
+      <th style = "text-align: left;">Value</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">Name</td>
+      <td style = "text-align: left;"></td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Description</td>
+      <td style = "text-align: left;"></td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">System Units Base</td>
+      <td style = "text-align: left;">SYSTEM_BASE</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Base Power</td>
+      <td style = "text-align: left;">100.0</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Base Frequency</td>
+      <td style = "text-align: left;">60.0</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Num Components</td>
+      <td style = "text-align: left;">501</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">Static Components</caption>
+  <thead>
+    <tr class = "header headerLastRow">
+      <th style = "text-align: left;">Type</th>
+      <th style = "text-align: left;">Count</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">ACBus</td>
+      <td style = "text-align: left;">73</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Arc</td>
+      <td style = "text-align: left;">109</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Area</td>
+      <td style = "text-align: left;">3</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">FixedAdmittance</td>
+      <td style = "text-align: left;">3</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">HydroDispatch</td>
+      <td style = "text-align: left;">1</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Line</td>
+      <td style = "text-align: left;">105</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">LoadZone</td>
+      <td style = "text-align: left;">21</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">PowerLoad</td>
+      <td style = "text-align: left;">51</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableDispatch</td>
+      <td style = "text-align: left;">29</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableNonDispatch</td>
+      <td style = "text-align: left;">31</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">TapTransformer</td>
+      <td style = "text-align: left;">15</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ThermalStandard</td>
+      <td style = "text-align: left;">54</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">TwoTerminalHVDCLine</td>
+      <td style = "text-align: left;">1</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">VariableReserve{ReserveDown}</td>
+      <td style = "text-align: left;">1</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">VariableReserve{ReserveUp}</td>
+      <td style = "text-align: left;">4</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">Time Series Summary</caption>
+  <thead>
+    <tr class = "header">
+      <th style = "text-align: left;">owner_type</th>
+      <th style = "text-align: left;">owner_category</th>
+      <th style = "text-align: left;">time_series_type</th>
+      <th style = "text-align: left;">time_series_category</th>
+      <th style = "text-align: left;">initial_timestamp</th>
+      <th style = "text-align: left;">resolution_ms</th>
+      <th style = "text-align: left;">count</th>
+    </tr>
+    <tr class = "subheader headerLastRow">
+      <th style = "text-align: left;">String</th>
+      <th style = "text-align: left;">String</th>
+      <th style = "text-align: left;">String</th>
+      <th style = "text-align: left;">String</th>
+      <th style = "text-align: left;">String</th>
+      <th style = "text-align: left;">Int64</th>
+      <th style = "text-align: left;">Int64</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">Area</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">DeterministicSingleTimeSeries</td>
+      <td style = "text-align: left;">Forecast</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">3</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Area</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">SingleTimeSeries</td>
+      <td style = "text-align: left;">StaticTimeSeries</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">3</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">FixedAdmittance</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">DeterministicSingleTimeSeries</td>
+      <td style = "text-align: left;">Forecast</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">3</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">FixedAdmittance</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">SingleTimeSeries</td>
+      <td style = "text-align: left;">StaticTimeSeries</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">3</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">HydroDispatch</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">DeterministicSingleTimeSeries</td>
+      <td style = "text-align: left;">Forecast</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">2</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">HydroDispatch</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">SingleTimeSeries</td>
+      <td style = "text-align: left;">StaticTimeSeries</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">2</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">PowerLoad</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">DeterministicSingleTimeSeries</td>
+      <td style = "text-align: left;">Forecast</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">51</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">PowerLoad</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">SingleTimeSeries</td>
+      <td style = "text-align: left;">StaticTimeSeries</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">51</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableDispatch</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">DeterministicSingleTimeSeries</td>
+      <td style = "text-align: left;">Forecast</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">29</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableDispatch</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">SingleTimeSeries</td>
+      <td style = "text-align: left;">StaticTimeSeries</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">29</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableNonDispatch</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">DeterministicSingleTimeSeries</td>
+      <td style = "text-align: left;">Forecast</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">31</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RenewableNonDispatch</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">SingleTimeSeries</td>
+      <td style = "text-align: left;">StaticTimeSeries</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">31</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">VariableReserve</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">DeterministicSingleTimeSeries</td>
+      <td style = "text-align: left;">Forecast</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">5</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">VariableReserve</td>
+      <td style = "text-align: left;">Component</td>
+      <td style = "text-align: left;">SingleTimeSeries</td>
+      <td style = "text-align: left;">StaticTimeSeries</td>
+      <td style = "text-align: left;">2020-01-01T00:00:00</td>
+      <td style = "text-align: left;">3600000</td>
+      <td style = "text-align: left;">5</td>
+    </tr>
+  </tbody>
+</table>
+<h2 id="Define-a-problem-specification-with-an-ProblemTemplate"><a class="docs-heading-anchor" href="#Define-a-problem-specification-with-an-ProblemTemplate">Define a problem specification with an <code>ProblemTemplate</code></a><a id="Define-a-problem-specification-with-an-ProblemTemplate-1"></a><a class="docs-heading-anchor-permalink" href="#Define-a-problem-specification-with-an-ProblemTemplate" title="Permalink"></a></h2><p>You can create an empty template with:</p><pre><code class="language-julia hljs">template_uc = ProblemTemplate()</code></pre><table>
+  <caption style = "text-align: left;">Network Model</caption>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">Network Model</td>
+      <td style = "text-align: left;">CopperPlatePowerModel</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Slacks</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">PTDF</td>
+      <td style = "text-align: left;">false</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">Duals</td>
+      <td style = "text-align: left;">None</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">Device Models</caption>
+  <thead>
+    <tr class = "header headerLastRow">
+      <th style = "text-align: left;">Device Type</th>
+      <th style = "text-align: left;">Formulation</th>
+      <th style = "text-align: left;">Slacks</th>
+    </tr>
+  </thead>
+  <tbody>
+  </tbody>
+</table>
+<p>Now, you can add a <code>DeviceModel</code> for each device type to create an assignment between PowerSystems device types and the subtypes of <code>AbstractDeviceFormulation</code>. PowerSimulations has a variety of different <code>AbstractDeviceFormulation</code> subtypes that can be applied to different PowerSystems device types, each dispatching to different methods for populating optimization problem objectives, variables, and constraints. Documentation on the formulation options for various devices can be found in the <a href="https://nrel-sienna.github.io/PowerSimulations.jl/latest/formulation_library/General/#formulation_library">formulation library docs</a></p><h3 id="Branch-Formulations"><a class="docs-heading-anchor" href="#Branch-Formulations">Branch Formulations</a><a id="Branch-Formulations-1"></a><a class="docs-heading-anchor-permalink" href="#Branch-Formulations" title="Permalink"></a></h3><p>Here is an example of relatively standard branch formulations. Other formulations allow for selective enforcement of transmission limits and greater control on transformer settings.</p><pre><code class="language-julia hljs">set_device_model!(template_uc, Line, StaticBranch)
+set_device_model!(template_uc, Transformer2W, StaticBranch)
+set_device_model!(template_uc, TapTransformer, StaticBranch)</code></pre><h3 id="Injection-Device-Formulations"><a class="docs-heading-anchor" href="#Injection-Device-Formulations">Injection Device Formulations</a><a id="Injection-Device-Formulations-1"></a><a class="docs-heading-anchor-permalink" href="#Injection-Device-Formulations" title="Permalink"></a></h3><p>Here we define template entries for all devices that inject or withdraw power on the network. For each device type, we can define a distinct <code>AbstractDeviceFormulation</code>. In this case, we&#39;re defining a basic unit commitment model for thermal generators, curtailable renewable generators, and fixed dispatch (net-load reduction) formulations for <code>HydroDispatch</code> and <code>RenewableNonDispatch</code> devices.</p><pre><code class="language-julia hljs">set_device_model!(template_uc, ThermalStandard, ThermalStandardUnitCommitment)
+set_device_model!(template_uc, RenewableDispatch, RenewableFullDispatch)
+set_device_model!(template_uc, PowerLoad, StaticPowerLoad)
+set_device_model!(template_uc, HydroDispatch, HydroDispatchRunOfRiver)
+set_device_model!(template_uc, RenewableNonDispatch, FixedOutput)</code></pre><h3 id="Service-Formulations"><a class="docs-heading-anchor" href="#Service-Formulations">Service Formulations</a><a id="Service-Formulations-1"></a><a class="docs-heading-anchor-permalink" href="#Service-Formulations" title="Permalink"></a></h3><p>We have two <code>VariableReserve</code> types, parameterized by their direction. So, similar to creating <code>DeviceModel</code>s, we can create <code>ServiceModel</code>s. The primary difference being that <code>DeviceModel</code> objects define how constraints get created, while <code>ServiceModel</code> objects define how constraints get modified.</p><pre><code class="language-julia hljs">set_service_model!(template_uc, VariableReserve{ReserveUp}, RangeReserve)
+set_service_model!(template_uc, VariableReserve{ReserveDown}, RangeReserve)</code></pre><h3 id="Network-Formulations"><a class="docs-heading-anchor" href="#Network-Formulations">Network Formulations</a><a id="Network-Formulations-1"></a><a class="docs-heading-anchor-permalink" href="#Network-Formulations" title="Permalink"></a></h3><p>Finally, we can define the transmission network specification that we&#39;d like to model. For simplicity, we&#39;ll choose a copper plate formulation. But there are dozens of specifications available through an integration with <a href="https://github.com/lanl-ansi/powermodels.jl">PowerModels.jl</a>. <em>Note that many formulations will require appropriate data and may be computationally intractable</em></p><pre><code class="language-julia hljs">set_network_model!(template_uc, NetworkModel(CopperPlatePowerModel))</code></pre><h2 id="DecisionModel"><a class="docs-heading-anchor" href="#DecisionModel"><code>DecisionModel</code></a><a id="DecisionModel-1"></a><a class="docs-heading-anchor-permalink" href="#DecisionModel" title="Permalink"></a></h2><p>Now that we have a <code>System</code> and an <code>ProblemTemplate</code>, we can put the two together to create an <code>DecisionModel</code> that we solve.</p><h3 id="Optimizer"><a class="docs-heading-anchor" href="#Optimizer">Optimizer</a><a id="Optimizer-1"></a><a class="docs-heading-anchor-permalink" href="#Optimizer" title="Permalink"></a></h3><p>It&#39;s most convenient to define an optimizer instance upfront and pass it into the <code>DecisionModel</code> constructor. For this example, we can use the free HiGHS solver with a relatively relaxed MIP gap (<code>ratioGap</code>) setting to improve speed.</p><pre><code class="language-julia hljs">solver = optimizer_with_attributes(HiGHS.Optimizer, &quot;mip_rel_gap&quot; =&gt; 0.5)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">MathOptInterface.OptimizerWithAttributes(HiGHS.Optimizer, Pair{MathOptInterface.AbstractOptimizerAttribute, Any}[MathOptInterface.RawOptimizerAttribute(&quot;mip_rel_gap&quot;) =&gt; 0.5])</code></pre><h3 id="Build-an-DecisionModel"><a class="docs-heading-anchor" href="#Build-an-DecisionModel">Build an <code>DecisionModel</code></a><a id="Build-an-DecisionModel-1"></a><a class="docs-heading-anchor-permalink" href="#Build-an-DecisionModel" title="Permalink"></a></h3><p>The construction of an <code>DecisionModel</code> essentially applies an <code>ProblemTemplate</code> to <code>System</code> data to create a JuMP model.</p><pre><code class="language-julia hljs">problem = DecisionModel(template_uc, sys; optimizer = solver, horizon = Hour(24))
+build!(problem; output_dir = mktempdir())</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">InfrastructureSystems.Optimization.ModelBuildStatusModule.ModelBuildStatus.BUILT = 0</code></pre><div class="admonition is-success"><header class="admonition-header">Tip</header><div class="admonition-body"><p>The principal component of the <code>DecisionModel</code> is the JuMP model. But you can serialize to a file using the following command:</p><pre><code class="language-julia hljs">serialize_optimization_model(problem, save_path)</code></pre><p>Keep in mind that if the setting &quot;store<em>variable</em>names&quot; is set to <code>False</code> then the file won&#39;t show the model&#39;s names.</p></div></div><h3 id="Solve-an-DecisionModel"><a class="docs-heading-anchor" href="#Solve-an-DecisionModel">Solve an <code>DecisionModel</code></a><a id="Solve-an-DecisionModel-1"></a><a class="docs-heading-anchor-permalink" href="#Solve-an-DecisionModel" title="Permalink"></a></h3><pre><code class="language-julia hljs">solve!(problem)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">InfrastructureSystems.Simulation.RunStatusModule.RunStatus.SUCCESSFULLY_FINALIZED = 0</code></pre><h2 id="Results-Inspection"><a class="docs-heading-anchor" href="#Results-Inspection">Results Inspection</a><a id="Results-Inspection-1"></a><a class="docs-heading-anchor-permalink" href="#Results-Inspection" title="Permalink"></a></h2><p>PowerSimulations collects the <code>DecisionModel</code> results into a <code>OptimizationProblemResults</code> struct:</p><pre><code class="language-julia hljs">res = OptimizationProblemResults(problem)</code></pre><p> Start: 2020-01-01T00:00:00</p>
+<p> End: 2020-01-01T23:00:00</p>
+<p> Resolution: 60 minutes</p>
+
+<table>
+  <caption style = "text-align: left;">PowerSimulations Problem Auxiliary variables Results</caption>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">TimeDurationOff__ThermalStandard</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">TimeDurationOn__ThermalStandard</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">HydroEnergyOutput__HydroDispatch</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">PowerSimulations Problem Expressions Results</caption>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">FuelConsumptionExpression__ThermalStandard</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ActivePowerBalance__System</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ProductionCostExpression__RenewableDispatch</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ProductionCostExpression__ThermalStandard</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ProductionCostExpression__HydroDispatch</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">PowerSimulations Problem Parameters Results</caption>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">ActivePowerTimeSeriesParameter__PowerLoad</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RequirementTimeSeriesParameter__VariableReserve__ReserveDown__Reg_Down</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R3</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ActivePowerTimeSeriesParameter__RenewableDispatch</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ActivePowerTimeSeriesParameter__RenewableNonDispatch</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R2</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R1</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ActivePowerTimeSeriesParameter__HydroDispatch</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Reg_Up</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <caption style = "text-align: left;">PowerSimulations Problem Variables Results</caption>
+  <tbody>
+    <tr>
+      <td style = "text-align: left;">ActivePowerReserveVariable__VariableReserve__ReserveDown__Reg_Down</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">OnVariable__ThermalStandard</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ActivePowerReserveVariable__VariableReserve__ReserveUp__Reg_Up</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ActivePowerVariable__RenewableDispatch</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R2</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">StartVariable__ThermalStandard</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R1</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ActivePowerVariable__HydroDispatch</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">StopVariable__ThermalStandard</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ActivePowerVariable__ThermalStandard</td>
+    </tr>
+    <tr>
+      <td style = "text-align: left;">ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R3</td>
+    </tr>
+  </tbody>
+</table>
+<h3 id="Optimizer-Stats"><a class="docs-heading-anchor" href="#Optimizer-Stats">Optimizer Stats</a><a id="Optimizer-Stats-1"></a><a class="docs-heading-anchor-permalink" href="#Optimizer-Stats" title="Permalink"></a></h3><p>The optimizer summary is included</p><pre><code class="language-julia hljs">get_optimizer_stats(res)</code></pre><div><div style = "float: left;"><span>1×21 DataFrame</span></div><div style = "clear: both;"></div></div><div class = "data-frame" style = "overflow-x: scroll;"><table class = "data-frame" style = "margin-bottom: 6px;"><thead><tr class = "header"><th class = "rowNumber" style = "font-weight: bold; text-align: right;">Row</th><th style = "text-align: left;">detailed_stats</th><th style = "text-align: left;">objective_value</th><th style = "text-align: left;">termination_status</th><th style = "text-align: left;">primal_status</th><th style = "text-align: left;">dual_status</th><th style = "text-align: left;">solver_solve_time</th><th style = "text-align: left;">result_count</th><th style = "text-align: left;">has_values</th><th style = "text-align: left;">has_duals</th><th style = "text-align: left;">objective_bound</th><th style = "text-align: left;">relative_gap</th><th style = "text-align: left;">dual_objective_value</th><th style = "text-align: left;">solve_time</th><th style = "text-align: left;">barrier_iterations</th><th style = "text-align: left;">simplex_iterations</th><th style = "text-align: left;">node_count</th><th style = "text-align: left;">timed_solve_time</th><th style = "text-align: left;">timed_calculate_aux_variables</th><th style = "text-align: left;">timed_calculate_dual_variables</th><th style = "text-align: left;">solve_bytes_alloc</th><th style = "text-align: left;">sec_in_gc</th></tr><tr class = "subheader headerLastRow"><th class = "rowNumber" style = "font-weight: bold; text-align: right;"></th><th title = "Bool" style = "text-align: left;">Bool</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Int64" style = "text-align: left;">Int64</th><th title = "Int64" style = "text-align: left;">Int64</th><th title = "Int64" style = "text-align: left;">Int64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Int64" style = "text-align: left;">Int64</th><th title = "Bool" style = "text-align: left;">Bool</th><th title = "Bool" style = "text-align: left;">Bool</th><th title = "Missing" style = "text-align: left;">Missing</th><th title = "Missing" style = "text-align: left;">Missing</th><th title = "Missing" style = "text-align: left;">Missing</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Missing" style = "text-align: left;">Missing</th><th title = "Missing" style = "text-align: left;">Missing</th><th title = "Missing" style = "text-align: left;">Missing</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th></tr></thead><tbody><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">1</td><td style = "text-align: right;">false</td><td style = "text-align: right;">2.3571e6</td><td style = "text-align: right;">1</td><td style = "text-align: right;">1</td><td style = "text-align: right;">0</td><td style = "text-align: right;">NaN</td><td style = "text-align: right;">1</td><td style = "text-align: right;">false</td><td style = "text-align: right;">false</td><td style = "font-style: italic; text-align: right;">missing</td><td style = "font-style: italic; text-align: right;">missing</td><td style = "font-style: italic; text-align: right;">missing</td><td style = "text-align: right;">0.612376</td><td style = "font-style: italic; text-align: right;">missing</td><td style = "font-style: italic; text-align: right;">missing</td><td style = "font-style: italic; text-align: right;">missing</td><td style = "text-align: right;">0.67719</td><td style = "text-align: right;">0.509693</td><td style = "text-align: right;">0.000449906</td><td style = "text-align: right;">2.41018e7</td><td style = "text-align: right;">0.0</td></tr></tbody></table></div><h3 id="Objective-Function-Value"><a class="docs-heading-anchor" href="#Objective-Function-Value">Objective Function Value</a><a id="Objective-Function-Value-1"></a><a class="docs-heading-anchor-permalink" href="#Objective-Function-Value" title="Permalink"></a></h3><pre><code class="language-julia hljs">get_objective_value(res)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">2.357099085649291e6</code></pre><h3 id="Variable,-Parameter,-Auxillary-Variable,-Dual,-and-Expression-Values"><a class="docs-heading-anchor" href="#Variable,-Parameter,-Auxillary-Variable,-Dual,-and-Expression-Values">Variable, Parameter, Auxillary Variable, Dual, and Expression Values</a><a id="Variable,-Parameter,-Auxillary-Variable,-Dual,-and-Expression-Values-1"></a><a class="docs-heading-anchor-permalink" href="#Variable,-Parameter,-Auxillary-Variable,-Dual,-and-Expression-Values" title="Permalink"></a></h3><p>The solution value data frames for variables, parameters, auxillary variables, duals and expressions can be accessed using the <code>read_</code> methods:</p><pre><code class="language-julia hljs">read_variables(res)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Dict{String, DataFrames.DataFrame} with 11 entries:
+  &quot;ActivePowerReserveVaria… =&gt; <span class="sgr1">24×52 DataFrame</span>…
+  &quot;ActivePowerReserveVaria… =&gt; <span class="sgr1">24×52 DataFrame</span>…
+  &quot;StopVariable__ThermalSt… =&gt; <span class="sgr1">24×55 DataFrame</span>…
+  &quot;OnVariable__ThermalStan… =&gt; <span class="sgr1">24×55 DataFrame</span>…
+  &quot;ActivePowerVariable__Hy… =&gt; <span class="sgr1">24×2 DataFrame</span>…
+  &quot;ActivePowerReserveVaria… =&gt; <span class="sgr1">24×19 DataFrame</span>…
+  &quot;StartVariable__ThermalS… =&gt; <span class="sgr1">24×55 DataFrame</span>…
+  &quot;ActivePowerVariable__Th… =&gt; <span class="sgr1">24×55 DataFrame</span>…
+  &quot;ActivePowerVariable__Re… =&gt; <span class="sgr1">24×30 DataFrame</span>…
+  &quot;ActivePowerReserveVaria… =&gt; <span class="sgr1">24×18 DataFrame</span>…
+  &quot;ActivePowerReserveVaria… =&gt; <span class="sgr1">24×17 DataFrame</span>…</code></pre><p>Or, you can read a single parameter values for parameters that exist in the results.</p><pre><code class="language-julia hljs">list_parameter_names(res)
+read_parameter(res, &quot;ActivePowerTimeSeriesParameter__RenewableDispatch&quot;)</code></pre><div><div style = "float: left;"><span>24×30 DataFrame</span></div><div style = "clear: both;"></div></div><div class = "data-frame" style = "overflow-x: scroll;"><table class = "data-frame" style = "margin-bottom: 6px;"><thead><tr class = "header"><th class = "rowNumber" style = "font-weight: bold; text-align: right;">Row</th><th style = "text-align: left;">DateTime</th><th style = "text-align: left;">122_WIND_1</th><th style = "text-align: left;">324_PV_3</th><th style = "text-align: left;">312_PV_1</th><th style = "text-align: left;">102_PV_1</th><th style = "text-align: left;">101_PV_1</th><th style = "text-align: left;">324_PV_2</th><th style = "text-align: left;">313_PV_2</th><th style = "text-align: left;">104_PV_1</th><th style = "text-align: left;">101_PV_2</th><th style = "text-align: left;">309_WIND_1</th><th style = "text-align: left;">310_PV_2</th><th style = "text-align: left;">113_PV_1</th><th style = "text-align: left;">317_WIND_1</th><th style = "text-align: left;">314_PV_1</th><th style = "text-align: left;">324_PV_1</th><th style = "text-align: left;">103_PV_1</th><th style = "text-align: left;">303_WIND_1</th><th style = "text-align: left;">314_PV_2</th><th style = "text-align: left;">102_PV_2</th><th style = "text-align: left;">314_PV_3</th><th style = "text-align: left;">320_PV_1</th><th style = "text-align: left;">101_PV_3</th><th style = "text-align: left;">319_PV_1</th><th style = "text-align: left;">314_PV_4</th><th style = "text-align: left;">310_PV_1</th><th style = "text-align: left;">215_PV_1</th><th style = "text-align: left;">313_PV_1</th><th style = "text-align: left;">101_PV_4</th><th style = "text-align: left;">119_PV_1</th></tr><tr class = "subheader headerLastRow"><th class = "rowNumber" style = "font-weight: bold; text-align: right;"></th><th title = "Dates.DateTime" style = "text-align: left;">DateTime</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th></tr></thead><tbody><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">1</td><td style = "text-align: left;">2020-01-01T00:00:00</td><td style = "text-align: right;">713.2</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">142.8</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">795.1</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">480.8</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">2</td><td style = "text-align: left;">2020-01-01T01:00:00</td><td style = "text-align: right;">712.8</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">139.1</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">794.4</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">634.9</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">3</td><td style = "text-align: left;">2020-01-01T02:00:00</td><td style = "text-align: right;">708.4</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">145.3</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">773.6</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">487.3</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">4</td><td style = "text-align: left;">2020-01-01T03:00:00</td><td style = "text-align: right;">710.7</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">144.8</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">767.3</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">432.7</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">5</td><td style = "text-align: left;">2020-01-01T04:00:00</td><td style = "text-align: right;">701.4</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">137.1</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">752.2</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">407.9</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">6</td><td style = "text-align: left;">2020-01-01T05:00:00</td><td style = "text-align: right;">682.5</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">98.6</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">719.4</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">440.2</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">7</td><td style = "text-align: left;">2020-01-01T06:00:00</td><td style = "text-align: right;">614.7</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">62.2</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">655.3</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">377.3</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">8</td><td style = "text-align: left;">2020-01-01T07:00:00</td><td style = "text-align: right;">517.7</td><td style = "text-align: right;">36.4</td><td style = "text-align: right;">52.2</td><td style = "text-align: right;">30.6</td><td style = "text-align: right;">29.6</td><td style = "text-align: right;">36.4</td><td style = "text-align: right;">62.2</td><td style = "text-align: right;">29.8</td><td style = "text-align: right;">30.4</td><td style = "text-align: right;">47.3</td><td style = "text-align: right;">38.2</td><td style = "text-align: right;">99.4</td><td style = "text-align: right;">594.6</td><td style = "text-align: right;">47.4</td><td style = "text-align: right;">44.8</td><td style = "text-align: right;">29.8</td><td style = "text-align: right;">199.3</td><td style = "text-align: right;">46.6</td><td style = "text-align: right;">30.0</td><td style = "text-align: right;">63.8</td><td style = "text-align: right;">47.8</td><td style = "text-align: right;">30.6</td><td style = "text-align: right;">179.2</td><td style = "text-align: right;">46.4</td><td style = "text-align: right;">38.2</td><td style = "text-align: right;">127.6</td><td style = "text-align: right;">62.2</td><td style = "text-align: right;">28.8</td><td style = "text-align: right;">27.2</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">9</td><td style = "text-align: left;">2020-01-01T08:00:00</td><td style = "text-align: right;">426.6</td><td style = "text-align: right;">63.4</td><td style = "text-align: right;">97.4</td><td style = "text-align: right;">36.8</td><td style = "text-align: right;">34.8</td><td style = "text-align: right;">63.4</td><td style = "text-align: right;">96.0</td><td style = "text-align: right;">35.0</td><td style = "text-align: right;">37.0</td><td style = "text-align: right;">48.9</td><td style = "text-align: right;">61.4</td><td style = "text-align: right;">126.2</td><td style = "text-align: right;">579.1</td><td style = "text-align: right;">61.2</td><td style = "text-align: right;">65.2</td><td style = "text-align: right;">58.4</td><td style = "text-align: right;">110.6</td><td style = "text-align: right;">67.0</td><td style = "text-align: right;">36.4</td><td style = "text-align: right;">100.0</td><td style = "text-align: right;">61.4</td><td style = "text-align: right;">37.4</td><td style = "text-align: right;">248.0</td><td style = "text-align: right;">67.0</td><td style = "text-align: right;">61.4</td><td style = "text-align: right;">164.6</td><td style = "text-align: right;">95.6</td><td style = "text-align: right;">35.4</td><td style = "text-align: right;">56.6</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">10</td><td style = "text-align: left;">2020-01-01T09:00:00</td><td style = "text-align: right;">274.2</td><td style = "text-align: right;">71.2</td><td style = "text-align: right;">118.0</td><td style = "text-align: right;">38.0</td><td style = "text-align: right;">36.4</td><td style = "text-align: right;">71.4</td><td style = "text-align: right;">117.6</td><td style = "text-align: right;">36.6</td><td style = "text-align: right;">38.2</td><td style = "text-align: right;">30.7</td><td style = "text-align: right;">66.8</td><td style = "text-align: right;">133.2</td><td style = "text-align: right;">466.8</td><td style = "text-align: right;">69.0</td><td style = "text-align: right;">68.0</td><td style = "text-align: right;">76.6</td><td style = "text-align: right;">3.6</td><td style = "text-align: right;">69.8</td><td style = "text-align: right;">37.6</td><td style = "text-align: right;">121.8</td><td style = "text-align: right;">69.8</td><td style = "text-align: right;">38.8</td><td style = "text-align: right;">273.4</td><td style = "text-align: right;">69.8</td><td style = "text-align: right;">66.8</td><td style = "text-align: right;">172.2</td><td style = "text-align: right;">116.8</td><td style = "text-align: right;">35.8</td><td style = "text-align: right;">74.8</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">11</td><td style = "text-align: left;">2020-01-01T10:00:00</td><td style = "text-align: right;">93.0</td><td style = "text-align: right;">72.2</td><td style = "text-align: right;">132.0</td><td style = "text-align: right;">37.8</td><td style = "text-align: right;">36.4</td><td style = "text-align: right;">72.2</td><td style = "text-align: right;">130.8</td><td style = "text-align: right;">36.6</td><td style = "text-align: right;">38.0</td><td style = "text-align: right;">27.4</td><td style = "text-align: right;">70.2</td><td style = "text-align: right;">134.2</td><td style = "text-align: right;">301.4</td><td style = "text-align: right;">70.2</td><td style = "text-align: right;">70.2</td><td style = "text-align: right;">89.8</td><td style = "text-align: right;">2.4</td><td style = "text-align: right;">72.2</td><td style = "text-align: right;">37.4</td><td style = "text-align: right;">129.0</td><td style = "text-align: right;">70.4</td><td style = "text-align: right;">38.6</td><td style = "text-align: right;">277.8</td><td style = "text-align: right;">72.2</td><td style = "text-align: right;">70.4</td><td style = "text-align: right;">173.2</td><td style = "text-align: right;">128.4</td><td style = "text-align: right;">37.4</td><td style = "text-align: right;">88.2</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">12</td><td style = "text-align: left;">2020-01-01T11:00:00</td><td style = "text-align: right;">6.3</td><td style = "text-align: right;">70.6</td><td style = "text-align: right;">135.2</td><td style = "text-align: right;">37.0</td><td style = "text-align: right;">35.0</td><td style = "text-align: right;">70.6</td><td style = "text-align: right;">134.2</td><td style = "text-align: right;">35.4</td><td style = "text-align: right;">37.2</td><td style = "text-align: right;">60.9</td><td style = "text-align: right;">69.8</td><td style = "text-align: right;">135.2</td><td style = "text-align: right;">110.7</td><td style = "text-align: right;">67.0</td><td style = "text-align: right;">70.2</td><td style = "text-align: right;">98.0</td><td style = "text-align: right;">56.2</td><td style = "text-align: right;">72.4</td><td style = "text-align: right;">36.6</td><td style = "text-align: right;">128.6</td><td style = "text-align: right;">67.2</td><td style = "text-align: right;">37.6</td><td style = "text-align: right;">263.2</td><td style = "text-align: right;">72.4</td><td style = "text-align: right;">69.6</td><td style = "text-align: right;">170.0</td><td style = "text-align: right;">133.2</td><td style = "text-align: right;">38.6</td><td style = "text-align: right;">91.6</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">13</td><td style = "text-align: left;">2020-01-01T12:00:00</td><td style = "text-align: right;">3.8</td><td style = "text-align: right;">67.4</td><td style = "text-align: right;">131.0</td><td style = "text-align: right;">36.2</td><td style = "text-align: right;">35.4</td><td style = "text-align: right;">67.4</td><td style = "text-align: right;">129.6</td><td style = "text-align: right;">35.6</td><td style = "text-align: right;">36.4</td><td style = "text-align: right;">20.4</td><td style = "text-align: right;">67.8</td><td style = "text-align: right;">133.0</td><td style = "text-align: right;">78.9</td><td style = "text-align: right;">67.2</td><td style = "text-align: right;">68.2</td><td style = "text-align: right;">94.0</td><td style = "text-align: right;">91.5</td><td style = "text-align: right;">70.2</td><td style = "text-align: right;">35.8</td><td style = "text-align: right;">128.2</td><td style = "text-align: right;">67.4</td><td style = "text-align: right;">37.0</td><td style = "text-align: right;">267.4</td><td style = "text-align: right;">70.2</td><td style = "text-align: right;">67.6</td><td style = "text-align: right;">169.0</td><td style = "text-align: right;">128.8</td><td style = "text-align: right;">37.8</td><td style = "text-align: right;">90.6</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">14</td><td style = "text-align: left;">2020-01-01T13:00:00</td><td style = "text-align: right;">1.1</td><td style = "text-align: right;">65.2</td><td style = "text-align: right;">125.4</td><td style = "text-align: right;">35.2</td><td style = "text-align: right;">35.0</td><td style = "text-align: right;">65.2</td><td style = "text-align: right;">123.6</td><td style = "text-align: right;">35.4</td><td style = "text-align: right;">35.4</td><td style = "text-align: right;">1.6</td><td style = "text-align: right;">67.2</td><td style = "text-align: right;">126.6</td><td style = "text-align: right;">107.9</td><td style = "text-align: right;">67.0</td><td style = "text-align: right;">65.8</td><td style = "text-align: right;">81.4</td><td style = "text-align: right;">103.0</td><td style = "text-align: right;">67.6</td><td style = "text-align: right;">34.8</td><td style = "text-align: right;">119.6</td><td style = "text-align: right;">67.0</td><td style = "text-align: right;">35.8</td><td style = "text-align: right;">258.8</td><td style = "text-align: right;">67.6</td><td style = "text-align: right;">67.0</td><td style = "text-align: right;">161.8</td><td style = "text-align: right;">122.8</td><td style = "text-align: right;">35.8</td><td style = "text-align: right;">79.2</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">15</td><td style = "text-align: left;">2020-01-01T14:00:00</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">60.2</td><td style = "text-align: right;">109.6</td><td style = "text-align: right;">31.0</td><td style = "text-align: right;">31.0</td><td style = "text-align: right;">60.4</td><td style = "text-align: right;">108.0</td><td style = "text-align: right;">31.4</td><td style = "text-align: right;">31.2</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">63.2</td><td style = "text-align: right;">110.2</td><td style = "text-align: right;">22.3</td><td style = "text-align: right;">59.4</td><td style = "text-align: right;">62.6</td><td style = "text-align: right;">59.4</td><td style = "text-align: right;">39.7</td><td style = "text-align: right;">64.2</td><td style = "text-align: right;">30.8</td><td style = "text-align: right;">107.0</td><td style = "text-align: right;">59.4</td><td style = "text-align: right;">31.6</td><td style = "text-align: right;">227.8</td><td style = "text-align: right;">64.2</td><td style = "text-align: right;">62.8</td><td style = "text-align: right;">143.2</td><td style = "text-align: right;">106.8</td><td style = "text-align: right;">31.4</td><td style = "text-align: right;">59.0</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">16</td><td style = "text-align: left;">2020-01-01T15:00:00</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">42.0</td><td style = "text-align: right;">69.0</td><td style = "text-align: right;">20.2</td><td style = "text-align: right;">19.2</td><td style = "text-align: right;">42.0</td><td style = "text-align: right;">65.6</td><td style = "text-align: right;">20.6</td><td style = "text-align: right;">20.2</td><td style = "text-align: right;">2.6</td><td style = "text-align: right;">45.0</td><td style = "text-align: right;">62.8</td><td style = "text-align: right;">24.6</td><td style = "text-align: right;">42.4</td><td style = "text-align: right;">44.8</td><td style = "text-align: right;">25.4</td><td style = "text-align: right;">87.7</td><td style = "text-align: right;">46.2</td><td style = "text-align: right;">20.0</td><td style = "text-align: right;">65.8</td><td style = "text-align: right;">43.4</td><td style = "text-align: right;">20.6</td><td style = "text-align: right;">151.6</td><td style = "text-align: right;">46.2</td><td style = "text-align: right;">43.8</td><td style = "text-align: right;">82.2</td><td style = "text-align: right;">62.8</td><td style = "text-align: right;">20.4</td><td style = "text-align: right;">27.8</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">17</td><td style = "text-align: left;">2020-01-01T16:00:00</td><td style = "text-align: right;">0.9</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">37.9</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">10.8</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">92.3</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">18</td><td style = "text-align: left;">2020-01-01T17:00:00</td><td style = "text-align: right;">276.3</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">46.9</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">243.2</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">89.4</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">19</td><td style = "text-align: left;">2020-01-01T18:00:00</td><td style = "text-align: right;">272.9</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">24.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">375.2</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">90.4</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">20</td><td style = "text-align: left;">2020-01-01T19:00:00</td><td style = "text-align: right;">345.6</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">24.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">568.4</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">81.1</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">21</td><td style = "text-align: left;">2020-01-01T20:00:00</td><td style = "text-align: right;">411.7</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">27.4</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">636.1</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">172.9</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">22</td><td style = "text-align: left;">2020-01-01T21:00:00</td><td style = "text-align: right;">376.6</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">6.5</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">719.2</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">326.9</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">23</td><td style = "text-align: left;">2020-01-01T22:00:00</td><td style = "text-align: right;">561.3</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">1.3</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">734.9</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">256.7</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">24</td><td style = "text-align: left;">2020-01-01T23:00:00</td><td style = "text-align: right;">568.4</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.1</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">729.1</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">141.1</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td></tr></tbody></table></div><h2 id="Plotting"><a class="docs-heading-anchor" href="#Plotting">Plotting</a><a id="Plotting-1"></a><a class="docs-heading-anchor-permalink" href="#Plotting" title="Permalink"></a></h2><p>Take a look at the plotting capabilities in <a href="https://github.com/nrel-siip/powergraphics.jl">PowerGraphics.jl</a></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../quick_start_guide/">« Quick Start Guide</a><a class="docs-footer-nextpage" href="../pcm_simulation/">Multi-stage Production Cost Simulation »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.8.0 on <span class="colophon-date" title="Sunday 5 January 2025 22:41">Sunday 5 January 2025</span>. Using Julia version 1.11.2.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
