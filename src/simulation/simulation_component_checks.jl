@@ -38,7 +38,6 @@ function _throw_different_components(
 end
 
 function _check_same_components(label::String, holders::_ComponentHolders)
-    length(holders) < 2 && return
     reference = first(holders)
     for holder in Iterators.drop(holders, 1)
         last(holder) == last(reference) ||
@@ -50,10 +49,9 @@ end
 function _state_key_components(models::SimulationModels)
     holders = Dict{OptimizationContainerKey, _ComponentHolders}()
     for model in _state_models(models)
-        container = get_optimization_container(model)
-        for field in fieldnames(DatasetContainer), key in keys(getfield(container, field))
-            _writes_key(model, key) || continue
-            components = Set{String}(string.(first(_model_columns(model, key))))
+        for key in get_container_keys(get_optimization_container(model))
+            should_write_resulting_value(key) || continue
+            components = Set{String}(first(_model_columns(model, key)))
             push!(get!(holders, key, _ComponentHolders()), get_name(model) => components)
         end
     end
@@ -65,7 +63,7 @@ function _initial_condition_components(models::SimulationModels)
     for model in get_decision_models(models)
         for (ic_key, ics) in get_initial_conditions(model)
             requires_reconciliation(get_entry_type(ic_key)) || continue
-            components = Set{String}(get_name(IOM.get_component(ic)) for ic in ics)
+            components = Set{String}(get_component_name(ic) for ic in ics)
             push!(get!(holders, ic_key, _ComponentHolders()), get_name(model) => components)
         end
     end
@@ -103,7 +101,7 @@ function _check_emulator_components(models::SimulationModels, em::EmulationModel
     holders = _state_key_components(models)
     for key in sort!(collect(keys(holders)); by = encode_key_as_string)
         _writes_key(em, key) || continue
-        em_components = Dict(holders[key])[em_name]
+        em_components = Set{String}(first(_model_columns(em, key)))
         for (name, components) in holders[key]
             absent = setdiff(components, em_components)
             isempty(absent) && continue
@@ -127,7 +125,7 @@ function _state_writers(models, key::OptimizationContainerKey)
     names = Set{String}()
     for model in models
         _writes_key(model, key) || continue
-        union!(names, string.(first(_model_columns(model, key))))
+        union!(names, first(_model_columns(model, key)))
     end
     return names
 end
@@ -137,14 +135,12 @@ const FEEDFORWARD_SOURCES_KEY = "feedforward_sources"
 # A feedforward of a model restricted to the components that the decision models built
 # before it write for its source key. `original` is the feedforward as attached, at
 # position `index` of `device_model`. `left_out` holds the components outside those
-# writers. With no such writer, or none left out, the feedforward is kept whole
-# (`restricted = false`).
+# writers.
 struct _FeedforwardRestriction
     device_model::IOM.DeviceModel
     index::Int
     original::AbstractAffectFeedforward
     left_out::Set{String}
-    restricted::Bool
 end
 
 _template_device_models(model) =
@@ -189,7 +185,6 @@ function _restrict_feedforwards!(
     sim::Simulation,
     model::Union{DecisionModel, EmulationModel},
 )
-    _restore_feedforwards!(model)
     built, _ = _decision_models_around(sim, model)
     restrictions = _FeedforwardRestriction[]
     sys = get_system(model)
@@ -199,19 +194,12 @@ function _restrict_feedforwards!(
         devices = collect(IOM.get_available_components(device_model, sys))
         for (ix, ff) in enumerate(feedforwards)
             POM.supports_component_subset(typeof(ff)) || continue
-            source_key = POM.get_optimization_container_key(ff)
-            writers = _state_writers(built, source_key)
-            restricted_ff = POM.restrict_feedforward(ff, writers, sys)
-            left_out = setdiff(
-                _feedforward_device_names(ff, devices, sys),
-                _feedforward_device_names(restricted_ff, devices, sys),
-            )
-            restricted = !isempty(writers) && !isempty(left_out)
-            restricted && (feedforwards[ix] = restricted_ff)
-            push!(
-                restrictions,
-                _FeedforwardRestriction(device_model, ix, ff, left_out, restricted),
-            )
+            writers = _state_writers(built, POM.get_optimization_container_key(ff))
+            isempty(writers) && continue
+            left_out = setdiff(_feedforward_device_names(ff, devices, sys), writers)
+            isempty(left_out) && continue
+            feedforwards[ix] = POM.restrict_feedforward(ff, writers, sys)
+            push!(restrictions, _FeedforwardRestriction(device_model, ix, ff, left_out))
         end
     end
     IOM.get_internal(model).ext[FEEDFORWARD_SOURCES_KEY] = restrictions
@@ -222,11 +210,8 @@ function _prepare_feedforwards!(
     sim::Simulation,
     model::Union{DecisionModel, EmulationModel},
 )
-    if get_allow_different_components(sim)
-        _restrict_feedforwards!(sim, model)
-    else
-        _restore_feedforwards!(model)
-    end
+    _restore_feedforwards!(model)
+    get_allow_different_components(sim) && _restrict_feedforwards!(sim, model)
     return
 end
 
@@ -238,14 +223,13 @@ function _check_feedforward_restrictions(sim::Simulation, model, reads_parameter
     haskey(ext, FEEDFORWARD_SOURCES_KEY) || return
     _, later = _decision_models_around(sim, model)
     for restriction in ext[FEEDFORWARD_SOURCES_KEY]::Vector{_FeedforwardRestriction}
-        (; original, left_out, restricted) = restriction
-        restricted || continue
+        (; original, left_out) = restriction
         source_key = POM.get_optimization_container_key(original)
         source = encode_key_as_string(source_key)
         affected = join(encode_key_as_string.(POM.get_affected_values(original)), ", ")
-        late = intersect(left_out, _state_writers(later, source_key))
-        if reads_parameters && !isempty(late)
-            throw(
+        if reads_parameters
+            late = intersect(left_out, _state_writers(later, source_key))
+            isempty(late) || throw(
                 IS.ConflictingInputsError(
                     "$(get_name(model)) is built before the model that writes $source \
                      for $(_shown_names(late)), so its feedforward on $affected leaves \
@@ -304,11 +288,15 @@ _reads_state_value(::IOM.ParameterAttributes) = false
 # Each feedforward parameter is read from the decision state of its source key for every
 # component of the parameter.
 function _check_parameter_sources(sim::Simulation, model)
+    decision_models = get_decision_models(get_models(sim))
+    writers_by_key = Dict{OptimizationContainerKey, Set{String}}()
     for (key, parameter) in get_parameters(get_optimization_container(model))
         attributes = get_attributes(parameter)
         _reads_state_value(attributes) || continue
         source_key = get_attribute_key(attributes)
-        writers = _state_writers(get_decision_models(get_models(sim)), source_key)
+        writers = get!(writers_by_key, source_key) do
+            _state_writers(decision_models, source_key)
+        end
         names = string.(axes(get_parameter_array(parameter))[1])
         missing_names = setdiff(names, writers)
         isempty(missing_names) && continue
@@ -356,7 +344,7 @@ end
 _check_initial_power_source(::Simulation, _, ::InitialConditionKey, _) = nothing
 
 # The initial power of a unit that is not must-run is taken with its status, read from the
-# `OnVariable` of the system state.
+# `OnVariable` of the system state. That state holds the components every model writes.
 function _check_initial_power_source(
     sim::Simulation,
     model,
@@ -364,10 +352,16 @@ function _check_initial_power_source(
     ics,
 ) where {T <: PSY.Component}
     status_key = VariableKey(OnVariable, T)
-    writers = _state_writers(_state_models(get_models(sim)), status_key)
+    system_states = get_system_states(get_simulation_state(sim))
+    if has_dataset(system_states, status_key)
+        status = get_dataset(system_states, status_key)
+        in_state = name -> _has_component(status, name)
+    else
+        in_state = _ -> false
+    end
     missing_names = Set{String}(
         get_component_name(ic) for ic in ics if
-        !IOM.get_must_run(IOM.get_component(ic)) && !(get_component_name(ic) in writers)
+        !IOM.get_must_run(IOM.get_component(ic)) && !in_state(get_component_name(ic))
     )
     isempty(missing_names) && return
     _throw_missing_writer(model, status_key,

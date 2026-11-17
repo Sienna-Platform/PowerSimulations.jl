@@ -37,7 +37,11 @@ function POM.construct_device!(
     ::IOM.NetworkModel,
 )
     segments = IOM.get_attribute(model, "segments")
-    inner_axes = isempty(segments) ? () : (segments,)
+    if isempty(segments)
+        inner_axes = ()
+    else
+        inner_axes = (segments,)
+    end
     for T in IOM.get_attribute(model, "parameters")
         IOM.add_param_container_shared_axes!(
             container,
@@ -326,12 +330,7 @@ end
         ),
         simulation_folder = mktempdir(; cleanup = true),
     )
-    err = try
-        build!(sim; console_level = Logging.AboveMaxLevel)
-        nothing
-    catch e
-        e
-    end
+    err = _build_error(sim)
     @test err isa IS.ConflictingInputsError
     message = sprint(showerror, err)
     @test occursin("Emulation model EM", message)

@@ -548,23 +548,20 @@ function _state_source_simulation(;
     set_device_model!(template_ed, ThermalStandard, ed_thermal)
     models = create_simulation_build_test_problems(
         get_template_basic_uc_simulation(), template_ed, sys_uc, sys_ed)
+    if isnothing(feedforward)
+        feedforwards = Dict()
+    else
+        feedforwards = Dict("ED" => [feedforward])
+    end
     sequence = SimulationSequence(;
         models,
-        feedforwards = isnothing(feedforward) ? Dict() : Dict("ED" => [feedforward]),
+        feedforwards,
         ini_cond_chronology = InterProblemChronology(),
         allow_different_components,
     )
     return Simulation(; name = "state_sources", steps, models, sequence,
         simulation_folder = mktempdir(; cleanup = true))
 end
-
-_build_error(sim) =
-    try
-        build!(sim; console_level = Logging.AboveMaxLevel)
-        nothing
-    catch e
-        e
-    end
 
 @testset "Models with different units fail at build by default" begin
     @test build!(_state_source_simulation(); console_level = Logging.AboveMaxLevel) ==

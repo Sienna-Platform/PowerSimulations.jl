@@ -757,7 +757,11 @@ end
 function _realized_power_with_unit_left_out(model, unit)
     sys_uc = PSB.build_system(PSITestSystems, "c_sys5_uc")
     sys_ed = PSB.build_system(PSITestSystems, "c_sys5_ed")
-    sys = model == "UC" ? sys_uc : sys_ed
+    if model == "UC"
+        sys = sys_uc
+    else
+        sys = sys_ed
+    end
     set_available!(get_component(ThermalStandard, sys, unit), false)
     models = SimulationModels(;
         decision_models = [
