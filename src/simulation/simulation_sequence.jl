@@ -238,7 +238,8 @@ Construct the simulation sequence between decision and emulation models.
   - `allow_different_components::Bool = false`: allow the models to hold different components
     for the same key. By default the build fails when they differ. When `true`, the simulation
     state holds every model's components, and each feedforward applies only to the components
-    its source model writes.
+    its source model writes. The emulation model must still hold every component of the
+    decision models.
 
 # Example
 

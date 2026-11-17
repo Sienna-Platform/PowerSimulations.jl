@@ -8,7 +8,10 @@ function _shown_names(names)
     sorted = sort!(collect(String, names))
     shown = join(first(sorted, _SHOWN_NAMES_LIMIT), ", ")
     rest = length(sorted) - _SHOWN_NAMES_LIMIT
-    return rest > 0 ? "$shown and $rest more" : shown
+    if rest > 0
+        return "$shown and $rest more"
+    end
+    return shown
 end
 
 const _ComponentHolders = Vector{Pair{Symbol, Set{String}}}
@@ -19,12 +22,12 @@ function _throw_different_components(
     (name, components)::Pair{Symbol, Set{String}},
 )
     details = String[]
-    for (holder, held, other, other_held) in
-        ((ref_name, ref, name, components), (name, components, ref_name, ref))
-        absent = setdiff(held, other_held)
-        isempty(absent) && continue
-        push!(details, "$other lacks $(_shown_names(absent)), which $holder has")
-    end
+    absent = setdiff(ref, components)
+    isempty(absent) ||
+        push!(details, "$name lacks $(_shown_names(absent)), which $ref_name has")
+    absent = setdiff(components, ref)
+    isempty(absent) ||
+        push!(details, "$ref_name lacks $(_shown_names(absent)), which $name has")
     throw(
         IS.ConflictingInputsError(
             "Models $ref_name and $name hold different components for $label: \
@@ -78,12 +81,43 @@ end
 
 # Every model holding a simulation state key, and every decision model holding an initial
 # condition that needs reconciliation, must have the same components for it unless the
-# sequence allows different components.
+# sequence allows different components. When it does, the emulator must still hold them all.
 function _check_component_sets(sim::Simulation)
-    get_allow_different_components(sim) && return
     models = get_models(sim)
-    _check_each_key(_state_key_components(models), "")
-    _check_each_key(_initial_condition_components(models), "initial condition ")
+    if get_allow_different_components(sim)
+        _check_emulator_components(models, get_emulation_model(models))
+    else
+        _check_each_key(_state_key_components(models), "")
+        _check_each_key(_initial_condition_components(models), "initial condition ")
+    end
+    return
+end
+
+_check_emulator_components(::SimulationModels, ::Nothing) = nothing
+
+# The emulator is the full view of the system. The system state of a key the emulator writes
+# takes the emulator's components only, so the emulator must hold every component that a
+# decision model writes for the key.
+function _check_emulator_components(models::SimulationModels, em::EmulationModel)
+    em_name = get_name(em)
+    holders = _state_key_components(models)
+    for key in sort!(collect(keys(holders)); by = encode_key_as_string)
+        _writes_key(em, key) || continue
+        em_components = Dict(holders[key])[em_name]
+        for (name, components) in holders[key]
+            absent = setdiff(components, em_components)
+            isempty(absent) && continue
+            throw(
+                IS.ConflictingInputsError(
+                    "Emulation model $em_name lacks the \
+                     $(nameof(get_component_type(key))) components \
+                     $(_shown_names(absent)) for $(encode_key_as_string(key)), which \
+                     decision model $name has. The emulation model must hold every \
+                     component of the decision models.",
+                ),
+            )
+        end
+    end
     return
 end
 
@@ -109,8 +143,6 @@ struct _FeedforwardRestriction
     device_model::IOM.DeviceModel
     index::Int
     original::AbstractAffectFeedforward
-    source_key::OptimizationContainerKey
-    affected_keys::Vector{OptimizationContainerKey}
     left_out::Set{String}
     restricted::Bool
 end
@@ -140,9 +172,9 @@ end
 # Puts back the feedforwards of `model` as they were attached, so a later build or sequence
 # starts from them.
 function _restore_feedforwards!(model::Union{DecisionModel, EmulationModel})
-    restrictions = pop!(IOM.get_internal(model).ext, FEEDFORWARD_SOURCES_KEY, nothing)
-    isnothing(restrictions) && return
-    for restriction in restrictions::Vector{_FeedforwardRestriction}
+    ext = IOM.get_internal(model).ext
+    haskey(ext, FEEDFORWARD_SOURCES_KEY) || return
+    for restriction in pop!(ext, FEEDFORWARD_SOURCES_KEY)::Vector{_FeedforwardRestriction}
         IOM.get_feedforwards(restriction.device_model)[restriction.index] =
             restriction.original
     end
@@ -178,9 +210,7 @@ function _restrict_feedforwards!(
             restricted && (feedforwards[ix] = restricted_ff)
             push!(
                 restrictions,
-                _FeedforwardRestriction(device_model, ix, ff, source_key,
-                    collect(OptimizationContainerKey, POM.get_affected_values(ff)),
-                    left_out, restricted),
+                _FeedforwardRestriction(device_model, ix, ff, left_out, restricted),
             )
         end
     end
@@ -200,17 +230,19 @@ function _prepare_feedforwards!(
     return
 end
 
-# A component left out of a feedforward because its only writers are built after the model
-# would never be set from the state. Each restriction that leaves components out is logged.
+# A component left out of a restricted feedforward because its only writers are built after
+# the model would never be set from the state. Each restriction is logged. A feedforward kept
+# whole is checked against every writer by `_check_parameter_sources`.
 function _check_feedforward_restrictions(sim::Simulation, model, reads_parameters::Bool)
-    restrictions = get(IOM.get_internal(model).ext, FEEDFORWARD_SOURCES_KEY, nothing)
-    isnothing(restrictions) && return
+    ext = IOM.get_internal(model).ext
+    haskey(ext, FEEDFORWARD_SOURCES_KEY) || return
     _, later = _decision_models_around(sim, model)
-    for restriction in restrictions::Vector{_FeedforwardRestriction}
-        (; source_key, affected_keys, left_out, restricted) = restriction
-        isempty(left_out) && continue
+    for restriction in ext[FEEDFORWARD_SOURCES_KEY]::Vector{_FeedforwardRestriction}
+        (; original, left_out, restricted) = restriction
+        restricted || continue
+        source_key = POM.get_optimization_container_key(original)
         source = encode_key_as_string(source_key)
-        affected = join(encode_key_as_string.(affected_keys), ", ")
+        affected = join(encode_key_as_string.(POM.get_affected_values(original)), ", ")
         late = intersect(left_out, _state_writers(later, source_key))
         if reads_parameters && !isempty(late)
             throw(
@@ -222,11 +254,15 @@ function _check_feedforward_restrictions(sim::Simulation, model, reads_parameter
                 ),
             )
         end
-        restricted || continue
         n_left_out = length(left_out)
-        @warn "$(get_name(model)) leaves $n_left_out $(n_left_out == 1 ? "component" : "components") \
-               out of the feedforward on $affected, since no model built before it writes \
-               $source for them: $(_shown_names(left_out))"
+        if n_left_out == 1
+            noun = "component"
+        else
+            noun = "components"
+        end
+        @warn "$(get_name(model)) leaves $n_left_out $noun out of the feedforward on \
+               $affected, since no model built before it writes $source for them: \
+               $(_shown_names(left_out))"
     end
     return
 end
@@ -237,14 +273,20 @@ end
 
 # Every execution but the simulation's first updates the parameters of the model it runs.
 function _reads_parameters_from_state(sim::Simulation, n::Int)
-    first_run = first(get_execution_order(sim)) == n ? 1 : 0
-    return _total_executions(sim, n) > first_run
+    if first(get_execution_order(sim)) == n
+        return _total_executions(sim, n) > 1
+    end
+    return _total_executions(sim, n) > 0
 end
 
+_reads_system_state(::InterProblemChronology) = true
+_reads_system_state(::InitialConditionChronology) = false
+
 # A model keeps its own initial conditions at its first execution.
-_reads_initial_conditions_from_state(sim::Simulation, n::Int) =
-    get_ini_cond_chronology(sim) isa InterProblemChronology &&
-    _total_executions(sim, n) > 1
+function _reads_initial_conditions_from_state(sim::Simulation, n::Int)
+    return _reads_system_state(get_ini_cond_chronology(sim)) &&
+           _total_executions(sim, n) > 1
+end
 
 function _throw_missing_writer(model, source_key, what, missing_names, remedy)
     throw(
@@ -256,12 +298,15 @@ function _throw_missing_writer(model, source_key, what, missing_names, remedy)
     )
 end
 
+_reads_state_value(::VariableValueAttributes) = true
+_reads_state_value(::IOM.ParameterAttributes) = false
+
 # Each feedforward parameter is read from the decision state of its source key for every
 # component of the parameter.
 function _check_parameter_sources(sim::Simulation, model)
     for (key, parameter) in get_parameters(get_optimization_container(model))
         attributes = get_attributes(parameter)
-        attributes isa VariableValueAttributes || continue
+        _reads_state_value(attributes) || continue
         source_key = get_attribute_key(attributes)
         writers = _state_writers(get_decision_models(get_models(sim)), source_key)
         names = string.(axes(get_parameter_array(parameter))[1])
@@ -299,22 +344,35 @@ function _parameter_source_remedy(
             $_ALLOW_DIFFERENT_COMPONENTS_HINT."
 end
 
-# The initial power of a unit that is not must-run is taken with its status, read from the
-# `OnVariable` of the system state.
+# Every other initial condition reads only keys that its own model writes for the same
+# components, so only the status behind an initial power can lack a writer.
 function _check_initial_power_sources(sim::Simulation, model)
     for (key, ics) in get_initial_conditions(model)
-        get_entry_type(key) === DevicePower || continue
-        status_key = VariableKey(OnVariable, get_component_type(key))
-        writers = _state_writers(_state_models(get_models(sim)), status_key)
-        missing_names = Set{String}(
-            get_component_name(ic) for ic in ics if
-            !IOM.get_must_run(IOM.get_component(ic)) && !(get_component_name(ic) in writers)
-        )
-        isempty(missing_names) && continue
-        _throw_missing_writer(model, status_key,
-            "the status behind the initial power of a unit", missing_names,
-            "Commit those units in some model, or make them must-run.")
+        _check_initial_power_source(sim, model, key, ics)
     end
+    return
+end
+
+_check_initial_power_source(::Simulation, _, ::InitialConditionKey, _) = nothing
+
+# The initial power of a unit that is not must-run is taken with its status, read from the
+# `OnVariable` of the system state.
+function _check_initial_power_source(
+    sim::Simulation,
+    model,
+    key::InitialConditionKey{DevicePower, T},
+    ics,
+) where {T <: PSY.Component}
+    status_key = VariableKey(OnVariable, T)
+    writers = _state_writers(_state_models(get_models(sim)), status_key)
+    missing_names = Set{String}(
+        get_component_name(ic) for ic in ics if
+        !IOM.get_must_run(IOM.get_component(ic)) && !(get_component_name(ic) in writers)
+    )
+    isempty(missing_names) && return
+    _throw_missing_writer(model, status_key,
+        "the status behind the initial power of a unit", missing_names,
+        "Commit those units in some model, or make them must-run.")
     return
 end
 

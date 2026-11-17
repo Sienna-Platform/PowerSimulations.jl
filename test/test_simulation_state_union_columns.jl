@@ -226,10 +226,9 @@ end
     @test values["other", "2", :].data == [-1.0, -1.0]
 end
 
-@testset "Stages and an emulator with different columns share one state" begin
+@testset "Stages with different columns and an emulator with all of them share one state" begin
     load_names = ["Bus2", "Bus3", "Bus4"]
-    uc_columns, ed_columns, em_columns =
-        ["Bus2", "Bus3"], ["Bus3", "Bus4"], ["Bus2", "Bus4"]
+    uc_columns, ed_columns, em_columns = ["Bus2", "Bus3"], ["Bus3", "Bus4"], load_names
     models = _union_columns_models(;
         uc = ([UnionColumnsParameter], uc_columns, 1.0),
         ed = ([UnionColumnsParameter], ed_columns, 2.0),
@@ -259,8 +258,25 @@ end
 end
 
 @testset "Reading a state value no model wrote names the component and key" begin
-    # The emulator writes the commitment state without Alta, so Alta's system-state column is
-    # never written and UC's initial conditions read it at the second step.
+    key = PSI.VariableKey(OnVariable, ThermalStandard)
+    values = DenseAxisArray([1.0, NaN], ["Brighton", "Alta"])
+    @test PSI._get_state_value(values, key, "Brighton") == 1.0
+    err = try
+        PSI._get_state_value(values, key, "Alta")
+        nothing
+    catch e
+        e
+    end
+    @test err isa IS.InvalidValue
+    message = sprint(showerror, err)
+    @test occursin("Alta", message)
+    @test occursin("OnVariable__ThermalStandard", message)
+    @test occursin("device filters", message)
+end
+
+@testset "An emulator that lacks a decision-model component fails at build" begin
+    # The emulator filters Alta out of its commitment, and UC commits Alta. The system state
+    # of a key the emulator writes holds only the emulator's components.
     sys_em = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_single_time_series = true)
     sys_uc = PSB.build_system(PSITestSystems, "c_sys5_uc")
     sys_ed = deepcopy(sys_em)
@@ -310,12 +326,18 @@ end
         ),
         simulation_folder = mktempdir(; cleanup = true),
     )
-    @test build!(sim; console_level = Logging.Error) == PSI.SimulationBuildStatus.BUILT
-    @test execute!(sim; in_memory = true) == PSI.RunStatus.FAILED
-    log = read(joinpath(sim.internal.logs_dir, PSI.SIMULATION_LOG_FILENAME), String)
-    @test occursin("Alta", log)
-    @test occursin("OnVariable__ThermalStandard", log)
-    @test occursin("device filters", log)
+    err = try
+        build!(sim; console_level = Logging.AboveMaxLevel)
+        nothing
+    catch e
+        e
+    end
+    @test err isa IS.ConflictingInputsError
+    message = sprint(showerror, err)
+    @test occursin("Emulation model EM", message)
+    @test occursin("ThermalStandard components Alta", message)
+    @test occursin("decision model UC", message)
+    @test occursin("__ThermalStandard", message)
 end
 
 @testset "A model output with a non-finite value is rejected" begin

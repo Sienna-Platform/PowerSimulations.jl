@@ -823,26 +823,48 @@ _ed_feedforwards(sim) =
     @test !haskey(IOM.get_internal(ed).ext, PSI.FEEDFORWARD_SOURCES_KEY)
 end
 
-@testset "A feedforward source built after its target fails at build" begin
-    # Both models look a day ahead, so the dispatch can be listed first.
-    models = SimulationModels(;
-        decision_models = [
-            DecisionModel(get_template_nomin_ed_simulation(),
-                PSB.build_system(PSITestSystems, "c_sys5_uc"); name = "ED",
-                optimizer = HiGHS_optimizer),
-            DecisionModel(get_template_basic_uc_simulation(),
-                PSB.build_system(PSITestSystems, "c_sys5_uc"); name = "UC",
-                optimizer = HiGHS_optimizer),
-        ],
-    )
+# Day-ahead models in the listed order, so the dispatch can be listed before a UC. Each entry
+# is a model name and the unit that model does not model, if any. The ED reads its
+# feedforward from the UC models.
+function _late_source_simulation(entries::Pair{String}...)
+    decision_models = DecisionModel[]
+    for (name, without) in entries
+        sys = PSB.build_system(PSITestSystems, "c_sys5_uc")
+        isnothing(without) ||
+            set_available!(get_component(ThermalStandard, sys, without), false)
+        if name == "ED"
+            template = get_template_nomin_ed_simulation()
+        else
+            template = get_template_basic_uc_simulation()
+        end
+        push!(decision_models,
+            DecisionModel(template, sys; name, optimizer = HiGHS_optimizer))
+    end
+    models = SimulationModels(; decision_models)
     sequence = SimulationSequence(;
         models,
         feedforwards = Dict("ED" => [_power_bound_feedforward()]),
         ini_cond_chronology = InterProblemChronology(),
         allow_different_components = true,
     )
-    sim = Simulation(; name = "late_source", steps = 2, models, sequence,
+    return Simulation(; name = "late_source", steps = 2, models, sequence,
         simulation_folder = mktempdir(; cleanup = true))
+end
+
+@testset "A whole feedforward reads a source built after its target" begin
+    # No model built before the ED writes the source, so its feedforward stays whole and the
+    # UC listed after it writes every unit.
+    sim = _late_source_simulation("ED" => nothing, "UC" => nothing)
+    @test build!(sim; console_level = Logging.AboveMaxLevel) ==
+          PSI.SimulationBuildStatus.BUILT
+    @test POM.get_feedforward_components(only(_ed_feedforwards(sim))) ==
+          make_selector(ThermalStandard)
+end
+
+@testset "A restricted feedforward source built after its target fails at build" begin
+    # UC1 lacks Alta and is built before the ED, so the ED's feedforward leaves Alta out, but
+    # UC2, listed after the ED, writes Alta.
+    sim = _late_source_simulation("UC1" => "Alta", "ED" => nothing, "UC2" => nothing)
     err = _build_error(sim)
     @test err isa IS.ConflictingInputsError
     msg = sprint(showerror, err)
