@@ -1,6 +1,7 @@
 struct SimulationState
     current_time::Base.RefValue{Dates.DateTime}
     last_decision_model::Base.RefValue{Symbol}
+    allow_different_components::Base.RefValue{Bool}
     decision_states::DatasetContainer{InMemoryDataset}
     system_states::DatasetContainer{InMemoryDataset}
 end
@@ -9,6 +10,7 @@ function SimulationState()
     return SimulationState(
         Ref(UNSET_INI_TIME),
         Ref(:None),
+        Ref(false),
         DatasetContainer{InMemoryDataset}(),
         DatasetContainer{InMemoryDataset}(),
     )
@@ -16,6 +18,7 @@ end
 
 IOM.get_current_time(s::SimulationState) = s.current_time[]
 get_last_decision_model(s::SimulationState) = s.last_decision_model[]
+get_allow_different_components(s::SimulationState) = s.allow_different_components[]
 get_decision_states(s::SimulationState) = s.decision_states
 get_system_states(s::SimulationState) = s.system_states
 
@@ -35,6 +38,11 @@ end
 
 function set_last_decision_model!(s::SimulationState, val::Symbol)
     s.last_decision_model[] = val
+    return
+end
+
+function set_allow_different_components!(s::SimulationState, val::Bool)
+    s.allow_different_components[] = val
     return
 end
 
@@ -304,6 +312,53 @@ function find_aligned_timestamp_index(dataset::InMemoryDataset, timestamp::Dates
     )
 end
 
+"""
+Start the window of a decision-state dataset at `simulation_time`, which the first write past
+the end of the step does. The writing model then overwrites the components it has from the
+first row.
+
+When models may hold different components, the writer can lack some of the dataset's
+components, so every value first moves up with its timestamp and the rows that enter the
+window take the key's initial value. Otherwise the writer has every component and only the
+timestamps change.
+"""
+function _start_state_window!(
+    state::SimulationState,
+    key::OptimizationContainerKey,
+    state_data::InMemoryDataset,
+    simulation_time::Dates.DateTime,
+)
+    timestamps = state_data.timestamps
+    resolution = get_data_resolution(state_data)
+    if get_allow_different_components(state)
+        num_shifted_rows = (simulation_time - first(timestamps)) ÷ resolution
+        _shift_state_rows!(
+            state_data.values.data,
+            num_shifted_rows,
+            _initial_state_value(key),
+        )
+    end
+    timestamps .= range(simulation_time; step = resolution, length = length(timestamps))
+    return
+end
+
+# Time is the last axis of the array, so each row is one contiguous block of values and the
+# shift is a single overlapping copy.
+function _shift_state_rows!(
+    data::Array{Float64},
+    num_shifted_rows::Int,
+    fill_value::Float64,
+)
+    row_length = prod(size(data)[1:(end - 1)])
+    num_kept_rows = max(size(data, ndims(data)) - num_shifted_rows, 0)
+    num_kept_values = num_kept_rows * row_length
+    if num_kept_values > 0
+        copyto!(data, 1, data, num_shifted_rows * row_length + 1, num_kept_values)
+    end
+    fill!(view(data, (num_kept_values + 1):length(data)), fill_value)
+    return
+end
+
 function update_decision_state!(
     state::SimulationState,
     key::ParameterKey{AvailableStatusChangeCountdownParameter, T},
@@ -322,12 +377,7 @@ function update_decision_state!(
     @assert_op resolution_ratio >= 1
     if simulation_time > get_end_of_step_timestamp(state_data)
         state_data_index = 1
-        state_data.timestamps[:] .=
-            range(
-                simulation_time;
-                step = state_resolution,
-                length = get_num_rows(state_data),
-            )
+        _start_state_window!(state, key, state_data, simulation_time)
     else
         state_data_index = find_timestamp_index(state_timestamps, simulation_time)
     end
@@ -371,12 +421,7 @@ function update_decision_state!(
 
     if simulation_time > get_end_of_step_timestamp(state_data)
         state_data_index = 1
-        state_data.timestamps[:] .=
-            range(
-                simulation_time;
-                step = state_resolution,
-                length = get_num_rows(state_data),
-            )
+        _start_state_window!(state, key, state_data, simulation_time)
     else
         state_data_index = find_timestamp_index(state_timestamps, simulation_time)
     end
@@ -430,7 +475,8 @@ end
 Write a model's results for `key` into the decision state. The state holds the union of the
 key's components across models, and each model writes only the components it has, so the
 last model to write a component wins. A component no model has written keeps its initial
-value.
+value. When the write starts a new window, values keep their timestamps as described in
+`_start_state_window!`.
 """
 function update_decision_state!(
     state::SimulationState,
@@ -451,12 +497,7 @@ function update_decision_state!(
 
     if simulation_time > get_end_of_step_timestamp(state_data)
         state_data_index = 1
-        state_data.timestamps[:] .=
-            range(
-                simulation_time;
-                step = state_resolution,
-                length = get_num_rows(state_data),
-            )
+        _start_state_window!(state, key, state_data, simulation_time)
     else
         state_data_index = find_timestamp_index(state_timestamps, simulation_time)
     end
@@ -643,12 +684,7 @@ function update_decision_state!(
 
     if simulation_time > get_end_of_step_timestamp(state_data)
         state_data_index = 1
-        state_data.timestamps[:] .=
-            range(
-                simulation_time;
-                step = state_resolution,
-                length = get_num_rows(state_data),
-            )
+        _start_state_window!(state, key, state_data, simulation_time)
     else
         state_data_index = find_timestamp_index(state_timestamps, simulation_time)
     end
@@ -690,12 +726,7 @@ function update_decision_state!(
 
     if simulation_time > get_end_of_step_timestamp(state_data)
         state_data_index = 1
-        state_data.timestamps[:] .=
-            range(
-                simulation_time;
-                step = state_resolution,
-                length = get_num_rows(state_data),
-            )
+        _start_state_window!(state, key, state_data, simulation_time)
     else
         state_data_index = find_timestamp_index(state_data.timestamps, simulation_time)
     end

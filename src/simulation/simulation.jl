@@ -395,8 +395,10 @@ end
 function _initialize_simulation_state!(sim::Simulation)
     step_resolution = get_step_resolution(get_sequence(sim))
     simulation_models = get_models(sim)
+    sim_state = get_simulation_state(sim)
+    set_allow_different_components!(sim_state, get_allow_different_components(sim))
     initialize_simulation_state!(
-        get_simulation_state(sim),
+        sim_state,
         simulation_models,
         step_resolution,
         get_initial_time(sim),
