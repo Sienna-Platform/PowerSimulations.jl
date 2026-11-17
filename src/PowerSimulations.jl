@@ -131,8 +131,7 @@ import InfrastructureOptimizationModels:
     read_json, start_up_cost, TimeSeriesParameter, to_dataframe, UNSET_HORIZON,
     UNSET_INI_TIME, UNSET_INTERVAL, UNSET_RESOLUTION, unwrap_for_param
 import InfrastructureOptimizationModels:
-    add_to_objective_variant_expression!, assign_maybe_broadcast!, fix_maybe_broadcast!,
-    set_expression!
+    add_to_objective_variant_expression!, assign_maybe_broadcast!, fix_maybe_broadcast!
 import InfrastructureOptimizationModels:
     _deserialize_key, _get_parameter_field, _process_timestamps, _should_export,
     _validate_keys, encode_keys_as_strings, get_current_time, get_forecast_horizon,

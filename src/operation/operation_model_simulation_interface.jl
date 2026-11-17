@@ -28,6 +28,7 @@ function update_parameters!(
     end
     container = get_optimization_container(model)
     if _edits_in_place(container) && !is_synchronized(container)
+        rewrite_variant_costs!(model)
         update_objective_function!(container)
         set_synchronized_status!(get_objective_expression(container), true)
     end
