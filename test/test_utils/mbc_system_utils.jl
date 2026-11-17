@@ -45,10 +45,13 @@ function replace_with_renewable!(
         step = IS.get_interval(load_ts),
         length = total_steps,
     )
+    # In MW: the thermal unit's maximum, or a profile around the renewable's rating.
     if use_thermal_max_power
-        rg_data = fill(get_active_power_limits(unit1, u"NU").max, total_steps)
+        rg_data = fill(get_active_power_limits(unit1, u"MW").max, total_steps)
     else
-        rg_data = magnitude .* ones(total_steps) .+ random_variation .* rand(total_steps)
+        rg_data =
+            (magnitude .* ones(total_steps) .+ random_variation .* rand(total_steps)) .*
+            get_rating(rg1, u"MW")
     end
     # Build a native `Deterministic` directly (windows keyed exactly like `load_ts`'s own,
     # each holding `num_forecast_steps` values sliced from `rg_data`) instead of adding a
@@ -64,6 +67,7 @@ function replace_with_renewable!(
         data = rg_ts_data,
         resolution = IS.get_interval(load_ts),
         interval = IS.get_interval(load_ts),
+        PSB.natural_units("active_power", "MW")...,
     )
     add_time_series!(sys, rg1, rg_ts)
     return
@@ -113,6 +117,8 @@ function tweak_system!(sys::System, load_pow_mult, therm_pow_mult, therm_price_m
             load,
             get_max_active_power(load, u"SU") * load_pow_mult * u"SU",
         )
+        # The series is per unit of base_power, not max_active_power, so scale it as well.
+        _scale_deterministic!(sys, load, "max_active_power", load_pow_mult)
     end
     # replace with type of component?
     for therm in get_components(ThermalStandard, sys)
@@ -127,6 +133,26 @@ function tweak_system!(sys::System, load_pow_mult, therm_pow_mult, therm_price_m
             _scaled_variable_cost(get_variable_operation_cost(op_cost), therm_price_mult),
         )
     end
+end
+
+# Replaces the `Deterministic` series `name` of `comp` with its values times `mult`, with the
+# same labels.
+function _scale_deterministic!(sys::System, comp, name::String, mult)
+    isone(mult) && return
+    PSY.has_time_series(comp, Deterministic, name) || return
+    ts = get_time_series(Deterministic, comp, name)
+    scaled = Deterministic(;
+        name = name,
+        data = OrderedDict(k => v .* mult for (k, v) in IS.get_data(ts)),
+        resolution = IS.get_resolution(ts),
+        interval = IS.get_interval(ts),
+        units = IS.get_units(ts),
+        quantity_kind = IS.get_quantity_kind(ts),
+        per_unit_of = IS.get_per_unit_of(ts),
+    )
+    remove_time_series!(sys, Deterministic, comp, name)
+    add_time_series!(sys, comp, scaled)
+    return
 end
 
 _is_market_bid_cost(::MarketBidCost) = true
@@ -525,12 +551,18 @@ function build_sys_decr2(
             )
             max_max_active_power = maximum(maximum(values(max_active_power_ts.data)))
             remove_time_series!(sys, Deterministic, il, "max_active_power")
+            # The constant is a value of the series it replaces, so it keeps its labels.
             new_ts = make_deterministic_ts(
                 sys,
                 "max_active_power",
                 max_max_active_power,
                 0.0,
-                0.0,
+                0.0;
+                labels = (;
+                    units = IS.get_units(md),
+                    quantity_kind = IS.get_quantity_kind(md),
+                    per_unit_of = IS.get_per_unit_of(md),
+                ),
             )
             add_time_series!(sys, il, new_ts)
             break
@@ -576,7 +608,7 @@ function _force_multistart_commitment!(sys::System, off_hours)
     horizon_count = IS.get_horizon_count(PSY.get_forecast_horizon(sys), resolution)
     @assert all(h -> 1 <= h <= horizon_count, off_hours)
     profile = [
-        h in off_hours ? MULTISTART_OFF_LOAD_MW / MULTISTART_ON_LOAD_MW : 1.0 for
+        ifelse(h in off_hours, MULTISTART_OFF_LOAD_MW, MULTISTART_ON_LOAD_MW) for
         h in 1:horizon_count
     ]
     load_ts = Deterministic(;
@@ -586,6 +618,7 @@ function _force_multistart_commitment!(sys::System, off_hours)
         ),
         resolution = resolution,
         interval = PSY.get_forecast_interval(sys),
+        PSB.natural_units("active_power", "MW")...,
     )
     remove_time_series!(sys, Deterministic, load, "max_active_power")
     add_time_series!(sys, load, load_ts)

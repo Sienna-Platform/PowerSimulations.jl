@@ -300,7 +300,7 @@ end
 
 """
 Make a deterministic time series from a tuple or a float value. See below function for
-details about the arguments.
+details about the arguments. `labels` holds the units labels of a physical series.
 """
 function make_deterministic_ts(
     name::String,
@@ -311,7 +311,8 @@ function make_deterministic_ts(
     horizon::Period,
     interval::Period,
     window_count::Int,
-    resolution::Period,
+    resolution::Period;
+    labels::NamedTuple = (;),
 ) where {T <: Union{Number, Tuple, IS.LinearFunctionData}}
     horizon_count = IS.get_horizon_count(horizon, resolution)
     ts_data = OrderedDict{DateTime, Vector{T}}()
@@ -327,6 +328,7 @@ function make_deterministic_ts(
         data = ts_data,
         resolution = resolution,
         interval = interval,
+        labels...,
     )
 end
 

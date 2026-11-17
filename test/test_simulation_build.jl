@@ -426,7 +426,7 @@ function _single_window_system()
     profile = [0.6 + 0.4 * sin(pi * h / 24) for h in 0:23]
     PSY.add_time_series!(sys, load,
         IS.SingleTimeSeries("max_active_power", TimeSeries.TimeArray(timestamps, profile);
-            unit_system = IS.CU, units = nothing, quantity_kind = "active_power"))
+            PSB.component_base("active_power")...))
     PSY.transform_single_time_series!(sys, Hour(24), Hour(24))
     return sys
 end
