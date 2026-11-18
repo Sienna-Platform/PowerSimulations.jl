@@ -1,6 +1,9 @@
 # PowerSimulations.jl — Claude Guide
 
-Platform-wide Sienna conventions (performance, type stability, formatter, environments, code style) live in `.claude/Sienna.md` and the `sienna-psy6` skill — read them too. This file is repo-specific and does not restate them.
+This file is repo-specific. The shared Sienna rules load from the import below; the `sienna-dev` skill holds the cross-package
+context; the `sienna-dev` and `sienna-reviewer` subagents implement and review.
+
+@Sienna.md
 
 ## Scope (psy6 line, post-excision)
 
@@ -12,8 +15,6 @@ PSI is the **simulation orchestration** package of the psy6 line. It runs optimi
 Rule of thumb for where a change goes: **if it needs `SimulationState`, a `SimulationStore`, or knowledge of more than one model, it is PSI. If it adds a variable, constraint, parameter, or expression to a container, it is POM (or IOM if domain-neutral).** Never port formulation code back into PSI.
 
 `using PowerSimulations` re-exports the full IOM and POM public API, so user scripts need only one `using`.
-
-PSI was cut down to this scope by the excision plan in `.claude/plans/2026-09-02-pom-excision.md`, with its spec and file classification in `2026-09-02-pom-excision-spec.md`. Commit-by-commit progress and the final counts are in `.claude/plans/excision-progress.md`. These are local, gitignored working notes — not tracked in git, not on other clones.
 
 ### Where PSI sits
 
@@ -132,9 +133,6 @@ Time-varying cost refresh must call the same IOM/POM objective-function function
 ### Never modify IOM's `optimization_container.jl`
 Same rule as before, one package down. Push fixes into POM's `construct_device!` / `add_parameters!` chain or PSI's update chain.
 
-### No silent absence-sentinel skips
-Do not add `isnothing(x) && continue` guards that hide malformed-data bugs; let the next call surface the data error. When triaging bot review comments, mark "add a nothing-skip" suggestions as invalid.
-
 ### Parameter multiplier `fill!` optimizations need a manual audit
 Whether a parameter type has a uniform multiplier across all `(device, time)` cells is NOT statically derivable. Frame `fill!` proposals as "for uniform-multiplier types" and ask which qualify. Hot path in PSI: `parameters/update_container_parameter_values.jl`.
 
@@ -158,5 +156,5 @@ Events framework to POM then unfence; AGC (`AGCReserveDeployment` dropped; POM's
   `Simulation` produces no recorder events and no between-step updates. PSI's simulation path
   drives updates itself (see "Parameter update between solves" above) and is unaffected.
 
-## Default branch
-`main` (not `master`). Diff/PR/review against `origin/main`. Excision work is on `jd/pom_excision` with per-task commits (a decision scoped to that effort); elsewhere the global rule holds: never `git commit`, leave changes unstaged.
+## Base branch
+`psy6`. Diff, PR, and review against `origin/psy6`. `origin/HEAD` points to `main`, which is not the base for this line.

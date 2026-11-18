@@ -39,7 +39,7 @@ generated*.md
 Manifest.toml
 .vscode
 *.h5
-.claude/plans
+.claude/plans/
 data
 
 # profiling results
@@ -138,3 +138,8 @@ $RECYCLE.BIN/
 hooks
 settings.*.json
 settings.json
+
+# Local agent files (never committed)
+.claude/drafts/
+.claude/worktrees/
+.claude/settings.local.json

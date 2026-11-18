@@ -1,125 +1,183 @@
-# Sienna Programming Practices
+# Sienna Practices — psy6 / Sienna 1.0 line
 
-General programming practices and conventions that apply across all Sienna packages (PowerSystems.jl, PowerSimulations.jl, PowerFlows.jl, PowerNetworkMatrices.jl, InfrastructureSystems.jl, etc.). This file is intended to be **identical across every Sienna repository** — package-specific guidance belongs in that package's `CLAUDE.md`, not here.
+The rules for every repository of the **psy6 (Sienna 1.0) development line**. This file is identical
+in each repository that has it; the master copy is in InfrastructureSystems.jl. Each repository's
+`.claude/CLAUDE.md` imports it and adds the package specifics. The `sienna-dev` skill holds the
+context: the full stack, the data pipeline, the glossary, and the psy5 → psy6 translation map. Load
+the skill before cross-package work, a units question, or any port from psy5 code, PSI PRs, or older
+docs — many psy5 facts are wrong here.
 
-## Performance Requirements
+psy6 is a breaking rewrite. The released psy5 line has the same package names in other checkouts;
+never mix the two lines.
 
-**Priority:** Critical. See the [Julia Performance Tips](https://docs.julialang.org/en/v1/manual/performance-tips/). Apply with judgment — focus optimization on hot paths and frequently called code, not every function.
+## The stack and the blast radius
 
-### Anti-Patterns to Avoid
+Acyclic DAG. Each package owns one concept and depends only on layers below it.
 
-- **Type instability** — functions must return consistent concrete types. Check with `@code_warntype`. Bad: `f(x) = x > 0 ? 1 : 1.0`; good: `f(x) = x > 0 ? 1.0 : 1.0`.
-- **Abstract field types** — struct fields must be concrete or parameterized. Bad: `struct Foo; data::AbstractVector; end`; good: `struct Foo{T<:AbstractVector}; data::T; end`.
-- **Untyped containers** — use `Vector{Float64}()`, not `Vector{Any}()` / `Vector{Real}()`.
-- **Non-const globals** — use `const THRESHOLD = 0.5`. (No type annotation needed on a `const`; the compiler already infers it — annotating gives no precompilation benefit.)
-- **Unnecessary allocations** — use views (`@view`/`@views`), pre-allocate instead of `push!` in loops, use in-place (`!`) operations.
-- **Captured variables** — avoid closures that box captured variables; pass them as arguments instead.
-- **Splatting penalty** — avoid `...` in performance-critical code.
-- **Abstract return types** — avoid returning `Union`s or abstract types.
+| Layer | Packages |
+|---|---|
+| 0 | InfrastructureSystems (IS), InfrastructureOptimizationModels (IOM) |
+| 1 | PowerSystems (PSY) — the data model; no parsers |
+| 2 | PowerNetworkMatrices (PNM), PowerFlowFileParser (PFFP, raw files), PowerTableDataParser (PTDP, tables) |
+| 3 | PowerFlows (PF), PowerOperationsModels (POM), PowerSystemsInvestmentsPortfolios (PSIP) |
+| 4 | PowerSimulations (PSI), PowerAnalytics (PA), PowerGraphics (PG), PowerTransmissionSecurityAnalysis (PTSA) |
+| Support | PowerSystemCaseBuilder (PSB), PowerSystemsUpdater (PSU) |
 
-#### Runtime type checking (`isa` and `<:`) — the canonical rule
+A change can break every layer above it. Run the downstream suites in dependency order, not only the
+suite of the package you edited:
 
-**ABSOLUTELY FORBIDDEN unless the user explicitly asks for it.** Never use `isa` or `<:` (subtype) checks to branch on types in a function body — use multiple dispatch instead. Using `<:` to branch is just `isa` with extra steps.
+- **IS** → everything. Time-series, serialization, and units changes are highest risk; extend the
+  serialization round-trip tests when you touch them.
+- **PSY** → PNM, PF, POM, PSB, PA. Also clear PSB's `data/serialized_system/` cache (it has no
+  version-aware invalidation) and check SiennaSchemas drift — the schemas mirror PSY fields.
+- **PNM** → PF and POM iterate its reduction maps and matrices; breakage is often latent.
+- **PF** → POM, through `ext/PowerFlowsExt` and `PowerFlowEvaluator`.
+- **IOM** → POM implements its stubs and calls non-exported `IOM._*` helpers, so a `_*` signature
+  change is a breaking change. POM and IOM → PSI, which re-exports their public API.
+- **SiennaSchemas** → both generated model packages and the GridDB unit registry regenerate from it.
 
-- Bad: `if x isa Float64 ... elseif x isa Int ... end`
-- Bad: `if typeof(x) <: AbstractVector ... end`
-- Bad: `if T <: SomeAbstractType ... else ... end` (branching on a type parameter)
-- Good: `f(x::AbstractVector) = sum(x); f(x::Number) = x`
+## Before you edit
 
-**Why:** runtime type checks force the compiler to handle multiple paths at runtime, lose type information, prevent specialization, and trigger runtime compilation — defeating Julia's performance model. The only acceptable use of `isa` is filtering inside a `catch` block, where dispatch is unavailable.
+- State the target first: repository, branch, and checkout path, one line per repository. Read the
+  branch with `git rev-parse --abbrev-ref HEAD` and diff against its real base. Never assume `psy6`.
+- **A function with no caller in its own package is not dead code.** Every repository here is a
+  library for the ones above it. Before you remove, rename, or narrow a function, method, accessor,
+  or export — or add a required argument to it — grep for it in every sibling repository's `src/`
+  and `test/`. If the sweep is clean and you still want it gone, ask first.
+- Do exactly what the task asks. Do not restructure, delete, or "clean up" code the task does not name.
 
-### Best Practices
+## Non-negotiables
 
-- Use `@inbounds` when bounds are verified; use broadcasting for element-wise ops.
-- Avoid `try-catch` in hot paths; use function barriers to isolate type instability.
+- **No shims.** psy6 is a planned breaking release: no compat aliases, no deprecation paths, no
+  defensive deserialization for renamed enums, no changelog entries. Fix the callers; regenerate old
+  serialized systems.
+- **No version or compat bumps in any `Project.toml` until release.** PSY reads 5.10.0 and IS 3.6.0
+  on the 6.0/4.0 lines. A bump can reappear during a session; revert it. The `[sources]` pins, not
+  the compat entries, select the psy6 line.
+- **Never hand-edit generated code**: IS `src/generated/`, PSY `src/models/generated/`, the OpenAPI
+  model packages, GridDB `unit_registry.sql`. Edit the descriptor or schema and regenerate.
+- **Never extend a silent-failure pattern.** New code errors loudly with context (type, name,
+  expectation). Known patterns, flagged for removal: a missing time series skips the device (POM
+  `add_parameters`); a missing validation descriptor passes validation (IS); a non-converged power
+  flow fills `PowerFlowData` with NaN (PF). No `isnothing(x) && continue` guards and no
+  `Union{Nothing,T}` sentinel returns — use a Bool predicate plus an accessor that always returns a
+  concrete value.
+- **Never commit, stage, or push unless the user asks.** Leave changes unstaged; use `git add -N`
+  for new files so they show in `git diff`. Plan files in `.claude/plans/` are local and never committed.
 
-## Code Conventions
+## Explicit units (SU / CU / NU)
 
-Style guide: <https://sienna-platform.github.io/InfrastructureSystems.jl/stable/style/>
+The most important psy6 correctness rule. There is no stateful units mode; every unit-bearing value
+goes through an explicit-unit API.
 
-**Always run the formatter after completing each task — before reporting it done. This is not optional.** Run the package's formatter script (the script self-activates its own environment):
+- Units are Unitful: `u"SU"` (system base), `u"CU"` (component base), `u"NU"` (natural, MW/MVA).
+  Bring them into scope with `using PowerSystems: @u_str, PerUnit`. Bases do not mix. Say
+  "component base"; "device base" is the psy5 name.
+- Getters on convertible fields take the unit: `PSY.get_rating(br, u"SU")`. Setters take tagged
+  values and reject bare floats: `set_rating_b!(line, 0.9u"SU")`.
+- Optimization and power-flow build code passes `u"SU"` to every PSY getter on a convertible field;
+  the models are all on the system base. PNM aggregators already return system base. A bare
+  `PSY.get_*` on a convertible field in consumer code is a defect.
+- The `SU`/`CU`/`NU` markers remain only for the unit parameter of cost curves and for the `units`
+  mode of `to_file`.
+- Angle limits are radians; do not convert them. An AC apparent-power rating RHS is squared:
+  `(rating · factor)^2`.
+- Wrong objective, limit, or rating magnitudes after a refactor: suspect units first.
+
+## Environments and commands
+
+No workspace-level Julia environment exists. Each package has its own environments:
 
 ```sh
+julia --project -e 'using PackageName'                       # compile-check after each edit
+julia --project=test -e 'using Pkg; Pkg.instantiate()'       # test env setup
+julia --project=test test/runtests.jl                        # full suite
+julia --project=docs docs/make.jl                            # docs build
 julia --project=scripts/formatter -e 'include("scripts/formatter/formatter_code.jl")'
 ```
 
-This applies after any change to `.jl` files. Treat the formatter's output as authoritative; do not manually revert its changes.
+- Run tests with `--project=test`, never bare `julia` or bare `--project`. The test runners differ
+  per repository (ReTest name filters, `@includetests` file stems, ParallelTestRunner); the
+  repository guide gives the exact filter syntax.
+- `Pkg.test()` honors the package's own `[sources]` git pins. To test against local checkouts,
+  repoint `test/Project.toml` `[sources]` to local paths and restore the git pins before you finish.
+  Do not `Pkg.develop` into an environment that carries `[sources]` git pins.
+- PSB fixtures (`build_system(Category, "name")`) are cached with no version-aware invalidation.
+  After a PSY change, clear `data/serialized_system/` or pass `force_build=true`. A test that mutates
+  a PSB system must `deepcopy` it first; a read-only test must not.
+- Python tooling: `python3`, never `python`.
 
-Key rules:
+## Definition of done
 
-- Constructors: use `function Foo()`, not `Foo() = ...`
-- Asserts: prefer `InfrastructureSystems.@assert_op` over `@assert`
-- Globals: `UPPER_CASE` for constants; exports: all in the main module file
-- Comments: complete sentences; describe why, not how
-- Nothing checks: use `isnothing(x)` / `!isnothing(x)`, not `x === nothing` / `x !== nothing`
-- Type checks: use multiple dispatch, never `isa`/`<:` branching — see the runtime type-checking rule above
-- Conditionals: prefer `if/else` over the ternary `? :`, especially in multi-line expressions
-- Cache lookups: use the lazy closure form `get!(dict, key) do ... end` (only evaluates on a miss). Never use 3-arg `get!(dict, key, default)` when `default` is expensive — Julia evaluates arguments eagerly, so `default` runs on every call and silently defeats the cache.
+A change is done when all of these hold, and the report states each one with its evidence:
 
-## Documentation Practices and Requirements
+- It compiles (`julia --project -e 'using PackageName'`) after each file edit.
+- The full test suite passes; report the pass count. A failure is acceptable only when you show it
+  also fails on the base branch.
+- The formatter ran and its output stays.
+- The docs build when the change touches docstrings, exports, or public API. Fix Documenter
+  `missing_docs` by registering the docstring in `@autodocs`/`@docs`, never with `warnonly`.
+- The downstream suites from the blast-radius list pass, when the change touches an API they use.
+
+## Julia code conventions
+
+Style guide: <https://sienna-platform.github.io/InfrastructureSystems.jl/stable/style/>
+
+- Dispatch, not runtime type checks. Do not branch on `isa` or `<:` in a function body; define a
+  method per type. Runtime type checks lose type information and block specialization. The only
+  accepted `isa` uses: filtering inside a `catch` block, and IS `serialize`/`deserialize` bodies.
+- No large `Union{...}` aliases that enumerate concrete types to drive dispatch. Use an abstract
+  supertype, or a trait when the grouping cuts across the type tree.
+- Type stability: concrete return types (check with `@code_warntype`), concrete or parameterized
+  struct fields (`struct Foo{T<:AbstractVector}; data::T; end`), typed containers
+  (`Vector{Float64}()`), `const` globals.
+- Hot paths: views and in-place `!` functions, pre-allocation instead of `push!` in loops, no
+  splatting, no closures that box captured variables, no `try`/`catch`, function barriers around
+  unstable code.
+- Constructors use `function Foo() ... end`. Non-trivial bodies use `function ... end` with an
+  explicit `return`; the assignment form is for genuine one-liners.
+- Prefer `InfrastructureSystems.@assert_op` over `@assert`; `if/else` over the ternary operator;
+  `iszero(x)` over `x == 0`; `isnothing(x)` over `x === nothing`.
+- Cache lookups use the lazy form `get!(dict, key) do ... end`. The 3-argument
+  `get!(dict, key, default)` evaluates `default` on every call.
+- `UPPER_CASE` for constants. All exports in the main module file.
+- User-facing code (tutorials, docs, public APIs, tests) uses `get_*`/`set_*` accessors, not dot
+  field access. Accessor bodies may use dot access.
+- Comments explain a non-obvious why. Default to no comment; no comments that restate the code or
+  narrate a change.
+- Mirror the existing structure when you add a parallel implementation (another solver, formulation,
+  or backend), so that validation is a direct comparison.
+
+## Tests
+
+Test custom logic, not language guarantees: dispatch and predicates you defined, type-mapping tables
+and accessors, serialization round-trips, custom `show` output, validation, error paths, and edge
+cases. Do not test that a struct stores its constructor arguments, that inherited `==` works, or that
+`obj isa T` holds where the type tree makes it true.
+
+Constraint math and numerics need coefficient-level ground truth: compare the built model's
+coefficients with an independently computed reference (the MODF suite asserts JuMP `AffExpr`
+coefficients against `VirtualMODF` columns), not only objective values or convergence flags.
+
+## Docs
 
 Framework: [Diataxis](https://diataxis.fr/). Sienna guides:
+[explanation](https://sienna-platform.github.io/InfrastructureSystems.jl/stable/docs_best_practices/explanation/) ·
+[tutorials](https://sienna-platform.github.io/InfrastructureSystems.jl/stable/docs_best_practices/how-to/write_a_tutorial/) ·
+[how-tos](https://sienna-platform.github.io/InfrastructureSystems.jl/stable/docs_best_practices/how-to/write_a_how-to/) ·
+[docstrings](https://sienna-platform.github.io/InfrastructureSystems.jl/stable/docs_best_practices/how-to/write_docstrings_org_api/).
+Docstrings cover every public-interface element, with
+signatures and argument lists through `DocStringExtensions.TYPEDSIGNATURES`. Add "see also" links
+between same-named methods. Most repositories keep the public and internals pages in
+`docs/src/reference/`; PSY, PSI, and PSIP use `docs/src/api/`.
 
-- Explanation / best practices: <https://sienna-platform.github.io/InfrastructureSystems.jl/stable/docs_best_practices/explanation/>
-- Tutorials: <https://sienna-platform.github.io/InfrastructureSystems.jl/stable/docs_best_practices/how-to/write_a_tutorial/> (script format via Literate.jl: <https://fredrikekre.github.io/Literate.jl/v2/>)
-- How-to's: <https://sienna-platform.github.io/InfrastructureSystems.jl/stable/docs_best_practices/how-to/write_a_how-to/>
-- API docstrings: <https://sienna-platform.github.io/InfrastructureSystems.jl/stable/docs_best_practices/how-to/write_docstrings_org_api/>
+## Agents
 
-Docstrings: cover all public-interface elements (IS is selective about exports); include signatures + argument lists; automate with `DocStringExtensions.TYPEDSIGNATURES` (`TYPEDFIELDS` sparingly); add "see also" links for same-named (multiple-dispatch) functions. API docs: public in `docs/src/api/public.md` via `@autodocs` (`Public=true, Private=false`); internals in `docs/src/api/internals.md`.
+Each repository defines two subagents, in `.claude/agents/` for Claude Code and in
+`.opencode/agents/` for OpenCode:
 
-**The documentation must build to succeed.** Before considering any documentation-affecting task complete, confirm the docs build cleanly — a broken docs build is a task failure, not a warning. Documenter treats missing docstring references, broken `@ref` links, and failing doctests as errors:
+- `sienna-dev` — implements one scoped task in one repository and reports against the definition
+  of done. Use it when the main session coordinates and reviews.
+- `sienna-reviewer` — reviews a diff against these rules and reports findings; it does not edit.
 
-```sh
-julia --project=docs -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'   # first time
-julia --project=docs docs/make.jl                                                              # must finish without errors
-```
-
-Where the package provides a docstring-coverage checker, also run it so every exported symbol is documented (this is enforced in CI):
-
-```sh
-julia --project=test scripts/check_docstrings.jl <PackageName>
-```
-
-## Design Principles
-
-- Elegance and concision in both interface and implementation
-- Fail fast with actionable error messages rather than hiding problems
-- Validate invariants explicitly in subtle cases
-- Avoid over-adherence to backwards compatibility for internal helpers
-
-## Contribution Workflow
-
-**The default branch for all Sienna packages is `main`, not `master`.** Branch naming: `feature/description` or `fix/description`. Workflow: create a feature branch → follow the style guide and run the formatter → ensure tests pass → submit a pull request.
-
-## Testing Guidelines
-
-**Test custom logic, not language guarantees.** Do not write tests that only verify Julia's built-in behavior.
-
-Avoid: `@test obj isa SomeType` when the type hierarchy makes it tautological; testing that a plain data-holder struct stores the value it was constructed with; testing `==`/`isequal`/`hash` inherited from a parent with no added logic; duplicating a test with trivially different inputs that exercise no new code path.
-
-Instead test: custom dispatch logic and predicates you defined; type-mapping tables and accessors (where typos hide); serialization round-trips; custom `show`/display formatting; validation logic, error paths, and edge cases.
-
-## Julia Environment Best Practices
-
-**CRITICAL: always run Julia with `julia --project=<env>`** — never bare `julia` or `julia --project` without specifying the environment, or required packages won't be available. Each package defines its environments under `test/`, `docs/`, and `scripts/formatter/`.
-
-```sh
-julia --project=test test/runtests.jl                       # full test suite
-julia --project=test test/runtests.jl test_file_name        # a single test file
-julia --project=test -e 'using Pkg; Pkg.instantiate()'      # instantiate test env
-julia --project=docs docs/make.jl                           # build docs
-```
-
-(See each repo's `CLAUDE.md` for its exact, verified commands and test-runner style.)
-
-## AI Agent Guidance
-
-**Priorities:** read existing patterns first; maintain consistency; use concrete types in hot paths; add docstrings to public API; consider downstream-package impact; ensure tests pass. **Then run the formatter and never edit auto-generated files.** The two rules most often violated:
-
-- **Never use `isa`/`<:` for runtime type branching** — use multiple dispatch (see the canonical rule above).
-- **Always run the formatter** (`julia --project=scripts/formatter -e 'include("scripts/formatter/formatter_code.jl")'`) before reporting a task done.
-
-## Troubleshooting
-
-- **Tests fail unexpectedly / packages missing:** re-instantiate — `julia --project=test -e 'using Pkg; Pkg.instantiate()'`.
-- **Poor performance, many allocations:** run `@code_warntype` on the suspect function (see the performance anti-patterns above).
+Both block `git commit` and `git push`.
