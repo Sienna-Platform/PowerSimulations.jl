@@ -173,13 +173,29 @@ function test_outages_match_removal(network_model, build_sys, outages)
         end
     end
 
-    flow = read_em(em, "FlowActivePowerVariable__Line")
-    for t in steps, name in out_sets[t]
-        if name in names(flow)
-            @test abs(flow[t, name]) <= 1e-6
-        end
+    for (out, reference) in references
+        mask = findall(out_sets .== Ref(out))
+        isempty(mask) || test_matches_reference(em, reference, mask, out)
     end
     return em, references
+end
+
+function test_matches_reference(em, reference, steps, out)
+    p = read_em(em, "ActivePowerVariable__ThermalStandard")
+    p_ref = read_em(reference, "ActivePowerVariable__ThermalStandard")
+    for name in names(p, Not(:DateTime))
+        @test isapprox(p[steps, name], p_ref[steps, name]; atol = 1e-6)
+    end
+    flow = read_em(em, "FlowActivePowerVariable__Line")
+    flow_ref = read_em(reference, "FlowActivePowerVariable__Line")
+    for name in names(flow, Not(:DateTime))
+        if name in out
+            @test isapprox(flow[steps, name], zeros(length(steps)); atol = 1e-6)
+        elseif name in names(flow_ref)
+            @test isapprox(flow[steps, name], flow_ref[steps, name]; atol = 1e-6)
+        end
+    end
+    return
 end
 
 @testset "Line outage that never occurs" begin
@@ -247,15 +263,8 @@ end
     for network_model in LINE_OUTAGE_NETWORKS
         # Opening lines 4 (B-C) and 5 (C-D) leaves nodeC on its own with Solitude, PVBus5
         # and Bus3, which must serve their load themselves.
-        islanding = ["4", "5"]
         status = outage_status([5:8; 15])
-        em, references =
-            test_outages_match_removal(network_model, c_sys5_events, [(islanding, status)])
-        thermal = read_em(em, "ActivePowerVariable__ThermalStandard")
-        thermal_removed =
-            read_em(references[Set(islanding)], "ActivePowerVariable__ThermalStandard")
-        out = isone.(status[1:nrow(thermal)])
-        @test isapprox(thermal[out, "Solitude"], thermal_removed[out, "Solitude"]; rtol = 1e-6)
+        test_outages_match_removal(network_model, c_sys5_events, [(["4", "5"], status)])
     end
 end
 
