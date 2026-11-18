@@ -1,3 +1,23 @@
+# The template model that built the cost parameters of component type `T`. Market
+# registration wins over a device twin, because those parameters come from the market
+# formulation.
+function _component_model(template, ::Type{T}) where {T <: PSY.Component}
+    market_models = POM._market_component_models(template)
+    if haskey(market_models, nameof(T))
+        return market_models[nameof(T)]
+    end
+    model = get_model(template, T)
+    if isnothing(model)
+        error(
+            "Component type $(T) is in neither the template's device models nor its market component models.",
+        )
+    end
+    return model
+end
+
+_component_model(template, ::Type{T}) where {T <: PSY.MarketComponent} =
+    IOM.get_market_component_models(IOM.get_market_model(template))[nameof(T)]
+
 # The update edits the objective and rows in place only if the model does not rebuild.
 # A rebuilt model reads its parameter values in the next build. The old build can lack
 # the terms of a new step's curves, for example a bid offered only on a later day.
@@ -32,7 +52,7 @@ function _update_parameter_values!(
             "Component $(V) named '$(name)' is no longer in the system; " *
             "cannot update parameter $(T)",
         )
-        op_cost = PSY.get_operation_cost(component)
+        op_cost = IOM.get_operation_cost(component)
         # `handle_variable_cost_parameter` is responsible for figuring out whether there is
         # actually time variance for this particular component and, if so, performing the update
         handle_variable_cost_parameter(
@@ -368,7 +388,8 @@ function handle_variable_cost_parameter(
     container = get_optimization_container(model)
     ts_name = _cost_ts_name(param, component, op_cost)
     power_units = IS.get_power_units(offer_curve)
-    formulation = IOM.get_formulation(get_model(get_template(model), typeof(component)))
+    formulation =
+        IOM.get_formulation(_component_model(get_template(model), typeof(component)))
     raw_values = get_time_series_values!(
         ts_type,
         model,
