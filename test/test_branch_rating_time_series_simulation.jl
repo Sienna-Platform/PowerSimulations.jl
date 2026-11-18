@@ -6,13 +6,17 @@
     initial_times = collect(PSY.get_forecast_initial_times(sys))
     resolution = first(PSY.get_time_series_resolutions(sys))
     n = Dates.Millisecond(PSY.get_forecast_horizon(sys)) ÷ Dates.Millisecond(resolution)
-    # One value per forecast window, so a stale or skipped update is visible.
-    window_value(k) = 0.5 + 0.1 * k
+    # One value per forecast window, so a stale or skipped update is visible. A line has no
+    # base power, so its rating series is in MVA.
+    rating = PSY.get_rating(line, u"MVA")
+    window_value(k) = (0.5 + 0.1 * k) * rating
     data = DataStructures.SortedDict(
         t => fill(window_value(k), n)
         for (k, t) in enumerate(initial_times)
     )
-    add_time_series!(sys, line, Deterministic("dynamic_line_rating", data, resolution))
+    add_time_series!(sys, line,
+        Deterministic("dynamic_line_rating", data, resolution;
+            PSB.natural_units("apparent_power", "MVA")...))
 
     template =
         get_template_nomin_ed_simulation(NetworkModel(PTDFNetworkModel; use_slacks = true))

@@ -366,7 +366,7 @@ end
     sys_constant_ts = build_sys_incr(false, false, false)
     for sys in (sys_no_ts, sys_constant_ts)
         unit1 = get_component(SEL_INCR, sys)
-        replace_with_renewable!(sys, unit1; magnitude = 1.0, random_variation = 0.1)
+        PSB.replace_with_renewable!(sys, unit1; magnitude = 1.0, random_variation = 0.1)
     end
     test_generic_mbc_equivalence(sys_no_ts, sys_constant_ts)
 end

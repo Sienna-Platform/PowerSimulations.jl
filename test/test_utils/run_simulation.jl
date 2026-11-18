@@ -1,3 +1,13 @@
+# The error a simulation build throws, or `nothing` when the build succeeds.
+function _build_error(sim)
+    try
+        build!(sim; console_level = Logging.AboveMaxLevel)
+    catch e
+        return e
+    end
+    return nothing
+end
+
 function run_simulation(
     c_sys5_hy_uc,
     c_sys5_hy_ed,

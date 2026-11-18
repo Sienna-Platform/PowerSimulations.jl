@@ -79,6 +79,7 @@ function IOM._show_method(io::IO, sequence::SimulationSequence, backend::Symbol;
     table = [
         "Simulation Step Interval" Dates.Hour(get_step_resolution(sequence))
         "Number of Problems" length(sequence.executions_by_model)
+        "Allow Different Components" get_allow_different_components(sequence)
     ]
 
     PrettyTables.pretty_table(

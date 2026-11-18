@@ -5,70 +5,6 @@ const SEL_DECR = make_selector(InterruptiblePowerLoad, "Bus1_interruptible")
 const SEL_MULTISTART = make_selector(ThermalMultiStart, "115_STEAM_1")
 
 # functions for replacing components in the system
-function replace_with_renewable!(
-    sys::PSY.System,
-    unit1::PSY.Generator;
-    use_thermal_max_power = false,
-    magnitude = 1.0,
-    random_variation = 0.1,
-)
-    rg1 = PSY.RenewableDispatch(;
-        name = "RG1",
-        available = true,
-        bus = get_bus(unit1),
-        active_power = get_active_power(unit1, u"CU"),
-        reactive_power = get_reactive_power(unit1, u"CU"),
-        rating = get_rating(unit1, u"CU"),
-        prime_mover_type = PSY.PrimeMovers.PVe,
-        reactive_power_limits = get_reactive_power_limits(unit1, u"CU"),
-        power_factor = 0.9,
-        # the start up, shunt down, and no-load cost of renewables should be zero,
-        # but we'll use the unit's operation cost as-is for simplicity.
-        operation_cost = deepcopy(get_operation_cost(unit1)),
-        base_power = get_base_power(unit1),
-        input_basis = u"CU",
-    )
-    add_component!(sys, rg1)
-    transfer_mbc!(rg1, unit1, sys)
-    remove_component!(sys, unit1)
-    zero_out_startup_shutdown_costs!(sys, rg1)
-
-    # add a max_active_power time series to the component
-    load = first(PSY.get_components(PSY.PowerLoad, sys))
-    load_ts = get_time_series(Deterministic, load, "max_active_power")
-    num_windows = length(get_data(load_ts))
-    num_forecast_steps =
-        floor(Int, IS.get_horizon(load_ts) / IS.get_interval(load_ts))
-    total_steps = num_windows + num_forecast_steps - 1
-    dates = range(
-        get_initial_timestamp(load_ts);
-        step = IS.get_interval(load_ts),
-        length = total_steps,
-    )
-    if use_thermal_max_power
-        rg_data = fill(get_active_power_limits(unit1, u"NU").max, total_steps)
-    else
-        rg_data = magnitude .* ones(total_steps) .+ random_variation .* rand(total_steps)
-    end
-    # Build a native `Deterministic` directly (windows keyed exactly like `load_ts`'s own,
-    # each holding `num_forecast_steps` values sliced from `rg_data`) instead of adding a
-    # `SingleTimeSeries` and calling `transform_single_time_series!`: that call produces a
-    # `DeterministicSingleTimeSeries`, a distinct forecast type from the rest of this
-    # system's (MarketBidCost-derived) native `Deterministic` time series, and
-    # `IOM.get_deterministic_time_series_type` refuses a System mixing the two.
-    rg_ts_data = OrderedDict{DateTime, Vector{Float64}}(
-        dates[w] => rg_data[w:(w + num_forecast_steps - 1)] for w in 1:num_windows
-    )
-    rg_ts = Deterministic(;
-        name = "max_active_power",
-        data = rg_ts_data,
-        resolution = IS.get_interval(load_ts),
-        interval = IS.get_interval(load_ts),
-    )
-    add_time_series!(sys, rg1, rg_ts)
-    return
-end
-
 function replace_load_with_interruptible!(sys::System)
     @assert !isempty(get_components(PSY.PowerLoad, sys))
     load1 = first(get_components(PSY.PowerLoad, sys))
@@ -113,6 +49,8 @@ function tweak_system!(sys::System, load_pow_mult, therm_pow_mult, therm_price_m
             load,
             get_max_active_power(load, u"SU") * load_pow_mult * u"SU",
         )
+        # The series is per unit of base_power, not max_active_power, so scale it as well.
+        PSB.scale_time_series!(sys, load, "max_active_power", load_pow_mult)
     end
     # replace with type of component?
     for therm in get_components(ThermalStandard, sys)
@@ -159,90 +97,6 @@ end
 tweak_for_startup_shutdown!(sys::System) = tweak_system!(sys::System, 0.8, 1.0, 1.0)
 
 tweak_for_decremental_initial!(sys::PSY.System) = tweak_system!(sys, 1.0, 1.2, 0.5)
-
-"""Transfer the market bid cost from old_comp to new_comp, copying any time series in the
-process. `old_comp`'s cost may be a static `MarketBidCost` (nothing to copy) or a
-`MarketBidTimeSeriesCost` (every field is a time series reference that must be re-homed onto
-`new_comp`)."""
-function transfer_mbc!(
-    new_comp::PSY.Device,
-    old_comp::PSY.Device,
-    new_sys::PSY.System,
-)
-    mbc = deepcopy(get_operation_cost(old_comp))
-    set_operation_cost!(new_comp, _rehomed_mbc(mbc, old_comp, new_sys, new_comp))
-    return
-end
-
-_rehomed_mbc(mbc::MarketBidCost, ::PSY.Device, ::PSY.System, ::PSY.Device) = mbc
-
-function _rehomed_mbc(
-    mbc::MarketBidTimeSeriesCost,
-    old_comp::PSY.Device,
-    new_sys::PSY.System,
-    new_comp::PSY.Device,
-)
-    rehome_key(key::IS.TimeSeriesKey) =
-        add_time_series!(new_sys, new_comp, deepcopy(PSY.get_time_series(old_comp, key)))
-    return MarketBidTimeSeriesCost(;
-        minimum_energy_offer = TimeSeriesLinearCurve(
-            rehome_key(IS.get_time_series_key(get_minimum_energy_offer(mbc))),
-        ),
-        start_up = rehome_key(get_start_up(mbc)),
-        shut_down = TimeSeriesLinearCurve(
-            rehome_key(IS.get_time_series_key(get_shut_down(mbc))),
-        ),
-        incremental_offer_curves =
-        _rehomed_offer_curve(get_incremental_offer_curves(mbc), rehome_key),
-        decremental_offer_curves =
-        _rehomed_offer_curve(get_decremental_offer_curves(mbc), rehome_key),
-        ancillary_service_offers = get_ancillary_service_offers(mbc),
-        incremental_slope = get_incremental_slope(mbc),
-        decremental_slope = get_decremental_slope(mbc),
-        curve_style = get_curve_style(mbc),
-    )
-end
-
-function _rehomed_offer_curve(curve::CostCurve{<:TimeSeriesPiecewiseIncrementalCurve},
-    rehome_key,
-)
-    vc = get_value_curve(curve)
-    new_pwl_key = rehome_key(IS.get_time_series_key(vc))
-    initial_key = IS.get_initial_input(vc)
-    local new_initial_key
-    if isnothing(initial_key)
-        new_initial_key = nothing
-    else
-        new_initial_key = rehome_key(initial_key)
-    end
-    return make_market_bid_ts_curve(new_pwl_key, new_initial_key, get_power_units(curve))
-end
-
-zero_out_startup_shutdown_costs!(sys::PSY.System, comp::PSY.Device) =
-    _zero_out_startup_shutdown_costs!(sys, comp, get_operation_cost(comp))
-
-function _zero_out_startup_shutdown_costs!(
-    ::PSY.System,
-    ::PSY.Device,
-    op_cost::MarketBidCost,
-)
-    set_start_up!(op_cost, (hot = 0.0, warm = 0.0, cold = 0.0))
-    set_shut_down!(op_cost, LinearCurve(0.0))
-    return
-end
-
-function _zero_out_startup_shutdown_costs!(
-    sys::PSY.System,
-    comp::PSY.Device,
-    op_cost::MarketBidTimeSeriesCost,
-)
-    startup_ts = make_deterministic_ts(sys, "zeroed_start_up", (0.0, 0.0, 0.0), 0.0, 0.0)
-    shutdown_ts =
-        make_deterministic_ts(sys, "zeroed_shut_down", LinearFunctionData(0.0), 0.0, 0.0)
-    set_start_up!(op_cost, add_time_series!(sys, comp, startup_ts))
-    set_shut_down!(op_cost, TimeSeriesLinearCurve(add_time_series!(sys, comp, shutdown_ts)))
-    return
-end
 
 """
 Move the `minimum_energy_offer` cost onto the incremental offer curve's `initial_input`,
@@ -516,91 +370,22 @@ function build_sys_decr2(
     )
 
     # make the max_active_power time series constant.
-    il = first(get_components(PSY.InterruptiblePowerLoad, sys))
-    for md in IS.list_time_series_metadata(il)
-        if get_name(md) == "max_active_power"
-            max_active_power_ts = get_time_series(
-                first(get_components(PSY.InterruptiblePowerLoad, sys)),
-                IS.get_time_series_key(md),
-            )
-            max_max_active_power = maximum(maximum(values(max_active_power_ts.data)))
-            remove_time_series!(sys, Deterministic, il, "max_active_power")
-            new_ts = make_deterministic_ts(
-                sys,
-                "max_active_power",
-                max_max_active_power,
-                0.0,
-                0.0,
-            )
-            add_time_series!(sys, il, new_ts)
-            break
-        end
-    end
-    return sys
-end
-
-const MULTISTART_BACKUP = "Alta"
-const MULTISTART_LOAD = "Bus4"
-const MULTISTART_BACKUP_MAX_MW = 10.0
-const MULTISTART_ON_LOAD_MW = 14.0
-const MULTISTART_OFF_LOAD_MW = 3.0
-
-"""
-Reduce `c_sys5_pglib` to `115_STEAM_1`, one backup unit, and one load, and set the load so
-that it alone decides when `115_STEAM_1` runs. In each hour of `off_hours` the load is below
-the minimum power of `115_STEAM_1`, so the unit must be off; in every other hour the load is
-above the capacity of the backup unit, so the unit must be on. Every forecast window has the
-same profile. The backup unit is cheaper, so `115_STEAM_1` runs at its minimum power and its
-ramp limits do not bind.
-"""
-function _force_multistart_commitment!(sys::System, off_hours)
-    multistart = get_component(SEL_MULTISTART, sys)
-    keep = (get_name(multistart), MULTISTART_BACKUP, MULTISTART_LOAD)
-    for comp in collect(get_components(StaticInjection, sys))
-        get_name(comp) in keep || remove_component!(sys, comp)
-    end
-
-    backup = get_component(ThermalStandard, sys, MULTISTART_BACKUP)
-    set_active_power_limits!(
-        backup,
-        (min = 0.0 * u"MW", max = MULTISTART_BACKUP_MAX_MW * u"MW"),
+    PSB.set_constant_max_active_power!(
+        sys,
+        first(get_components(PSY.InterruptiblePowerLoad, sys)),
     )
-    set_operation_cost!(
-        backup,
-        ThermalGenerationCost(CostCurve(LinearCurve(1.0)), 0.0, 0.0, 0.0),
-    )
-
-    load = get_component(PowerLoad, sys, MULTISTART_LOAD)
-    set_max_active_power!(load, MULTISTART_ON_LOAD_MW * u"MW")
-    resolution = only(PSY.get_time_series_resolutions(sys))
-    horizon_count = IS.get_horizon_count(PSY.get_forecast_horizon(sys), resolution)
-    @assert all(h -> 1 <= h <= horizon_count, off_hours)
-    profile = [
-        h in off_hours ? MULTISTART_OFF_LOAD_MW / MULTISTART_ON_LOAD_MW : 1.0 for
-        h in 1:horizon_count
-    ]
-    load_ts = Deterministic(;
-        name = "max_active_power",
-        data = OrderedDict(
-            it => copy(profile) for it in PSY.get_forecast_initial_times(sys)
-        ),
-        resolution = resolution,
-        interval = PSY.get_forecast_interval(sys),
-    )
-    remove_time_series!(sys, Deterministic, load, "max_active_power")
-    add_time_series!(sys, load, load_ts)
     return sys
 end
 
 """
 Build the `ThermalMultiStart` system of the market bid cost tests. `115_STEAM_1` is off in
 the hours `off_hours` of every forecast window and on otherwise (see
-[`_force_multistart_commitment!`](@ref)), so the off durations alone decide the start types.
+`PSB.force_multistart_commitment!`), so the off durations alone decide the start types.
 """
 function create_multistart_sys(with_increments::Bool, off_hours; add_ts = true)
     @assert add_ts || !with_increments
     c_sys5_pglib = load_and_fix_system(PSITestSystems, "c_sys5_pglib")
-    _force_multistart_commitment!(c_sys5_pglib, off_hours)
+    PSB.force_multistart_commitment!(c_sys5_pglib, off_hours)
     ms_comp = get_component(SEL_MULTISTART, c_sys5_pglib)
     old_op = get_operation_cost(ms_comp)
     old_ic = IncrementalCurve(get_value_curve(get_variable_operation_cost(old_op)))

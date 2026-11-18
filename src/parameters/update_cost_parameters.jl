@@ -109,6 +109,8 @@ handle_variable_cost_parameter(
         AbstractPiecewiseLinearBreakpointParameter,
     },
     ::PSY.OperationalCost, args...) = nothing
+handle_variable_cost_parameter(::FuelCostParameter, ::PSY.OperationalCost, args...) =
+    nothing
 
 # Slope and breakpoint parameters share the same raw time series; the slope's resolved value
 # is an objective term, the breakpoint's re-parametrizes the block-width constraint's RHS.
@@ -470,6 +472,9 @@ end
 _has_time_variant_fuel_cost(fuel_curve::PSY.FuelCurve) =
     is_time_variant(PSY.get_fuel_cost_time_series(fuel_curve))
 _has_time_variant_fuel_cost(::PSY.CostCurve) = false
+_has_time_variant_fuel_cost(cost::PSY.ThermalGenerationCost) =
+    _has_time_variant_fuel_cost(PSY.get_variable_operation_cost(cost))
+_has_time_variant_fuel_cost(::PSY.OperationalCost) = false
 
 function handle_variable_cost_parameter(
     ::FuelCostParameter,
@@ -630,7 +635,9 @@ function _rewrite_variant_costs!(
     end
     if has_container_key(container, FuelCostParameter, T)
         for d in _built_components(container, FuelCostParameter, T, system)
-            fuel_curve = PSY.get_variable_operation_cost(PSY.get_operation_cost(d))
+            op_cost = PSY.get_operation_cost(d)
+            _has_time_variant_fuel_cost(op_cost) || continue
+            fuel_curve = PSY.get_variable_operation_cost(op_cost)
             IOM._add_time_varying_fuel_variable_cost!(
                 container, ActivePowerVariable, d,
                 PSY.get_fuel_cost_time_series(fuel_curve))
