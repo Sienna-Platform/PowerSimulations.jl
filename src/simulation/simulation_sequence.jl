@@ -237,9 +237,10 @@ Construct the simulation sequence between decision and emulation models.
     information sharing model between stages with [`InterProblemChronology`](@ref)
   - `allow_different_components::Bool = false`: allow the models to hold different components
     for the same key. By default the build fails when they differ. When `true`, the simulation
-    state holds every model's components, and each feedforward applies only to the components
-    its source model writes. The emulation model must still hold every component of the
-    decision models.
+    state holds every model's components. Each feedforward that supports a component subset
+    (see `supports_component_subset`) applies only to the components its source model writes.
+    For each key the emulation model writes, it must hold every component that the decision
+    models write for that key.
 
 # Example
 

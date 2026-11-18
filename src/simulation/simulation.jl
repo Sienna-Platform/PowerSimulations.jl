@@ -270,7 +270,7 @@ end
 
 # Compare initial conditions for all `InitialConditionType`s with the
 # `requires_reconciliation` trait across `models`, log @info messages for mismatches.
-# Values are compared on the components every model with the key holds.
+# Each component is compared across the models that hold it.
 function _initial_conditions_reconciliation!(
     models::Vector{<:IOM.AbstractOptimizationModel})
     model_names = get_name.(models)
@@ -299,13 +299,19 @@ function _initial_conditions_reconciliation!(
             ic_vals_per_model[i] = ic_vals_per_component
         end
 
-        component_names = intersect(Set.(keys.(values(ic_vals_per_model)))...)
+        component_names = union(Set.(keys.(values(ic_vals_per_model)))...)
         for component_name in sort!(collect(component_names))
-            all_values = [result[component_name] for result in values(ic_vals_per_model)]
+            holders = [
+                (model_i, result) for
+                (model_i, result) in sort(collect(ic_vals_per_model); by = first) if
+                haskey(result, component_name)
+            ]
+            length(holders) < 2 && continue
+            all_values = [result[component_name] for (_, result) in holders]
             if !_ic_values_reconciled(all_values)
                 has_mismatches = true
                 mismatch_msg = "For IC key $ic_key, mismatch on component $component_name:"
-                for (model_i, result) in sort(pairs(ic_vals_per_model); by = first)
+                for (model_i, result) in holders
                     mismatch_msg *= "\n\t$(model_names[model_i]): $(result[component_name])"
                 end
                 @info mismatch_msg

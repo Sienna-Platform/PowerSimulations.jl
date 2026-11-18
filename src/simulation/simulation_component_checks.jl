@@ -186,7 +186,10 @@ function _restrict_feedforwards!(
     model::Union{DecisionModel, EmulationModel},
 )
     built, _ = _decision_models_around(sim, model)
+    # Stored before the loop, so a later build restores the feedforwards that a failed
+    # restriction already replaced.
     restrictions = _FeedforwardRestriction[]
+    IOM.get_internal(model).ext[FEEDFORWARD_SOURCES_KEY] = restrictions
     sys = get_system(model)
     for device_model in _template_device_models(model)
         feedforwards = IOM.get_feedforwards(device_model)
@@ -202,7 +205,6 @@ function _restrict_feedforwards!(
             push!(restrictions, _FeedforwardRestriction(device_model, ix, ff, left_out))
         end
     end
-    IOM.get_internal(model).ext[FEEDFORWARD_SOURCES_KEY] = restrictions
     return
 end
 

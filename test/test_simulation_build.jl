@@ -637,10 +637,20 @@ end
     park_city = get_component(ThermalStandard, sys_ed, "Park City")
     set_active_power!(park_city, (get_active_power(park_city, u"SU") + 0.5) * u"SU")
     # Ramp limits give the ED a DevicePower initial condition to compare with the UC's.
+    # A third model without Park City must not hide the mismatch between the other two.
+    sys_ed2 = PSB.build_system(PSITestSystems, "c_sys5_ed")
+    set_available!(get_component(ThermalStandard, sys_ed2, "Park City"), false)
     template_ed = get_template_nomin_ed_simulation()
     set_device_model!(template_ed, ThermalStandard, ThermalStandardDispatch)
-    models = create_simulation_build_test_problems(
-        get_template_standard_uc_simulation(), template_ed, sys_uc, sys_ed)
+    models = SimulationModels(;
+        decision_models = [
+            DecisionModel(get_template_standard_uc_simulation(), sys_uc;
+                name = "UC", optimizer = HiGHS_optimizer),
+            DecisionModel(template_ed, sys_ed; name = "ED", optimizer = HiGHS_optimizer),
+            DecisionModel(deepcopy(template_ed), sys_ed2;
+                name = "ED2", optimizer = HiGHS_optimizer),
+        ],
+    )
     sequence = SimulationSequence(;
         models,
         ini_cond_chronology = InterProblemChronology(),
@@ -659,6 +669,7 @@ end
         @test_logs (:info, r"mismatch on component Park City") match_mode = :any reconcile()
     power = ics[IOM.InitialConditionKey(POM.DevicePower, ThermalStandard)]
     @test "Brighton" in keys(power[1]) && !("Brighton" in keys(power[2]))
+    @test !("Park City" in keys(power[3]))
 end
 
 @testset "An initial power without a status source fails at build unless the unit is must-run" begin
