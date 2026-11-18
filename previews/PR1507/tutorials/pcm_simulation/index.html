@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Multi-stage Production Cost Simulation · PowerSimulations.jl</title><meta name="title" content="Multi-stage Production Cost Simulation · PowerSimulations.jl"/><meta property="og:title" content="Multi-stage Production Cost Simulation · PowerSimulations.jl"/><meta property="twitter:title" content="Multi-stage Production Cost Simulation · PowerSimulations.jl"/><meta name="description" content="Documentation for PowerSimulations.jl."/><meta property="og:description" content="Documentation for PowerSimulations.jl."/><meta property="twitter:description" content="Documentation for PowerSimulations.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.png" alt="PowerSimulations.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">PowerSimulations.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Welcome Page</a></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../decision_problem/">Single-step Problem</a></li><li class="is-active"><a class="tocitem" href>Multi-stage Production Cost Simulation</a><ul class="internal"><li><a class="tocitem" href="#Introduction"><span>Introduction</span></a></li><li><a class="tocitem" href="#ProblemTemplates-define-stages"><span><code>ProblemTemplate</code>s define stages</span></a></li><li><a class="tocitem" href="#Simulation"><span><code>Simulation</code></span></a></li><li><a class="tocitem" href="#Results"><span>Results</span></a></li><li><a class="tocitem" href="#Plotting"><span>Plotting</span></a></li></ul></li></ul></li><li><span class="tocitem">How to...</span><ul><li><a class="tocitem" href="../../how_to/register_variable/">...register a variable in a custom operation model</a></li><li><a class="tocitem" href="../../how_to/problem_templates/">...create a problem template</a></li><li><a class="tocitem" href="../../how_to/read_results/">...read the simulation results</a></li><li><a class="tocitem" href="../../how_to/debugging_infeasible_models/">...debug an infeasible model</a></li><li><a class="tocitem" href="../../how_to/logging/">...configure logging</a></li><li><a class="tocitem" href="../../how_to/simulation_recorder/">...inspect simulation events using the recorder</a></li><li><a class="tocitem" href="../../how_to/parallel_simulations/">...run a parallel simulation</a></li></ul></li><li><span class="tocitem">Explanation</span><ul><li><a class="tocitem" href="../../explanation/psi_structure/">PowerSimulations.jl Modeling Structure</a></li><li><a class="tocitem" href="../../explanation/feedforward/">Feedforward</a></li><li><a class="tocitem" href="../../explanation/chronologies/">Chronologies</a></li><li><a class="tocitem" href="../../explanation/sequencing/">Sequencing</a></li></ul></li><li><span class="tocitem">Reference</span><ul><li><a class="tocitem" href="../../api/glossary/">Glossary and Acronyms</a></li><li><a class="tocitem" href="../../api/PowerSimulations/">Public API</a></li><li><input class="collapse-toggle" id="menuitem-5-3" type="checkbox"/><label class="tocitem" for="menuitem-5-3"><span class="docs-label">Developers</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../../api/developer/">Developer Guidelines</a></li><li><a class="tocitem" href="../../api/internal/">Internals</a></li></ul></li></ul></li><li><a class="tocitem" href="../../archive_old_docs_content/">Archived Old Docs Content</a></li><li><span class="tocitem">Formulation Library</span><ul><li><a class="tocitem" href="../../formulation_library/Introduction/">Introduction</a></li><li><a class="tocitem" href="../../formulation_library/General/">General</a></li><li><a class="tocitem" href="../../formulation_library/Network/">Network</a></li><li><a class="tocitem" href="../../formulation_library/ThermalGen/">Thermal Generation</a></li><li><a class="tocitem" href="../../formulation_library/RenewableGen/">Renewable Generation</a></li><li><a class="tocitem" href="../../formulation_library/Load/">Load</a></li><li><a class="tocitem" href="../../formulation_library/Branch/">Branch</a></li><li><a class="tocitem" href="../../formulation_library/Source/">Source</a></li><li><a class="tocitem" href="../../formulation_library/Service/">Services</a></li><li><a class="tocitem" href="../../formulation_library/Feedforward/">Feedforwards</a></li><li><a class="tocitem" href="../../formulation_library/Piecewise/">Piecewise Linear Cost</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>Multi-stage Production Cost Simulation</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Multi-stage Production Cost Simulation</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/NREL-Sienna/PowerSimulations.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/NREL-Sienna/PowerSimulations.jl/blob/main/docs/src/tutorials/pcm_simulation.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="pcm_tutorial"><a class="docs-heading-anchor" href="#pcm_tutorial">Sequential Simulations with <a href="https://github.com/NREL-SIIP/PowerSimulations.jl">PowerSimulations.jl</a></a><a id="pcm_tutorial-1"></a><a class="docs-heading-anchor-permalink" href="#pcm_tutorial" title="Permalink"></a></h1><p><strong>Originally Contributed by</strong>: Clayton Barrows</p><h2 id="Introduction"><a class="docs-heading-anchor" href="#Introduction">Introduction</a><a id="Introduction-1"></a><a class="docs-heading-anchor-permalink" href="#Introduction" title="Permalink"></a></h2><p>PowerSimulations.jl supports simulations that consist of sequential optimization problems where results from previous problems inform subsequent problems in a variety of ways. This example demonstrates some of these capabilities to represent electricity market clearing. This example is intended to be an extension of the <a href="../decision_problem/#op_problem_tutorial">OperationsProblem tutorial.</a></p><h3 id="Load-Packages"><a class="docs-heading-anchor" href="#Load-Packages">Load Packages</a><a id="Load-Packages-1"></a><a class="docs-heading-anchor-permalink" href="#Load-Packages" title="Permalink"></a></h3><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; using PowerSystems</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; using PowerSimulations</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; using HydroPowerSimulations</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; const PSI = PowerSimulations</code><code class="nohighlight hljs ansi" style="display:block;">PowerSimulations</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; using PowerSystemCaseBuilder</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; using Dates</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; using HiGHS #solver</code></pre><h3 id="Optimizer"><a class="docs-heading-anchor" href="#Optimizer">Optimizer</a><a id="Optimizer-1"></a><a class="docs-heading-anchor-permalink" href="#Optimizer" title="Permalink"></a></h3><p>It&#39;s most convenient to define an optimizer instance upfront and pass it into the <a href="../decision_problem/#DecisionModel"><code>DecisionModel</code></a> constructor. For this example, we can use the free HiGHS solver with a relatively relaxed MIP gap (<code>ratioGap</code>) setting to improve speed.</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; solver = optimizer_with_attributes(HiGHS.Optimizer, &quot;mip_rel_gap&quot; =&gt; 0.5)</code><code class="nohighlight hljs ansi" style="display:block;">MathOptInterface.OptimizerWithAttributes(HiGHS.Optimizer, Pair{MathOptInterface.AbstractOptimizerAttribute, Any}[MathOptInterface.RawOptimizerAttribute(&quot;mip_rel_gap&quot;) =&gt; 0.5])</code></pre><h3 id="Hourly-day-ahead-system"><a class="docs-heading-anchor" href="#Hourly-day-ahead-system">Hourly day-ahead system</a><a id="Hourly-day-ahead-system-1"></a><a class="docs-heading-anchor-permalink" href="#Hourly-day-ahead-system" title="Permalink"></a></h3><p>First, we&#39;ll create a <code>System</code> with hourly data to represent day-ahead forecasted wind, solar, and load profiles:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; sys_DA = build_system(PSISystems, &quot;modified_RTS_GMLC_DA_sys&quot;; skip_serialization = true)</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr36"><span class="sgr1">[ Info: </span></span>Loaded time series from storage file existing=/home/runner/.julia/packages/PowerSystemCaseBuilder/tnwpN/data/serialized_system/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/modified_RTS_GMLC_DA_sys_time_series_storage.h5 new=/tmp/jl_LV7T2W compression=CompressionSettings(false, CompressionTypes.DEFLATE = 1, 3, true)
+<span class="sgr1">              System
+┌───────────────────┬─────────────┐
+│ Property          │ Value       │
+├───────────────────┼─────────────┤
+│ Name              │             │
+│ Description       │             │
+│ System Units Base │ SYSTEM_BASE │
+│ Base Power        │ 100.0       │
+│ Base Frequency    │ 60.0        │
+│ Num Components    │ 504         │
+└───────────────────┴─────────────┘
+
+           Static Components
+┌──────────────────────────────┬───────┐
+│ Type                         │ Count │
+├──────────────────────────────┼───────┤
+│ ACBus                        │ 73    │
+│ Arc                          │ 109   │
+│ Area                         │ 3     │
+│ FixedAdmittance              │ 3     │
+│ HydroDispatch                │ 1     │
+│ Line                         │ 105   │
+│ LoadZone                     │ 21    │
+│ PowerLoad                    │ 51    │
+│ RenewableDispatch            │ 29    │
+│ RenewableNonDispatch         │ 31    │
+│ SynchronousCondenser         │ 3     │
+│ TapTransformer               │ 15    │
+│ ThermalStandard              │ 54    │
+│ TwoTerminalGenericHVDCLine   │ 1     │
+│ VariableReserve{ReserveDown} │ 1     │
+│ VariableReserve{ReserveUp}   │ 4     │
+└──────────────────────────────┴───────┘
+
+                            StaticTimeSeries Summary
+┌──────────────────────┬────────────────┬──────────────────┬────────────────────
+│ owner_type           │ owner_category │ name             │ time_series_type  ⋯
+│<span class="sgr90"> String               │ String         │ String           │ String            ⋯
+├──────────────────────┼────────────────┼──────────────────┼────────────────────
+│ Area                 │ Component      │ max_active_power │ SingleTimeSeries  ⋯
+│ FixedAdmittance      │ Component      │ max_active_power │ SingleTimeSeries  ⋯
+│ HydroDispatch        │ Component      │ max_active_power │ SingleTimeSeries  ⋯
+│ PowerLoad            │ Component      │ max_active_power │ SingleTimeSeries  ⋯
+│ RenewableDispatch    │ Component      │ max_active_power │ SingleTimeSeries  ⋯
+│ RenewableNonDispatch │ Component      │ max_active_power │ SingleTimeSeries  ⋯
+│ VariableReserve      │ Component      │ requirement      │ SingleTimeSeries  ⋯
+└──────────────────────┴────────────────┴──────────────────┴────────────────────
+</span><span class="sgr36">                                                               4 columns omitted
+                                Forecast Summary
+┌──────────────────────┬────────────────┬──────────────────┬────────────────────
+│ owner_type           │ owner_category │ name             │ time_series_type  ⋯
+│</span><span class="sgr90"> String               │ String         │ String           │ String            ⋯
+├──────────────────────┼────────────────┼──────────────────┼────────────────────
+│ Area                 │ Component      │ max_active_power │ DeterministicSing ⋯
+│ FixedAdmittance      │ Component      │ max_active_power │ DeterministicSing ⋯
+│ HydroDispatch        │ Component      │ max_active_power │ DeterministicSing ⋯
+│ PowerLoad            │ Component      │ max_active_power │ DeterministicSing ⋯
+│ RenewableDispatch    │ Component      │ max_active_power │ DeterministicSing ⋯
+│ RenewableNonDispatch │ Component      │ max_active_power │ DeterministicSing ⋯
+│ VariableReserve      │ Component      │ requirement      │ DeterministicSing ⋯
+└──────────────────────┴────────────────┴──────────────────┴────────────────────
+</span><span class="sgr36">                                                               7 columns omitted</span></span></code></pre><h3 id="5-Minute-system"><a class="docs-heading-anchor" href="#5-Minute-system">5-Minute system</a><a id="5-Minute-system-1"></a><a class="docs-heading-anchor-permalink" href="#5-Minute-system" title="Permalink"></a></h3><p>The RTS data also includes 5-minute resolution time series data. So, we can create another <code>System</code> to represent 15 minute ahead forecasted data for a &quot;real-time&quot; market:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; sys_RT = build_system(PSISystems, &quot;modified_RTS_GMLC_RT_sys&quot;; skip_serialization = true)</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr36"><span class="sgr1">┌ Info: </span></span>Building new system modified_RTS_GMLC_RT_sys from raw data
+<span class="sgr36"><span class="sgr1">└ </span></span>  sys_descriptor.raw_data = &quot;/home/runner/.julia/artifacts/c257b2c37b981f261fdc328b0fb9b96436a96537/RTS-GMLC-0.2.3&quot;
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Parsing csv data in branch.csv ...
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Successfully parsed branch.csv
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Parsing csv data in bus.csv ...
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Successfully parsed bus.csv
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Parsing csv data in dc_branch.csv ...
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Successfully parsed dc_branch.csv
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Parsing csv data in gen.csv ...
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Successfully parsed gen.csv
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Parsing csv data in reserves.csv ...
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Successfully parsed reserves.csv
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Parsing csv data in simulation_objects.csv ...
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Successfully parsed simulation_objects.csv
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Parsing csv data in storage.csv ...
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Successfully parsed storage.csv
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Parsing csv data in timeseries_pointers.csv ...
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Successfully parsed timeseries_pointers.csv
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Unit System changed to UnitSystem.DEVICE_BASE = 1
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Missing PowerSystems.InputCategoryModule.InputCategory.LOAD = 5 data.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:300</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Startup Ramp Rate MW/min is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Shutdown Ramp Rate MW/min is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Status at Start is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Time at Status is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Start Cost Cold is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Start Cost Warm is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Start Cost Hot is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Must Run is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Rating calculation returned 0.0. Changing to 1.0 in the p.u. of the device.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/common.jl:120</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Generator SynchronousCondenser: 114_SYNC_COND_1 has base power of zero: changing device base power to match system base power, 100.0
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:938</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Rating calculation returned 0.0. Changing to 1.0 in the p.u. of the device.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/common.jl:120</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Generator SynchronousCondenser: 214_SYNC_COND_1 has base power of zero: changing device base power to match system base power, 100.0
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:938</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Rating calculation returned 0.0. Changing to 1.0 in the p.u. of the device.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/common.jl:120</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Generator SynchronousCondenser: 314_SYNC_COND_1 has base power of zero: changing device base power to match system base power, 100.0
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:938</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Heat rate parsing not valid for RenewableGen replacing with zero cost
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1039</span>
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Adding contributing generators for Spin_Up_R1 by category
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Startup Ramp Rate MW/min is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Shutdown Ramp Rate MW/min is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Status at Start is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Time at Status is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Start Cost Cold is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Start Cost Warm is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Start Cost Hot is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Must Run is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Adding contributing generators for Spin_Up_R2 by category
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Startup Ramp Rate MW/min is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Shutdown Ramp Rate MW/min is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Status at Start is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Time at Status is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Start Cost Cold is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Start Cost Warm is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Start Cost Hot is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Must Run is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Adding contributing generators for Spin_Up_R3 by category
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Startup Ramp Rate MW/min is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Shutdown Ramp Rate MW/min is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Status at Start is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Time at Status is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Start Cost Cold is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Start Cost Warm is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Start Cost Hot is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Must Run is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Adding contributing generators for Flex_Up by category
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Startup Ramp Rate MW/min is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Shutdown Ramp Rate MW/min is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Status at Start is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Time at Status is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Start Cost Cold is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Start Cost Warm is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Start Cost Hot is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Must Run is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Adding contributing generators for Flex_Down by category
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Startup Ramp Rate MW/min is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Shutdown Ramp Rate MW/min is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Status at Start is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Time at Status is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Start Cost Cold is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Start Cost Warm is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Start Cost Hot is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Must Run is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Adding contributing generators for Reg_Up by category
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Startup Ramp Rate MW/min is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Shutdown Ramp Rate MW/min is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Status at Start is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Time at Status is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Start Cost Cold is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Start Cost Warm is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Start Cost Hot is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Must Run is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Adding contributing generators for Reg_Down by category
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Startup Ramp Rate MW/min is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Shutdown Ramp Rate MW/min is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Status at Start is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Time at Status is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Start Cost Cold is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Start Cost Warm is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Start Cost Hot is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>User-defined column name Must Run is not in dataframe.
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSystems ~/.julia/packages/PowerSystems/VW7nY/src/parsers/power_system_table_data.jl:1778</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>no component category=Component name=201_HYDRO_4_RESERVOIR_head
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ InfrastructureSystems ~/.julia/packages/InfrastructureSystems/vIcUz/src/system_data.jl:776</span>
+<span class="sgr36"><span class="sgr1">[ Info: </span></span>Unit System changed to UnitSystem.SYSTEM_BASE = 0
+<span class="sgr1">              System
+┌───────────────────┬─────────────┐
+│ Property          │ Value       │
+├───────────────────┼─────────────┤
+│ Name              │             │
+│ Description       │             │
+│ System Units Base │ SYSTEM_BASE │
+│ Base Power        │ 100.0       │
+│ Base Frequency    │ 60.0        │
+│ Num Components    │ 502         │
+└───────────────────┴─────────────┘
+
+           Static Components
+┌──────────────────────────────┬───────┐
+│ Type                         │ Count │
+├──────────────────────────────┼───────┤
+│ ACBus                        │ 73    │
+│ Arc                          │ 109   │
+│ Area                         │ 1     │
+│ FixedAdmittance              │ 3     │
+│ HydroDispatch                │ 1     │
+│ Line                         │ 105   │
+│ LoadZone                     │ 21    │
+│ PowerLoad                    │ 51    │
+│ RenewableDispatch            │ 29    │
+│ RenewableNonDispatch         │ 31    │
+│ SynchronousCondenser         │ 3     │
+│ TapTransformer               │ 15    │
+│ ThermalStandard              │ 54    │
+│ TwoTerminalGenericHVDCLine   │ 1     │
+│ VariableReserve{ReserveDown} │ 1     │
+│ VariableReserve{ReserveUp}   │ 4     │
+└──────────────────────────────┴───────┘
+
+                            StaticTimeSeries Summary
+┌──────────────────────┬────────────────┬──────────────────┬────────────────────
+│ owner_type           │ owner_category │ name             │ time_series_type  ⋯
+│<span class="sgr90"> String               │ String         │ String           │ String            ⋯
+├──────────────────────┼────────────────┼──────────────────┼────────────────────
+│ Area                 │ Component      │ max_active_power │ SingleTimeSeries  ⋯
+│ FixedAdmittance      │ Component      │ max_active_power │ SingleTimeSeries  ⋯
+│ HydroDispatch        │ Component      │ max_active_power │ SingleTimeSeries  ⋯
+│ PowerLoad            │ Component      │ max_active_power │ SingleTimeSeries  ⋯
+│ RenewableDispatch    │ Component      │ max_active_power │ SingleTimeSeries  ⋯
+│ RenewableNonDispatch │ Component      │ max_active_power │ SingleTimeSeries  ⋯
+│ VariableReserve      │ Component      │ requirement      │ SingleTimeSeries  ⋯
+└──────────────────────┴────────────────┴──────────────────┴────────────────────
+</span><span class="sgr36">                                                               4 columns omitted
+                                Forecast Summary
+┌──────────────────────┬────────────────┬──────────────────┬────────────────────
+│ owner_type           │ owner_category │ name             │ time_series_type  ⋯
+│</span><span class="sgr90"> String               │ String         │ String           │ String            ⋯
+├──────────────────────┼────────────────┼──────────────────┼────────────────────
+│ Area                 │ Component      │ max_active_power │ DeterministicSing ⋯
+│ FixedAdmittance      │ Component      │ max_active_power │ DeterministicSing ⋯
+│ HydroDispatch        │ Component      │ max_active_power │ DeterministicSing ⋯
+│ PowerLoad            │ Component      │ max_active_power │ DeterministicSing ⋯
+│ RenewableDispatch    │ Component      │ max_active_power │ DeterministicSing ⋯
+│ RenewableNonDispatch │ Component      │ max_active_power │ DeterministicSing ⋯
+│ VariableReserve      │ Component      │ requirement      │ DeterministicSing ⋯
+└──────────────────────┴────────────────┴──────────────────┴────────────────────
+</span><span class="sgr36">                                                               7 columns omitted</span></span></code></pre><h2 id="ProblemTemplates-define-stages"><a class="docs-heading-anchor" href="#ProblemTemplates-define-stages"><code>ProblemTemplate</code>s define stages</a><a id="ProblemTemplates-define-stages-1"></a><a class="docs-heading-anchor-permalink" href="#ProblemTemplates-define-stages" title="Permalink"></a></h2><p>Sequential simulations in PowerSimulations are created by defining <code>OperationsProblems</code> that represent stages, and how information flows between executions of a stage and between different stages.</p><p>Let&#39;s start by defining a two stage simulation that might look like a typical day-Ahead and real-time electricity market clearing process.</p><h3 id="Day-ahead-unit-commitment-stage"><a class="docs-heading-anchor" href="#Day-ahead-unit-commitment-stage">Day-ahead unit commitment stage</a><a id="Day-ahead-unit-commitment-stage-1"></a><a class="docs-heading-anchor-permalink" href="#Day-ahead-unit-commitment-stage" title="Permalink"></a></h3><p>First, we can define a unit commitment template for the day ahead problem. We can use the included UC template, but in this example, we&#39;ll replace the <code>ThermalBasicUnitCommitment</code> with the slightly more complex <code>ThermalStandardUnitCommitment</code> for the thermal generators.</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; template_uc = template_unit_commitment()</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr1">                Network Model
+┌────────────────────┬───────────────────────┐
+│ Network Model      │ CopperPlatePowerModel │
+│ Slacks             │ false                 │
+│ PTDF               │ false                 │
+│ Duals              │ None                  │
+│ HVDC Network Model │ None                  │
+└────────────────────┴───────────────────────┘
+
+                         Device Models
+┌────────────────────────┬────────────────────────────┬────────┐
+│ Device Type            │ Formulation                │ Slacks │
+├────────────────────────┼────────────────────────────┼────────┤
+│ RenewableNonDispatch   │ FixedOutput                │ false  │
+│ ThermalStandard        │ ThermalBasicUnitCommitment │ false  │
+│ PowerLoad              │ StaticPowerLoad            │ false  │
+│ InterruptiblePowerLoad │ PowerLoadInterruption      │ false  │
+│ RenewableDispatch      │ RenewableFullDispatch      │ false  │
+└────────────────────────┴────────────────────────────┴────────┘
+
+                          Branch Models
+┌────────────────────────────┬─────────────────────────┬────────┐
+│ Branch Type                │ Formulation             │ Slacks │
+├────────────────────────────┼─────────────────────────┼────────┤
+│ Line                       │ StaticBranch            │ false  │
+│ TapTransformer             │ StaticBranch            │ false  │
+│ Transformer2W              │ StaticBranch            │ false  │
+│ TwoTerminalGenericHVDCLine │ HVDCTwoTerminalDispatch │ false  │
+└────────────────────────────┴─────────────────────────┴────────┘
+
+                              Service Models
+┌──────────────────────────────┬──────────────┬────────┬──────────────────┐
+│ Service Type                 │ Formulation  │ Slacks │ Aggregated Model │
+├──────────────────────────────┼──────────────┼────────┼──────────────────┤
+│ VariableReserve{ReserveUp}   │ RangeReserve │ false  │ true             │
+│ VariableReserve{ReserveDown} │ RangeReserve │ false  │ true             │
+└──────────────────────────────┴──────────────┴────────┴──────────────────┘</span></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; set_device_model!(template_uc, ThermalStandard, ThermalStandardUnitCommitment)</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Overwriting ThermalStandard existing model
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSimulations ~/work/PowerSimulations.jl/PowerSimulations.jl/src/core/device_model.jl:111</span></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; set_device_model!(template_uc, HydroDispatch, HydroDispatchRunOfRiver)</code></pre><h3 id="Define-the-reference-model-for-the-real-time-economic-dispatch"><a class="docs-heading-anchor" href="#Define-the-reference-model-for-the-real-time-economic-dispatch">Define the reference model for the real-time economic dispatch</a><a id="Define-the-reference-model-for-the-real-time-economic-dispatch-1"></a><a class="docs-heading-anchor-permalink" href="#Define-the-reference-model-for-the-real-time-economic-dispatch" title="Permalink"></a></h3><p>In addition to the manual specification process demonstrated in the OperationsProblem example, PSI also provides pre-specified templates for some standard problems:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; template_ed = template_economic_dispatch(;
+           network = NetworkModel(PTDFPowerModel; use_slacks = true),
+       )</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr1">             Network Model
+┌────────────────────┬────────────────┐
+│ Network Model      │ PTDFPowerModel │
+│ Slacks             │ true           │
+│ PTDF               │ false          │
+│ Duals              │ None           │
+│ HVDC Network Model │ None           │
+└────────────────────┴────────────────┘
+
+                       Device Models
+┌────────────────────────┬───────────────────────┬────────┐
+│ Device Type            │ Formulation           │ Slacks │
+├────────────────────────┼───────────────────────┼────────┤
+│ RenewableNonDispatch   │ FixedOutput           │ false  │
+│ ThermalStandard        │ ThermalBasicDispatch  │ false  │
+│ PowerLoad              │ StaticPowerLoad       │ false  │
+│ InterruptiblePowerLoad │ PowerLoadInterruption │ false  │
+│ RenewableDispatch      │ RenewableFullDispatch │ false  │
+└────────────────────────┴───────────────────────┴────────┘
+
+                          Branch Models
+┌────────────────────────────┬─────────────────────────┬────────┐
+│ Branch Type                │ Formulation             │ Slacks │
+├────────────────────────────┼─────────────────────────┼────────┤
+│ Line                       │ StaticBranch            │ false  │
+│ TapTransformer             │ StaticBranch            │ false  │
+│ Transformer2W              │ StaticBranch            │ false  │
+│ TwoTerminalGenericHVDCLine │ HVDCTwoTerminalDispatch │ false  │
+└────────────────────────────┴─────────────────────────┴────────┘
+
+                              Service Models
+┌──────────────────────────────┬──────────────┬────────┬──────────────────┐
+│ Service Type                 │ Formulation  │ Slacks │ Aggregated Model │
+├──────────────────────────────┼──────────────┼────────┼──────────────────┤
+│ VariableReserve{ReserveUp}   │ RangeReserve │ false  │ true             │
+│ VariableReserve{ReserveDown} │ RangeReserve │ false  │ true             │
+└──────────────────────────────┴──────────────┴────────┴──────────────────┘</span></code></pre><h3 id="Define-the-SimulationModels"><a class="docs-heading-anchor" href="#Define-the-SimulationModels">Define the <code>SimulationModels</code></a><a id="Define-the-SimulationModels-1"></a><a class="docs-heading-anchor-permalink" href="#Define-the-SimulationModels" title="Permalink"></a></h3><p><a href="../decision_problem/#DecisionModel"><code>DecisionModel</code></a><code>s define the problems that are executed in the simulation. The actual problem will change as the stage gets updated to represent different time periods, but the formulations applied to the components is constant within a stage. In this case, we want to define two stages with the</code>ProblemTemplate<code>s and the</code>System`s that we&#39;ve already created.</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; models = SimulationModels(;
+           decision_models = [
+               DecisionModel(template_uc, sys_DA; optimizer = solver, name = &quot;UC&quot;),
+               DecisionModel(template_ed, sys_RT; optimizer = solver, name = &quot;ED&quot;),
+           ],
+       )</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Transformer2W is included in the template but no available components exist in the system
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSimulations ~/work/PowerSimulations.jl/PowerSimulations.jl/src/operation/problem_template.jl:358</span>
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Transformer2W is included in the template but no available components exist in the system
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ PowerSimulations ~/work/PowerSimulations.jl/PowerSimulations.jl/src/operation/problem_template.jl:358</span>
+
+<span class="sgr1">                       Decision Models
+┌────────────┬──────────────────┬────────┬──────────────────┐
+│ Model Name │ Model Type       │ Status │ Output Directory │
+├────────────┼──────────────────┼────────┼──────────────────┤
+│ UC         │ GenericOpProblem │ EMPTY  │ nothing          │
+│ ED         │ GenericOpProblem │ EMPTY  │ nothing          │
+└────────────┴──────────────────┴────────┴──────────────────┘
+
+No Emulator Model Specified</span></code></pre><h3 id="SimulationSequence"><a class="docs-heading-anchor" href="#SimulationSequence"><code>SimulationSequence</code></a><a id="SimulationSequence-1"></a><a class="docs-heading-anchor-permalink" href="#SimulationSequence" title="Permalink"></a></h3><p>Similar to a <code>ProblemTemplate</code>, the <code>SimulationSequence</code> provides a template of how to execute a sequential set of operations problems.</p><p>Let&#39;s review some of the <code>SimulationSequence</code> arguments.</p><h3 id="Chronologies"><a class="docs-heading-anchor" href="#Chronologies">Chronologies</a><a id="Chronologies-1"></a><a class="docs-heading-anchor-permalink" href="#Chronologies" title="Permalink"></a></h3><p>In PowerSimulations, chronologies define where information is flowing. There are two types of chronologies.</p><ul><li>inter-stage chronologies: Define how information flows between stages. e.g. day-ahead solutions are used to inform economic dispatch problems</li><li>intra-stage chronologies: Define how information flows between multiple executions of a single stage. e.g. the dispatch setpoints of the first period of an economic dispatch problem are constrained by the ramping limits from setpoints in the final period of the previous problem.</li></ul><h3 id="FeedForward"><a class="docs-heading-anchor" href="#FeedForward"><code>FeedForward</code></a><a id="FeedForward-1"></a><a class="docs-heading-anchor-permalink" href="#FeedForward" title="Permalink"></a></h3><p>The definition of exactly what information is passed using the defined chronologies is accomplished with <code>FeedForward</code>. Specifically, <code>FeedForward</code> is used to define what to do with information being passed with an inter-stage chronology. Let&#39;s define a <code>FeedForward</code> that affects the semi-continuous range constraints of thermal generators in the economic dispatch problems based on the value of the unit-commitment variables.</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; feedforward = Dict(
+           &quot;ED&quot; =&gt; [
+               SemiContinuousFeedforward(;
+                   component_type = ThermalStandard,
+                   source = OnVariable,
+                   affected_values = [ActivePowerVariable],
+               ),
+           ],
+       )</code><code class="nohighlight hljs ansi" style="display:block;">Dict{String, Vector{SemiContinuousFeedforward}} with 1 entry:
+  &quot;ED&quot; =&gt; [SemiContinuousFeedforward(VariableKey{OnVariable, ThermalStandard}(&quot;…</code></pre><h3 id="Sequencing"><a class="docs-heading-anchor" href="#Sequencing">Sequencing</a><a id="Sequencing-1"></a><a class="docs-heading-anchor-permalink" href="#Sequencing" title="Permalink"></a></h3><p>The stage problem length, look-ahead, and other details surrounding the temporal Sequencing of stages are controlled using the structure of the time series data in the <code>System</code>s. So, to define a typical day-ahead - real-time sequence:</p><ul><li>Day ahead problems should represent 48 hours, advancing 24 hours after each execution (24-hour look-ahead)</li><li>Real time problems should represent 1 hour (12 5-minute periods), advancing 15 min after each execution (15 min look-ahead)</li></ul><p>We can adjust the time series data to reflect this structure in each <code>System</code>:</p><ul><li><code>transform_single_time_series!(sys_DA, Hour(48), Hour(24))</code></li><li><code>transform_single_time_series!(sys_RT, Minute(60), Minute(15))</code></li></ul><p>Now we can put it all together to define a <code>SimulationSequence</code></p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; DA_RT_sequence = SimulationSequence(;
+           models = models,
+           ini_cond_chronology = InterProblemChronology(),
+           feedforwards = feedforward,
+       )</code><code class="nohighlight hljs ansi" style="display:block;">
+<span class="sgr1">          Simulation Sequence
+┌──────────────────────────┬──────────┐
+│ Simulation Step Interval │ 24 hours │
+│ Number of Problems       │ 2        │
+└──────────────────────────┴──────────┘
+
+                    Simulation Problems
+┌────────────┬─────────┬────────────┬─────────────────────┐
+│ Model Name │ Horizon │ Interval   │ Executions Per Step │
+├────────────┼─────────┼────────────┼─────────────────────┤
+│ UC         │ 2 days  │ 1 day      │ 1                   │
+│ ED         │ 1 hour  │ 15 minutes │ 96                  │
+└────────────┴─────────┴────────────┴─────────────────────┘
+
+               Feedforwards
+┌────────────┬───────────────────────────┐
+│ Model Name │ Feed Forward Type         │
+├────────────┼───────────────────────────┤
+│ ED         │ SemiContinuousFeedforward │
+└────────────┴───────────────────────────┘</span></code></pre><h2 id="Simulation"><a class="docs-heading-anchor" href="#Simulation"><code>Simulation</code></a><a id="Simulation-1"></a><a class="docs-heading-anchor-permalink" href="#Simulation" title="Permalink"></a></h2><p>Now, we can build and execute a simulation using the <code>SimulationSequence</code> and <code>Stage</code>s that we&#39;ve defined.</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; sim = Simulation(;
+           name = &quot;rts-test&quot;,
+           steps = 2,
+           models = models,
+           sequence = DA_RT_sequence,
+           simulation_folder = joinpath(&quot;.&quot;, &quot;rts-store&quot;),
+       )</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr1">               Simulation
+┌─────────────────┬────────────────────┐
+│ Simulation Name │ rts-test           │
+│ Build Status    │ EMPTY              │
+│ Run Status      │ NOT_READY          │
+│ Initial Time    │ Unset Initial Time │
+│ Steps           │ 2                  │
+└─────────────────┴────────────────────┘
+
+                       Decision Models
+┌────────────┬──────────────────┬────────┬──────────────────┐
+│ Model Name │ Model Type       │ Status │ Output Directory │
+├────────────┼──────────────────┼────────┼──────────────────┤
+│ UC         │ GenericOpProblem │ EMPTY  │ nothing          │
+│ ED         │ GenericOpProblem │ EMPTY  │ nothing          │
+└────────────┴──────────────────┴────────┴──────────────────┘
+
+No Emulator Model Specified
+
+          Simulation Sequence
+┌──────────────────────────┬──────────┐
+│ Simulation Step Interval │ 24 hours │
+│ Number of Problems       │ 2        │
+└──────────────────────────┴──────────┘
+
+                    Simulation Problems
+┌────────────┬─────────┬────────────┬─────────────────────┐
+│ Model Name │ Horizon │ Interval   │ Executions Per Step │
+├────────────┼─────────┼────────────┼─────────────────────┤
+│ UC         │ 2 days  │ 1 day      │ 1                   │
+│ ED         │ 1 hour  │ 15 minutes │ 96                  │
+└────────────┴─────────┴────────────┴─────────────────────┘
+
+               Feedforwards
+┌────────────┬───────────────────────────┐
+│ Model Name │ Feed Forward Type         │
+├────────────┼───────────────────────────┤
+│ ED         │ SemiContinuousFeedforward │
+└────────────┴───────────────────────────┘</span></code></pre><h3 id="Build-simulation"><a class="docs-heading-anchor" href="#Build-simulation">Build simulation</a><a id="Build-simulation-1"></a><a class="docs-heading-anchor-permalink" href="#Build-simulation" title="Permalink"></a></h3><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; build!(sim)</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr36"><span class="sgr1">┌ Info: </span></span>
+<span class="sgr36"><span class="sgr1">│ </span></span>─────────────────────────────────────────────────────────────────────────────────────────────
+<span class="sgr36"><span class="sgr1">│ </span></span>                                                    Time                    Allocations      
+<span class="sgr36"><span class="sgr1">│ </span></span>                                           ───────────────────────   ────────────────────────
+<span class="sgr36"><span class="sgr1">│ </span></span>             Tot / % measured:                  33.7s / 100.0%           2.61GiB / 100.0%    
+<span class="sgr36"><span class="sgr1">│ </span></span>
+<span class="sgr36"><span class="sgr1">│ </span></span>Section                            ncalls     time    %tot     avg     alloc    %tot      avg
+<span class="sgr36"><span class="sgr1">│ </span></span>─────────────────────────────────────────────────────────────────────────────────────────────
+<span class="sgr36"><span class="sgr1">│ </span></span>Build Simulation                        1    33.7s  100.0%   33.7s   2.61GiB  100.0%  2.61GiB
+<span class="sgr36"><span class="sgr1">│ </span></span>  Build Decision Problems               1    21.1s   62.6%   21.1s   1.89GiB   72.2%  1.89GiB
+<span class="sgr36"><span class="sgr1">│ </span></span>    Problem ED                          1    17.0s   50.3%   17.0s   1.45GiB   55.5%  1.45GiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      Line                              2    3.17s    9.4%   1.58s    414MiB   15.5%   207MiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      ThermalStandard                   2    3.11s    9.2%   1.56s    220MiB    8.2%   110MiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      TapTransformer                    2    1.59s    4.7%   797ms    186MiB    6.9%  92.8MiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      TwoTerminalGenericHVDCLine        2    944ms    2.8%   472ms   49.2MiB    1.8%  24.6MiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      PTDFPowerModel                    1    546ms    1.6%   546ms   16.6MiB    0.6%  16.6MiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      Numerical Bounds Check            1    367ms    1.1%   367ms   46.4MiB    1.7%  46.4MiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      RenewableNonDispatch              2    299ms    0.9%   149ms   10.6MiB    0.4%  5.28MiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      RenewableDispatch                 2    230ms    0.7%   115ms   7.59MiB    0.3%  3.80MiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      PowerLoad                         2    170ms    0.5%  85.0ms   6.42MiB    0.2%  3.21MiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      Services                          2    138ms    0.4%  69.0ms   10.2MiB    0.4%  5.11MiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      Build pre-step                    1    134ms    0.4%   134ms   5.60MiB    0.2%  5.60MiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      Objective                         1   95.2ms    0.3%  95.2ms    500KiB    0.0%   500KiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      Model Initialization              1    418μs    0.0%   418μs   43.8KiB    0.0%  43.8KiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      Power Flow Initialization         1   26.0μs    0.0%  26.0μs      896B    0.0%     896B
+<span class="sgr36"><span class="sgr1">│ </span></span>      InterruptiblePowerLoad            2   18.4μs    0.0%  9.20μs      448B    0.0%     224B
+<span class="sgr36"><span class="sgr1">│ </span></span>      Transformer2W                     2   16.8μs    0.0%  8.39μs      448B    0.0%     224B
+<span class="sgr36"><span class="sgr1">│ </span></span>    Problem UC                          1    4.16s   12.3%   4.16s    447MiB   16.7%   447MiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      Model Initialization              1    2.40s    7.1%   2.40s    198MiB    7.4%   198MiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      RenewableNonDispatch              2    609ms    1.8%   305ms   40.6MiB    1.5%  20.3MiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      ThermalStandard                   2    252ms    0.7%   126ms   72.7MiB    2.7%  36.4MiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      Services                          2    186ms    0.6%  92.8ms   34.6MiB    1.3%  17.3MiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      Numerical Bounds Check            1    163ms    0.5%   163ms   58.0MiB    2.2%  58.0MiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      RenewableDispatch                 2    108ms    0.3%  54.1ms   11.4MiB    0.4%  5.70MiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      PowerLoad                         2   97.9ms    0.3%  48.9ms   10.8MiB    0.4%  5.39MiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      HydroDispatch                     2   81.1ms    0.2%  40.5ms   2.78MiB    0.1%  1.39MiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      InterruptiblePowerLoad            2   22.4ms    0.1%  11.2ms    434KiB    0.0%   217KiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      Line                              2   6.94ms    0.0%  3.47ms   1.19MiB    0.0%   607KiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      TapTransformer                    2   1.47ms    0.0%   735μs    251KiB    0.0%   125KiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      Objective                         1   1.30ms    0.0%  1.30ms   2.24MiB    0.1%  2.24MiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      Build pre-step                    1   1.10ms    0.0%  1.10ms   64.2KiB    0.0%  64.2KiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      TwoTerminalGenericHVDCLine        2    578μs    0.0%   289μs    147KiB    0.0%  73.7KiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      CopperPlatePowerModel             1    507μs    0.0%   507μs    515KiB    0.0%   515KiB
+<span class="sgr36"><span class="sgr1">│ </span></span>      Power Flow Initialization         1   18.7μs    0.0%  18.7μs      896B    0.0%     896B
+<span class="sgr36"><span class="sgr1">│ </span></span>      Transformer2W                     2   10.2μs    0.0%  5.12μs      448B    0.0%     224B
+<span class="sgr36"><span class="sgr1">│ </span></span>  Initialize Simulation State           1    5.47s   16.2%   5.47s    283MiB   10.6%   283MiB
+<span class="sgr36"><span class="sgr1">│ </span></span>  Serializing Simulation Files          1    155ms    0.5%   155ms   22.9MiB    0.9%  22.9MiB
+<span class="sgr36"><span class="sgr1">│ </span></span>  Check Steps                           1   6.63μs    0.0%  6.63μs   1.12KiB    0.0%  1.12KiB
+<span class="sgr36"><span class="sgr1">└ </span></span>─────────────────────────────────────────────────────────────────────────────────────────────
+InfrastructureSystems.Simulation.SimulationBuildStatusModule.SimulationBuildStatus.BUILT = 0</code></pre><h3 id="Execute-simulation"><a class="docs-heading-anchor" href="#Execute-simulation">Execute simulation</a><a id="Execute-simulation-1"></a><a class="docs-heading-anchor-permalink" href="#Execute-simulation" title="Permalink"></a></h3><p>the following command returns the status of the simulation (0: is proper execution) and stores the results in a set of HDF5 files on disk.</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; execute!(sim; enable_progress_bar = false)</code><code class="nohighlight hljs ansi" style="display:block;">InfrastructureSystems.Simulation.RunStatusModule.RunStatus.SUCCESSFULLY_FINALIZED = 0</code></pre><h2 id="Results"><a class="docs-heading-anchor" href="#Results">Results</a><a id="Results-1"></a><a class="docs-heading-anchor-permalink" href="#Results" title="Permalink"></a></h2><p>To access the results, we need to load the simulation result metadata and then make requests to the specific data of interest. This allows you to efficiently access the results of interest without overloading resources.</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; results = SimulationResults(sim);</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; uc_results = get_decision_problem_results(results, &quot;UC&quot;); # UC stage result metadata</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; ed_results = get_decision_problem_results(results, &quot;ED&quot;); # ED stage result metadata</code></pre><p>We can read all the result variables</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; read_variables(uc_results)</code><code class="nohighlight hljs ansi" style="display:block;">Dict{String, SortedDict{Dates.DateTime, DataFrames.DataFrame, Base.Order.ForwardOrdering}} with 15 entries:
+  &quot;ActivePowerReserveVaria… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">2448</span>…
+  &quot;StopVariable__ThermalSt… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">2592</span>…
+  &quot;OnVariable__ThermalStan… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">2592</span>…
+  &quot;HVDCFlowDirectionVariab… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">48×3</span>…
+  &quot;ActivePowerReserveVaria… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">864×</span>…
+  &quot;ActivePowerVariable__Re… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">1392</span>…
+  &quot;ActivePowerReserveVaria… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">816×</span>…
+  &quot;ActivePowerReserveVaria… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">2448</span>…
+  &quot;ActivePowerVariable__Hy… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">48×3</span>…
+  &quot;FlowActivePowerToFromVa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">48×3</span>…
+  &quot;StartVariable__ThermalS… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">2592</span>…
+  &quot;FlowActivePowerFromToVa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">48×3</span>…
+  &quot;ActivePowerVariable__Th… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">2592</span>…
+  &quot;HVDCLosses__TwoTerminal… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">48×3</span>…
+  &quot;ActivePowerReserveVaria… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">768×</span>…</code></pre><p>or all the parameters</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; read_parameters(uc_results)</code><code class="nohighlight hljs ansi" style="display:block;">Dict{String, SortedDict{Dates.DateTime, DataFrames.DataFrame, Base.Order.ForwardOrdering}} with 9 entries:
+  &quot;RequirementTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">48×3</span>…
+  &quot;ActivePowerTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">2448</span>…
+  &quot;ActivePowerTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">1488</span>…
+  &quot;ActivePowerTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">1392</span>…
+  &quot;RequirementTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">48×3</span>…
+  &quot;RequirementTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">48×3</span>…
+  &quot;ActivePowerTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">48×3</span>…
+  &quot;RequirementTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">48×3</span>…
+  &quot;RequirementTimeSeriesPa… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">48×3</span>…</code></pre><p>We can just list the variable names contained in <code>uc_results</code>:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; list_variable_names(uc_results)</code><code class="nohighlight hljs ansi" style="display:block;">15-element Vector{String}:
+ &quot;StartVariable__ThermalStandard&quot;
+ &quot;ActivePowerReserveVariable__VariableReserve__ReserveUp__Reg_Up&quot;
+ &quot;HVDCFlowDirectionVariable__TwoTerminalGenericHVDCLine&quot;
+ &quot;ActivePowerVariable__RenewableDispatch&quot;
+ &quot;FlowActivePowerToFromVariable__TwoTerminalGenericHVDCLine&quot;
+ &quot;ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R2&quot;
+ &quot;ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R3&quot;
+ &quot;ActivePowerReserveVariable__VariableReserve__ReserveDown__Reg_Down&quot;
+ &quot;FlowActivePowerFromToVariable__TwoTerminalGenericHVDCLine&quot;
+ &quot;ActivePowerReserveVariable__VariableReserve__ReserveUp__Spin_Up_R1&quot;
+ &quot;StopVariable__ThermalStandard&quot;
+ &quot;ActivePowerVariable__ThermalStandard&quot;
+ &quot;OnVariable__ThermalStandard&quot;
+ &quot;ActivePowerVariable__HydroDispatch&quot;
+ &quot;HVDCLosses__TwoTerminalGenericHVDCLine&quot;</code></pre><p>and a number of parameters (this pattern also works for aux_variables, expressions, and duals)</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; list_parameter_names(uc_results)</code><code class="nohighlight hljs ansi" style="display:block;">9-element Vector{String}:
+ &quot;RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R1&quot;
+ &quot;ActivePowerTimeSeriesParameter__PowerLoad&quot;
+ &quot;RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R3&quot;
+ &quot;RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Reg_Up&quot;
+ &quot;ActivePowerTimeSeriesParameter__HydroDispatch&quot;
+ &quot;ActivePowerTimeSeriesParameter__RenewableNonDispatch&quot;
+ &quot;RequirementTimeSeriesParameter__VariableReserve__ReserveDown__Reg_Down&quot;
+ &quot;RequirementTimeSeriesParameter__VariableReserve__ReserveUp__Spin_Up_R2&quot;
+ &quot;ActivePowerTimeSeriesParameter__RenewableDispatch&quot;</code></pre><p>Now we can read the specific results of interest for a specific problem, time window (optional), and set of variables, duals, or parameters (optional)</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; Dict([
+           v =&gt; read_variable(uc_results, v) for v in [
+               &quot;ActivePowerVariable__RenewableDispatch&quot;,
+               &quot;ActivePowerVariable__HydroDispatch&quot;,
+               &quot;StopVariable__ThermalStandard&quot;,
+           ]
+       ])</code><code class="nohighlight hljs ansi" style="display:block;">Dict{String, SortedDict{Dates.DateTime, DataFrames.DataFrame, Base.Order.ForwardOrdering}} with 3 entries:
+  &quot;StopVariable__ThermalSt… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">2592</span>…
+  &quot;ActivePowerVariable__Re… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">1392</span>…
+  &quot;ActivePowerVariable__Hy… =&gt; SortedDict(DateTime(&quot;2020-01-01T00:00:00&quot;)=&gt;<span class="sgr1">48×3</span>…</code></pre><p>Or if we want the result of just one variable, parameter, or dual (must be defined in the problem definition), we can use:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; read_parameter(
+           ed_results,
+           &quot;ActivePowerTimeSeriesParameter__RenewableNonDispatch&quot;;
+           initial_time = DateTime(&quot;2020-01-01T06:00:00&quot;),
+           count = 5,
+       )</code><code class="nohighlight hljs ansi" style="display:block;">SortedDict{Dates.DateTime, DataFrames.DataFrame, Base.Order.ForwardOrdering} with 5 entries:
+  DateTime(&quot;2020-01-01T06:00:00&quot;) =&gt; <span class="sgr1">372×3 DataFrame</span>…
+  DateTime(&quot;2020-01-01T06:15:00&quot;) =&gt; <span class="sgr1">372×3 DataFrame</span>…
+  DateTime(&quot;2020-01-01T06:30:00&quot;) =&gt; <span class="sgr1">372×3 DataFrame</span>…
+  DateTime(&quot;2020-01-01T06:45:00&quot;) =&gt; <span class="sgr1">372×3 DataFrame</span>…
+  DateTime(&quot;2020-01-01T07:00:00&quot;) =&gt; <span class="sgr1">372×3 DataFrame</span>…</code></pre><div class="admonition is-info" id="Info-f780c4b3a2e3124"><header class="admonition-header">Info<a class="admonition-anchor" href="#Info-f780c4b3a2e3124" title="Permalink"></a></header><div class="admonition-body"></div></div><p>note that this returns the results of each execution step in a separate dataframe If you want the realized results (without lookahead periods), you can call <code>read_realized_*</code>:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; read_realized_variables(
+           uc_results,
+           [&quot;ActivePowerVariable__ThermalStandard&quot;, &quot;ActivePowerVariable__RenewableDispatch&quot;],
+       )</code><code class="nohighlight hljs ansi" style="display:block;">Dict{String, DataFrames.DataFrame} with 2 entries:
+  &quot;ActivePowerVariable__Th… =&gt; <span class="sgr1">2592×3 DataFrame</span>…
+  &quot;ActivePowerVariable__Re… =&gt; <span class="sgr1">1392×3 DataFrame</span>…</code></pre><h2 id="Plotting"><a class="docs-heading-anchor" href="#Plotting">Plotting</a><a id="Plotting-1"></a><a class="docs-heading-anchor-permalink" href="#Plotting" title="Permalink"></a></h2><p>Take a look at the plotting capabilities in <a href="https://github.com/nrel-siip/powergraphics.jl">PowerGraphics.jl</a></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../decision_problem/">« Single-step Problem</a><a class="docs-footer-nextpage" href="../../how_to/register_variable/">...register a variable in a custom operation model »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Tuesday 6 January 2026 21:18">Tuesday 6 January 2026</span>. Using Julia version 1.12.3.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
