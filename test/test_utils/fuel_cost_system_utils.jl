@@ -1,13 +1,10 @@
 """
-A copy of `c_sys5_uc` whose first thermal unit has a `FuelCurve` with a time-varying fuel
-cost. The fuel cost series mirrors the load forecast's windows, resolution and interval, and
-each window holds distinct values, so a parameter frozen at build time reads back the wrong
-step. Returns the system, the unit, the fuel cost data by window and the forecast windows.
+Give `thermal` a `FuelCurve` whose fuel cost reads a "fuel_cost" series. The series mirrors
+the windows, resolution and interval of `sys`'s load forecast, and each window holds distinct
+values, so a parameter frozen at build time reads back the wrong step. Returns the fuel cost
+data by window and the forecast windows.
 """
-function fuel_cost_time_series_system()
-    sys = deepcopy(PSB.build_system(PSITestSystems, "c_sys5_uc"))
-    thermal = first(PSY.get_components(PSY.ThermalStandard, sys))
-
+function add_fuel_cost_time_series!(sys::PSY.System, thermal::PSY.ThermalStandard)
     # A System cannot mix Deterministic and DeterministicSingleTimeSeries, and the model
     # reads every series with the load's horizon.
     load = first(PSY.get_components(PSY.PowerLoad, sys))
@@ -41,5 +38,17 @@ function fuel_cost_time_series_system()
             shut_down = PSY.get_shut_down(old_cost),
         ),
     )
+    return fuel_cost_data, windows
+end
+
+"""
+A copy of `c_sys5_uc` whose first thermal unit has a time-varying fuel cost from
+[`add_fuel_cost_time_series!`](@ref). Returns the system, the unit, the fuel cost data by
+window and the forecast windows.
+"""
+function fuel_cost_time_series_system()
+    sys = deepcopy(PSB.build_system(PSITestSystems, "c_sys5_uc"))
+    thermal = first(PSY.get_components(PSY.ThermalStandard, sys))
+    fuel_cost_data, windows = add_fuel_cost_time_series!(sys, thermal)
     return sys, thermal, fuel_cost_data, windows
 end

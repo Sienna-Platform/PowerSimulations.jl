@@ -629,6 +629,135 @@ end
           PSI.SimulationBuildStatus.BUILT
 end
 
+# A "dynamic_line_rating" series on `line` at its static rating, over the windows of `sys`'s
+# load forecast.
+function _add_line_rating_series!(sys::PSY.System, line::Line)
+    load = first(get_components(PowerLoad, sys))
+    load_ts = get_time_series(Deterministic, load, "max_active_power")
+    rating = PSY.get_rating(line, u"MVA")
+    data = DataStructures.SortedDict(
+        dt => fill(rating, length(values)) for (dt, values) in get_data(load_ts)
+    )
+    add_time_series!(sys, line,
+        Deterministic("dynamic_line_rating", data, IS.get_resolution(load_ts);
+            PSB.natural_units("apparent_power", "MVA")...))
+    return
+end
+
+function _line_rating_template()
+    template =
+        get_template_nomin_ed_simulation(NetworkModel(PTDFNetworkModel; use_slacks = true))
+    set_device_model!(
+        template,
+        DeviceModel(Line, StaticBranch;
+            time_series_names = Dict(
+                BranchRatingTimeSeriesParameter => "dynamic_line_rating",
+            )),
+    )
+    return template
+end
+
+function _parameter_columns(sim, model_name::Symbol, key)
+    model = PSI.get_simulation_model(sim, model_name)
+    return first(PSI._model_columns(model, key))
+end
+
+@testset "Models with rating series on different lines build by default" begin
+    sys_uc = PSB.build_system(PSITestSystems, "c_sys5_uc")
+    sys_ed = PSB.build_system(PSITestSystems, "c_sys5_ed")
+    line_uc, line_ed = first(sort!(get_name.(get_components(Line, sys_uc))), 2)
+    _add_line_rating_series!(sys_uc, get_component(Line, sys_uc, line_uc))
+    _add_line_rating_series!(sys_ed, get_component(Line, sys_ed, line_ed))
+    models = create_simulation_build_test_problems(
+        _line_rating_template(), _line_rating_template(), sys_uc, sys_ed)
+    sequence = SimulationSequence(; models, ini_cond_chronology = InterProblemChronology())
+    sim = Simulation(; name = "rating_series", steps = 1, models, sequence,
+        simulation_folder = mktempdir(; cleanup = true))
+    @test build!(sim; console_level = Logging.AboveMaxLevel) ==
+          PSI.SimulationBuildStatus.BUILT
+    key = PSI.ParameterKey(BranchRatingTimeSeriesParameter, Line)
+    @test _parameter_columns(sim, :UC, key) == [line_uc]
+    @test _parameter_columns(sim, :ED, key) == [line_ed]
+    @test execute!(sim; enable_progress_bar = false) ==
+          PSI.RunStatus.SUCCESSFULLY_FINALIZED
+end
+
+@testset "Models with fuel cost series on different units build by default" begin
+    sys_uc = PSB.build_system(PSITestSystems, "c_sys5_uc")
+    sys_ed = PSB.build_system(PSITestSystems, "c_sys5_ed")
+    # Both units burn fuel in both models; each model reads a fuel cost series for one.
+    for sys in (sys_uc, sys_ed), name in ("Alta", "Brighton")
+        unit = get_component(ThermalStandard, sys, name)
+        cost = get_operation_cost(unit)
+        set_operation_cost!(unit,
+            ThermalGenerationCost(;
+                variable_operation_cost = FuelCurve(LinearCurve(0.0, 5.0), PSY.MMBtu, 3.0),
+                fixed = get_fixed(cost),
+                start_up = get_start_up(cost),
+                shut_down = get_shut_down(cost),
+            ))
+    end
+    add_fuel_cost_time_series!(sys_uc, get_component(ThermalStandard, sys_uc, "Alta"))
+    add_fuel_cost_time_series!(sys_ed, get_component(ThermalStandard, sys_ed, "Brighton"))
+    models = create_simulation_build_test_problems(
+        get_template_basic_uc_simulation(), get_template_nomin_ed_simulation(),
+        sys_uc, sys_ed)
+    sequence = SimulationSequence(; models, ini_cond_chronology = InterProblemChronology())
+    sim = Simulation(; name = "fuel_cost_series", steps = 1, models, sequence,
+        simulation_folder = mktempdir(; cleanup = true))
+    @test build!(sim; console_level = Logging.AboveMaxLevel) ==
+          PSI.SimulationBuildStatus.BUILT
+    key = PSI.ParameterKey(FuelCostParameter, ThermalStandard)
+    @test _parameter_columns(sim, :UC, key) == ["Alta"]
+    @test _parameter_columns(sim, :ED, key) == ["Brighton"]
+    @test execute!(sim; enable_progress_bar = false) ==
+          PSI.RunStatus.SUCCESSFULLY_FINALIZED
+end
+
+# A "dynamic_line_rating" SingleTimeSeries on `line` at its static rating, spanning `sys`'s
+# load series.
+function _add_single_line_rating_series!(sys::PSY.System, line::Line)
+    load = first(get_components(PowerLoad, sys))
+    stamps = TimeSeries.timestamp(
+        get_data(get_time_series(SingleTimeSeries, load, "max_active_power")))
+    ratings = fill(PSY.get_rating(line, u"MVA"), length(stamps))
+    add_time_series!(sys, line,
+        SingleTimeSeries("dynamic_line_rating", TimeSeries.TimeArray(stamps, ratings);
+            PSB.natural_units("apparent_power", "MVA")...))
+    return
+end
+
+@testset "An emulator with rating series on different lines builds when allowed" begin
+    sys_em = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_single_time_series = true)
+    sys_ed = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_single_time_series = true)
+    line_ed, line_em = first(sort!(get_name.(get_components(Line, sys_ed))), 2)
+    _add_single_line_rating_series!(sys_em, get_component(Line, sys_em, line_em))
+    _add_single_line_rating_series!(sys_ed, get_component(Line, sys_ed, line_ed))
+    PSY.transform_single_time_series!(sys_ed, Hour(1), Hour(1))
+    models = SimulationModels(;
+        decision_models = [
+            DecisionModel(_line_rating_template(), sys_ed; name = "ED",
+                optimizer = HiGHS_optimizer),
+        ],
+        emulation_model = EmulationModel(_line_rating_template(), sys_em; name = "EM",
+            optimizer = HiGHS_optimizer),
+    )
+    sequence = SimulationSequence(;
+        models,
+        ini_cond_chronology = InterProblemChronology(),
+        allow_different_components = true,
+    )
+    sim = Simulation(; name = "em_rating_series", steps = 1, models, sequence,
+        simulation_folder = mktempdir(; cleanup = true))
+    @test build!(sim; console_level = Logging.AboveMaxLevel) ==
+          PSI.SimulationBuildStatus.BUILT
+    key = PSI.ParameterKey(BranchRatingTimeSeriesParameter, Line)
+    @test _parameter_columns(sim, :ED, key) == [line_ed]
+    @test _parameter_columns(sim, :EM, key) == [line_em]
+    @test execute!(sim; enable_progress_bar = false) ==
+          PSI.RunStatus.SUCCESSFULLY_FINALIZED
+end
+
 @testset "Models with different units compare initial conditions on the units they share" begin
     sys_uc = PSB.build_system(PSITestSystems, "c_sys5_uc")
     sys_ed = PSB.build_system(PSITestSystems, "c_sys5_ed")
