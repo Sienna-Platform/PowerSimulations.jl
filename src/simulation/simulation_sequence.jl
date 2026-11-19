@@ -240,7 +240,9 @@ Construct the simulation sequence between decision and emulation models.
     state holds every model's components. Each feedforward that supports a component subset
     (see `supports_component_subset`) applies only to the components its source model writes.
     For each key the emulation model writes, it must hold every component that the decision
-    models write for that key.
+    models write for that key. Time series and cost parameters are exempt either way: each
+    model reads them from its own system, so models may carry them for different components,
+    such as dynamic line ratings on different lines.
 
 # Example
 

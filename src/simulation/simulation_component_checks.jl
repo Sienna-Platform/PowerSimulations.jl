@@ -46,11 +46,19 @@ function _check_same_components(label::String, holders::_ComponentHolders)
     return
 end
 
+# Each model fills its time series and cost parameters from its own system, and no model
+# reads them back from the simulation state, so models may carry them for different
+# components.
+_requires_same_components(::OptimizationContainerKey) = true
+_requires_same_components(::ParameterKey{<:TimeSeriesParameter}) = false
+_requires_same_components(::ParameterKey{<:ObjectiveFunctionParameter}) = false
+
 function _state_key_components(models::SimulationModels)
     holders = Dict{OptimizationContainerKey, _ComponentHolders}()
     for model in _state_models(models)
         for key in get_container_keys(get_optimization_container(model))
             should_write_resulting_value(key) || continue
+            _requires_same_components(key) || continue
             components = Set{String}(first(_model_columns(model, key)))
             push!(get!(holders, key, _ComponentHolders()), get_name(model) => components)
         end
