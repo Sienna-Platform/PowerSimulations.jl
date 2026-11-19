@@ -224,7 +224,7 @@ end
 
     network_model = IOM.get_network_model(IOM.get_template(model))
     matrix = POM.get_topology_matrix(network_model)
-    ts = POM.get_topology_sequence(network_model)
+    ts = POM.get_topology_schedule(network_model)
     time_steps = IOM.get_time_steps(IOM.get_optimization_container(model))
     in_use = Set(
         PNM.get_network_modification(ts, t) for
