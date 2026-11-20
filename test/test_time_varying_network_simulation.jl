@@ -57,7 +57,9 @@ const _TVN_OUT = collect((_TVN_T0 + Hour(6)):Hour(1):(_TVN_T0 + Hour(9)))
 # the other units exceeds the demand at the low-load hours, so those minimums are zeroed; the
 # island's unit keeps its minimum, which only its outage lifts.
 function _windowed_dispatch_system()
-    sys = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_single_time_series = true)
+    sys = deepcopy(
+        PSB.build_system(PSITestSystems, "c_sys5_uc"; add_single_time_series = true),
+    )
     for g in get_components(ThermalStandard, sys)
         get_name(g) == "Solitude" && continue
         limits = PSY.get_active_power_limits(g, u"SU")
@@ -226,11 +228,13 @@ end
     matrix = POM.get_topology_matrix(network_model)
     ts = POM.get_topology_sequence(network_model)
     time_steps = IOM.get_time_steps(IOM.get_optimization_container(model))
-    in_use = Set(
-        PNM.get_network_modification(ts, t) for
-        t in time_steps if PNM.get_topology_index(ts, t) != 0
-    )
-    @test length(in_use) == 1
+    # The final window covers hours 8-19, so only line "6" is out, at its steps 7-8.
+    out_steps = [t for t in time_steps if PNM.get_topology_index(ts, t) != 0]
+    @test out_steps == [7, 8]
+    in_use = Set(PNM.get_network_modification(ts, t) for t in out_steps)
+    sys = PSI.get_system(model)
+    line_6 = get_component(Line, sys, "6")
+    @test in_use == Set([PNM.NetworkModification(matrix, sys, [line_6])])
     base = PNM.NetworkModification("", PNM.ArcModification[])
     @test Set(keys(PNM.get_row_caches(matrix))) == union(in_use, [base])
     @test issubset(keys(PNM.get_woodbury_cache(matrix)), in_use)
@@ -248,8 +252,8 @@ _ed_pattern(k, h) = ((k == 1 && h in 2:4) || (k == 2 && h in 1:2)) ? 1.0 : 0.0
 # An hourly UC and a 5-minute ED, each scheduling its own line with its own series; returns
 # the executed simulation and its execution status.
 function _run_two_resolutions(uc_line, ed_line)
-    sys_uc = PSB.build_system(PSITestSystems, "c_sys5_uc")
-    sys_ed = PSB.build_system(PSITestSystems, "c_sys5_ed")
+    sys_uc = deepcopy(PSB.build_system(PSITestSystems, "c_sys5_uc"))
+    sys_ed = deepcopy(PSB.build_system(PSITestSystems, "c_sys5_ed"))
     _add_forecast_outage!(sys_uc, get_component(Line, sys_uc, uc_line),
         _uc_pattern)
     _add_forecast_outage!(sys_ed, get_component(Line, sys_ed, ed_line),
@@ -347,6 +351,9 @@ function _add_forced_outage!(sys, timestamps, component)
     return outage
 end
 
+_planned_steps_for(steps::AbstractDict, name) = steps[name]
+_planned_steps_for(steps, _name) = steps
+
 # With `forced`, "Alta" carries a `FixedForcedOutage` series at hour 2 in every system and
 # the simulation runs an event model for it. `planned` (a component type and name) carries an
 # availability schedule out at `planned_steps` (hours) in the systems named in `planned_on`;
@@ -369,7 +376,7 @@ function _planned_and_forced_simulation(
 )
     timestamps = collect(_TVN_T0:Hour(1):(_TVN_T0 + Hour(47)))
     systems = Dict(
-        name => PSB.build_system(PSITestSystems, "c_sys5_events") for
+        name => deepcopy(PSB.build_system(PSITestSystems, "c_sys5_events")) for
         name in ("D1", "D2", "EM")
     )
     for (name, sys) in systems
@@ -383,7 +390,7 @@ function _planned_and_forced_simulation(
         end
         if name in planned_on
             component = get_component(first(planned), sys, last(planned))
-            steps = planned_steps isa AbstractDict ? planned_steps[name] : planned_steps
+            steps = _planned_steps_for(planned_steps, name)
             _add_planned_outage!(sys, component, timestamps, timestamps[steps])
         end
     end
@@ -552,13 +559,14 @@ const _UPDATED_OUT = 12:14
 const _UPDATED_SCHEDULES =
     Dict("D1" => _DAY_AHEAD_OUT, "D2" => _UPDATED_OUT, "EM" => _UPDATED_OUT)
 
-_day_ahead_alta_on(sim) =
+# Alta's values of the variable `key` over D1's full 2-day window.
+_day_ahead_alta(sim, key) =
     Float64.(
         only(
             values(
                 read_variable(
                     get_decision_problem_results(SimulationResults(sim), "D1"),
-                    "OnVariable__ThermalStandard";
+                    key;
                     table_format = TableFormat.WIDE,
                 ),
             ),
@@ -567,6 +575,7 @@ _day_ahead_alta_on(sim) =
             "Alta",
         ],
     )
+_day_ahead_alta_on(sim) = _day_ahead_alta(sim, "OnVariable__ThermalStandard")
 
 _rolling_results(sim) = get_decision_problem_results(SimulationResults(sim), "D2")
 
@@ -582,13 +591,18 @@ _rolling_results(sim) = get_decision_problem_results(SimulationResults(sim), "D2
     day_ahead_on = _day_ahead_alta_on(sim)
     @test all(iszero, day_ahead_on[_DAY_AHEAD_OUT])
     @test all(isone, day_ahead_on[_UPDATED_OUT])
-    rolling_on = _realized(_rolling_results(sim), "OnVariable__ThermalStandard", "Alta")
+    rolling = _rolling_results(sim)
+    rolling_on = _realized(rolling, "OnVariable__ThermalStandard", "Alta")
     @test all(iszero, rolling_on[_UPDATED_OUT])
     em = get_emulation_problem_results(SimulationResults(sim))
     @test all(
         iszero,
         _realized_alta(em, "ActivePowerVariable__ThermalStandard")[_UPDATED_OUT],
     )
+    updated_status = [Float64(!(h in _UPDATED_OUT)) for h in 1:24]
+    @test _realized(rolling, "InjectorStatusParameter__ThermalStandard", "Alta") ==
+          updated_status
+    @test _realized_alta(em, "InjectorStatusParameter__ThermalStandard") == updated_status
 end
 
 # A commitment fixed from the day-ahead model yields to the rolling model's own outage. With
@@ -618,6 +632,7 @@ end
     day_ahead_on = _day_ahead_alta_on(sim)
     rolling = _rolling_results(sim)
     rolling_on = _realized(rolling, "OnVariable__ThermalStandard", "Alta")
+    @test all(isone, day_ahead_on[_UPDATED_OUT])
     for h in 1:24
         @test rolling_on[h] ≈ (h in _UPDATED_OUT ? 0.0 : day_ahead_on[h]) atol = 1e-6
     end
@@ -644,12 +659,21 @@ end
         ),
     )
     @test status == PSI.RunStatus.SUCCESSFULLY_FINALIZED
-    for on in (
-        _day_ahead_alta_on(sim)[1:24],
-        _realized(_rolling_results(sim), "OnVariable__ThermalStandard", "Alta"),
+    rolling = _rolling_results(sim)
+    for (on, start) in (
+        (
+            _day_ahead_alta_on(sim),
+            _day_ahead_alta(sim, "StartVariable__ThermalStandard"),
+        ),
+        (
+            _realized(rolling, "OnVariable__ThermalStandard", "Alta"),
+            _realized(rolling, "StartVariable__ThermalStandard", "Alta"),
+        ),
     )
         @test all(iszero, on[out_steps])
-        starts = [h for h in 2:24 if on[h] > 0.5 && on[h - 1] < 0.5]
-        @test all(h -> all(>(0.5), on[h:min(h + 7, 24)]), starts)
+        # The start variable also records starts at a window's first step, which a
+        # transition in `on` cannot show without the initial status.
+        starts = findall(>(0.5), start)
+        @test all(h -> all(>(0.5), on[h:min(h + 7, length(on))]), starts)
     end
 end
