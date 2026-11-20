@@ -1029,17 +1029,7 @@ Default problem update function for most problems with no customization
 function update_model!(model::IOM.AbstractOptimizationModel, sim::Simulation)
     update_model!(model, get_simulation_state(sim), get_ini_cond_chronology(sim))
     if get_rebuild_model(model)
-        container = get_optimization_container(model)
-        # A released model was reset when it was released.
-        if !IOM.is_released(model)
-            reset_optimization_model!(container)
-        end
-        # The build reads time series at the initial time; the model's clock needs it back.
-        initial_time = get_initial_time(model)
-        set_initial_time!(model, get_current_time(sim))
-        POM.build_problem!(container, get_template(model), get_system(model))
-        set_initial_time!(model, initial_time)
-        IOM.set_released!(model, false)
+        IOM.rebuild_model!(model; initial_time = get_current_time(sim))
     end
 
     return

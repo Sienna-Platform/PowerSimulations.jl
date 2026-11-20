@@ -28,11 +28,11 @@ PowerTableDataParser = "2b750c0e-0bff-11f1-9200-1befd75df6be"
 
 [sources]
 InfrastructureSystems = {url = "https://github.com/Sienna-Platform/InfrastructureSystems.jl", rev = "IS4"}
-InfrastructureOptimizationModels = {url = "https://github.com/Sienna-Platform/InfrastructureOptimizationModels.jl", rev = "main"}
+InfrastructureOptimizationModels = {url = "https://github.com/Sienna-Platform/InfrastructureOptimizationModels.jl", rev = "mb/tvn-component-statuses-rebuild-hooks"}
 PowerSystems = {url = "https://github.com/Sienna-Platform/PowerSystems.jl", rev = "psy6"}
-PowerNetworkMatrices = {url = "https://github.com/Sienna-Platform/PowerNetworkMatrices.jl", rev = "psy6", subdir = "PowerNetworkMatrices.jl"}
-PowerMatricesCore = {url = "https://github.com/Sienna-Platform/PowerNetworkMatrices.jl", rev = "psy6", subdir = "PowerMatricesCore.jl"}
-PowerOperationsModels = {url = "https://github.com/Sienna-Platform/PowerOperationsModels.jl", rev = "rh/fix-main-feedforward-highs"}
+PowerNetworkMatrices = {url = "https://github.com/Sienna-Platform/PowerNetworkMatrices.jl", rev = "mb/tvn-c8-two-tier-woodbury", subdir = "PowerNetworkMatrices.jl"}
+PowerMatricesCore = {url = "https://github.com/Sienna-Platform/PowerNetworkMatrices.jl", rev = "mb/tvn-c8-two-tier-woodbury", subdir = "PowerMatricesCore.jl"}
+PowerOperationsModels = {url = "https://github.com/Sienna-Platform/PowerOperationsModels.jl", rev = "mb/tvn-c3-sc-on-topology"}
 PowerSystemCaseBuilder = {url = "https://github.com/Sienna-Platform/PowerSystemCaseBuilder.jl", rev = "psy6"}
 # PSB depends on these off the psy6 branch; not registered there yet.
 PowerFlowFileParser = {url = "https://github.com/Sienna-Platform/PowerFlowFileParser.jl", rev = "psy6"}
