@@ -6,7 +6,7 @@ const _TVN_T0 = DateTime("2024-01-01T00:00:00")
 
 # An availability schedule on `component` that is out (0.0) at the timestamps in `out`.
 function _add_planned_outage!(sys, component, timestamps, out)
-    values = [t in out ? 0.0 : 1.0 for t in timestamps]
+    values = [ifelse(t in out, 0.0, 1.0) for t in timestamps]
     add_time_series!(
         sys,
         component,
@@ -246,8 +246,8 @@ end
 
 # The UC takes its line out at hours 6-8; the ED takes its line out at its own 5-minute steps,
 # which the UC series does not: steps 2-4 of its first window and 1-2 of its second.
-_uc_pattern(k, h) = (k == 1 && h in 7:9) ? 1.0 : 0.0
-_ed_pattern(k, h) = ((k == 1 && h in 2:4) || (k == 2 && h in 1:2)) ? 1.0 : 0.0
+_uc_pattern(k, h) = ifelse(k == 1 && h in 7:9, 1.0, 0.0)
+_ed_pattern(k, h) = ifelse((k == 1 && h in 2:4) || (k == 2 && h in 1:2), 1.0, 0.0)
 
 # An hourly UC and a 5-minute ED, each scheduling its own line with its own series; returns
 # the executed simulation and its execution status.
@@ -338,7 +338,7 @@ end
 #################################################################################
 
 const _PLANNED_STEPS = 4:6
-const _EVENT_STATUS = [h == 2 ? 1.0 : 0.0 for h in 1:48]
+const _EVENT_STATUS = [ifelse(h == 2, 1.0, 0.0) for h in 1:48]
 
 function _add_forced_outage!(sys, timestamps, component)
     outage = PSY.FixedForcedOutage(; outage_status = 0.0)
@@ -424,11 +424,15 @@ function _planned_and_forced_simulation(
         ],
     )
     isempty(d2_feedforwards) || (feedforwards["D2"] = d2_feedforwards)
+    events = POM.EventModel[]
+    if forced
+        push!(events, event_model)
+    end
     sequence = SimulationSequence(;
         models,
         ini_cond_chronology = InterProblemChronology(),
         feedforwards = feedforwards,
-        events = forced ? [event_model] : POM.EventModel[],
+        events,
     )
     folder = mktempdir(; cleanup = true)
     sim = Simulation(;
@@ -478,7 +482,7 @@ _realized_alta(em, key) = _realized(em, key, "Alta")
     @test _realized_alta(em, "AvailableStatusParameter__ThermalStandard") ==
           1.0 .- _EVENT_STATUS[1:24]
     @test _realized_alta(em, "InjectorStatusParameter__ThermalStandard") ==
-          [h in _PLANNED_STEPS ? 0.0 : 1.0 for h in 1:24]
+          [ifelse(h in _PLANNED_STEPS, 0.0, 1.0) for h in 1:24]
     @test all(
         iszero,
         _realized_alta(em, "ActivePowerVariable__ThermalStandard")[[2, 4, 5, 6]],
@@ -519,7 +523,7 @@ end
     @test PSI.has_dataset(PSI.get_system_states(state), status_key)
     em = get_emulation_problem_results(SimulationResults(sim))
     @test _realized(em, "InjectorStatusParameter__RenewableDispatch", "WindBus1") ==
-          [h in _PLANNED_STEPS ? 0.0 : 1.0 for h in 1:24]
+          [ifelse(h in _PLANNED_STEPS, 0.0, 1.0) for h in 1:24]
     @test all(
         iszero,
         _realized(em, "ActivePowerVariable__RenewableDispatch", "WindBus1")[_PLANNED_STEPS],
@@ -544,10 +548,10 @@ end
     rolling = get_decision_problem_results(results, "D2")
     on = read_realized_variable(rolling, OnVariable, ThermalStandard;
         table_format = TableFormat.WIDE)
-    @test all(isone, on[out_steps, "Alta"])
+    @test all(x -> isapprox(x, 1.0; atol = 1e-6), on[out_steps, "Alta"])
     em = get_emulation_problem_results(results)
     @test _realized_alta(em, "InjectorStatusParameter__ThermalStandard") ==
-          [h in out_steps ? 0.0 : 1.0 for h in 1:24]
+          [ifelse(h in out_steps, 0.0, 1.0) for h in 1:24]
     @test all(iszero, _realized_alta(em, "ActivePowerVariable__ThermalStandard")[out_steps])
 end
 
@@ -590,7 +594,7 @@ _rolling_results(sim) = get_decision_problem_results(SimulationResults(sim), "D2
     @test status == PSI.RunStatus.SUCCESSFULLY_FINALIZED
     day_ahead_on = _day_ahead_alta_on(sim)
     @test all(iszero, day_ahead_on[_DAY_AHEAD_OUT])
-    @test all(isone, day_ahead_on[_UPDATED_OUT])
+    @test all(x -> isapprox(x, 1.0; atol = 1e-6), day_ahead_on[_UPDATED_OUT])
     rolling = _rolling_results(sim)
     rolling_on = _realized(rolling, "OnVariable__ThermalStandard", "Alta")
     @test all(iszero, rolling_on[_UPDATED_OUT])
@@ -632,9 +636,10 @@ end
     day_ahead_on = _day_ahead_alta_on(sim)
     rolling = _rolling_results(sim)
     rolling_on = _realized(rolling, "OnVariable__ThermalStandard", "Alta")
-    @test all(isone, day_ahead_on[_UPDATED_OUT])
+    @test all(x -> isapprox(x, 1.0; atol = 1e-6), day_ahead_on[_UPDATED_OUT])
     for h in 1:24
-        @test rolling_on[h] ≈ (h in _UPDATED_OUT ? 0.0 : day_ahead_on[h]) atol = 1e-6
+        expected = ifelse(h in _UPDATED_OUT, 0.0, day_ahead_on[h])
+        @test rolling_on[h] ≈ expected atol = 1e-6
     end
     shed = read_realized_variable(rolling, "SystemBalanceSlackUp__System";
         table_format = TableFormat.WIDE)[

@@ -8,7 +8,7 @@
     resolution = first(PSY.get_time_series_resolutions(sys))
     n = Dates.Millisecond(PSY.get_forecast_horizon(sys)) ÷ Dates.Millisecond(resolution)
     # In service throughout window 1; out for the first three periods of window 2.
-    outage_values(k) = [(k == 2 && i <= 3) ? 1.0 : 0.0 for i in 1:n]
+    outage_values(k) = [ifelse(k == 2 && i <= 3, 1.0, 0.0) for i in 1:n]
     data = DataStructures.SortedDict(
         t => 1.0 .- outage_values(k) for (k, t) in enumerate(initial_times)
     )
@@ -98,7 +98,7 @@ end
     n = Dates.Millisecond(PSY.get_forecast_horizon(sys)) ÷ Dates.Millisecond(resolution)
     max_mw = get_max_active_power(unit, u"MW")
     minimum_series = DataStructures.SortedDict(
-        t => fill((k == 1 ? 0.1 : 0.3) * max_mw, n) for (k, t) in enumerate(initial_times)
+        t => fill(ifelse(k == 1, 0.1, 0.3) * max_mw, n) for (k, t) in enumerate(initial_times)
     )
     add_time_series!(
         sys,
@@ -113,7 +113,7 @@ end
     # Out from step 13 of window 1 through step 4 of window 2.
     is_out(k, i) = (k == 1 && i >= 13) || (k == 2 && i <= 4)
     outage_series = DataStructures.SortedDict(
-        t => [is_out(k, i) ? 0.0 : 1.0 for i in 1:n] for (k, t) in enumerate(initial_times)
+        t => [ifelse(is_out(k, i), 0.0, 1.0) for i in 1:n] for (k, t) in enumerate(initial_times)
     )
     add_time_series!(
         sys,
@@ -179,7 +179,7 @@ function _add_uc_outage!(sys, unit_name, is_out)
     resolution = first(PSY.get_time_series_resolutions(sys))
     n = Dates.Millisecond(PSY.get_forecast_horizon(sys)) ÷ Dates.Millisecond(resolution)
     data = DataStructures.SortedDict(
-        t => [is_out(i) ? 0.0 : 1.0 for i in 1:n] for t in initial_times
+        t => [ifelse(is_out(i), 0.0, 1.0) for i in 1:n] for t in initial_times
     )
     add_time_series!(sys, unit, Deterministic(POM.AVAILABLE_SCHEDULE, data, resolution))
     return
@@ -190,7 +190,7 @@ function _add_ed_outage!(sys, unit_name, is_out)
     unit = get_component(ThermalStandard, sys, unit_name)
     timestamps =
         collect(DateTime("2024-01-01T00:00:00"):Hour(1):DateTime("2024-01-02T23:00:00"))
-    values = [is_out(Dates.hour(t) + 1) ? 0.0 : 1.0 for t in timestamps]
+    values = [ifelse(is_out(Dates.hour(t) + 1), 0.0, 1.0) for t in timestamps]
     add_time_series!(
         sys,
         unit,
