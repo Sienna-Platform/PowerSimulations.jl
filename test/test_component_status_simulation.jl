@@ -2,7 +2,7 @@
 # between steps PSI must recompute them for the new window, since the rebuild keeps the
 # parameter containers.
 @testset "Component statuses refresh between simulation steps" begin
-    sys = PSB.build_system(PSITestSystems, "c_sys5_ed")
+    sys = deepcopy(PSB.build_system(PSITestSystems, "c_sys5_ed"))
     line = first(sort!(collect(get_components(Line, sys)); by = get_name))
     initial_times = collect(PSY.get_forecast_initial_times(sys))
     resolution = first(PSY.get_time_series_resolutions(sys))
@@ -61,9 +61,9 @@ function _scale_load_series!(sys, factor)
                     name = name,
                     data = data,
                     resolution = PSY.get_resolution(ts),
-                    units = ts.units,
-                    quantity_kind = ts.quantity_kind,
-                    per_unit_of = ts.per_unit_of,
+                    units = IS.get_units(ts),
+                    quantity_kind = IS.get_quantity_kind(ts),
+                    per_unit_of = IS.get_per_unit_of(ts),
                 ),
             )
         end
@@ -76,7 +76,7 @@ end
 # not updated between windows, so in window 2, which starts mid-outage, it would claim the unit
 # was producing and charge a drop from its minimum that its ramp-down limit cannot follow.
 @testset "A must-run compact unit with an outage spanning the window boundary" begin
-    sys = PSB.build_system(PSITestSystems, "c_sys5_uc")
+    sys = deepcopy(PSB.build_system(PSITestSystems, "c_sys5_uc"))
     _scale_load_series!(sys, 0.4)
     for g in get_components(ThermalStandard, sys)
         ramp = get_active_power_limits(g, u"SU").max
@@ -161,8 +161,10 @@ const INJECTOR_STATUS_KEY =
 # `ed_schedules!` adds the ED system's schedules before its series are transformed, so the
 # transform derives their forecast views.
 function _status_stage_systems(; ed_schedules! = sys -> nothing)
-    sys_ed = PSB.build_system(PSITestSystems, "c_sys5_uc"; add_single_time_series = true)
-    sys_uc = PSB.build_system(PSITestSystems, "c_sys5_uc")
+    sys_ed = deepcopy(
+        PSB.build_system(PSITestSystems, "c_sys5_uc"; add_single_time_series = true),
+    )
+    sys_uc = deepcopy(PSB.build_system(PSITestSystems, "c_sys5_uc"))
     _scale_load_series!(sys_uc, 0.4)
     _scale_load_series!(sys_ed, 0.4)
     ed_schedules!(sys_ed)
@@ -232,12 +234,10 @@ end
 
 # The decision-state value of `unit_name` at the step's `hour` (0-based), after every model ran.
 function _state_status(sim, unit_name, hour)
-    dataset = PSI.get_dataset(
-        PSI.get_decision_states(PSI.get_simulation_state(sim)),
-        INJECTOR_STATUS_KEY,
-    )
-    row = findfirst(==(PSI.get_initial_time(sim) + Hour(hour)), dataset.timestamps)
-    return dataset.values[unit_name, row]
+    states = PSI.get_decision_states(PSI.get_simulation_state(sim))
+    timestamps = PSI.get_dataset(states, INJECTOR_STATUS_KEY).timestamps
+    row = findfirst(==(PSI.get_initial_time(sim) + Hour(hour)), timestamps)
+    return PSI.get_dataset_values(states, INJECTOR_STATUS_KEY)[unit_name, row]
 end
 
 function _written_status_columns(results, name)
